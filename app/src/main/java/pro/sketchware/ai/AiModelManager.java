@@ -14,11 +14,11 @@ import com.google.ai.edge.litertlm.Contents;
 import com.google.ai.edge.litertlm.Engine;
 import com.google.ai.edge.litertlm.EngineConfig;
 import com.google.ai.edge.litertlm.Message;
-import com.google.ai.edge.litertlm.MessageCallback;
 import com.google.ai.edge.litertlm.ModelInfo;
 import com.google.ai.edge.litertlm.SamplerConfig;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -41,18 +41,26 @@ import java.util.concurrent.TimeUnit;
  * thermal and memory budget, so all engine work runs on a single background
  * thread and only one turn may be in flight.
  *
- * <p><b>The conversation is reused, never recreated per turn.</b> On Android,
- * {@code MessageCallback.onDone()} is not delivered for a conversation that is
- * used exactly once (google-ai-edge/LiteRT-LM#3266, still open as of
- * 0.18.0). The turn then never closes, the engine is dead for the rest of the
- * process and closing the conversation blocks forever. Reusing one
- * conversation across turns is the only call shape that reliably delivers
- * {@code onDone()}, so the conversation is created once and kept.
+ * <p><b>The app owns the transcript; the model does not.</b> A LiteRT-LM
+ * conversation is supposed to remember earlier turns in its KV cache, but on
+ * a real device the model answered every message as if it were the first:
+ * the native session memory cannot be trusted across models and templates.
+ * So every turn creates a fresh conversation seeded with the recent
+ * transcript as its initial messages, and the app re-sends that bounded
+ * history each time. Memory then works no matter what the model file does.
  *
- * <p><b>A watchdog closes turns that never get a callback.</b> Because
- * {@code onDone()} can be lost, a turn is also considered finished when no
- * token has arrived for {@link #IDLE_TIMEOUT_SECONDS}. Without it the chat
- * would hang on a spinner forever.
+ * <p><b>Turns are synchronous.</b> The streaming callback API cannot be
+ * combined with a fresh conversation per turn: for a conversation that is
+ * used exactly once, {@code MessageCallback.onDone()} is never delivered
+ * (google-ai-edge/LiteRT-LM#3266) and the engine is left unusable. The
+ * synchronous {@code sendMessage} call is the documented workaround, so a
+ * reply now arrives in one piece instead of token by token. The cost is a
+ * full prefill of the (bounded) transcript per turn, which is also what
+ * makes the memory real rather than hoped for.
+ *
+ * <p><b>A watchdog closes turns that never finish.</b> A native call that
+ * never returns would otherwise wedge the single engine thread and the chat
+ * with it, so a turn is abandoned after {@link #TURN_TIMEOUT_SECONDS}.
  *
  * <p><b>Nothing here touches the main thread.</b> Initialising a model takes
  * seconds and closing a stuck conversation can block indefinitely, so both
@@ -62,8 +70,14 @@ public class AiModelManager {
 
     private static final String TAG = "AiModelManager";
 
-    /** How long a turn may stay silent before it is treated as finished. */
-    private static final int IDLE_TIMEOUT_SECONDS = 20;
+    /** How long a turn may run before it is abandoned. */
+    private static final int TURN_TIMEOUT_SECONDS = 180;
+
+    /** How many transcript messages are re-sent to the model each turn. */
+    private static final int MAX_HISTORY_MESSAGES = 16;
+
+    /** Character budget for the re-sent transcript (roughly 2k tokens). */
+    private static final int MAX_HISTORY_CHARS = 8000;
 
     /**
      * What the model is told about itself.
@@ -133,6 +147,13 @@ public class AiModelManager {
 
     private Engine engine;
     private Conversation conversation;
+    /**
+     * The recent conversation, owned by the app and re-sent to the model on
+     * every turn. Guarded by {@link #engineLock}.
+     */
+    private final List<Message> transcript = new ArrayList<>();
+    private volatile boolean stopRequested;
+    private volatile boolean turnAbandoned;
     private File modelFile;
     private AiModelConfig.Backend backend = AiModelConfig.Backend.CPU;
     private volatile State state = State.IDLE;
@@ -242,29 +263,60 @@ public class AiModelManager {
     }
 
     /**
-     * Creates (or reuses) the conversation.
-     *
-     * <p>Reuse is deliberate: see the class comment.
+     * Creates the conversation for one turn, seeded with the transcript so
+     * far. The conversation is closed when the turn ends; see the class
+     * comment for why turns do not share one.
      */
     @Nullable
-    private Conversation ensureConversation() {
+    private Conversation createConversation(List<Message> initialMessages) {
         synchronized (engineLock) {
             if (engine == null) {
                 return null;
             }
-            if (conversation != null) {
-                return conversation;
-            }
             SamplerConfig samplerConfig = new SamplerConfig(64, 0.95, 1.0f, 0);
             ConversationConfig config = new ConversationConfig(
                     /* systemInstruction    */ Contents.Companion.of(SYSTEM_INSTRUCTION),
-                    /* initialMessages      */ Collections.emptyList(),
+                    /* initialMessages      */ initialMessages,
                     /* tools                */ Collections.emptyList(),
                     /* samplerConfig        */ samplerConfig,
                     /* automaticToolCalling */ false,
                     /* channels             */ Collections.emptyList());
             conversation = engine.createConversation(config);
             return conversation;
+        }
+    }
+
+    /** Closes a turn's conversation; never throws. */
+    private void closeConversation(@Nullable Conversation toClose) {
+        if (toClose == null) {
+            return;
+        }
+        synchronized (engineLock) {
+            if (conversation == toClose) {
+                conversation = null;
+            }
+            try {
+                toClose.close();
+            } catch (Throwable t) {
+                Log.w(TAG, "Closing the conversation failed", t);
+            }
+        }
+    }
+
+    /**
+     * Trims the transcript to the newest exchanges that fit the budget.
+     * Messages are dropped in user/model pairs so the roles stay balanced.
+     * Caller must hold {@link #engineLock}.
+     */
+    private void trimTranscriptLocked() {
+        int chars = 0;
+        for (Message message : transcript) {
+            chars += message.toString().length();
+        }
+        while ((transcript.size() > MAX_HISTORY_MESSAGES || chars > MAX_HISTORY_CHARS)
+                && transcript.size() >= 2) {
+            chars -= transcript.remove(0).toString().length();
+            chars -= transcript.remove(0).toString().length();
         }
     }
 
@@ -317,6 +369,7 @@ public class AiModelManager {
             Engine toCloseEngine = engine;
             engine = null;
             modelFile = null;
+            transcript.clear();
 
             if (toClose != null) {
                 try {
@@ -341,52 +394,70 @@ public class AiModelManager {
 
     // region turns
 
-    /** Sends a prompt to the model and streams the answer back. */
+    /**
+     * Sends a prompt to the model and delivers the whole reply at once.
+     *
+     * <p>The reply is not streamed: see the class comment. The turn runs on
+     * the engine thread, so the synchronous native call cannot block the UI.
+     */
     public void send(String prompt) {
         engineThread.execute(() -> {
-            Conversation active = ensureConversation();
-            if (active == null) {
-                notifyError(new IllegalStateException("No model is loaded"));
-                return;
+            final List<Message> seed;
+            synchronized (engineLock) {
+                if (engine == null) {
+                    notifyError(new IllegalStateException("No model is loaded"));
+                    return;
+                }
+                if (generating) {
+                    return;
+                }
+                generating = true;
+                stopRequested = false;
+                turnAbandoned = false;
+                seed = new ArrayList<>(transcript);
             }
-            generating = true;
             setState(State.GENERATING);
 
+            Conversation active = null;
             try {
-                Message message = Message.Companion.user(prompt);
-                active.sendMessageAsync(message, new MessageCallback() {
-                    @Override
-                    public void onMessage(@NonNull Message response) {
-                        try {
-                            cancelWatchdog();
-                            String text = response.toString();
-                            if (text != null && !text.isEmpty()) {
-                                notifyToken(text);
-                            }
-                            armWatchdog();
-                        } catch (Throwable t) {
-                            // This runs inside the native callback: an
-                            // exception here would abort the process.
-                            Log.e(TAG, "Failed to handle a token", t);
-                        }
-                    }
+                active = createConversation(seed);
+                if (active == null) {
+                    notifyError(new IllegalStateException("No model is loaded"));
+                    return;
+                }
+                armWatchdog();
+                Message reply = active.sendMessage(Message.Companion.user(prompt));
+                String text = reply == null ? "" : reply.toString();
 
-                    @Override
-                    public void onDone() {
-                        finishTurn();
+                boolean abandoned;
+                synchronized (engineLock) {
+                    abandoned = stopRequested || turnAbandoned;
+                    if (!abandoned && text != null && !text.trim().isEmpty()) {
+                        transcript.add(Message.Companion.user(prompt));
+                        transcript.add(Message.Companion.model(text.trim()));
+                        trimTranscriptLocked();
                     }
-
-                    @Override
-                    public void onError(@NonNull Throwable t) {
-                        Log.e(TAG, "Generation failed", t);
-                        finishTurn();
-                        notifyError(t);
+                }
+                if (!abandoned) {
+                    if (text == null || text.trim().isEmpty()) {
+                        notifyError(new IllegalStateException(
+                                "The model returned an empty reply"));
+                    } else {
+                        notifyToken(text.trim());
                     }
-                });
+                }
             } catch (Throwable t) {
-                Log.e(TAG, "Sending the message failed", t);
+                boolean abandoned;
+                synchronized (engineLock) {
+                    abandoned = stopRequested || turnAbandoned;
+                }
+                if (!abandoned) {
+                    Log.e(TAG, "Sending the message failed", t);
+                    notifyError(t);
+                }
+            } finally {
+                closeConversation(active);
                 finishTurn();
-                notifyError(t);
             }
         });
     }
@@ -395,6 +466,7 @@ public class AiModelManager {
     public void stop() {
         Conversation active;
         synchronized (engineLock) {
+            stopRequested = true;
             active = conversation;
         }
         if (active != null) {
@@ -404,16 +476,18 @@ public class AiModelManager {
                 Log.w(TAG, "Cancelling the generation failed", t);
             }
         }
-        cancelWatchdog();
         finishTurn();
     }
 
     private void finishTurn() {
         cancelWatchdog();
-        if (generating) {
+        synchronized (engineLock) {
+            if (!generating) {
+                return;
+            }
             generating = false;
-            setState(State.READY);
         }
+        setState(State.READY);
         mainHandler.post(() -> {
             for (Listener listener : listeners) {
                 listener.onTurnComplete();
@@ -424,10 +498,23 @@ public class AiModelManager {
     private void armWatchdog() {
         cancelWatchdog();
         idleWatchdog = watchdog.schedule(() -> {
-            // The terminal callback never arrived; close the turn ourselves.
-            Log.w(TAG, "No token for " + IDLE_TIMEOUT_SECONDS + "s, closing the turn");
+            // The native call never returned; abandon the turn and try to
+            // unblock the engine thread.
+            Log.w(TAG, "Turn exceeded " + TURN_TIMEOUT_SECONDS + "s, abandoning it");
+            Conversation active;
+            synchronized (engineLock) {
+                turnAbandoned = true;
+                active = conversation;
+            }
+            if (active != null) {
+                try {
+                    active.cancelProcess();
+                } catch (Throwable t) {
+                    Log.w(TAG, "Cancelling the stuck turn failed", t);
+                }
+            }
             finishTurn();
-        }, IDLE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        }, TURN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
     private void cancelWatchdog() {

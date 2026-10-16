@@ -76,14 +76,32 @@ while 4/4 turns that reused the same `Conversation` did.
 
 Mitigation, implemented in `AiModelManager`:
 
-1. one `Conversation` is created and **reused for every turn**;
+1. turns use the **synchronous** `sendMessage`, which is the reporter's own
+   workaround: it returns the full reply and needs no terminal callback. The
+   cost is that replies are no longer streamed token by token;
 2. the engine and the conversation are only ever touched on a single
    background thread — closing a stuck conversation must not happen on the
    main thread, that would be an ANR;
-3. an idle watchdog closes a turn that produced no token for 20 s, because the
-   terminal callback cannot be relied upon;
+3. a watchdog abandons a turn whose native call does not return within
+   180 s, because even a synchronous call cannot be relied upon to finish;
 4. a failed engine can be torn down and reloaded, so the manager treats
    "engine is dead" as recoverable.
+
+### 3.1.1 The native conversation memory cannot be trusted
+
+Reusing one `Conversation` was the original mitigation for #3266, and it
+failed in the field: on a real device the model answered every message as if
+it were the first — no reference to earlier turns, near-identical generic
+replies to unrelated questions. Whatever the native session does with its
+KV cache across turns depends on the model file and its chat template, and
+the app cannot inspect either.
+
+So the app owns the transcript. Every turn creates a fresh `Conversation`
+whose `initialMessages` are the recent transcript (bounded to the newest
+16 messages / ~8000 characters), sends one synchronous message, and closes
+the conversation. Memory then comes from data the app controls, and a fresh
+conversation per turn is exactly the shape the synchronous call makes safe.
+The price is re-prefilling that bounded history on every turn.
 
 ### 3.2 Model output can abort the process — #3849
 
