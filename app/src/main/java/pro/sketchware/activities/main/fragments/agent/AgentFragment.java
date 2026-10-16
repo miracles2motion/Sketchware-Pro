@@ -46,6 +46,11 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
 
     private final List<ChatMessage> messages = new ArrayList<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    /** Tokens that arrived but are not in the list yet. */
+    private final StringBuilder pendingToken = new StringBuilder();
+    /** How long the collected tokens are batched before the list is updated. */
+    private static final long TOKEN_FLUSH_MS = 60L;
+    private volatile boolean flushScheduled;
     private AgentChatBinding binding;
     private ChatAdapter adapter;
     private AiModelManager modelManager;
@@ -366,13 +371,39 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
         if (binding == null || streamingMessage == null) {
             return;
         }
-        streamingMessage.text += text;
-        streamingMessage.state = ChatMessage.State.STREAMING;
-        int index = messages.indexOf(streamingMessage);
-        if (index >= 0) {
-            adapter.submitList(new ArrayList<>(messages));
+        // A model on a phone emits tokens faster than the list can be
+        // diffed, so the tokens are collected and flushed to the list in
+        // batches.
+        synchronized (pendingToken) {
+            pendingToken.append(text);
+        }
+        if (!flushScheduled) {
+            flushScheduled = true;
+            binding.chatList.postDelayed(flushTokens, TOKEN_FLUSH_MS);
         }
     }
+
+    /** Moves the collected tokens into the streaming message. */
+    private final Runnable flushTokens = new Runnable() {
+        @Override
+        public void run() {
+            flushScheduled = false;
+            if (binding == null || streamingMessage == null) {
+                synchronized (pendingToken) {
+                    pendingToken.setLength(0);
+                }
+                return;
+            }
+            synchronized (pendingToken) {
+                if (pendingToken.length() > 0) {
+                    streamingMessage.text += pendingToken;
+                    pendingToken.setLength(0);
+                }
+            }
+            streamingMessage.state = ChatMessage.State.STREAMING;
+            adapter.submitList(new ArrayList<>(messages));
+        }
+    };
 
     @Override
     public void onTurnComplete() {
@@ -389,15 +420,26 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
     }
 
     private void setStreamingComplete() {
-        if (streamingMessage != null) {
-            streamingMessage.state = ChatMessage.State.COMPLETE;
-            if (streamingMessage.text.isEmpty()) {
-                streamingMessage.text = "…";
+        if (streamingMessage == null) {
+            return;
+        }
+        if (binding != null) {
+            binding.chatList.removeCallbacks(flushTokens);
+        }
+        flushScheduled = false;
+        synchronized (pendingToken) {
+            if (pendingToken.length() > 0) {
+                streamingMessage.text += pendingToken;
+                pendingToken.setLength(0);
             }
-            streamingMessage = null;
-            if (binding != null) {
-                adapter.submitList(new ArrayList<>(messages));
-            }
+        }
+        streamingMessage.state = ChatMessage.State.COMPLETE;
+        if (streamingMessage.text.isEmpty()) {
+            streamingMessage.text = "…";
+        }
+        streamingMessage = null;
+        if (binding != null) {
+            adapter.submitList(new ArrayList<>(messages));
         }
     }
 
