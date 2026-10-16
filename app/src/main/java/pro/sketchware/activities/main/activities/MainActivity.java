@@ -377,6 +377,7 @@ public class MainActivity extends BasePermissionAppCompatActivity {
      * project screens, and the toolbar title changes with the mode.
      */
     private void applyModeChrome(boolean agent) {
+        boolean wasAgent = agentMode;
         agentMode = agent;
         if (agent) {
             binding.bottomNav.setVisibility(View.GONE);
@@ -385,6 +386,11 @@ public class MainActivity extends BasePermissionAppCompatActivity {
         } else {
             binding.bottomNav.setVisibility(View.VISIBLE);
             binding.toolbarTitle.setText(R.string.agent_mode_projects_hint);
+            if (wasAgent) {
+                // Leaving Agent Mode gives the memory back to the rest of the
+                // app; a 1B class model holds about a gigabyte of RAM.
+                pro.sketchware.ai.AiModelManager.getInstance().unload();
+            }
         }
     }
 

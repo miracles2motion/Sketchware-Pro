@@ -1,5 +1,6 @@
 package pro.sketchware.ai;
 
+import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -220,6 +221,37 @@ public class AiModelManager {
      */
     public void unload() {
         engineThread.execute(this::unloadInternal);
+    }
+
+    /**
+     * Releases the engine and waits for it, so that the memory is really free
+     * before a memory hungry operation (AAPT2, D8) starts.
+     *
+     * <p>Never blocks the main thread: on the UI thread the unload is only
+     * requested, because waiting there would be an ANR.
+     *
+     * @param timeoutMs how long to wait for the engine to go away
+     * @return true when the engine was released within the timeout
+     */
+    public boolean unloadBlocking(long timeoutMs) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            unload();
+            return false;
+        }
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        engineThread.execute(() -> {
+            try {
+                unloadInternal();
+            } finally {
+                latch.countDown();
+            }
+        });
+        try {
+            return latch.await(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     private void unloadInternal() {

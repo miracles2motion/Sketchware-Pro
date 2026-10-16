@@ -81,6 +81,12 @@ import proguard.ProGuard;
 public class ProjectBuilder {
     public static final String TAG = "AppBuilder";
 
+    /**
+     * How long a build waits for the Agent Mode model to be released before
+     * it starts anyway.
+     */
+    private static final long ENGINE_UNLOAD_TIMEOUT_MS = 10_000L;
+
     private final File aapt2Binary;
     private final Context context;
     public BuildSettings build_settings;
@@ -139,6 +145,13 @@ public class ProjectBuilder {
     public ProjectBuilder(BuildProgressReceiver buildAsyncTask, Context context, yq yqVar) {
         this(context, yqVar);
         progressReceiver = buildAsyncTask;
+        /*
+         * Free the on-device model before the build starts. A 1B class model
+         * holds roughly a gigabyte of resident memory, and AAPT2/D8 need that
+         * memory as well; keeping both alive at the same time is an OOM.
+         * The wait is bounded and never happens on the main thread.
+         */
+        pro.sketchware.ai.AiModelManager.getInstance().unloadBlocking(ENGINE_UNLOAD_TIMEOUT_MS);
     }
 
     /**
