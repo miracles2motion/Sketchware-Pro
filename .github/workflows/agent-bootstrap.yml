@@ -136,6 +136,11 @@ jobs:
           # Keep the log of every commit: the branch is force pushed, so the
           # newest log would otherwise hide an older failure.
           cp build_log.txt "lfs_payload/build_log_${GITHUB_SHA}.txt" 2>/dev/null || true
+          # The release APK is published through Git LFS, so it can be
+          # downloaded straight from a browser without logging in:
+          # https://media.githubusercontent.com/media/<owner>/<repo>/lfs-payload/lfs_payload/app-release.apk
+          cp app/build/outputs/apk/release/app-release.apk lfs_payload/app-release.apk 2>/dev/null || true
+          sha256sum lfs_payload/app-release.apk > lfs_payload/app-release.apk.sha256 2>/dev/null || true
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -f lfs_payload
