@@ -1,0 +1,76 @@
+name: Agent Bootstrap
+
+on:
+  push:
+    branches:
+      - 'ci/agent-bootstrap'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    name: Recover LFS payload and verify build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout with LFS
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+          fetch-depth: 1
+
+      - name: Collect LFS payloads as plain git blobs
+        id: collect
+        run: |
+          set -euo pipefail
+          mkdir -p lfs_payload
+          : > lfs_payload/MANIFEST.txt
+          i=0
+          while IFS= read -r f; do
+            i=$((i+1))
+            if [ -f "$f" ]; then
+              sz=$(stat -c%s "$f")
+              # rename so .gitattributes LFS rules (*.jar/*.zip/*.aar) don't re-capture it
+              out="lfs_payload/$(printf '%02d' "$i")_$(basename "$f" | tr -c 'A-Za-z0-9._-' '_').bin"
+              cp "$f" "$out"
+              printf '%s\t%s\t%s\n' "$out" "$f" "$sz" >> lfs_payload/MANIFEST.txt
+            else
+              echo "MISSING $f" >&2
+            fi
+          done < <(git lfs ls-files -n)
+          echo "collected $(wc -l < lfs_payload/MANIFEST.txt) files"
+
+      - name: Commit and push payload branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f lfs_payload
+          if git diff --cached --quiet; then
+            echo "payload unchanged"
+          else
+            git commit -m "chore: mirror LFS payloads as plain blobs"
+          fi
+          git push --force origin HEAD:refs/heads/lfs-payload
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: 17
+          distribution: temurin
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Build release APK
+        env:
+          SKETCHUB_API_KEY: ${{ secrets.SKETCHUB_API_KEY }}
+        run: gradle assembleRelease --no-daemon
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-bootstrap-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: warn
