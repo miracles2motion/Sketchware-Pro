@@ -75,6 +75,18 @@ public class MainActivity extends BasePermissionAppCompatActivity {
     private ProjectsFragment projectsFragment;
     private ProjectsStoreFragment projectsStoreFragment;
     private pro.sketchware.activities.main.fragments.agent.AgentFragment agentFragment;
+    /**
+     * True once the fragment was handed to a transaction.
+     *
+     * <p>{@code findFragmentByTag} only sees a fragment after its transaction
+     * was executed, and a transaction is executed later. Two navigations in a
+     * row would therefore both believe the fragment is new and would add it
+     * twice, which the fragment manager refuses with "Fragment already
+     * added". These flags close that window.
+     */
+    private boolean projectsFragmentAdded = false;
+    private boolean projectsStoreFragmentAdded = false;
+    private boolean agentFragmentAdded = false;
     private Fragment activeFragment;
     @IdRes
     private int currentNavItemId = R.id.item_projects;
@@ -322,6 +334,16 @@ public class MainActivity extends BasePermissionAppCompatActivity {
         outState.putBoolean("agent_mode", agentMode);
     }
 
+    /**
+     * Tells whether a fragment is already part of the container.
+     *
+     * @param tag   the tag the fragment was added with
+     * @param added whether this activity already issued the add
+     */
+    private boolean isAlreadyAdded(String tag, boolean added) {
+        return added || getSupportFragmentManager().findFragmentByTag(tag) != null;
+    }
+
     private void navigateToProjectsFragment() {
         if (projectsFragment == null) {
             projectsFragment = new ProjectsFragment();
@@ -334,7 +356,8 @@ public class MainActivity extends BasePermissionAppCompatActivity {
         applyModeChrome(false);
         binding.createNewProject.show();
         if (activeFragment != null) transaction.hide(activeFragment);
-        if (fm.findFragmentByTag(PROJECTS_FRAGMENT_TAG) == null) {
+        if (!isAlreadyAdded(PROJECTS_FRAGMENT_TAG, projectsFragmentAdded)) {
+            projectsFragmentAdded = true;
             shouldShow = false;
             transaction.add(binding.container.getId(), projectsFragment, PROJECTS_FRAGMENT_TAG);
         }
@@ -361,7 +384,8 @@ public class MainActivity extends BasePermissionAppCompatActivity {
 
         applyModeChrome(true);
         if (activeFragment != null) transaction.hide(activeFragment);
-        if (fm.findFragmentByTag(AGENT_FRAGMENT_TAG) == null) {
+        if (!isAlreadyAdded(AGENT_FRAGMENT_TAG, agentFragmentAdded)) {
+            agentFragmentAdded = true;
             shouldShow = false;
             transaction.add(binding.container.getId(), agentFragment, AGENT_FRAGMENT_TAG);
         }
@@ -406,7 +430,8 @@ public class MainActivity extends BasePermissionAppCompatActivity {
         binding.createNewProject.hide();
         applyModeChrome(false);
         if (activeFragment != null) transaction.hide(activeFragment);
-        if (fm.findFragmentByTag(PROJECTS_STORE_FRAGMENT_TAG) == null) {
+        if (!isAlreadyAdded(PROJECTS_STORE_FRAGMENT_TAG, projectsStoreFragmentAdded)) {
+            projectsStoreFragmentAdded = true;
             shouldShow = false;
             transaction.add(binding.container.getId(), projectsStoreFragment, PROJECTS_STORE_FRAGMENT_TAG);
         }
