@@ -14,7 +14,6 @@ import java.io.Reader;
 import java.io.Writer;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 
 import mod.hilal.saif.blocks.BlocksHandler;
 
@@ -71,7 +70,7 @@ public final class AgentKnowledgePack {
      * slot takes a widget of type TextView and not a free text.
      */
     public static String blocksJson() {
-        List<HashMap<String, Object>> raw = new ArrayList<>();
+        ArrayList<HashMap<String, Object>> raw = new ArrayList<>();
         BlocksHandler.builtInBlocks(raw);
 
         JsonArray blocks = new JsonArray();
