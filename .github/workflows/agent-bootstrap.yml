@@ -3,6 +3,7 @@ name: Agent Bootstrap
 on:
   push:
     branches:
+      - 'arena/8a5fd688-sketchware-pro'
       - 'ci/agent-bootstrap'
   workflow_dispatch:
 
@@ -11,7 +12,7 @@ permissions:
 
 jobs:
   bootstrap:
-    name: Recover LFS payload and verify build
+    name: Recover LFS payload, dump jar API, verify build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout with LFS
@@ -43,6 +44,27 @@ jobs:
           java-version: 17
           distribution: temurin
 
+      - name: Dump public API of jar-only classes
+        run: |
+          set -euo pipefail
+          mkdir -p lfs_payload/api
+          for jar in app/libs/a.a.a-important-classes.jar \
+                     app/libs/a.a.a-notimportant-classes.jar \
+                     app/libs/com.besome.sketch-classes.jar; do
+            base=$(basename "$jar" .jar)
+            out="lfs_payload/api/${base}.txt"
+            {
+              echo "# javap -public for $jar"
+              classes=$(unzip -Z1 "$jar" | grep '\.class$' | sed 's|\.class$||; s|/|.|g' | grep -v '\$[0-9]')
+              for c in $classes; do
+                echo
+                echo "########## $c"
+                javap -classpath "$jar" -public "$c" 2>/dev/null || echo "  <javap failed>"
+              done
+            } > "$out"
+            echo "$base: $(grep -c '##########' "$out") classes"
+          done
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
 
@@ -55,10 +77,9 @@ jobs:
           set +e
           gradle assembleRelease --no-daemon --stacktrace > build_log.txt 2>&1
           echo "exit=$?" >> build_log.txt
-          cat build_log.txt
-          echo "BUILD_EXIT=$?" >> $GITHUB_ENV
+          tail -60 build_log.txt
 
-      - name: Publish build log
+      - name: Publish payload, API dump and build log
         if: always()
         run: |
           set -euo pipefail
@@ -67,7 +88,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -f lfs_payload
-          git diff --cached --quiet || git commit -m "chore: publish LFS payload and build log"
+          git diff --cached --quiet || git commit -m "chore: publish LFS payload, jar API dump and build log"
           git push --force origin HEAD:refs/heads/lfs-payload
 
       - name: Upload release APK

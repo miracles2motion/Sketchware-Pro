@@ -1,5 +1,11 @@
 /**
  * Creates a mock google-services.json if GOOGLE_SERVICES_JSON environment variable is absent.
+ *
+ * The mock has to exist for every build variant that the Google Services plugin
+ * processes, otherwise `process<Variant>GoogleServices` fails with
+ * "File google-services.json is missing". Previously the mock was only written
+ * to src/debug/, so release builds failed on forks/CI that have no
+ * GOOGLE_SERVICES_JSON secret.
  */
 tasks.register('createMockGoogleServices') {
     doLast {
@@ -12,10 +18,7 @@ tasks.register('createMockGoogleServices') {
         if (rootMockFile.exists() && rootMockFile.length() == 0) {
             rootMockFile.delete()
         }
-        def mockFile = file("src/debug/google-services.json")
-        if (!mockFile.exists()) {
-            mockFile.parentFile.mkdirs()
-            def mockContent = """{
+        def mockContent = """{
   "project_info": {
     "project_number": "123456789000",
     "firebase_url": "https://mock-project-default-rtdb.firebaseio.com",
@@ -45,7 +48,13 @@ tasks.register('createMockGoogleServices') {
   ],
   "configuration_version": "1"
 }"""
-            mockFile.text = mockContent
+        // One mock per build variant, so debug and release both resolve it.
+        ["src/debug/google-services.json", "src/release/google-services.json"].each { path ->
+            def mockFile = file(path)
+            if (!mockFile.exists()) {
+                mockFile.parentFile.mkdirs()
+                mockFile.text = mockContent
+            }
         }
     }
 }
