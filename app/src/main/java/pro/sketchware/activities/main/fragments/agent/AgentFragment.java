@@ -73,7 +73,7 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
         super.onViewCreated(view, savedInstanceState);
         handleInsetts(binding.getRoot());
 
-        adapter = new ChatAdapter();
+        adapter = new ChatAdapter(messages);
         binding.chatList.setLayoutManager(new LinearLayoutManager(getContext()));
         binding.chatList.setAdapter(adapter);
 
@@ -162,9 +162,9 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
 
     private void appendMessage(ChatMessage message) {
         messages.add(message);
-        adapter.submitList(new ArrayList<>(messages));
+        adapter.notifyItemInserted(messages.size() - 1);
         if (binding != null) {
-            binding.chatList.scrollToPosition(adapter.getItemCount() - 1);
+            binding.chatList.scrollToPosition(messages.size() - 1);
         }
     }
 
@@ -181,7 +181,7 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
             messages.add(new ChatMessage(ChatMessage.Role.SYSTEM, getString(R.string.agent_empty_body)));
         }
         binding.chooseModelButton.setVisibility(hasModel ? View.GONE : View.VISIBLE);
-        adapter.submitList(new ArrayList<>(messages));
+        adapter.notifyDataSetChanged();
         updateActionButton();
 
         if (hasModel && modelManager.state() == AiModelManager.State.IDLE) {
@@ -401,7 +401,7 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
                 }
             }
             streamingMessage.state = ChatMessage.State.STREAMING;
-            adapter.submitList(new ArrayList<>(messages));
+            adapter.notifyItemChanged(messages.indexOf(streamingMessage));
         }
     };
 
@@ -439,7 +439,7 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
         }
         streamingMessage = null;
         if (binding != null) {
-            adapter.submitList(new ArrayList<>(messages));
+            adapter.notifyDataSetChanged();
         }
     }
 

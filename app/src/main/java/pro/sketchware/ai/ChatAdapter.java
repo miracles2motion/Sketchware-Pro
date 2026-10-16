@@ -1,12 +1,13 @@
 package pro.sketchware.ai;
 
 import android.view.LayoutInflater;
+import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
-import androidx.recyclerview.widget.DiffUtil;
-import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
+
+import java.util.List;
 
 import pro.sketchware.databinding.AgentChatItemAssistantBinding;
 import pro.sketchware.databinding.AgentChatItemUserBinding;
@@ -15,33 +16,28 @@ import pro.sketchware.databinding.AgentChatItemUserBinding;
  * Renders the agent chat. User messages are right-aligned bubbles, assistant
  * messages are left-aligned and show a spinner while tokens are still
  * streaming in.
+ *
+ * <p>The adapter deliberately does not use {@code ListAdapter}. The chat
+ * message is a mutable object and the streaming answer is updated in place,
+ * so a diff would always compare an object with itself and would never
+ * report a change: the answer would stay empty. The list is small and the
+ * adapter is told exactly which row changed.
  */
-public class ChatAdapter extends ListAdapter<ChatMessage, ChatAdapter.Holder> {
+public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
 
     private static final int TYPE_USER = 0;
     private static final int TYPE_ASSISTANT = 1;
 
-    public ChatAdapter() {
-        super(DIFF);
+    /** The list the fragment owns; the adapter never copies it. */
+    private final List<ChatMessage> items;
+
+    public ChatAdapter(List<ChatMessage> items) {
+        this.items = items;
     }
-
-    private static final DiffUtil.ItemCallback<ChatMessage> DIFF = new DiffUtil.ItemCallback<ChatMessage>() {
-        @Override
-        public boolean areItemsTheSame(@NonNull ChatMessage oldItem, @NonNull ChatMessage newItem) {
-            return oldItem == newItem;
-        }
-
-        @Override
-        public boolean areContentsTheSame(@NonNull ChatMessage oldItem, @NonNull ChatMessage newItem) {
-            return oldItem.role == newItem.role
-                    && oldItem.state == newItem.state
-                    && oldItem.text.equals(newItem.text);
-        }
-    };
 
     @Override
     public int getItemViewType(int position) {
-        return getItem(position).isFromUser() ? TYPE_USER : TYPE_ASSISTANT;
+        return items.get(position).isFromUser() ? TYPE_USER : TYPE_ASSISTANT;
     }
 
     @NonNull
@@ -56,11 +52,16 @@ public class ChatAdapter extends ListAdapter<ChatMessage, ChatAdapter.Holder> {
 
     @Override
     public void onBindViewHolder(@NonNull Holder holder, int position) {
-        holder.bind(getItem(position));
+        holder.bind(items.get(position));
+    }
+
+    @Override
+    public int getItemCount() {
+        return items.size();
     }
 
     static class Holder extends RecyclerView.ViewHolder {
-        Holder(@NonNull android.view.View itemView) {
+        Holder(@NonNull View itemView) {
             super(itemView);
         }
 
@@ -95,7 +96,7 @@ public class ChatAdapter extends ListAdapter<ChatMessage, ChatAdapter.Holder> {
             binding.messageText.setText(message.text);
             boolean streaming = message.state == ChatMessage.State.STREAMING
                     || message.state == ChatMessage.State.PENDING;
-            binding.streamingIndicator.setVisibility(streaming ? android.view.View.VISIBLE : android.view.View.GONE);
+            binding.streamingIndicator.setVisibility(streaming ? View.VISIBLE : View.GONE);
         }
     }
 }
