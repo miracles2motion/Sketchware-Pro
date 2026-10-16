@@ -42,11 +42,47 @@
                     tools:menu="@menu/projects_fragment_menu">
 
                     <TextView
+                        android:id="@+id/toolbar_title"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Search for projects..."
                         android:textColor="?attr/colorOnSurfaceVariant" />
                 </com.google.android.material.appbar.MaterialToolbar>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Mode switch between the project list and Agent Mode. -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="16dp"
+                android:layout_marginTop="8dp"
+                app:cardBackgroundColor="?attr/colorSurfaceContainer"
+                app:cardCornerRadius="50dp">
+
+                <com.google.android.material.button.MaterialButtonToggleGroup
+                    android:id="@+id/mode_toggle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="4dp"
+                    app:selectionRequired="true"
+                    app:singleSelection="true">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/mode_projects"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/agent_mode_projects" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/mode_agent"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/agent_mode_agent" />
+                </com.google.android.material.button.MaterialButtonToggleGroup>
             </com.google.android.material.card.MaterialCardView>
         </com.google.android.material.appbar.AppBarLayout>
 

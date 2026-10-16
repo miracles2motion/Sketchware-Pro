@@ -60,6 +60,7 @@ import pro.sketchware.utility.UI;
 public class MainActivity extends BasePermissionAppCompatActivity {
     private static final String PROJECTS_FRAGMENT_TAG = "projects_fragment";
     private static final String PROJECTS_STORE_FRAGMENT_TAG = "projects_store_fragment";
+    private static final String AGENT_FRAGMENT_TAG = "agent_fragment";
     private ActionBarDrawerToggle drawerToggle;
     private DB u;
     private Snackbar storageAccessDenied;
@@ -73,9 +74,11 @@ public class MainActivity extends BasePermissionAppCompatActivity {
     };
     private ProjectsFragment projectsFragment;
     private ProjectsStoreFragment projectsStoreFragment;
+    private pro.sketchware.activities.main.fragments.agent.AgentFragment agentFragment;
     private Fragment activeFragment;
     @IdRes
     private int currentNavItemId = R.id.item_projects;
+    private boolean agentMode = false;
 
     private static boolean isFirebaseInitialized(Context context) {
         try {
@@ -262,9 +265,25 @@ public class MainActivity extends BasePermissionAppCompatActivity {
             return false;
         });
 
+        binding.modeToggle.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
+            if (!isChecked) {
+                return;
+            }
+            if (checkedId == R.id.mode_agent) {
+                navigateToAgentFragment();
+            } else if (checkedId == R.id.mode_projects) {
+                if (currentNavItemId == R.id.item_sketchub) {
+                    navigateToSketchubFragment();
+                } else {
+                    navigateToProjectsFragment();
+                }
+            }
+        });
+
         if (savedInstanceState != null) {
             projectsFragment = (ProjectsFragment) getSupportFragmentManager().findFragmentByTag(PROJECTS_FRAGMENT_TAG);
             projectsStoreFragment = (ProjectsStoreFragment) getSupportFragmentManager().findFragmentByTag(PROJECTS_STORE_FRAGMENT_TAG);
+            agentFragment = (pro.sketchware.activities.main.fragments.agent.AgentFragment) getSupportFragmentManager().findFragmentByTag(AGENT_FRAGMENT_TAG);
             currentNavItemId = savedInstanceState.getInt("selected_tab_id");
             Fragment current = getFragmentForNavId(currentNavItemId);
             if (current instanceof ProjectsFragment) {
@@ -273,9 +292,17 @@ public class MainActivity extends BasePermissionAppCompatActivity {
                 navigateToSketchubFragment();
             }
 
+            if (savedInstanceState.getBoolean("agent_mode", false)) {
+                binding.modeToggle.check(R.id.mode_agent);
+                navigateToAgentFragment();
+            } else {
+                binding.modeToggle.check(R.id.mode_projects);
+            }
+
             return;
         }
 
+        binding.modeToggle.check(R.id.mode_projects);
         navigateToProjectsFragment();
     }
 
@@ -292,6 +319,7 @@ public class MainActivity extends BasePermissionAppCompatActivity {
     protected void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putInt("selected_tab_id", currentNavItemId);
+        outState.putBoolean("agent_mode", agentMode);
     }
 
     private void navigateToProjectsFragment() {
@@ -303,6 +331,7 @@ public class MainActivity extends BasePermissionAppCompatActivity {
         FragmentManager fm = getSupportFragmentManager();
         FragmentTransaction transaction = fm.beginTransaction();
 
+        applyModeChrome(false);
         binding.createNewProject.show();
         if (activeFragment != null) transaction.hide(activeFragment);
         if (fm.findFragmentByTag(PROJECTS_FRAGMENT_TAG) == null) {
@@ -316,6 +345,49 @@ public class MainActivity extends BasePermissionAppCompatActivity {
         currentNavItemId = R.id.item_projects;
     }
 
+    /**
+     * Switches the main container to Agent Mode. The project list and the
+     * Sketchub store stay in the back stack, so returning to them restores the
+     * exact previous state.
+     */
+    private void navigateToAgentFragment() {
+        if (agentFragment == null) {
+            agentFragment = new pro.sketchware.activities.main.fragments.agent.AgentFragment();
+        }
+
+        boolean shouldShow = true;
+        FragmentManager fm = getSupportFragmentManager();
+        FragmentTransaction transaction = fm.beginTransaction();
+
+        applyModeChrome(true);
+        if (activeFragment != null) transaction.hide(activeFragment);
+        if (fm.findFragmentByTag(AGENT_FRAGMENT_TAG) == null) {
+            shouldShow = false;
+            transaction.add(binding.container.getId(), agentFragment, AGENT_FRAGMENT_TAG);
+        }
+        if (shouldShow) transaction.show(agentFragment);
+        transaction.commit();
+
+        activeFragment = agentFragment;
+    }
+
+    /**
+     * Applies the chrome that belongs to the current mode: the bottom
+     * navigation and the "new project" button are only meaningful for the
+     * project screens, and the toolbar title changes with the mode.
+     */
+    private void applyModeChrome(boolean agent) {
+        agentMode = agent;
+        if (agent) {
+            binding.bottomNav.setVisibility(View.GONE);
+            binding.createNewProject.hide();
+            binding.toolbarTitle.setText(R.string.agent_mode_title);
+        } else {
+            binding.bottomNav.setVisibility(View.VISIBLE);
+            binding.toolbarTitle.setText(R.string.agent_mode_projects_hint);
+        }
+    }
+
     private void navigateToSketchubFragment() {
         if (projectsStoreFragment == null) {
             projectsStoreFragment = new ProjectsStoreFragment();
@@ -326,6 +398,7 @@ public class MainActivity extends BasePermissionAppCompatActivity {
         FragmentTransaction transaction = fm.beginTransaction();
 
         binding.createNewProject.hide();
+        applyModeChrome(false);
         if (activeFragment != null) transaction.hide(activeFragment);
         if (fm.findFragmentByTag(PROJECTS_STORE_FRAGMENT_TAG) == null) {
             shouldShow = false;

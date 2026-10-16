@@ -917,4 +917,25 @@ ACTION_VIEW
     <string name="unknown_attr">Unknown Attribute</string>
     <string name="attr_already_exist">This attribute already exists</string>
 
+    <!-- Agent Mode -->
+    <string name="agent_mode_projects">Projects</string>
+    <string name="agent_mode_agent">Agent</string>
+    <string name="agent_mode_title">Agent</string>
+    <string name="agent_mode_projects_hint">Search for projects...</string>
+    <string name="agent_hint_message">Message</string>
+    <string name="agent_action_send">Send</string>
+    <string name="agent_action_stop">Stop</string>
+    <string name="agent_action_choose_model">Choose model file</string>
+    <string name="agent_action_remove_model">Remove model</string>
+    <string name="agent_empty_title">No model yet</string>
+    <string name="agent_empty_body">Agent Mode runs a model on your own device. Point Sketchware Pro at a LiteRT-LM model file to get started.</string>
+    <string name="agent_state_loading_model">Loading model…</string>
+    <string name="agent_state_ready">Ready</string>
+    <string name="agent_state_generating">Thinking…</string>
+    <string name="agent_state_error">The model stopped unexpectedly</string>
+    <string name="agent_model_imported">Model imported</string>
+    <string name="agent_model_invalid">That file is not a usable LiteRT-LM model</string>
+    <string name="agent_model_missing">The model file is no longer available</string>
+    <string name="agent_no_active_project">No project yet — the agent can create one.</string>
+
 </resources>

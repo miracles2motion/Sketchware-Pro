@@ -37,6 +37,8 @@ public class wq {
     public static final String n = ".sketchware" + File.separator + "resources" + File.separator + "images";
     public static final String o = ".sketchware" + File.separator + "resources" + File.separator + "sounds";
     public static final String p = ".sketchware" + File.separator + "resources" + File.separator + "fonts";
+    /** Agent Mode storage root: models, knowledge pack and the agent config registry. */
+    public static final String q = ".sketchware" + File.separator + "ai";
     public static final String r = ".sketchware" + File.separator + "download" + File.separator + "apk";
     public static final String s = ".sketchware" + File.separator + "download" + File.separator + "data";
     public static final String t = ".sketchware" + File.separator + "tutorial" + File.separator + "images";
