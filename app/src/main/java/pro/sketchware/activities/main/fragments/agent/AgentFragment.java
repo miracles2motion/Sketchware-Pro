@@ -206,7 +206,9 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
         Rect visible = new Rect();
         getActivity().getWindow().getVisibleDisplayFrame(visible);
         int[] location = new int[2];
-        root.getLocationInWindow(location);
+        // The visible frame is in screen coordinates, so the position of the
+        // screen has to be taken in screen coordinates as well.
+        root.getLocationOnScreen(location);
         int overflow = location[1] + root.getHeight() - visible.bottom;
         if (overflow < 0) {
             overflow = 0;
