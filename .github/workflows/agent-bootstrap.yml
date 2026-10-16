@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   bootstrap:
-    name: Recover LFS payload, dump jar API, verify build
+    name: Recover LFS payload, dump APIs, verify build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout with LFS
@@ -44,7 +44,23 @@ jobs:
           java-version: 17
           distribution: temurin
 
-      - name: Dump public API of jar-only classes
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Build release APK (capture log)
+        id: build
+        continue-on-error: true
+        env:
+          SKETCHUB_API_KEY: ${{ secrets.SKETCHUB_API_KEY }}
+        run: |
+          set +e
+          gradle assembleRelease --no-daemon --stacktrace > build_log.txt 2>&1
+          echo "exit=$?" >> build_log.txt
+          grep -E "BUILD (SUCCESSFUL|FAILED)|error:|What went wrong" build_log.txt | head -30
+          tail -20 build_log.txt
+
+      - name: Dump API of jar-only classes
+        if: always()
         run: |
           set -euo pipefail
           mkdir -p lfs_payload/api
@@ -65,21 +81,46 @@ jobs:
             echo "$base: $(grep -c '##########' "$out") classes"
           done
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
-
-      - name: Build release APK (capture log)
-        id: build
-        continue-on-error: true
-        env:
-          SKETCHUB_API_KEY: ${{ secrets.SKETCHUB_API_KEY }}
+      - name: Dump LiteRT-LM API and Kotlin runtime resolution
+        if: always()
         run: |
-          set +e
-          gradle assembleRelease --no-daemon --stacktrace > build_log.txt 2>&1
-          echo "exit=$?" >> build_log.txt
-          tail -60 build_log.txt
+          set -uo pipefail
+          mkdir -p lfs_payload/api
+          AAR=$(find "$HOME/.gradle/caches" -name 'litertlm-android-*.aar' 2>/dev/null | head -1)
+          if [ -n "$AAR" ]; then
+            echo "AAR: $AAR"
+            rm -rf /tmp/litertlm && mkdir -p /tmp/litertlm
+            unzip -o -q "$AAR" -d /tmp/litertlm
+            CLS=$(find /tmp/litertlm -name '*.jar' | head -1)
+            echo "classes jar: $CLS"
+            {
+              echo "# javap -public for litertlm-android"
+              for c in $(unzip -Z1 "$CLS" 2>/dev/null | grep '^com/google/ai/edge/litertlm/[^$]*\.class$' | sed 's|\.class$||; s|/|.|g'); do
+                echo
+                echo "########## $c"
+                javap -classpath "$CLS" -public "$c" 2>/dev/null || echo "  <javap failed>"
+              done
+            } > lfs_payload/api/litertlm-android.txt
+            echo "litertlm classes: $(grep -c '##########' lfs_payload/api/litertlm-android.txt)"
+            unzip -Z1 "$AAR" | grep -E 'jni/|so$' | head -40 > lfs_payload/api/litertlm-native.txt || true
+          else
+            echo "litertlm AAR not found" | tee lfs_payload/api/litertlm-android.txt
+          fi
 
-      - name: Publish payload, API dump and build log
+      - name: Inspect Kotlin runtime resolution
+        if: always()
+        run: |
+          set -uo pipefail
+          {
+            echo "=== dependencyInsight kotlin-stdlib ==="
+            gradle :app:dependencyInsight --dependency kotlin-stdlib --configuration releaseRuntimeClasspath --no-daemon 2>&1 | head -60
+            echo
+            echo "=== dependencyInsight kotlinx-coroutines ==="
+            gradle :app:dependencyInsight --dependency kotlinx-coroutines --configuration releaseRuntimeClasspath --no-daemon 2>&1 | head -60
+          } > lfs_payload/api/kotlin-resolution.txt || true
+          grep -E "kotlin-stdlib|coroutines" lfs_payload/api/kotlin-resolution.txt | head -20 || true
+
+      - name: Publish payload, API dumps and build log
         if: always()
         run: |
           set -euo pipefail
@@ -88,7 +129,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -f lfs_payload
-          git diff --cached --quiet || git commit -m "chore: publish LFS payload, jar API dump and build log"
+          git diff --cached --quiet || git commit -m "chore: publish LFS payload, API dumps and build log"
           git push --force origin HEAD:refs/heads/lfs-payload
 
       - name: Upload release APK
