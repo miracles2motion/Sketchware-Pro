@@ -527,7 +527,18 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
             return;
         }
         setStreamingComplete();
-        appendMessage(ChatMessage.error(getString(R.string.agent_state_error)));
+        // Show what actually failed: a generic "stopped unexpectedly" gives
+        // nobody anything to act on.
+        String detail = error == null ? "" : String.valueOf(error.getMessage()).trim();
+        if (detail.isEmpty() || "null".equals(detail)) {
+            detail = error == null ? "" : error.getClass().getSimpleName();
+        }
+        if (detail.length() > 160) {
+            detail = detail.substring(0, 160) + "…";
+        }
+        appendMessage(ChatMessage.error(detail.isEmpty()
+                ? getString(R.string.agent_state_error)
+                : getString(R.string.agent_state_error) + "\n" + detail));
     }
 
     private void setStreamingComplete() {
