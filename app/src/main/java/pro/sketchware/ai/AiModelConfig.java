@@ -55,6 +55,8 @@ public class AiModelConfig {
         public long importedAt;
         /** Set to false when the file disappeared or failed validation. */
         public boolean valid = true;
+        /** Metadata read from the model file, for example its context size. */
+        public String description;
 
         public ModelEntry() {
         }

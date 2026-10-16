@@ -105,9 +105,16 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
     }
 
     @Override
+    public void onDestroy() {
+        io.shutdownNow();
+        super.onDestroy();
+    }
+
+    @Override
     public void onResume() {
         super.onResume();
-        showCurrentState();
+        // The transcript survives; only the model state is refreshed.
+        updateActionButton();
     }
 
     // region chat
@@ -119,7 +126,7 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
         }
         binding.chatInput.setText("");
 
-        AiModelConfig.ModelEntry model = config.activeModel();
+        AiModelConfig.ModelEntry model = config == null ? null : config.activeModel();
         if (model == null || model.file() == null || !model.file().exists()) {
             appendMessage(ChatMessage.error(getString(R.string.agent_model_missing)));
             return;
@@ -159,8 +166,35 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
         if (hasModel && modelManager.state() == AiModelManager.State.IDLE) {
             // The engine is loaded lazily: a 500 MB model must not be resident
             // while the user is just looking at the project list.
-            modelManager.loadModel(model.file(), config.activeBackend(), engineCacheDir());
+            modelManager.loadModel(model.file(), config.activeBackend(), engineCacheDir(),
+                    nativeLibraryDir());
         }
+    }
+
+    /** Refreshes the model state without touching the transcript. */
+    private void refreshModelState() {
+        if (binding == null || config == null) {
+            return;
+        }
+        AiModelConfig.ModelEntry model = config.activeModel();
+        boolean hasModel = model != null && model.file() != null && model.file().exists();
+        binding.chooseModelButton.setVisibility(hasModel ? View.GONE : View.VISIBLE);
+        if (hasModel && modelManager.state() == AiModelManager.State.IDLE) {
+            modelManager.loadModel(model.file(), config.activeBackend(), engineCacheDir(),
+                    nativeLibraryDir());
+        }
+    }
+
+    /**
+     * The directory that holds the NPU libraries. LiteRT-LM needs it for the
+     * NPU backend, see {@code Backend.NPU}.
+     */
+    private String nativeLibraryDir() {
+        Context context = getContext();
+        if (context == null) {
+            return null;
+        }
+        return context.getApplicationInfo().nativeLibraryDir;
     }
 
     private File engineCacheDir() {
@@ -222,7 +256,11 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
                 config.setActiveModel(entry.id);
                 config.save();
                 if (binding != null) {
-                    binding.chatList.post(() -> showCurrentState());
+                    binding.chatList.post(() -> {
+                        refreshModelState();
+                        appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM,
+                                getString(R.string.agent_model_imported)));
+                    });
                 }
             } catch (IOException e) {
                 if (binding != null) {
@@ -263,6 +301,9 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
         entry.sizeBytes = target.length();
         entry.importedAt = System.currentTimeMillis();
         entry.backend = config.activeBackend().name();
+        // Read the metadata without loading the weights, so a file that is not
+        // a usable model is rejected here and not after a long load.
+        entry.description = AiModelManager.describeModel(target);
         return entry;
     }
 

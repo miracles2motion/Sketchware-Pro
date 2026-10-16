@@ -55,7 +55,9 @@ jobs:
         run: |
           set +e
           gradle assembleRelease --no-daemon --stacktrace > build_log.txt 2>&1
-          echo "exit=$?" >> build_log.txt
+          code=$?
+          echo "exit=$code" >> build_log.txt
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           grep -E "BUILD (SUCCESSFUL|FAILED)|error:|What went wrong" build_log.txt | head -30
           tail -20 build_log.txt
 
@@ -91,11 +93,16 @@ jobs:
             echo "AAR: $AAR"
             rm -rf /tmp/litertlm && mkdir -p /tmp/litertlm
             unzip -o -q "$AAR" -d /tmp/litertlm
-            CLS=$(find /tmp/litertlm -name '*.jar' | head -1)
+            echo "=== jars inside the AAR ==="
+            find /tmp/litertlm -name '*.jar' -exec sh -c 'echo "  $1 ($(stat -c%s "$1") bytes)"' _ {} \;
+            CLS=/tmp/litertlm/classes.jar
+            if [ ! -f "$CLS" ]; then
+              CLS=$(find /tmp/litertlm -name '*.jar' | head -1)
+            fi
             echo "classes jar: $CLS"
             {
-              echo "# javap -public for litertlm-android"
-              for c in $(unzip -Z1 "$CLS" 2>/dev/null | grep '^com/google/ai/edge/litertlm/[^$]*\.class$' | sed 's|\.class$||; s|/|.|g'); do
+              echo "# javap -public for litertlm-android ($CLS)"
+              for c in $(unzip -Z1 "$CLS" 2>/dev/null | grep '^com/google/ai/edge/litertlm/.*\.class$' | grep -v '\$\$' | sed 's|\.class$||; s|/|.|g'); do
                 echo
                 echo "########## $c"
                 javap -classpath "$CLS" -public "$c" 2>/dev/null || echo "  <javap failed>"
@@ -126,6 +133,9 @@ jobs:
           set -euo pipefail
           mkdir -p lfs_payload
           cp build_log.txt lfs_payload/build_log.txt 2>/dev/null || true
+          # Keep the log of every commit: the branch is force pushed, so the
+          # newest log would otherwise hide an older failure.
+          cp build_log.txt "lfs_payload/build_log_${GITHUB_SHA}.txt" 2>/dev/null || true
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -f lfs_payload
@@ -139,3 +149,15 @@ jobs:
           name: agent-bootstrap-apk
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
+
+      - name: Report the build result
+        if: always()
+        env:
+          EXIT_CODE: ${{ steps.build.outputs.exit_code }}
+        run: |
+          if [ "${EXIT_CODE}" = "0" ]; then
+            echo "::notice::Release build succeeded."
+          else
+            echo "::error::Release build failed (exit ${EXIT_CODE}). The log is in lfs_payload/build_log_${GITHUB_SHA}.txt"
+            exit 1
+          fi

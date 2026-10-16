@@ -104,7 +104,62 @@ is a live risk and not only a maths-app problem.
 and runtime requirements **without a full model load**, and is what the import
 validation step needs.
 
-## 4. Build and memory arbitration
+## 4. The exact LiteRT-LM 0.18.0 API
+
+Read from the published sources of the `v0.18.0` tag, because the Java view
+of a Kotlin API is full of traps.
+
+```kotlin
+sealed class Backend(val name: String) {
+  data class CPU(val threadCount: Int? = null, val numOfThreads: Int? = null) : Backend("CPU")
+  class GPU : Backend("GPU")
+  data class NPU(val nativeLibraryDir: String = "") : Backend("NPU")
+  class GOOGLE_TENSOR : Backend("GOOGLE_TENSOR_ARTISAN")
+}
+
+data class EngineConfig @JvmOverloads constructor(
+  val modelPath: String,
+  val backend: Backend = Backend.CPU(),
+  val visionBackend: Backend? = null,
+  val audioBackend: Backend? = null,
+  val maxNumTokens: Int? = null,
+  val maxNumImages: Int? = null,
+  val cacheDir: String? = null,
+  val activationDataType: ActivationDataType? = null,
+)
+
+data class ConversationConfig @JvmOverloads constructor(
+  val systemInstruction: Contents? = null,
+  val initialMessages: List<Message> = listOf(),
+  val tools: List<ToolProvider> = listOf(),
+  val samplerConfig: SamplerConfig? = null,
+  val automaticToolCalling: Boolean = true,
+  val channels: List<Channel>? = null,
+  ...)
+
+data class SamplerConfig(val topK: Int, val topP: Double, val temperature: Double, val seed: Int = 0)
+```
+
+What that means in Java:
+
+| Kotlin | Java |
+| --- | --- |
+| `Backend.CPU()` | `new Backend.CPU()` — a nested **class**, not a function |
+| `Backend.GPU()` | `new Backend.GPU()` |
+| `Backend.NPU(dir)` | `new Backend.NPU(dir)` |
+| `EngineConfig(path, backend, cacheDir)` | `new EngineConfig(path, backend, null, null, null, null, cacheDir)` — `cacheDir` is the **seventh** parameter, `@JvmOverloads` only drops trailing ones |
+| `Message.user(text)` | `Message.Companion.user(text)` — the companion is reached through `Companion` |
+| `SamplerConfig(64, 0.95, 1.0f, 0)` | the same; `seed` has a default, the other three do not |
+| `ModelInfo.from(path)` | `ModelInfo.from(path)` — `@JvmStatic` on the companion |
+| `tool(myToolSet)` | `ToolKt.tool(myToolSet)` — a top level function |
+
+`automaticToolCalling` defaults to **true**. It has to be turned off
+explicitly, because the whole safety model of Agent Mode is built on the
+application deciding what a tool call does.
+
+`Conversation` also offers `cancelProcess()` (used for Stop) and `isAlive()`.
+
+## 5. Build and memory arbitration
 
 - A 1B int4 model holds roughly 1 GB of resident memory, and AAPT2/D8 need
   that memory too. `ProjectBuilder` therefore releases the engine before a
@@ -116,7 +171,7 @@ validation step needs.
   starts the load, and the engine is not resident while the user only looks at
   the project list.
 
-## 5. What is in the tree now
+## 6. What is in the tree now
 
 ```
 pro/sketchware/ai/

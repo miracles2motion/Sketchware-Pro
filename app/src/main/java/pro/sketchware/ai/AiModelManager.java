@@ -4,6 +4,7 @@ import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.google.ai.edge.litertlm.Backend;
 import com.google.ai.edge.litertlm.Conversation;
@@ -12,12 +13,14 @@ import com.google.ai.edge.litertlm.Engine;
 import com.google.ai.edge.litertlm.EngineConfig;
 import com.google.ai.edge.litertlm.Message;
 import com.google.ai.edge.litertlm.MessageCallback;
+import com.google.ai.edge.litertlm.ModelInfo;
 import com.google.ai.edge.litertlm.SamplerConfig;
 
 import java.io.File;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -116,7 +119,6 @@ public class AiModelManager {
     private volatile State state = State.IDLE;
     private volatile boolean generating;
     private ScheduledFuture<?> idleWatchdog;
-    private volatile boolean stopRequested;
 
     private AiModelManager() {
     }
@@ -155,30 +157,30 @@ public class AiModelManager {
      *
      * @param file     the {@code .litertlm} file
      * @param backend  the backend to use
-     * @param cacheDir writable directory for the runtime cache
+     * @param cacheDir writable directory for the runtime cache, may be null
      */
-    public void loadModel(File file, AiModelConfig.Backend backend, File cacheDir) {
+    public void loadModel(File file, AiModelConfig.Backend backend, @Nullable File cacheDir,
+                          @Nullable String nativeLibraryDir) {
         engineThread.execute(() -> {
             try {
                 unloadInternal();
                 setState(State.LOADING);
-
-                Backend litertBackend = toLiteRtBackend(backend);
-                EngineConfig engineConfig = new EngineConfig(
-                        file.getAbsolutePath(),
-                        litertBackend,
-                        cacheDir == null ? null : cacheDir.getAbsolutePath());
-
-                Engine newEngine = new Engine(engineConfig);
-                newEngine.initialize();
-
-                synchronized (engineLock) {
-                    engine = newEngine;
-                    modelFile = file;
-                    this.backend = backend;
-                    conversation = null;
+                try {
+                    startEngine(file, backend, cacheDir, nativeLibraryDir);
+                } catch (Throwable t) {
+                    if (backend == AiModelConfig.Backend.GPU) {
+                        // The GPU backend is not available on every device and
+                        // a failed initialisation can also leave the native
+                        // runtime in a bad state. Fall back to the CPU once
+                        // and remember the verdict, so the app does not keep
+                        // retrying a backend that cannot work here.
+                        Log.w(TAG, "GPU backend failed, falling back to the CPU", t);
+                        rememberGpuFailure();
+                        startEngine(file, AiModelConfig.Backend.CPU, cacheDir, nativeLibraryDir);
+                    } else {
+                        throw t;
+                    }
                 }
-                setState(State.READY);
             } catch (Throwable t) {
                 Log.e(TAG, "Failed to load model", t);
                 setState(State.ERROR);
@@ -187,11 +189,45 @@ public class AiModelManager {
         });
     }
 
+    private void startEngine(File file, AiModelConfig.Backend backend, @Nullable File cacheDir,
+                             @Nullable String nativeLibraryDir) {
+        EngineConfig engineConfig = new EngineConfig(
+                file.getAbsolutePath(),
+                /* backend        */ toLiteRtBackend(backend, nativeLibraryDir),
+                /* visionBackend  */ null,
+                /* audioBackend   */ null,
+                /* maxNumTokens   */ null,
+                /* maxNumImages   */ null,
+                /* cacheDir       */ cacheDir == null ? null : cacheDir.getAbsolutePath());
+
+        Engine newEngine = new Engine(engineConfig);
+        newEngine.initialize();
+
+        synchronized (engineLock) {
+            engine = newEngine;
+            modelFile = file;
+            this.backend = backend;
+            conversation = null;
+        }
+        setState(State.READY);
+    }
+
+    /** Stores the verdict that the GPU backend does not work on this device. */
+    private void rememberGpuFailure() {
+        AiModelConfig config = AiModelConfig.load();
+        if (!config.registry().gpuFailed) {
+            config.registry().gpuFailed = true;
+            config.registry().backend = AiModelConfig.Backend.CPU.name();
+            config.save();
+        }
+    }
+
     /**
      * Creates (or reuses) the conversation.
      *
      * <p>Reuse is deliberate: see the class comment.
      */
+    @Nullable
     private Conversation ensureConversation() {
         synchronized (engineLock) {
             if (engine == null) {
@@ -205,7 +241,7 @@ public class AiModelManager {
                     /* systemInstruction    */ null,
                     /* initialMessages      */ Collections.emptyList(),
                     /* tools                */ Collections.emptyList(),
-                    samplerConfig,
+                    /* samplerConfig        */ samplerConfig,
                     /* automaticToolCalling */ false,
                     /* channels             */ Collections.emptyList());
             conversation = engine.createConversation(config);
@@ -238,7 +274,7 @@ public class AiModelManager {
             unload();
             return false;
         }
-        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        CountDownLatch latch = new CountDownLatch(1);
         engineThread.execute(() -> {
             try {
                 unloadInternal();
@@ -295,7 +331,6 @@ public class AiModelManager {
                 return;
             }
             generating = true;
-            stopRequested = false;
             setState(State.GENERATING);
 
             try {
@@ -322,7 +357,7 @@ public class AiModelManager {
                         finishTurn();
                         notifyError(t);
                     }
-                }, Collections.emptyMap());
+                });
             } catch (Throwable t) {
                 Log.e(TAG, "Sending the message failed", t);
                 finishTurn();
@@ -333,7 +368,17 @@ public class AiModelManager {
 
     /** Asks for the current turn to stop as soon as possible. */
     public void stop() {
-        stopRequested = true;
+        Conversation active;
+        synchronized (engineLock) {
+            active = conversation;
+        }
+        if (active != null) {
+            try {
+                active.cancelProcess();
+            } catch (Throwable t) {
+                Log.w(TAG, "Cancelling the generation failed", t);
+            }
+        }
         cancelWatchdog();
         finishTurn();
     }
@@ -368,6 +413,35 @@ public class AiModelManager {
 
     // endregion
 
+    // region model inspection
+
+    /**
+     * Reads the metadata of a model file without loading the weights.
+     *
+     * <p>Used to reject a file that is not a usable LiteRT-LM model before it
+     * is copied into the model directory.
+     *
+     * @param file the candidate {@code .litertlm} file
+     * @return a short description, or null when the file cannot be read
+     */
+    @Nullable
+    public static String describeModel(File file) {
+        try (ModelInfo info = ModelInfo.from(file.getAbsolutePath())) {
+            StringBuilder builder = new StringBuilder();
+            builder.append("maxContextTokens=").append(info.maxContextTokens());
+            String runtime = info.minRuntimeVersion();
+            if (runtime != null) {
+                builder.append(", minRuntime=").append(runtime);
+            }
+            return builder.toString();
+        } catch (Throwable t) {
+            Log.w(TAG, "Cannot read the model info of " + file, t);
+            return null;
+        }
+    }
+
+    // endregion
+
     // region notifications
 
     private void setState(State newState) {
@@ -391,15 +465,16 @@ public class AiModelManager {
 
     // endregion
 
-    private static Backend toLiteRtBackend(AiModelConfig.Backend backend) {
+    private static Backend toLiteRtBackend(AiModelConfig.Backend backend,
+                                            @Nullable String nativeLibraryDir) {
         switch (backend) {
             case GPU:
-                return Backend.GPU();
+                return new Backend.GPU();
             case NPU:
-                return Backend.NPU();
+                return new Backend.NPU(nativeLibraryDir == null ? "" : nativeLibraryDir);
             case CPU:
             default:
-                return Backend.CPU();
+                return new Backend.CPU();
         }
     }
 }
