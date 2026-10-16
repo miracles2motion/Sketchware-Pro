@@ -3,6 +3,7 @@ package pro.sketchware.activities.main.fragments.agent;
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
+import android.graphics.Rect;
 import android.os.Bundle;
 import android.util.Log;
 import android.provider.OpenableColumns;
@@ -54,6 +55,10 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
     /** How long the collected tokens are batched before the list is updated. */
     private static final long TOKEN_FLUSH_MS = 60L;
     private volatile boolean flushScheduled;
+    /** Padding that was taken off because the screen reached below the display. */
+    private int appliedBottomPadding;
+    /** Watches the layout to keep the chat inside the visible area. */
+    private android.view.ViewTreeObserver.OnGlobalLayoutListener layoutListener;
     private AgentChatBinding binding;
     private ChatAdapter adapter;
     private AiModelManager modelManager;
@@ -74,10 +79,29 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        handleInsetts(binding.getRoot());
+        /*
+         * The chat screen lives in a container that the coordinator layout
+         * pushes below the app bar. The container is not always shortened by
+         * the height of the app bar, so the screen can reach below the
+         * display and the input bar would be out of sight. The overflow is
+         * measured and taken off as padding, so the input bar always sits
+         * just above the navigation bar.
+         */
+        layoutListener = new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override
+            public void onGlobalLayout() {
+                fitToVisibleArea(binding == null ? null : binding.getRoot());
+            }
+        };
+        view.getViewTreeObserver().addOnGlobalLayoutListener(layoutListener);
 
         adapter = new ChatAdapter(messages);
-        binding.chatList.setLayoutManager(new LinearLayoutManager(getContext()));
+        androidx.recyclerview.widget.LinearLayoutManager layoutManager =
+                new androidx.recyclerview.widget.LinearLayoutManager(getContext());
+        // A short conversation sits above the input bar, not at the top of an
+        // empty screen.
+        layoutManager.setStackFromEnd(true);
+        binding.chatList.setLayoutManager(layoutManager);
         binding.chatList.setAdapter(adapter);
 
         binding.sendButton.setOnClickListener(v -> {
@@ -124,6 +148,11 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
         if (modelManager != null) {
             modelManager.removeListener(this);
         }
+        if (layoutListener != null && binding != null) {
+            binding.getRoot().getViewTreeObserver()
+                    .removeOnGlobalLayoutListener(layoutListener);
+        }
+        layoutListener = null;
         binding = null;
         super.onDestroyView();
     }
@@ -161,6 +190,56 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
         streamingMessage = reply;
         appendMessage(reply);
         modelManager.send(text);
+    }
+
+    /**
+     * Takes off the part of the screen that reaches below the display.
+     *
+     * <p>Whatever the container was given, the chat ends exactly at the
+     * bottom of the visible area, so the input bar is never hidden below
+     * the navigation bar.
+     */
+    private void fitToVisibleArea(View root) {
+        if (root == null || root.getHeight() == 0 || !isAdded() || getActivity() == null) {
+            return;
+        }
+        Rect visible = new Rect();
+        getActivity().getWindow().getVisibleDisplayFrame(visible);
+        int[] location = new int[2];
+        root.getLocationInWindow(location);
+        int overflow = location[1] + root.getHeight() - visible.bottom;
+        if (overflow < 0) {
+            overflow = 0;
+        }
+        if (overflow != appliedBottomPadding) {
+            appliedBottomPadding = overflow;
+            root.setPadding(root.getPaddingLeft(), root.getPaddingTop(),
+                    root.getPaddingRight(), overflow);
+        }
+    }
+
+    /**
+     * Scrolls to the newest message, but only when the user is already
+     * looking at the end of the conversation.
+     */
+    private void scrollToNewest() {
+        if (binding == null) {
+            return;
+        }
+        androidx.recyclerview.widget.LinearLayoutManager manager =
+                (androidx.recyclerview.widget.LinearLayoutManager) binding.chatList.getLayoutManager();
+        if (manager == null) {
+            return;
+        }
+        int last = adapter.getItemCount() - 1;
+        if (last < 0) {
+            return;
+        }
+        int first = manager.findFirstVisibleItemPosition();
+        if (first == androidx.recyclerview.widget.RecyclerView.NO_POSITION
+                || last - first < 3) {
+            binding.chatList.scrollToPosition(last);
+        }
     }
 
     private void appendMessage(ChatMessage message) {
@@ -430,6 +509,7 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
             int index = messages.indexOf(streamingMessage);
             if (index >= 0) {
                 adapter.notifyItemChanged(index);
+                scrollToNewest();
             }
         }
     };
