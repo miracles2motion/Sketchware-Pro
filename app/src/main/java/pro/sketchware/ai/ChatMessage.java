@@ -45,6 +45,11 @@ public class ChatMessage {
         return role == Role.USER;
     }
 
+    /** True for a message the app itself wrote, not the model. */
+    public boolean isFromApp() {
+        return role == Role.SYSTEM;
+    }
+
     public static ChatMessage user(String text) {
         return new ChatMessage(Role.USER, text);
     }
@@ -56,7 +61,9 @@ public class ChatMessage {
     }
 
     public static ChatMessage error(String text) {
-        ChatMessage message = new ChatMessage(Role.ASSISTANT, text);
+        // An error comes from the app, not from the model, so it is shown as
+        // a quiet note instead of a reply.
+        ChatMessage message = new ChatMessage(Role.SYSTEM, text);
         message.state = State.ERROR;
         return message;
     }
