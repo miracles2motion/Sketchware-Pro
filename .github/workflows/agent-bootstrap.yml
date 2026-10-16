@@ -21,7 +21,6 @@ jobs:
           fetch-depth: 1
 
       - name: Collect LFS payloads as plain git blobs
-        id: collect
         run: |
           set -euo pipefail
           mkdir -p lfs_payload
@@ -31,28 +30,12 @@ jobs:
             i=$((i+1))
             if [ -f "$f" ]; then
               sz=$(stat -c%s "$f")
-              # rename so .gitattributes LFS rules (*.jar/*.zip/*.aar) don't re-capture it
               out="lfs_payload/$(printf '%02d' "$i")_$(basename "$f" | tr -c 'A-Za-z0-9._-' '_').bin"
               cp "$f" "$out"
               printf '%s\t%s\t%s\n' "$out" "$f" "$sz" >> lfs_payload/MANIFEST.txt
-            else
-              echo "MISSING $f" >&2
             fi
           done < <(git lfs ls-files -n)
           echo "collected $(wc -l < lfs_payload/MANIFEST.txt) files"
-
-      - name: Commit and push payload branch
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -f lfs_payload
-          if git diff --cached --quiet; then
-            echo "payload unchanged"
-          else
-            git commit -m "chore: mirror LFS payloads as plain blobs"
-          fi
-          git push --force origin HEAD:refs/heads/lfs-payload
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -63,12 +46,32 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
 
-      - name: Build release APK
+      - name: Build release APK (capture log)
+        id: build
+        continue-on-error: true
         env:
           SKETCHUB_API_KEY: ${{ secrets.SKETCHUB_API_KEY }}
-        run: gradle assembleRelease --no-daemon
+        run: |
+          set +e
+          gradle assembleRelease --no-daemon --stacktrace > build_log.txt 2>&1
+          echo "exit=$?" >> build_log.txt
+          cat build_log.txt
+          echo "BUILD_EXIT=$?" >> $GITHUB_ENV
+
+      - name: Publish build log
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p lfs_payload
+          cp build_log.txt lfs_payload/build_log.txt 2>/dev/null || true
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f lfs_payload
+          git diff --cached --quiet || git commit -m "chore: publish LFS payload and build log"
+          git push --force origin HEAD:refs/heads/lfs-payload
 
       - name: Upload release APK
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: agent-bootstrap-apk
