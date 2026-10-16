@@ -1,5 +1,6 @@
 package pro.sketchware.ai;
 
+import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
@@ -104,6 +105,11 @@ public class AiModelManager {
     private static volatile AiModelManager instance;
 
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
+    /**
+     * The listeners are UI objects, so every callback is delivered on the
+     * main thread even though the engine works on its own thread.
+     */
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService engineThread = Executors.newSingleThreadExecutor(new ThreadFactory() {
         @Override
         public Thread newThread(@NonNull Runnable r) {
@@ -402,9 +408,11 @@ public class AiModelManager {
             generating = false;
             setState(State.READY);
         }
-        for (Listener listener : listeners) {
-            listener.onTurnComplete();
-        }
+        mainHandler.post(() -> {
+            for (Listener listener : listeners) {
+                listener.onTurnComplete();
+            }
+        });
     }
 
     private void armWatchdog() {
@@ -459,21 +467,27 @@ public class AiModelManager {
 
     private void setState(State newState) {
         state = newState;
-        for (Listener listener : listeners) {
-            listener.onEngineStateChanged(newState);
-        }
+        mainHandler.post(() -> {
+            for (Listener listener : listeners) {
+                listener.onEngineStateChanged(newState);
+            }
+        });
     }
 
     private void notifyToken(String text) {
-        for (Listener listener : listeners) {
-            listener.onToken(text);
-        }
+        mainHandler.post(() -> {
+            for (Listener listener : listeners) {
+                listener.onToken(text);
+            }
+        });
     }
 
     private void notifyError(Throwable error) {
-        for (Listener listener : listeners) {
-            listener.onError(error);
-        }
+        mainHandler.post(() -> {
+            for (Listener listener : listeners) {
+                listener.onError(error);
+            }
+        });
     }
 
     // endregion
