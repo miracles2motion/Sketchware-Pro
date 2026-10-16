@@ -174,6 +174,7 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
             return;
         }
         messages.clear();
+        streamingMessage = null;
         AiModelConfig.ModelEntry model = config == null ? null : config.activeModel();
         boolean hasModel = model != null && model.file() != null && model.file().exists();
         if (!hasModel) {
@@ -273,9 +274,10 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
         io.execute(() -> {
             try {
                 AiModelConfig.ModelEntry entry = importModel(appContext, uri);
-                config.putModel(entry);
-                config.setActiveModel(entry.id);
-                config.save();
+                AiModelConfig registry = config == null ? AiModelConfig.load() : config;
+                registry.putModel(entry);
+                registry.setActiveModel(entry.id);
+                registry.save();
                 if (binding != null) {
                     binding.chatList.post(() -> {
                         refreshModelState();
@@ -401,7 +403,10 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
                 }
             }
             streamingMessage.state = ChatMessage.State.STREAMING;
-            adapter.notifyItemChanged(messages.indexOf(streamingMessage));
+            int index = messages.indexOf(streamingMessage);
+            if (index >= 0) {
+                adapter.notifyItemChanged(index);
+            }
         }
     };
 

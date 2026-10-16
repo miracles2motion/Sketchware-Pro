@@ -357,12 +357,18 @@ public class AiModelManager {
                 active.sendMessageAsync(message, new MessageCallback() {
                     @Override
                     public void onMessage(@NonNull Message response) {
-                        cancelWatchdog();
-                        String text = response.toString();
-                        if (text != null && !text.isEmpty()) {
-                            notifyToken(text);
+                        try {
+                            cancelWatchdog();
+                            String text = response.toString();
+                            if (text != null && !text.isEmpty()) {
+                                notifyToken(text);
+                            }
+                            armWatchdog();
+                        } catch (Throwable t) {
+                            // This runs inside the native callback: an
+                            // exception here would abort the process.
+                            Log.e(TAG, "Failed to handle a token", t);
                         }
-                        armWatchdog();
                     }
 
                     @Override
