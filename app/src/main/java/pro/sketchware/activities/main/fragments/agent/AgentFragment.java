@@ -4,6 +4,7 @@ import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.util.Log;
 import android.provider.OpenableColumns;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -43,6 +44,8 @@ import pro.sketchware.databinding.AgentChatBinding;
  * and torn down when the app needs the memory for a build.
  */
 public class AgentFragment extends qA implements AiModelManager.Listener {
+
+    private static final String TAG = "AgentFragment";
 
     private final List<ChatMessage> messages = new ArrayList<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -286,9 +289,14 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
                     });
                 }
             } catch (IOException e) {
+                Log.e(TAG, "Importing the model failed", e);
+                boolean noStorage = !isStorageWritable(appContext);
                 if (binding != null) {
-                    binding.chatList.post(() ->
-                            appendMessage(ChatMessage.error(getString(R.string.agent_model_invalid))));
+                    // The string is read on the main thread, the fragment may
+                    // be detached by the time the copy failed.
+                    binding.chatList.post(() -> appendMessage(ChatMessage.error(getString(
+                            noStorage ? R.string.agent_model_no_storage
+                                    : R.string.agent_model_invalid))));
                 }
             }
         });
@@ -328,6 +336,22 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
         // a usable model is rejected here and not after a long load.
         entry.description = AiModelManager.describeModel(target);
         return entry;
+    }
+
+    /**
+     * Tells whether the app may write into the agent directory.
+     *
+     * <p>On Android 11 and later that needs the "all files access" permission,
+     * which the user can refuse. Without it the model cannot be copied into
+     * the app and the reason has to be said, not guessed.
+     */
+    private boolean isStorageWritable(Context context) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R
+                && !android.os.Environment.isExternalStorageManager()) {
+            return false;
+        }
+        File dir = AiPaths.agentRoot();
+        return dir.exists() && dir.canWrite();
     }
 
     private String queryDisplayName(Context context, Uri uri) {

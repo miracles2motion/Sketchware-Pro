@@ -936,6 +936,7 @@ ACTION_VIEW
     <string name="agent_model_imported">Model imported</string>
     <string name="agent_model_invalid">That file is not a usable LiteRT-LM model</string>
     <string name="agent_model_missing">The model file is no longer available</string>
+    <string name="agent_model_no_storage">Sketchware Pro needs the "All files access" permission to store the model. Grant it in the app settings and try again.</string>
     <string name="agent_no_active_project">No project yet — the agent can create one.</string>
 
 </resources>
