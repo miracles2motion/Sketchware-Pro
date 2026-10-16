@@ -9,6 +9,7 @@ import androidx.annotation.Nullable;
 import com.google.ai.edge.litertlm.Backend;
 import com.google.ai.edge.litertlm.Conversation;
 import com.google.ai.edge.litertlm.ConversationConfig;
+import com.google.ai.edge.litertlm.Contents;
 import com.google.ai.edge.litertlm.Engine;
 import com.google.ai.edge.litertlm.EngineConfig;
 import com.google.ai.edge.litertlm.Message;
@@ -62,6 +63,18 @@ public class AiModelManager {
 
     /** How long a turn may stay silent before it is treated as finished. */
     private static final int IDLE_TIMEOUT_SECONDS = 20;
+
+    /**
+     * What the model is told about itself.
+     *
+     * <p>Kept short on purpose: a 1B model has a small context and every
+     * token here is a token that is not available for the conversation.
+     */
+    private static final String SYSTEM_INSTRUCTION =
+            "You are the assistant of Sketchware Pro, an Android app builder for people who do "
+                    + "not write code. You answer in the language of the user, you are brief, and "
+                    + "you never invent APIs. When you are asked to change something in a project, "
+                    + "you describe the change first and wait for the user to approve it.";
 
     /** State of the model. */
     public enum State {
@@ -238,7 +251,7 @@ public class AiModelManager {
             }
             SamplerConfig samplerConfig = new SamplerConfig(64, 0.95, 1.0f, 0);
             ConversationConfig config = new ConversationConfig(
-                    /* systemInstruction    */ null,
+                    /* systemInstruction    */ Contents.Companion.of(SYSTEM_INSTRUCTION),
                     /* initialMessages      */ Collections.emptyList(),
                     /* tools                */ Collections.emptyList(),
                     /* samplerConfig        */ samplerConfig,

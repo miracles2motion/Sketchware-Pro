@@ -27,6 +27,7 @@ import java.util.concurrent.Executors;
 
 import a.a.a.qA;
 import pro.sketchware.R;
+import pro.sketchware.ai.AgentKnowledgePack;
 import pro.sketchware.ai.AiModelConfig;
 import pro.sketchware.ai.AiModelManager;
 import pro.sketchware.ai.AiPaths;
@@ -93,6 +94,21 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
         modelManager.addListener(this);
 
         showCurrentState();
+        ensureKnowledgePack();
+    }
+
+    /**
+     * Writes the block catalog the model needs into the knowledge directory.
+     *
+     * <p>The file is only written when it is missing, so a pack the user has
+     * edited by hand is never overwritten.
+     */
+    private void ensureKnowledgePack() {
+        File blocks = new File(AiPaths.knowledgeDir(), AgentKnowledgePack.BLOCKS_FILE_NAME);
+        if (blocks.exists()) {
+            return;
+        }
+        io.execute(AgentKnowledgePack::exportBlocks);
     }
 
     @Override

@@ -175,16 +175,48 @@ application deciding what a tool call does.
 
 ```
 pro/sketchware/ai/
-    AiPaths.java          filesystem layout under .sketchware/ai
-    AiModelConfig.java    agent-config.json registry (Gson)
-    AiModelManager.java   engine lifecycle, single thread, watchdog
-    ChatMessage.java      chat message bean
-    ChatAdapter.java      chat recycler adapter
+    AiPaths.java             filesystem layout under .sketchware/ai
+    AiModelConfig.java       agent-config.json registry (Gson)
+    AiModelManager.java      engine lifecycle, single thread, watchdog
+    AgentKnowledgePack.java  the block catalog, exported for the model
+    ChatMessage.java         chat message bean
+    ChatAdapter.java         chat recycler adapter
 pro/sketchware/activities/main/fragments/agent/
-    AgentFragment.java    chat screen, model import, lazy engine load
+    AgentFragment.java       chat screen, model import, lazy engine load
 res/layout/agent_chat.xml
 res/layout/agent_chat_item_user.xml
 res/layout/agent_chat_item_assistant.xml
 ```
 
 The mode toggle lives in `main.xml` and is handled by `MainActivity`.
+
+### The knowledge pack
+
+`AgentKnowledgePack` exports the block catalog of *this* build of the app to
+`.sketchware/ai/knowledge/blocks.json`. It calls the same
+`BlocksHandler.builtInBlocks(...)` that the logic editor uses to build its
+palette, so the pack always contains exactly the blocks the app supports,
+including the ones that come from mod libraries.
+
+Every entry carries the opcode, the block type, the palette, the grammar and
+the grammar broken down into parameters:
+
+```json
+{
+  "opCode": "setText",
+  "type": "c",
+  "kind": "statement",
+  "spec": "set text of %m.TextView to %s",
+  "parameters": [
+    {"index": 0, "kind": "member", "memberType": "TextView", "label": "text of"},
+    {"index": 1, "kind": "text", "label": "to"}
+  ]
+}
+```
+
+The parameter breakdown is what makes a block usable by a model: `%m.TextView`
+is a slot for a widget of a known type, not a free text.
+
+The widget palette is **not** compiled into the app. It lives in
+`/storage/emulated/0/.sketchware/resources/widgets/widgets.json` and can be
+extended by the user, so it is copied verbatim instead of being rebuilt.
