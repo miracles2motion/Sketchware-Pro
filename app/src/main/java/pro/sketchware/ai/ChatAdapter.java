@@ -186,11 +186,17 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                         binding.retryText);
             }
             binding.messageText.setText(message.text);
+            // No words yet: the dots pill speaks alone, no empty shell.
+            binding.messageCard.setVisibility(
+                    message.text.isEmpty() ? View.GONE : View.VISIBLE);
         }
 
         /** Text-only update while streaming; everything else stays put. */
         void updateText(ChatMessage message) {
             binding.messageText.setText(message.text);
+            if (!message.text.isEmpty()) {
+                binding.messageCard.setVisibility(View.VISIBLE);
+            }
         }
 
         private final List<ObjectAnimator> dotAnimations = new ArrayList<>();

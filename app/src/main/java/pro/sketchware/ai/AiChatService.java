@@ -420,7 +420,7 @@ public class AiChatService {
         } else if (httpCode == 404 || lowered.contains("no longer available")
                 || (lowered.contains("not found") && lowered.contains("model"))) {
             kind = ErrorKind.MODEL_GONE;
-        } else if (lowered.contains("not enabled for model")
+        } else if (lowered.contains("not enabled")
                 || lowered.contains("does not support")
                 || lowered.contains("not supported")) {
             kind = ErrorKind.UNSUPPORTED;

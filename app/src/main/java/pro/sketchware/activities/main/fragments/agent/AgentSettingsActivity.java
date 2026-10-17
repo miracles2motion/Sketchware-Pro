@@ -95,6 +95,9 @@ public class AgentSettingsActivity extends AppCompatActivity {
 
     /** Draws the selected provider's key list, one row per key. */
     private void renderKeys() {
+        if (!config.keys(selected).isEmpty()) {
+            hideStatus();
+        }
         binding.keysContainer.removeAllViews();
         java.util.List<AiProviderConfig.KeyEntry> entries = config.keys(selected);
         binding.keysHint.setVisibility(entries.isEmpty() ? View.GONE : View.VISIBLE);
@@ -338,12 +341,9 @@ public class AgentSettingsActivity extends AppCompatActivity {
      * chosen, Save simply persists everything and closes.
      */
     private void save() {
-        String baseUrl = text(binding.baseUrlInput);
-        String key = text(binding.apiKeyInput);
-        if (baseUrl.isEmpty() || key.isEmpty()) {
-            showStatus(getString(R.string.agent_settings_need_key), true);
-            return;
-        }
+        // Saving judges the key in use from the list, never the paste
+        // field: the field is only for adding the next key. fetchModels
+        // adopts a typed key first, then validates what remains.
         fetchModels(true);
     }
 

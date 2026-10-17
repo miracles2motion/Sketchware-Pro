@@ -9,61 +9,64 @@
     android:paddingVertical="4dp">
 
     <com.google.android.material.card.MaterialCardView
+        android:id="@+id/message_card"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginEnd="48dp"
         app:cardBackgroundColor="?attr/colorSurfaceContainer"
         app:cardCornerRadius="18dp">
 
+        <TextView
+            android:id="@+id/message_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="10dp"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textIsSelectable="true"
+            tools:text="I'll start by creating the project and a login screen." />
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- Typing indicator on its own: a small pill under the bubble, shown
+         from send until the reply is complete. Never inside the bubble. -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/typing_indicator"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="2dp"
+        android:layout_marginTop="4dp"
+        android:visibility="gone"
+        app:cardBackgroundColor="?attr/colorSurfaceContainer"
+        app:cardCornerRadius="14dp"
+        tools:visibility="visible">
+
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:orientation="horizontal"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="9dp">
 
-            <TextView
-                android:id="@+id/message_text"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:paddingHorizontal="14dp"
-                android:paddingVertical="10dp"
-                android:textAppearance="?attr/textAppearanceBodyMedium"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                android:textIsSelectable="true"
-                tools:text="I'll start by creating the project and a login screen." />
+            <View
+                android:id="@+id/dot_1"
+                android:layout_width="7dp"
+                android:layout_height="7dp"
+                android:background="@drawable/agent_typing_dot" />
 
-            <!-- Typing indicator: three pulsing dots, shown from send
-                 until the reply is complete. -->
-            <LinearLayout
-                android:id="@+id/typing_indicator"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="end"
-                android:layout_marginEnd="14dp"
-                android:layout_marginBottom="8dp"
-                android:orientation="horizontal"
-                android:visibility="gone"
-                tools:visibility="visible">
+            <View
+                android:id="@+id/dot_2"
+                android:layout_width="7dp"
+                android:layout_height="7dp"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/agent_typing_dot" />
 
-                <View
-                    android:id="@+id/dot_1"
-                    android:layout_width="7dp"
-                    android:layout_height="7dp"
-                    android:background="@drawable/agent_typing_dot" />
-
-                <View
-                    android:id="@+id/dot_2"
-                    android:layout_width="7dp"
-                    android:layout_height="7dp"
-                    android:layout_marginStart="4dp"
-                    android:background="@drawable/agent_typing_dot" />
-
-                <View
-                    android:id="@+id/dot_3"
-                    android:layout_width="7dp"
-                    android:layout_height="7dp"
-                    android:layout_marginStart="4dp"
-                    android:background="@drawable/agent_typing_dot" />
-            </LinearLayout>
+            <View
+                android:id="@+id/dot_3"
+                android:layout_width="7dp"
+                android:layout_height="7dp"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/agent_typing_dot" />
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
