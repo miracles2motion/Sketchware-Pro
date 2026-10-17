@@ -317,3 +317,25 @@ safe cosmetics only.
 **Build order:** read-only tools + Working-On card → create project/activity
 + approval cards → `edit_screen` → `set_event_handler` → build loop +
 file tools. Each slice device-verified before the next.
+
+**Durability & crash recovery (user-approved addition):** chat history is
+currently in-memory only (gone if the app dies) — Phase 2 pulls basic
+persistence forward, ahead of the Phase 3 history browser. The transcript is
+appended to app-private storage as messages complete, so a restored chat is
+restored memory (history is re-sent per request by design). Agent run state
+(approved plan, steps done/pending, snapshot index, any pending approval
+card) lives in the project beside `ai-manifest.md`; returning after a crash
+offers one card: Resume / Undo the whole task / Discard. Steps apply
+transactionally (complete write, then swap), are safe to re-run, and
+re-verify target revisions before continuing.
+
+**Context management (user-approved addition):** big screens and projects
+are stored and indexed by the app; the model holds a page at a time.
+Projections are condensed and capped (containers summarised, leaf detail on
+demand); the model drills in with read-only tools (expand a container,
+search a screen by text/type/colour). Targets are addressed by widget id
+plus human label with the full path shown on approval cards. Edits are
+small ops, never screen regeneration. Task memory is the on-disk checklist —
+each step re-reads its own branch fresh (small, revision-checked) instead of
+recalling earlier steps. Conversation context is budgeted: recent turns
+verbatim, older turns condensed into an app-maintained running summary.
