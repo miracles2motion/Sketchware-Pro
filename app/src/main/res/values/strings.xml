@@ -929,6 +929,8 @@ ACTION_VIEW
     <string name="agent_action_settings">Settings</string>
     <string name="agent_action_history">History</string>
     <string name="agent_action_scroll_down">Scroll to the latest message</string>
+    <string name="agent_status_waiting">Waiting for the model… %1$d s</string>
+    <string name="agent_status_thinking">Thinking… %1$d s</string>
     <string name="agent_history_soon">Chat history arrives in a later phase — for now, this conversation lives here.</string>
     <string name="agent_no_provider">No provider set</string>
     <string name="agent_provider_empty_title">Connect an AI provider</string>

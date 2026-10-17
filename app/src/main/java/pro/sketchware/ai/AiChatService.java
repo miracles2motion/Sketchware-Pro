@@ -79,6 +79,9 @@ public class AiChatService {
     }
 
     public interface ChatListener {
+        /** The model is producing reasoning but no visible text yet. */
+        void onThinking();
+
         void onToken(String text);
 
         void onComplete();
@@ -138,6 +141,9 @@ public class AiChatService {
         Request request = new Request.Builder()
                 .url(normalize(baseUrl) + "chat/completions")
                 .header("Authorization", "Bearer " + apiKey)
+                // A compressed stream gets buffered by intermediaries and
+                // arrives in one lump at the end; keep the events flowing.
+                .header("Accept-Encoding", "identity")
                 .post(RequestBody.create(payload.toString(), JSON))
                 .build();
 
@@ -175,6 +181,7 @@ public class AiChatService {
     private void stream(ResponseBody body, ChatListener listener) throws IOException {
         BufferedSource source = body.source();
         boolean anyToken = false;
+        boolean thinkingNotified = false;
         String line;
         while ((line = source.readUtf8Line()) != null) {
             String trimmed = line.trim();
@@ -185,7 +192,14 @@ public class AiChatService {
             if (data.equals("[DONE]")) {
                 break;
             }
-            String text = deltaText(data);
+            String[] parts = deltaTexts(data);
+            if (parts[1] != null && !parts[1].isEmpty() && !thinkingNotified) {
+                // The model is reasoning silently. The UI says so instead
+                // of looking frozen while no visible text exists yet.
+                thinkingNotified = true;
+                mainHandler.post(listener::onThinking);
+            }
+            String text = parts[0];
             if (text != null && !text.isEmpty()) {
                 anyToken = true;
                 mainHandler.post(() -> listener.onToken(text));
@@ -198,25 +212,38 @@ public class AiChatService {
         }
     }
 
-    /** Extracts {@code choices[0].delta.content} from one stream chunk. */
-    private static String deltaText(String data) {
+    /**
+     * Extracts the visible text and the (invisible) reasoning text from one
+     * stream chunk: {@code [0]} is {@code choices[0].delta.content},
+     * {@code [1]} is {@code choices[0].delta.reasoning_content}; either may
+     * be null. Reasoning is never displayed, it only proves the model is
+     * alive while the reply is still wordless.
+     */
+    private static String[] deltaTexts(String data) {
+        String[] parts = new String[2];
         try {
             JsonElement root = JsonParser.parseString(data);
             if (!root.isJsonObject()) {
-                return null;
+                return parts;
             }
             JsonArray choices = root.getAsJsonObject().getAsJsonArray("choices");
             if (choices == null || choices.size() == 0) {
-                return null;
+                return parts;
             }
             JsonObject delta = choices.get(0).getAsJsonObject().getAsJsonObject("delta");
-            if (delta == null || !delta.has("content") || delta.get("content").isJsonNull()) {
-                return null;
+            if (delta == null) {
+                return parts;
             }
-            return delta.get("content").getAsString();
-        } catch (Exception e) {
-            return null;
+            if (delta.has("content") && !delta.get("content").isJsonNull()) {
+                parts[0] = delta.get("content").getAsString();
+            }
+            if (delta.has("reasoning_content") && !delta.get("reasoning_content").isJsonNull()) {
+                parts[1] = delta.get("reasoning_content").getAsString();
+            }
+        } catch (Exception ignored) {
+            // A malformed chunk is skipped, not fatal to the stream.
         }
+        return parts;
     }
 
     /** Lists the models a key may call: {@code GET <base>/models}. */

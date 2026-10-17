@@ -27,6 +27,12 @@ public class ChatMessage {
         ERROR
     }
 
+    /**
+     * Display-only text for an empty streaming bubble (e.g. how long the
+     * model has been thinking). Never persisted, never sent to the model.
+     */
+    public transient String statusText;
+
     public Role role = Role.USER;
     public String text = "";
     public State state = State.COMPLETE;
