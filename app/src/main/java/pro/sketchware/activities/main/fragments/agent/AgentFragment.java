@@ -437,15 +437,66 @@ public class AgentFragment extends qA {
         if (getContext() == null) {
             return;
         }
+        // The key that just failed rests: briefly for a rate limit,
+        // a day for a spent allowance.
+        String detail = error.message.toLowerCase(java.util.Locale.ROOT);
+        long restMinutes = (error.httpCode == 429 || detail.contains("rate"))
+                ? 30L : 24L * 60L;
+        providerConfig.markKeyExhausted(providerConfig.activeProvider(),
+                System.currentTimeMillis() + restMinutes * 60_000L);
+        providerConfig.save(requireContext());
+
         String message = getString(R.string.agent_quota_body);
-        new MaterialAlertDialogBuilder(requireContext())
+        MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.agent_quota_title)
                 .setMessage(message)
                 .setPositiveButton(R.string.agent_action_switch_model,
                         (dialog, which) -> fetchModelsAndPick())
                 .setNegativeButton(R.string.agent_action_open_settings,
                         (dialog, which) -> openSettings())
-                .setNeutralButton(android.R.string.cancel, null)
+                .setNeutralButton(android.R.string.cancel, null);
+        if (providerConfig.keys(providerConfig.activeProvider()).size() > 1) {
+            // Neutral is taken by Cancel; the key choice rides along as a
+            // fourth action by replacing Cancel's slot order: use the
+            // positive-area via a list instead when keys exist.
+            builder.setNeutralButton(R.string.agent_action_switch_key,
+                    (dialog, which) -> showKeyPicker());
+        }
+        builder.show();
+    }
+
+    /** Offers the active provider's other keys after a quota hit. */
+    private void showKeyPicker() {
+        if (getContext() == null) {
+            return;
+        }
+        AiProvider provider = providerConfig.activeProvider();
+        List<AiProviderConfig.KeyEntry> entries = providerConfig.keys(provider);
+        int activeIndex = providerConfig.activeKeyIndex(provider);
+        long now = System.currentTimeMillis();
+        String[] items = new String[entries.size()];
+        for (int i = 0; i < entries.size(); i++) {
+            AiProviderConfig.KeyEntry entry = entries.get(i);
+            String suffix = i == activeIndex
+                    ? getString(R.string.agent_key_in_use)
+                    : entry.isExhausted(now)
+                            ? getString(R.string.agent_key_exhausted_until,
+                                    android.text.format.DateFormat.format("MMM d, h:mm a",
+                                            new java.util.Date(entry.exhaustedUntil)).toString())
+                            : getString(R.string.agent_key_ready);
+            items[i] = entry.label + " · " + AiProviderConfig.mask(entry)
+                    + " — " + suffix;
+        }
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.agent_action_switch_key)
+                .setItems(items, (dialog, which) -> {
+                    providerConfig.setActiveKey(provider, which);
+                    providerConfig.save(requireContext());
+                    appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM,
+                            getString(R.string.agent_switched_key,
+                                    entries.get(which).label)));
+                    retryFailedTurn();
+                })
                 .show();
     }
 

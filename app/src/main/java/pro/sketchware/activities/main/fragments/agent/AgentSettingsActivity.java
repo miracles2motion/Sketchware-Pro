@@ -1,9 +1,14 @@
 package pro.sketchware.activities.main.fragments.agent;
 
 import android.os.Bundle;
+import android.text.format.DateFormat;
 import android.view.View;
 import android.widget.ArrayAdapter;
+import android.widget.EditText;
 import android.widget.Toast;
+
+import com.google.android.material.color.MaterialColors;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -15,6 +20,7 @@ import pro.sketchware.R;
 import pro.sketchware.ai.AiChatService;
 import pro.sketchware.ai.AiProvider;
 import pro.sketchware.ai.AiProviderConfig;
+import pro.sketchware.databinding.AgentKeyRowBinding;
 import pro.sketchware.databinding.AgentSettingsBinding;
 
 /**
@@ -48,6 +54,7 @@ public class AgentSettingsActivity extends AppCompatActivity {
         binding.providerInput.setOnItemClickListener((parent, view, position, id) ->
                 applyProvider(AiProvider.values()[position], true));
 
+        binding.addKeyButton.setOnClickListener(v -> addTypedKey());
         binding.fetchModelsButton.setOnClickListener(v -> fetchModels(false));
         binding.showAllModelsSwitch.setOnCheckedChangeListener((button, checked) -> {
             config.settings(selected).showAllModels = checked;
@@ -72,7 +79,8 @@ public class AgentSettingsActivity extends AppCompatActivity {
         binding.providerInput.setText(provider.displayName, false);
         AiProviderConfig.Settings settings = config.settings(provider);
         binding.baseUrlInput.setText(settings.baseUrl);
-        binding.apiKeyInput.setText(config.apiKey(provider));
+        binding.apiKeyInput.setText("");
+        renderKeys();
         binding.modelInput.setText(settings.model, false);
         // The fetched list is cached per provider: it is simply here,
         // reopening Settings must never demand a fresh query first.
@@ -86,10 +94,115 @@ public class AgentSettingsActivity extends AppCompatActivity {
         hideStatus();
     }
 
+    /** Draws the selected provider's key list, one row per key. */
+    private void renderKeys() {
+        binding.keysContainer.removeAllViews();
+        java.util.List<AiProviderConfig.KeyEntry> entries = config.keys(selected);
+        binding.keysHint.setVisibility(entries.isEmpty() ? View.GONE : View.VISIBLE);
+        int activeIndex = config.activeKeyIndex(selected);
+        long now = System.currentTimeMillis();
+        for (int i = 0; i < entries.size(); i++) {
+            AiProviderConfig.KeyEntry entry = entries.get(i);
+            AgentKeyRowBinding row = AgentKeyRowBinding.inflate(
+                    getLayoutInflater(), binding.keysContainer, false);
+            row.keyLabel.setText(entry.label + " · " + AiProviderConfig.mask(entry));
+            if (i == activeIndex) {
+                row.keyStatus.setText(R.string.agent_key_in_use);
+                row.keyStatus.setTextColor(MaterialColors.getColor(row.keyStatus,
+                        com.google.android.material.R.attr.colorPrimary));
+            } else if (entry.isExhausted(now)) {
+                row.keyStatus.setText(getString(R.string.agent_key_exhausted_until,
+                        DateFormat.format("MMM d, h:mm a",
+                                new java.util.Date(entry.exhaustedUntil)).toString()));
+            } else {
+                row.keyStatus.setText(R.string.agent_key_ready);
+            }
+            final int index = i;
+            row.getRoot().setOnClickListener(v -> {
+                if (config.activeKeyIndex(selected) == index) {
+                    showRenameDialog(index);
+                } else {
+                    config.setActiveKey(selected, index);
+                    config.save(this);
+                    renderKeys();
+                }
+            });
+            row.deleteButton.setOnClickListener(v -> confirmRemoveKey(index, entry));
+            binding.keysContainer.addView(row.getRoot());
+        }
+    }
+
+    private void showRenameDialog(int index) {
+        AiProviderConfig.KeyEntry entry = config.keys(selected).get(index);
+        EditText input = new EditText(this);
+        input.setText(entry.label);
+        input.setSingleLine(true);
+        input.setSelectAllOnFocus(true);
+        int padding = (int) (20 * getResources().getDisplayMetrics().density);
+        input.setPadding(padding, padding / 2, padding, 0);
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.agent_key_rename)
+                .setView(input)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    String name = input.getText() == null
+                            ? "" : input.getText().toString().trim();
+                    if (!name.isEmpty()) {
+                        entry.label = name;
+                        config.save(this);
+                        renderKeys();
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void confirmRemoveKey(int index, AiProviderConfig.KeyEntry entry) {
+        new MaterialAlertDialogBuilder(this)
+                .setMessage(getString(R.string.agent_key_remove_confirm,
+                        entry.label + " (" + AiProviderConfig.mask(entry) + ")"))
+                .setPositiveButton(R.string.agent_key_remove, (dialog, which) -> {
+                    config.removeKey(selected, index);
+                    config.save(this);
+                    renderKeys();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /** Adds whatever key is pasted in the field to this provider's list. */
+    private void addTypedKey() {
+        String typed = text(binding.apiKeyInput);
+        if (typed.isEmpty()) {
+            showStatus(getString(R.string.agent_settings_need_key), true);
+            return;
+        }
+        boolean exists = false;
+        for (AiProviderConfig.KeyEntry entry : config.keys(selected)) {
+            if (entry.key.equals(typed)) {
+                exists = true;
+                break;
+            }
+        }
+        config.addKey(selected, typed);
+        config.save(this);
+        binding.apiKeyInput.setText("");
+        renderKeys();
+        showStatus(getString(exists
+                ? R.string.agent_key_already : R.string.agent_key_added), false);
+    }
+
     /** Asks the provider which models this key may call. */
     private void fetchModels(boolean fromSave) {
         String baseUrl = text(binding.baseUrlInput);
-        String key = text(binding.apiKeyInput);
+        String typed = text(binding.apiKeyInput);
+        if (!typed.isEmpty()) {
+            // Fetching with a fresh key adds it first, so proving it and
+            // keeping it are the same gesture.
+            config.addKey(selected, typed);
+            binding.apiKeyInput.setText("");
+            renderKeys();
+        }
+        String key = config.apiKey(selected);
         if (baseUrl.isEmpty() || key.isEmpty()) {
             showStatus(getString(R.string.agent_settings_need_key), true);
             return;
@@ -189,7 +302,8 @@ public class AgentSettingsActivity extends AppCompatActivity {
         AiProviderConfig.Settings settings = config.settings(selected);
         settings.baseUrl = text(binding.baseUrlInput);
         settings.model = text(binding.modelInput);
-        config.setApiKey(selected, text(binding.apiKeyInput));
+        // Keys persist the moment they are added, switched or removed;
+        // nothing about them is read back from the form here.
         config.save(this);
     }
 
