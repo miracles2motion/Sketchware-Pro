@@ -49,10 +49,12 @@ public class AgentFragment extends qA {
     private final List<ChatMessage> messages = new ArrayList<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     /** Tokens that arrived but are not in the list yet. */
-    private final StringBuilder pendingToken = new StringBuilder();
+    /** Tokens that have arrived but are not on screen yet. */
+    private final StringBuilder pendingReveal = new StringBuilder();
     /** How long the collected tokens are batched before the list is updated. */
-    private static final long TOKEN_FLUSH_MS = 60L;
-    private volatile boolean flushScheduled;
+    /** How often the smoothing queue paints the next characters. */
+    private static final long REVEAL_TICK_MS = 24L;
+    private volatile boolean revealScheduled;
     /** Padding that was taken off because the screen reached below the display. */
     private int appliedBottomPadding;
     /** Watches the layout to keep the chat inside the visible area. */
@@ -540,40 +542,76 @@ public class AgentFragment extends qA {
         if (binding == null || streamingMessage == null) {
             return;
         }
-        // Tokens can arrive faster than the list can be diffed, so they are
-        // collected and flushed to the list in batches.
-        synchronized (pendingToken) {
-            pendingToken.append(text);
+        // Arrived tokens wait here instead of going straight to the screen:
+        // on a bursty connection they would otherwise land in lumps and the
+        // bubble would grow in jerks.
+        synchronized (pendingReveal) {
+            pendingReveal.append(text);
         }
-        if (!flushScheduled) {
-            flushScheduled = true;
-            binding.chatList.postDelayed(flushTokens, TOKEN_FLUSH_MS);
+        if (!revealScheduled) {
+            revealScheduled = true;
+            binding.chatList.postDelayed(revealTokens, REVEAL_TICK_MS);
         }
     }
 
-    /** Moves the collected tokens into the streaming message. */
-    private final Runnable flushTokens = () -> {
-        flushScheduled = false;
-        flushPendingTokens();
+    /**
+     * The smoothing queue. Every tick it moves a few characters from the
+     * waiting buffer into the bubble — a calm, even pace no matter how the
+     * network delivered them — speeding up when a lot is waiting so long
+     * answers never lag far behind the wire.
+     */
+    private final Runnable revealTokens = new Runnable() {
+        @Override
+        public void run() {
+            revealScheduled = false;
+            if (binding == null || streamingMessage == null) {
+                return;
+            }
+            boolean pinnedToEnd = !binding.chatList.canScrollVertically(1);
+            boolean moreWaiting;
+            synchronized (pendingReveal) {
+                int waiting = pendingReveal.length();
+                if (waiting > 0) {
+                    int count = Math.min(waiting, Math.max(4, waiting / 6));
+                    streamingMessage.text += pendingReveal.substring(0, count);
+                    pendingReveal.delete(0, count);
+                }
+                moreWaiting = pendingReveal.length() > 0;
+            }
+            int index = messages.indexOf(streamingMessage);
+            if (index >= 0) {
+                adapter.notifyTextChanged(index);
+            }
+            if (pinnedToEnd && index >= 0) {
+                // Follow the growing text only while the user is at the end;
+                // scrolling up to read must never be yanked back down.
+                binding.chatList.scrollToPosition(index);
+            }
+            if (moreWaiting) {
+                revealScheduled = true;
+                binding.chatList.postDelayed(this, REVEAL_TICK_MS);
+            }
+        }
     };
 
+    /** Moves everything still waiting into the bubble at once. */
     private void flushPendingTokens() {
         if (binding == null || streamingMessage == null) {
-            synchronized (pendingToken) {
-                pendingToken.setLength(0);
+            synchronized (pendingReveal) {
+                pendingReveal.setLength(0);
             }
             return;
         }
-        synchronized (pendingToken) {
-            if (pendingToken.length() > 0) {
-                streamingMessage.text += pendingToken;
-                pendingToken.setLength(0);
+        synchronized (pendingReveal) {
+            if (pendingReveal.length() > 0) {
+                streamingMessage.text += pendingReveal;
+                pendingReveal.setLength(0);
             }
         }
         streamingMessage.state = ChatMessage.State.STREAMING;
         int index = messages.indexOf(streamingMessage);
         if (index >= 0) {
-            adapter.notifyItemChanged(index);
+            adapter.notifyTextChanged(index);
             scrollToNewest();
         }
     }
@@ -583,13 +621,13 @@ public class AgentFragment extends qA {
             return;
         }
         if (binding != null) {
-            binding.chatList.removeCallbacks(flushTokens);
+            binding.chatList.removeCallbacks(revealTokens);
         }
-        flushScheduled = false;
-        synchronized (pendingToken) {
-            if (pendingToken.length() > 0) {
-                streamingMessage.text += pendingToken;
-                pendingToken.setLength(0);
+        revealScheduled = false;
+        synchronized (pendingReveal) {
+            if (pendingReveal.length() > 0) {
+                streamingMessage.text += pendingReveal;
+                pendingReveal.setLength(0);
             }
         }
         streamingMessage.state = ChatMessage.State.COMPLETE;

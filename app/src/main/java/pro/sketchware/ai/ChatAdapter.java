@@ -88,6 +88,27 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
         holder.bind(items.get(position));
     }
 
+    private static final String PAYLOAD_TEXT = "text";
+
+    /**
+     * Repaints only the text of a streaming bubble. A full rebind on every
+     * token makes the list re-measure the row each time and the bubble
+     * staggers; this is the light touch used while text is flowing.
+     */
+    public void notifyTextChanged(int position) {
+        notifyItemChanged(position, PAYLOAD_TEXT);
+    }
+
+    @Override
+    public void onBindViewHolder(@NonNull Holder holder, int position,
+                                 @NonNull List<Object> payloads) {
+        if (!payloads.isEmpty() && holder instanceof AssistantHolder assistant) {
+            assistant.updateText(items.get(position));
+            return;
+        }
+        super.onBindViewHolder(holder, position, payloads);
+    }
+
     /** Wires taps on the given views to the message click listener. */
     void attachClicks(Holder holder, View... views) {
         for (View view : views) {
@@ -164,6 +185,11 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                 owner.attachClicks(this, itemView, binding.messageText,
                         binding.retryText);
             }
+            binding.messageText.setText(message.text);
+        }
+
+        /** Text-only update while streaming; everything else stays put. */
+        void updateText(ChatMessage message) {
             binding.messageText.setText(message.text);
         }
 
