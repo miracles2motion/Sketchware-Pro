@@ -69,8 +69,12 @@ public class AgentSettingsActivity extends AppCompatActivity {
         binding.baseUrlInput.setText(settings.baseUrl);
         binding.apiKeyInput.setText(config.apiKey(provider));
         binding.modelInput.setText(settings.model, false);
+        // The fetched list is cached per provider: it is simply here,
+        // reopening Settings must never demand a fresh query first.
         binding.modelInput.setAdapter(new ArrayAdapter<>(
-                this, android.R.layout.simple_list_item_1, new ArrayList<String>()));
+                this, android.R.layout.simple_list_item_1,
+                new ArrayList<>(settings.models)));
+        updateFetchButtonLabel();
         binding.keyHint.setText(provider.keyPage.isEmpty()
                 ? getString(R.string.agent_settings_key_hint_custom)
                 : getString(R.string.agent_settings_where_key, provider.keyPage));
@@ -98,6 +102,7 @@ public class AgentSettingsActivity extends AppCompatActivity {
                 }
                 showStatus(getString(R.string.agent_settings_key_ok, models.size()), false);
                 config.settings(selected).models = models;
+                updateFetchButtonLabel();
                 if (fromSave) {
                     // The first thing a new key does is fetch its models;
                     // persist the key so the chat can use them too.
@@ -122,6 +127,14 @@ public class AgentSettingsActivity extends AppCompatActivity {
                 showStatus(describe(error), true);
             }
         });
+    }
+
+    /** Once a key has a model list, fetching again is a refresh. */
+    private void updateFetchButtonLabel() {
+        boolean hasModels = !config.settings(selected).models.isEmpty();
+        binding.fetchModelsButton.setText(hasModels
+                ? R.string.agent_settings_refresh_models
+                : R.string.agent_settings_fetch_models);
     }
 
     /** OpenRouter is the only preset that reports remaining credit. */
