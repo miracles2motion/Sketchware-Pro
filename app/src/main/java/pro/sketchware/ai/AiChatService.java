@@ -38,7 +38,7 @@ import okio.BufferedSource;
 public class AiChatService {
 
     private static final String TAG = "AiChatService";
-    private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
+    private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
     /** How many past messages are sent with each request. */
     private static final int MAX_HISTORY_MESSAGES = 40;
