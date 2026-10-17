@@ -15,27 +15,56 @@
         app:cardBackgroundColor="?attr/colorSurfaceContainer"
         app:cardCornerRadius="18dp">
 
-        <TextView
-            android:id="@+id/message_text"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:paddingHorizontal="14dp"
-            android:paddingVertical="10dp"
-            android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textColor="?attr/colorOnSurfaceVariant"
-            android:textIsSelectable="true"
-            tools:text="I'll start by creating the project and a login screen." />
+            android:orientation="vertical">
 
-        <ProgressBar
-            android:id="@+id/streaming_indicator"
-            style="?android:attr/progressBarStyleSmall"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="end"
-            android:layout_marginHorizontal="12dp"
-            android:layout_marginBottom="10dp"
-            android:visibility="gone"
-            tools:visibility="visible" />
+            <TextView
+                android:id="@+id/message_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textIsSelectable="true"
+                tools:text="I'll start by creating the project and a login screen." />
+
+            <!-- Typing indicator: three pulsing dots, shown from send
+                 until the reply is complete. -->
+            <LinearLayout
+                android:id="@+id/typing_indicator"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end"
+                android:layout_marginEnd="14dp"
+                android:layout_marginBottom="8dp"
+                android:orientation="horizontal"
+                android:visibility="gone"
+                tools:visibility="visible">
+
+                <View
+                    android:id="@+id/dot_1"
+                    android:layout_width="7dp"
+                    android:layout_height="7dp"
+                    android:background="@drawable/agent_typing_dot" />
+
+                <View
+                    android:id="@+id/dot_2"
+                    android:layout_width="7dp"
+                    android:layout_height="7dp"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/agent_typing_dot" />
+
+                <View
+                    android:id="@+id/dot_3"
+                    android:layout_width="7dp"
+                    android:layout_height="7dp"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/agent_typing_dot" />
+            </LinearLayout>
+        </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
     <!-- Only for a failed turn: quietly offers to send it again. -->

@@ -1,5 +1,7 @@
 package pro.sketchware.ai;
 
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -7,6 +9,7 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import pro.sketchware.databinding.AgentChatItemAssistantBinding;
@@ -155,6 +158,8 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
         void bind(ChatMessage message) {
             binding.retryText.setVisibility(
                     message.state == ChatMessage.State.ERROR ? View.VISIBLE : View.GONE);
+            setTyping(message.state == ChatMessage.State.STREAMING
+                    || message.state == ChatMessage.State.PENDING);
             if (owner != null) {
                 owner.attachClicks(this, itemView, binding.messageText,
                         binding.retryText);
@@ -168,7 +173,45 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
             } else {
                 binding.messageText.setText(message.text);
             }
-            binding.streamingIndicator.setVisibility(streaming ? View.VISIBLE : View.GONE);
         }
+
+        private final List<ObjectAnimator> dotAnimations = new ArrayList<>();
+
+        /** Starts or stops the three-dot typing pulse. */
+        void setTyping(boolean typing) {
+            stopDots();
+            binding.typingIndicator.setVisibility(typing ? View.VISIBLE : View.GONE);
+            if (!typing) {
+                return;
+            }
+            View[] dots = {binding.dot1, binding.dot2, binding.dot3};
+            for (int i = 0; i < dots.length; i++) {
+                ObjectAnimator animator = ObjectAnimator.ofFloat(
+                        dots[i], View.ALPHA, 0.25f, 1f, 0.25f);
+                animator.setDuration(900L);
+                animator.setStartDelay(i * 160L);
+                animator.setRepeatCount(ValueAnimator.INFINITE);
+                animator.start();
+                dotAnimations.add(animator);
+            }
+        }
+
+        void stopDots() {
+            for (ObjectAnimator animator : dotAnimations) {
+                animator.cancel();
+            }
+            dotAnimations.clear();
+            binding.dot1.setAlpha(1f);
+            binding.dot2.setAlpha(1f);
+            binding.dot3.setAlpha(1f);
+        }
+    }
+
+    @Override
+    public void onViewRecycled(@NonNull Holder holder) {
+        if (holder instanceof AssistantHolder assistant) {
+            assistant.stopDots();
+        }
+        super.onViewRecycled(holder);
     }
 }
