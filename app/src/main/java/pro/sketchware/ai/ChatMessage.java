@@ -35,6 +35,10 @@ public class ChatMessage {
 
     public Role role = Role.USER;
     public String text = "";
+    /** Reasoning the model showed before answering ("" = it did not). */
+    public String thinking = "";
+    /** Whether the thinking block is expanded in the transcript. */
+    public boolean thinkingExpanded;
     public State state = State.COMPLETE;
     public long timestamp;
 

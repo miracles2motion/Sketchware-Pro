@@ -413,3 +413,23 @@ per request.
 - Device test: bind a sacrificial project, ask "what screens does my
   project have?", "what widgets are on MainActivity?", and ask the same
   with no project bound (must explain the card, not invent screens).
+
+### Slice 1 device verdict + fix pack (2026-10-18)
+
+Device test findings (SportyNivida / Sporty Bet):
+- Card binding, picker, live data all PASS — the agent reflected a newly
+  created activity the moment it existed (1 screen → 2), and `get_screen`
+  returned the real 8-widget tree of MainActivity.
+- FAIL found: with the project unbound, the model answered from
+  conversation memory instead of refusing. Guard added: the agent must
+  always verify project contents with tools (memory goes stale), and
+  when unbound it must ask for the Working-On card.
+- Some Gemini Flash models (3.7/3.8) returned 503 while 3.6 Flash and
+  Flash Lite worked through the identical code path — provider-side
+  capacity, handled by the human error + retry.
+- Fix pack: native-style project picker (rows like the app's project
+  list); reasoning split out of answers at parse time
+  (`reasoning_content` field and inline `<thought>` tags) into a
+  collapsed "Thinking" block on the bubble; Markwon rendering for
+  assistant bubbles (user/system text stays literal; plain text while
+  streaming, formatted at completion).

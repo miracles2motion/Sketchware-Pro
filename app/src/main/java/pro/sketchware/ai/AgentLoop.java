@@ -28,7 +28,11 @@ public class AgentLoop {
             "\n\nYou are connected to the user's Sketchware Pro app and can "
                     + "look at the project they are working on with your "
                     + "tools. Use the tools when a question is about their "
-                    + "project instead of guessing. Nearly everything the "
+                    + "project instead of guessing. Always check a project's "
+                    + "current screens and widgets with the tools, even if "
+                    + "earlier messages mention them — the user may have "
+                    + "changed the project since, and remembered details go "
+                    + "stale. Nearly everything the "
                     + "tools tell you is invisible to the user — answer in "
                     + "plain words and never show raw tool output, ids, or "
                     + "JSON. If a tool reports that no working project is "
@@ -38,8 +42,8 @@ public class AgentLoop {
         /** A quiet activity line, e.g. "Looked at MainActivity". */
         void onToolNote(String line);
 
-        /** The turn finished with this plain-text answer. */
-        void onAnswer(String text);
+        /** The turn finished: answer text, plus any model reasoning. */
+        void onAnswer(String text, String thinking);
 
         /** The turn failed (or tool calling is unsupported). */
         void onError(AiChatService.AiError error);
@@ -118,7 +122,8 @@ public class AgentLoop {
                     dispatch(listener, () -> listener.onError(new AiChatService.AiError(
                             AiChatService.ErrorKind.EMPTY, 200, "empty reply")));
                 } else {
-                    dispatch(listener, () -> listener.onAnswer(answer));
+                    String thinking = reply.thinking == null ? "" : reply.thinking;
+                    dispatch(listener, () -> listener.onAnswer(answer, thinking));
                 }
                 return;
             }
@@ -184,9 +189,11 @@ public class AgentLoop {
                                 + "through your tools.");
             }
         } else {
-            prompt.append("\n\nNo working project is chosen yet. If the user "
-                    + "asks about a project, your tools will explain how "
-                    + "they can choose one.");
+            prompt.append("\n\nNo working project is chosen right now. If "
+                    + "the user asks about any project's screens or "
+                    + "widgets, do not answer from earlier conversation: "
+                    + "ask them to choose the project with the \"Working "
+                    + "on\" card at the top of the chat first.");
         }
         JsonObject system = new JsonObject();
         system.addProperty("role", "system");

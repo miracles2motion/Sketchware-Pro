@@ -303,6 +303,8 @@ public class AiChatService {
     /** What the model sent back from one agent turn. */
     public static final class AgentReply {
         public String content = "";
+        /** The model's reasoning, split out — never part of the answer. */
+        public String thinking = "";
         public final List<ToolCallData> toolCalls = new ArrayList<>();
         /** The assistant message verbatim, to echo back next turn. */
         public JsonObject rawMessage;
@@ -378,6 +380,16 @@ public class AiChatService {
             if (message.has("content") && !message.get("content").isJsonNull()) {
                 reply.content = message.get("content").getAsString();
             }
+            if (message.has("reasoning_content")
+                    && !message.get("reasoning_content").isJsonNull()) {
+                reply.thinking = message.get("reasoning_content").getAsString();
+            }
+            // Some models (Gemma among them) inline their reasoning in the
+            // answer text inside <thought> tags. Split it out here, once,
+            // so no caller can ever show it as part of the answer.
+            StringBuilder thinking = new StringBuilder(reply.thinking);
+            reply.content = extractThought(reply.content, thinking);
+            reply.thinking = thinking.toString().trim();
             JsonArray calls = message.getAsJsonArray("tool_calls");
             if (calls != null) {
                 for (JsonElement element : calls) {
@@ -406,6 +418,50 @@ public class AiChatService {
                     "The provider returned an unreadable reply."));
         }
         return reply;
+    }
+
+    /**
+     * Moves {@code <thought>}/{@code <thinking>} blocks out of an answer
+     * and into {@code thinking}, returning the answer that remains.
+     */
+    private static String extractThought(String content, StringBuilder thinking) {
+        if (content == null) {
+            return "";
+        }
+        String result = content;
+        for (String tag : new String[]{"thought", "thinking"}) {
+            String open = "<" + tag + ">";
+            String close = "</" + tag + ">";
+            while (true) {
+                String lower = result.toLowerCase(java.util.Locale.ROOT);
+                int start = lower.indexOf(open);
+                if (start < 0) {
+                    break;
+                }
+                int end = lower.indexOf(close, start);
+                if (end < 0) {
+                    // Unclosed tag: the rest is reasoning, not answer.
+                    appendThought(thinking, result.substring(start + open.length()));
+                    result = result.substring(0, start);
+                    break;
+                }
+                appendThought(thinking,
+                        result.substring(start + open.length(), end));
+                result = result.substring(0, start)
+                        + result.substring(end + close.length());
+            }
+        }
+        return result.trim();
+    }
+
+    private static void appendThought(StringBuilder thinking, String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return;
+        }
+        if (thinking.length() > 0) {
+            thinking.append("\n");
+        }
+        thinking.append(text.trim());
     }
 
     /** Lists the models a key may call: {@code GET <base>/models}. */

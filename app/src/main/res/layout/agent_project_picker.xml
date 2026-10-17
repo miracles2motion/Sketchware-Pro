@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The project list behind the Working-On card: mirrors the app's own
+     project list (icon, app name, project name · package). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="20dp"
+    android:paddingBottom="8dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="24dp"
+        android:paddingBottom="12dp"
+        android:text="@string/agent_working_on_label"
+        android:textAppearance="?attr/textAppearanceTitleLarge" />
+
+    <ListView
+        android:id="@+id/picker_list"
+        android:layout_width="match_parent"
+        android:layout_height="380dp"
+        android:divider="@null" />
+</LinearLayout>

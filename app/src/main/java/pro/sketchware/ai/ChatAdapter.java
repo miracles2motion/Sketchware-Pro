@@ -12,6 +12,9 @@ import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
 import java.util.List;
 
+import io.noties.markwon.Markwon;
+
+import pro.sketchware.R;
 import pro.sketchware.databinding.AgentChatItemAssistantBinding;
 import pro.sketchware.databinding.AgentChatItemSystemBinding;
 import pro.sketchware.databinding.AgentChatItemUserBinding;
@@ -70,6 +73,16 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
     }
 
     @NonNull
+    /** Renders model answers (bold, lists, code) instead of raw symbols. */
+    private Markwon markwon;
+
+    private Markwon markwon(View view) {
+        if (markwon == null) {
+            markwon = Markwon.create(view.getContext());
+        }
+        return markwon;
+    }
+
     @Override
     public Holder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         LayoutInflater inflater = LayoutInflater.from(parent.getContext());
@@ -185,10 +198,42 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                 owner.attachClicks(this, itemView, binding.messageText,
                         binding.retryText);
             }
-            binding.messageText.setText(message.text);
+            boolean hasThinking = message.thinking != null
+                    && !message.thinking.trim().isEmpty();
+            binding.thinkingHeader.setVisibility(
+                    hasThinking ? View.VISIBLE : View.GONE);
+            binding.thinkingText.setVisibility(hasThinking
+                    && message.thinkingExpanded ? View.VISIBLE : View.GONE);
+            if (hasThinking) {
+                markwon(binding.messageText).setMarkdown(
+                        binding.thinkingText, message.thinking);
+                updateThinkingHeader(binding, message.thinkingExpanded);
+                binding.thinkingHeader.setOnClickListener(v -> {
+                    message.thinkingExpanded = !message.thinkingExpanded;
+                    binding.thinkingText.setVisibility(
+                            message.thinkingExpanded ? View.VISIBLE : View.GONE);
+                    updateThinkingHeader(binding, message.thinkingExpanded);
+                });
+            }
+            if (message.state == ChatMessage.State.STREAMING
+                    || message.state == ChatMessage.State.PENDING) {
+                // Still arriving: raw text now, formatting at completion.
+                binding.messageText.setText(message.text);
+            } else {
+                markwon(binding.messageText).setMarkdown(
+                        binding.messageText, message.text);
+            }
             // No words yet: the dots pill speaks alone, no empty shell.
             binding.messageCard.setVisibility(
                     message.text.isEmpty() ? View.GONE : View.VISIBLE);
+        }
+
+        /** The header label, with its open/closed chevron. */
+        private void updateThinkingHeader(
+                AgentChatItemAssistantBinding binding, boolean expanded) {
+            binding.thinkingHeader.setText(binding.getRoot().getContext()
+                    .getString(R.string.agent_thinking_label)
+                    + (expanded ? " ▴" : " ▾"));
         }
 
         /** Text-only update while streaming; everything else stays put. */

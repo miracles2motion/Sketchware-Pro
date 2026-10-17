@@ -12,6 +12,8 @@ import android.graphics.Rect;
 import android.os.SystemClock;
 import android.os.Bundle;
 import android.view.LayoutInflater;
+import android.widget.BaseAdapter;
+import android.widget.ListView;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -347,9 +349,12 @@ public class AgentFragment extends qA {
                     }
 
                     @Override
-                    public void onAnswer(String text) {
+                    public void onAnswer(String text, String thinking) {
                         runOnUi(() -> {
                             generating = false;
+                            if (streamingMessage != null) {
+                                streamingMessage.thinking = thinking;
+                            }
                             appendToken(text);
                             flushPendingTokens();
                             setStreamingComplete();
@@ -451,7 +456,8 @@ public class AgentFragment extends qA {
         });
     }
 
-    /** The project list behind the Working-On card. */
+    /** The project list behind the Working-On card: the projects the way
+     * the app's own project list shows them. */
     private void showProjectPicker() {
         io.execute(() -> {
             List<SketchwareProjects.ProjectInfo> projects =
@@ -460,36 +466,95 @@ public class AgentFragment extends qA {
                 if (binding == null) {
                     return;
                 }
-                String current = providerConfig.workingProjectId();
-                String[] labels = new String[projects.size() + 1];
-                labels[0] = getString(R.string.agent_working_on_none);
-                int checked = 0;
-                for (int i = 0; i < projects.size(); i++) {
-                    SketchwareProjects.ProjectInfo project = projects.get(i);
-                    labels[i + 1] = project.name;
-                    if (project.scId.equals(current)) {
-                        checked = i + 1;
+                View picker = LayoutInflater.from(requireContext())
+                        .inflate(R.layout.agent_project_picker, null);
+                ListView list = picker.findViewById(R.id.picker_list);
+                list.setAdapter(new ProjectPickerAdapter(projects,
+                        providerConfig.workingProjectId()));
+                androidx.appcompat.app.AlertDialog dialog =
+                        new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                                .setView(picker)
+                                .setNegativeButton(android.R.string.cancel, null)
+                                .create();
+                list.setOnItemClickListener((parent, view, position, id) -> {
+                    dialog.dismiss();
+                    if (position == 0) {
+                        chooseProject("", "");
+                    } else {
+                        SketchwareProjects.ProjectInfo chosen =
+                                projects.get(position - 1);
+                        chooseProject(chosen.scId, chosen.name);
                     }
-                }
-                new androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                        .setTitle(R.string.agent_working_on_label)
-                        .setSingleChoiceItems(labels, checked, (dialog, which) -> {
-                            dialog.dismiss();
-                            String chosen = which == 0 ? ""
-                                    : projects.get(which - 1).scId;
-                            providerConfig.setWorkingProjectId(chosen);
-                            providerConfig.save(requireContext());
-                            updateWorkingOnCard();
-                            appendMessage(ChatMessage.error(getString(chosen.isEmpty()
-                                    ? R.string.agent_working_on_cleared
-                                    : R.string.agent_working_on_set,
-                                    chosen.isEmpty() ? ""
-                                            : projects.get(which - 1).name)));
-                        })
-                        .setNegativeButton(android.R.string.cancel, null)
-                        .show();
+                });
+                dialog.show();
             });
         });
+    }
+
+    /** Binds (or unbinds) the working project and notes it in the chat. */
+    private void chooseProject(String scId, String name) {
+        providerConfig.setWorkingProjectId(scId);
+        providerConfig.save(requireContext());
+        updateWorkingOnCard();
+        appendMessage(ChatMessage.error(getString(scId.isEmpty()
+                ? R.string.agent_working_on_cleared
+                : R.string.agent_working_on_set, name)));
+    }
+
+    /** Rows of the picker: "No project", then one row per project. */
+    private class ProjectPickerAdapter extends BaseAdapter {
+        private final List<SketchwareProjects.ProjectInfo> projects;
+        private final String currentId;
+
+        ProjectPickerAdapter(List<SketchwareProjects.ProjectInfo> projects,
+                             String currentId) {
+            this.projects = projects;
+            this.currentId = currentId;
+        }
+
+        @Override
+        public int getCount() {
+            return projects.size() + 1;
+        }
+
+        @Override
+        public Object getItem(int position) {
+            return position == 0 ? null : projects.get(position - 1);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            View row = convertView;
+            if (row == null) {
+                row = LayoutInflater.from(parent.getContext())
+                        .inflate(R.layout.agent_project_row, parent, false);
+            }
+            android.widget.TextView name =
+                    row.findViewById(R.id.picker_name);
+            android.widget.TextView subtitle =
+                    row.findViewById(R.id.picker_subtitle);
+            View check = row.findViewById(R.id.picker_check);
+            if (position == 0) {
+                name.setText(R.string.agent_working_on_none);
+                subtitle.setText(R.string.agent_picker_none_hint);
+                check.setVisibility(
+                        currentId.isEmpty() ? View.VISIBLE : View.GONE);
+            } else {
+                SketchwareProjects.ProjectInfo project =
+                        projects.get(position - 1);
+                name.setText(project.appName.isEmpty()
+                        ? project.name : project.appName);
+                subtitle.setText(project.name + " · " + project.packageName);
+                check.setVisibility(project.scId.equals(currentId)
+                        ? View.VISIBLE : View.GONE);
+            }
+            return row;
+        }
     }
 
     /** A quiet activity line, slipped in above the streaming bubble. */
