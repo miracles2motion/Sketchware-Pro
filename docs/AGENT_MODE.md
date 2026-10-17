@@ -339,3 +339,19 @@ small ops, never screen regeneration. Task memory is the on-disk checklist —
 each step re-reads its own branch fresh (small, revision-checked) instead of
 recalling earlier steps. Conversation context is budgeted: recent turns
 verbatim, older turns condensed into an app-maintained running summary.
+
+**Design competence (user-approved addition):** without help, the agent
+builds correct apps wearing stock default widgets. Phase 2 therefore ships
+(a) a **planning rubric** injected at plan time — always address screens,
+data storage, navigation, empty states, naming — which stops category
+omissions but cannot supply taste; and (b) an in-app **style kit**: a few
+curated palettes, a rounded-button drawable, card styling, 8dp spacing,
+applied through ordinary style ops. The plan's Interface section chooses a
+palette (or takes the user's), which becomes project **design tokens**
+(primary, surface, text, accent) stored with the project. Widgets are
+created against tokens (`@primary` references resolved by the app at write
+time), so colour use is consistent by construction rather than by model
+memory; off-palette literals remain possible but are visible on approval
+cards. Changing the palette mid-project updates the tokens and offers a
+re-apply pass over existing screens. Visual iteration (render → look →
+refine) stays with the later vision phase.
