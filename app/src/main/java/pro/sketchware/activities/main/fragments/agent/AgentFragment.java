@@ -459,7 +459,10 @@ public class AgentFragment extends qA {
         if (getContext() == null) {
             return;
         }
-        String[] items = models.toArray(new String[0]);
+        // Only conversational models are offered; the full fetched list
+        // stays cached for anyone who enables "show all" in Settings.
+        String[] items = AiProviderConfig.pickerModels(models, settings.showAllModels)
+                .toArray(new String[0]);
         new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.agent_pick_model)
                 .setItems(items, (dialog, which) -> {

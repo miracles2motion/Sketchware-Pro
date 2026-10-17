@@ -31,6 +31,49 @@ public class AiProviderConfig {
         public String model = "";
         /** Models the provider last reported for this key. */
         public java.util.List<String> models = new java.util.ArrayList<>();
+        /** True when the pickers should also show non-chat models. */
+        public boolean showAllModels;
+    }
+
+    /**
+     * Words that mark a model as not built for text chat: speech, image
+     * generation, live audio, managed agents, embeddings. Providers hand
+     * back every model a key may call; the chat only offers the ones that
+     * can hold a conversation. Matched by capability, never by model name,
+     * so new chat models pass untouched and new exotic ones exclude
+     * themselves.
+     */
+    private static final String[] NON_CHAT_MARKERS = {
+            "tts", "image", "audio", "antigravity", "aqa", "embed",
+            "deep-research", "live"
+    };
+
+    /** True when this model id belongs to a text-chat model. */
+    public static boolean isChatCapable(String modelId) {
+        String id = modelId.toLowerCase(java.util.Locale.ROOT);
+        for (String marker : NON_CHAT_MARKERS) {
+            if (id.contains(marker)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * The models a picker should show: chat-capable ones, or everything
+     * when the user asked for the full list. Never returns an empty list
+     * while the provider reported models at all.
+     */
+    public static java.util.List<String> pickerModels(
+            java.util.List<String> fetched, boolean showAll) {
+        java.util.List<String> visible = new java.util.ArrayList<>();
+        for (String model : fetched) {
+            if (showAll || isChatCapable(model)) {
+                visible.add(model);
+            }
+        }
+        return visible.isEmpty()
+                ? new java.util.ArrayList<>(fetched) : visible;
     }
 
     /** Shape of {@code agent-config.json}. Old model-registry fields are ignored. */

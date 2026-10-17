@@ -946,6 +946,7 @@ ACTION_VIEW
     <string name="agent_settings_api_key">API key</string>
     <string name="agent_settings_model">Model</string>
     <string name="agent_settings_fetch_models">Fetch models for this key</string>
+    <string name="agent_settings_show_all_models">Show all models, including image, audio and agent-only ones</string>
     <string name="agent_settings_refresh_models">Refresh models</string>
     <string name="agent_settings_save">Save</string>
     <string name="agent_settings_checking">Checking the key…</string>
