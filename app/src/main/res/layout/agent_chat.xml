@@ -186,7 +186,7 @@
             android:layout_marginBottom="2dp"
             android:contentDescription="@string/agent_action_send"
             android:enabled="false"
-            app:icon="@drawable/ic_mtrl_email_sent" />
+            app:icon="@drawable/agent_ic_send" />
     </LinearLayout>
 
 </LinearLayout>

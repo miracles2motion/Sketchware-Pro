@@ -101,7 +101,7 @@ public class AgentFragment extends qA {
             boolean hasText = !text.trim().isEmpty();
             binding.sendButton.setEnabled(hasText || generating);
             binding.sendButton.setIconResource(
-                    generating ? R.drawable.ic_mtrl_close : R.drawable.ic_mtrl_email_sent);
+                    generating ? R.drawable.ic_mtrl_close : R.drawable.agent_ic_send);
         }));
 
         binding.chooseModelButton.setOnClickListener(v -> openSettings());
@@ -580,7 +580,7 @@ public class AgentFragment extends qA {
             return;
         }
         binding.sendButton.setIconResource(
-                generating ? R.drawable.ic_mtrl_close : R.drawable.ic_mtrl_email_sent);
+                generating ? R.drawable.ic_mtrl_close : R.drawable.agent_ic_send);
         binding.sendButton.setContentDescription(
                 getString(generating ? R.string.agent_action_stop : R.string.agent_action_send));
         boolean hasText = binding.chatInput.getText() != null
