@@ -1,8 +1,12 @@
 package pro.sketchware.activities.main.fragments.agent;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.PopupMenu;
+import android.widget.Toast;
 import android.graphics.Rect;
 import android.os.SystemClock;
 import android.os.Bundle;
@@ -91,6 +95,7 @@ public class AgentFragment extends qA {
         view.getViewTreeObserver().addOnGlobalLayoutListener(layoutListener);
 
         adapter = new ChatAdapter(messages);
+        adapter.setOnMessageClickListener(this::onMessageClicked);
         LinearLayoutManager layoutManager = new LinearLayoutManager(getContext());
         // A short conversation sits above the input bar, not at the top of an
         // empty screen.
@@ -179,8 +184,72 @@ public class AgentFragment extends qA {
         if (getContext() != null) {
             providerConfig = AiProviderConfig.load(requireContext());
         }
+        dropSetupSeedIfConfigured();
         updateProviderUi();
         updateActionButton();
+    }
+
+    /**
+     * The "connect a provider" notes are seeded into an empty chat. Once a
+     * provider exists they have served their purpose and leave the chat.
+     */
+    private void dropSetupSeedIfConfigured() {
+        if (providerConfig == null || !providerConfig.isConfigured()
+                || streamingMessage != null) {
+            return;
+        }
+        boolean removed = messages.removeIf(message ->
+                message.role == ChatMessage.Role.SYSTEM
+                        && message.state != ChatMessage.State.ERROR);
+        if (removed && adapter != null) {
+            adapter.notifyDataSetChanged();
+        }
+    }
+
+    /**
+     * A tap on a bubble: the retry line resends a failed turn at once;
+     * anything else offers to copy the text.
+     */
+    private void onMessageClicked(View anchor, ChatMessage message) {
+        if (getContext() == null) {
+            return;
+        }
+        boolean failed = message.state == ChatMessage.State.ERROR
+                && message == failedBubble;
+        if (failed && anchor.getId() == R.id.retry_text) {
+            retryFailedTurn();
+            return;
+        }
+        boolean hasText = message.text != null && !message.text.isEmpty();
+        if (!hasText && !failed) {
+            return;
+        }
+        PopupMenu menu = new PopupMenu(requireContext(), anchor);
+        if (hasText) {
+            menu.getMenu().add(0, 1, 0, R.string.agent_action_copy);
+        }
+        if (failed) {
+            menu.getMenu().add(0, 2, 1, R.string.agent_action_retry);
+        }
+        menu.setOnMenuItemClickListener(item -> {
+            if (item.getItemId() == 1) {
+                ClipboardManager clipboard = (ClipboardManager)
+                        requireContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(
+                            ClipData.newPlainText("message", message.text));
+                }
+                Toast.makeText(requireContext(), R.string.agent_copied,
+                        Toast.LENGTH_SHORT).show();
+                return true;
+            }
+            if (item.getItemId() == 2) {
+                retryFailedTurn();
+                return true;
+            }
+            return false;
+        });
+        menu.show();
     }
 
     // region chat
@@ -275,18 +344,18 @@ public class AgentFragment extends qA {
             return;
         }
         flushPendingTokens();
+        // Every failure keeps its bubble, marked as failed: a subtle
+        // tap-to-retry line appears under it instead of a dead end.
+        failedBubble = streamingMessage;
+        if (failedBubble != null) {
+            failedBubble.state = ChatMessage.State.ERROR;
+            streamingMessage = null;
+            adapter.notifyDataSetChanged();
+        }
         if (error.kind == AiChatService.ErrorKind.QUOTA) {
-            // Keep the bubble: after a model switch the same turn is retried.
-            failedBubble = streamingMessage;
-            if (failedBubble != null) {
-                failedBubble.state = ChatMessage.State.COMPLETE;
-                streamingMessage = null;
-                adapter.notifyDataSetChanged();
-            }
             showQuotaDialog(error);
             return;
         }
-        setStreamingComplete();
         appendMessage(ChatMessage.error(errorTitle(error)
                 + (error.message.isEmpty() ? "" : "\n" + error.message)));
     }

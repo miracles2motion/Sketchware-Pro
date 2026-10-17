@@ -33,8 +33,25 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
     /** The list the fragment owns; the adapter never copies it. */
     private final List<ChatMessage> items;
 
+    private OnMessageClickListener clickListener;
+
     public ChatAdapter(List<ChatMessage> items) {
         this.items = items;
+    }
+
+    /** Taps on a bubble: retry for a failed turn, copy for the rest. */
+    public interface OnMessageClickListener {
+        void onMessageClick(View view, ChatMessage message);
+    }
+
+    public void setOnMessageClickListener(OnMessageClickListener listener) {
+        this.clickListener = listener;
+    }
+
+    private void fireClick(View view, int position) {
+        if (clickListener != null && position != RecyclerView.NO_POSITION) {
+            clickListener.onMessageClick(view, items.get(position));
+        }
     }
 
     @Override
@@ -64,7 +81,16 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
 
     @Override
     public void onBindViewHolder(@NonNull Holder holder, int position) {
+        holder.owner = this;
         holder.bind(items.get(position));
+    }
+
+    /** Wires taps on the given views to the message click listener. */
+    void attachClicks(Holder holder, View... views) {
+        for (View view : views) {
+            view.setOnClickListener(v ->
+                    fireClick(v, holder.getAbsoluteAdapterPosition()));
+        }
     }
 
     @Override
@@ -73,6 +99,8 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
     }
 
     static class Holder extends RecyclerView.ViewHolder {
+        ChatAdapter owner;
+
         Holder(@NonNull View itemView) {
             super(itemView);
         }
@@ -92,6 +120,9 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
         @Override
         void bind(ChatMessage message) {
             binding.messageText.setText(message.text);
+            if (owner != null) {
+                owner.attachClicks(this, itemView, binding.messageText);
+            }
         }
     }
 
@@ -106,6 +137,9 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
         @Override
         void bind(ChatMessage message) {
             binding.messageText.setText(message.text);
+            if (owner != null) {
+                owner.attachClicks(this, itemView, binding.messageText);
+            }
         }
     }
 
@@ -119,6 +153,12 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
 
         @Override
         void bind(ChatMessage message) {
+            binding.retryText.setVisibility(
+                    message.state == ChatMessage.State.ERROR ? View.VISIBLE : View.GONE);
+            if (owner != null) {
+                owner.attachClicks(this, itemView, binding.messageText,
+                        binding.retryText);
+            }
             boolean streaming = message.state == ChatMessage.State.STREAMING
                     || message.state == ChatMessage.State.PENDING;
             if (streaming && message.text.isEmpty() && message.statusText != null) {

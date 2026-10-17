@@ -38,4 +38,19 @@
             tools:visibility="visible" />
     </com.google.android.material.card.MaterialCardView>
 
+    <!-- Only for a failed turn: quietly offers to send it again. -->
+    <TextView
+        android:id="@+id/retry_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="10dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:paddingHorizontal="6dp"
+        android:paddingVertical="4dp"
+        android:text="@string/agent_action_retry"
+        android:textAppearance="?attr/textAppearanceLabelLarge"
+        android:textColor="?attr/colorPrimary"
+        android:visibility="gone"
+        tools:visibility="visible" />
+
 </LinearLayout>
