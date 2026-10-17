@@ -355,3 +355,39 @@ memory; off-palette literals remain possible but are visible on approval
 cards. Changing the palette mid-project updates the tokens and offers a
 re-apply pass over existing screens. Visual iteration (render → look →
 refine) stays with the later vision phase.
+
+**Approval-card spec (user-approved):** users see sentences, never beans.
+A mutation card states the action and target in Sketchware's own words
+("MainActivity · button1 (\"Save\") — background: red → blue", colours as
+named swatches), with a muted-green ✓ Approve and muted-red ✕ Reject
+(icons + text, theme-aware, never colour alone). A collapsed "Details"
+expander holds the exact ops for audit. Read-only actions appear as quiet
+activity lines. Executed steps confirm what was *seen* after verification,
+failures offer Retry/Skip/Stop in plain language; `E_*` codes are
+model-facing only. Plan mode: one plan approval, then a collapsed executed
+checklist with Stop and Undo task always visible.
+
+**Risk register (hard requirements before/within slices):** (1) mutate
+beans only through the app's own classes/save paths, proven per slice in
+the real editor + builder; (2) screens open in the editor are locked
+against the agent; (3) project/activity creation rides the app's own
+creation flows; (4) block compilation starts from a safe subset of common
+blocks; (5) explicit per-call size limits (ops count, string length,
+nesting depth) on all untrusted model output; (6) the app allocates widget
+ids, the model references them; (7) automatic project backup before the
+agent's first mutation of an existing project, with restore; (8) a
+Settings kill switch ("Allow the agent to modify projects") separate from
+chat. Decisions: agent/tool turns run **non-streaming**; tool-calling
+incapability is detected and explained ("this model can't operate tools");
+same error twice stops the loop and asks the user; a first-read privacy
+line discloses that project content goes to the chosen provider.
+Verification per slice = golden tasks on sacrificial projects judged in
+the real editor and compiler.
+
+**Knowledge base status:** real but partial — the block catalog
+(`blocks.json` from `BlocksHandler`) and the device widget palette.
+Missing and to be completed *per slice, by extraction from the app*:
+per-widget properties/events (edit_screen slice), block parameter/usage
+detail (event-handler slice), build-error meanings. Knowledge is injected
+as relevant slices and pulled via read-only lookups — never uploaded whole
+per request.
