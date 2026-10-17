@@ -929,8 +929,6 @@ ACTION_VIEW
     <string name="agent_action_settings">Settings</string>
     <string name="agent_action_history">History</string>
     <string name="agent_action_scroll_down">Scroll to the latest message</string>
-    <string name="agent_status_waiting">Waiting for the model… %1$d s</string>
-    <string name="agent_status_thinking">Thinking… %1$d s</string>
     <string name="agent_action_copy">Copy</string>
     <string name="agent_action_retry">Tap to retry</string>
     <string name="agent_copied">Copied</string>

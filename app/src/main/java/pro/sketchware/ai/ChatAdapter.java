@@ -164,15 +164,7 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                 owner.attachClicks(this, itemView, binding.messageText,
                         binding.retryText);
             }
-            boolean streaming = message.state == ChatMessage.State.STREAMING
-                    || message.state == ChatMessage.State.PENDING;
-            if (streaming && message.text.isEmpty() && message.statusText != null) {
-                // Nothing visible from the model yet: say what it is doing
-                // instead of showing an empty bubble.
-                binding.messageText.setText(message.statusText);
-            } else {
-                binding.messageText.setText(message.text);
-            }
+            binding.messageText.setText(message.text);
         }
 
         private final List<ObjectAnimator> dotAnimations = new ArrayList<>();

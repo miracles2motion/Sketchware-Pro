@@ -68,9 +68,7 @@ public class AgentFragment extends qA {
     private volatile boolean generating;
     /** True while the soft keyboard is up (measured, not guessed). */
     private boolean keyboardOpen;
-    /** True once the current turn has produced (invisible) reasoning. */
-    private boolean thinkingSeen;
-    /** When the current turn was sent, for the waiting clock. */
+    /** When the current turn was sent, to time the reply. */
     private long requestStartedAt;
 
     @Nullable
@@ -305,15 +303,7 @@ public class AgentFragment extends qA {
             return;
         }
         generating = true;
-        thinkingSeen = false;
         requestStartedAt = SystemClock.elapsedRealtime();
-        streamingMessage.statusText = getString(R.string.agent_status_waiting, 0);
-        int bubbleIndex = messages.indexOf(streamingMessage);
-        if (bubbleIndex >= 0) {
-            adapter.notifyItemChanged(bubbleIndex);
-        }
-        binding.chatList.removeCallbacks(waitTicker);
-        binding.chatList.postDelayed(waitTicker, 1000L);
         updateActionButton();
         List<ChatMessage> history = new ArrayList<>();
         for (ChatMessage message : messages) {
@@ -330,7 +320,8 @@ public class AgentFragment extends qA {
                 settings.model, history, new AiChatService.ChatListener() {
                     @Override
                     public void onThinking() {
-                        thinkingSeen = true;
+                        // The typing dots already show the model is alive;
+                        // no status text is painted into the bubble.
                     }
 
                     @Override
@@ -560,30 +551,6 @@ public class AgentFragment extends qA {
         }
     }
 
-    /**
-     * Once a second, refreshes the empty streaming bubble with how long the
-     * model has been working. Stops by itself when the turn ends.
-     */
-    private final Runnable waitTicker = new Runnable() {
-        @Override
-        public void run() {
-            if (binding == null || streamingMessage == null || !generating) {
-                return;
-            }
-            if (streamingMessage.text.isEmpty()) {
-                long seconds = (SystemClock.elapsedRealtime() - requestStartedAt) / 1000L;
-                streamingMessage.statusText = getString(thinkingSeen
-                        ? R.string.agent_status_thinking
-                        : R.string.agent_status_waiting, seconds);
-                int index = messages.indexOf(streamingMessage);
-                if (index >= 0) {
-                    adapter.notifyItemChanged(index);
-                }
-            }
-            binding.chatList.postDelayed(this, 1000L);
-        }
-    };
-
     /** Moves the collected tokens into the streaming message. */
     private final Runnable flushTokens = () -> {
         flushScheduled = false;
@@ -617,10 +584,8 @@ public class AgentFragment extends qA {
         }
         if (binding != null) {
             binding.chatList.removeCallbacks(flushTokens);
-            binding.chatList.removeCallbacks(waitTicker);
         }
         flushScheduled = false;
-        streamingMessage.statusText = null;
         synchronized (pendingToken) {
             if (pendingToken.length() > 0) {
                 streamingMessage.text += pendingToken;
