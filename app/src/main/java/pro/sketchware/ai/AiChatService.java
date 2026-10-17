@@ -62,6 +62,10 @@ public class AiChatService {
         NETWORK,
         /** Any other HTTP failure. */
         HTTP,
+        /** The model exists but cannot be used the way the chat uses it. */
+        UNSUPPORTED,
+        /** The provider retired or renamed the model. */
+        MODEL_GONE,
         /** The provider accepted the request but produced no text. */
         EMPTY
     }
@@ -401,31 +405,64 @@ public class AiChatService {
 
     /** Turns an HTTP failure into the kind the UI should act on. */
     static AiError classify(int httpCode, String body) {
-        String message = "";
-        try {
-            JsonElement root = JsonParser.parseString(body);
-            JsonObject error = root.getAsJsonObject().getAsJsonObject("error");
-            if (error != null && error.has("message")) {
-                message = error.get("message").getAsString();
-            }
-        } catch (Exception ignored) {
-            message = body == null ? "" : body.trim();
-        }
+        String message = extractMessage(body);
         if (message.length() > 240) {
             message = message.substring(0, 240) + "…";
         }
         ErrorKind kind;
-        String lowered = message.toLowerCase();
+        String lowered = message.toLowerCase(java.util.Locale.ROOT);
         if (httpCode == 401 || httpCode == 403) {
             kind = ErrorKind.AUTH;
         } else if (httpCode == 402 || httpCode == 429
                 || lowered.contains("quota") || lowered.contains("insufficient")
                 || lowered.contains("resource_exhausted") || lowered.contains("rate limit")) {
             kind = ErrorKind.QUOTA;
+        } else if (httpCode == 404 || lowered.contains("no longer available")
+                || (lowered.contains("not found") && lowered.contains("model"))) {
+            kind = ErrorKind.MODEL_GONE;
+        } else if (lowered.contains("not enabled for model")
+                || lowered.contains("does not support")
+                || lowered.contains("not supported")) {
+            kind = ErrorKind.UNSUPPORTED;
         } else {
             kind = ErrorKind.HTTP;
         }
         return new AiError(kind, httpCode, message);
+    }
+
+    /**
+     * Pulls the human sentence out of a provider error body, whatever shape
+     * it arrived in: {@code {"error": {"message": ...}}}, the array-wrapped
+     * {@code [{"error": ...}]} some Google endpoints return, or plain text.
+     * Raw JSON never reaches the user.
+     */
+    private static String extractMessage(String body) {
+        if (body == null) {
+            return "";
+        }
+        try {
+            JsonElement root = JsonParser.parseString(body);
+            JsonObject object;
+            if (root.isJsonArray() && root.getAsJsonArray().size() > 0) {
+                object = root.getAsJsonArray().get(0).getAsJsonObject();
+            } else {
+                object = root.getAsJsonObject();
+            }
+            JsonObject error = object.getAsJsonObject("error");
+            if (error != null && error.has("message")) {
+                return error.get("message").getAsString().trim();
+            }
+            if (object.has("message")) {
+                return object.get("message").getAsString().trim();
+            }
+        } catch (Exception ignored) {
+            // Not JSON at all: fall through to the plain-text handling.
+        }
+        String text = body.trim();
+        if (text.startsWith("{") || text.startsWith("[")) {
+            return "";
+        }
+        return text;
     }
 
     private static String normalize(String baseUrl) {

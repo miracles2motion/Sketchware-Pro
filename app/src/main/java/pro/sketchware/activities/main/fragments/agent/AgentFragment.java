@@ -373,8 +373,7 @@ public class AgentFragment extends qA {
             showQuotaDialog(error);
             return;
         }
-        String note = errorTitle(error)
-                + (error.message.isEmpty() ? "" : "\n" + error.message);
+        String note = explainError(error);
         // Retrying a dead connection must not stack the same note again.
         int lastIndex = messages.size() - 1;
         if (lastIndex < 0 || !note.equals(messages.get(lastIndex).text)) {
@@ -382,7 +381,12 @@ public class AgentFragment extends qA {
         }
     }
 
-    private String errorTitle(AiChatService.AiError error) {
+    /**
+     * Turns a provider failure into one or two plain sentences. The
+     * provider's raw wording only survives when it is already short, clean
+     * prose; anything JSON-shaped was stripped long before this point.
+     */
+    private String explainError(AiChatService.AiError error) {
         switch (error.kind) {
             case AUTH:
                 return getString(R.string.agent_error_auth);
@@ -390,8 +394,38 @@ public class AgentFragment extends qA {
                 return getString(R.string.agent_error_network);
             case EMPTY:
                 return getString(R.string.agent_error_empty);
+            case UNSUPPORTED: {
+                String detail = error.message.toLowerCase(java.util.Locale.ROOT);
+                if (detail.contains("developer instruction")
+                        || detail.contains("system instruction")) {
+                    return getString(R.string.agent_error_unsupported_dev);
+                }
+                if (detail.contains("multiturn") || detail.contains("multi-turn")
+                        || detail.contains("multi turn")) {
+                    return getString(R.string.agent_error_unsupported_multiturn);
+                }
+                return getString(R.string.agent_error_unsupported_generic);
+            }
+            case MODEL_GONE: {
+                java.util.regex.Matcher suggestion = java.util.regex.Pattern
+                        .compile("use (models/[A-Za-z0-9._\\-]+)")
+                        .matcher(error.message);
+                if (suggestion.find()) {
+                    return getString(R.string.agent_error_model_gone_suggest,
+                            suggestion.group(1));
+                }
+                return getString(R.string.agent_error_model_gone);
+            }
+            case QUOTA:
+                return getString(R.string.agent_error_quota_now);
             default:
-                return getString(R.string.agent_error_generic) + " (" + error.httpCode + ")";
+                if (error.httpCode >= 500) {
+                    return getString(R.string.agent_error_server, error.httpCode);
+                }
+                String headline = getString(R.string.agent_error_bad_request,
+                        error.httpCode);
+                return error.message.isEmpty()
+                        ? headline : headline + "\n" + error.message;
         }
     }
 
@@ -403,8 +437,7 @@ public class AgentFragment extends qA {
         if (getContext() == null) {
             return;
         }
-        String message = error.message.isEmpty()
-                ? getString(R.string.agent_quota_body) : error.message;
+        String message = getString(R.string.agent_quota_body);
         new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.agent_quota_title)
                 .setMessage(message)
@@ -449,8 +482,7 @@ public class AgentFragment extends qA {
                     @Override
                     public void onError(AiChatService.AiError error) {
                         updateProviderUi();
-                        appendMessage(ChatMessage.error(errorTitle(error)
-                                + (error.message.isEmpty() ? "" : "\n" + error.message)));
+                        appendMessage(ChatMessage.error(explainError(error)));
                     }
                 });
     }
@@ -522,8 +554,7 @@ public class AgentFragment extends qA {
 
                     @Override
                     public void onError(AiChatService.AiError error) {
-                        appendMessage(ChatMessage.error(errorTitle(error)
-                                + (error.message.isEmpty() ? "" : "\n" + error.message)));
+                        appendMessage(ChatMessage.error(explainError(error)));
                     }
                 });
     }

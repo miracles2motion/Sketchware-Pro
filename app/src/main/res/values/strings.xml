@@ -964,6 +964,13 @@ ACTION_VIEW
     <string name="agent_error_empty">The provider returned an empty reply. Try again, or switch models.</string>
     <string name="agent_error_no_models">That key has no models available.</string>
     <string name="agent_error_generic">The request failed</string>
+    <string name="agent_error_unsupported_dev">This model does not accept the app\'s instructions, so it cannot chat here. Pick a regular chat model from the list above.</string>
+    <string name="agent_error_unsupported_multiturn">This model answers one request at a time — it cannot hold a conversation (speech models work this way). Pick a regular chat model from the list above.</string>
+    <string name="agent_error_unsupported_generic">This model is not built for chat. Pick a regular chat model from the list above.</string>
+    <string name="agent_error_model_gone">The provider no longer offers this model. Pick another one from the model list above.</string>
+    <string name="agent_error_model_gone_suggest">The provider no longer offers this model. It suggests %1$s instead — pick it from the model list above.</string>
+    <string name="agent_error_server">The provider is having trouble right now (%1$d). Try again shortly.</string>
+    <string name="agent_error_bad_request">The provider rejected that request (%1$d).</string>
     <string name="agent_quota_title">Quota exhausted</string>
     <string name="agent_quota_body">The provider reports that this model is out of quota. Switch to another model to continue.</string>
     <string name="agent_action_switch_model">Switch model</string>
