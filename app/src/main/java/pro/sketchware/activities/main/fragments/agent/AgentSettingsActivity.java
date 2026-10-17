@@ -201,6 +201,10 @@ public class AgentSettingsActivity extends AppCompatActivity {
                 return getString(R.string.agent_error_network);
             case QUOTA:
                 return getString(R.string.agent_error_quota_now);
+            case UNSUPPORTED:
+                return getString(R.string.agent_error_unsupported_generic);
+            case MODEL_GONE:
+                return getString(R.string.agent_error_model_gone);
             default:
                 return getString(R.string.agent_error_generic) + " (" + error.httpCode + "): "
                         + error.message;
