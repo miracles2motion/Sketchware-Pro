@@ -108,8 +108,10 @@ public class AgentSettingsActivity extends AppCompatActivity {
             row.keyLabel.setText(entry.label + " · " + AiProviderConfig.mask(entry));
             if (i == activeIndex) {
                 row.keyStatus.setText(R.string.agent_key_in_use);
-                row.keyStatus.setTextColor(MaterialColors.getColor(row.keyStatus,
-                        com.google.android.material.R.attr.colorPrimary));
+                android.util.TypedValue primary = new android.util.TypedValue();
+                getTheme().resolveAttribute(
+                        androidx.appcompat.R.attr.colorPrimary, primary, true);
+                row.keyStatus.setTextColor(primary.data);
             } else if (entry.isExhausted(now)) {
                 row.keyStatus.setText(getString(R.string.agent_key_exhausted_until,
                         DateFormat.format("MMM d, h:mm a",

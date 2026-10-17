@@ -32,6 +32,7 @@ import pro.sketchware.R;
 import pro.sketchware.ai.AgentKnowledgePack;
 import pro.sketchware.ai.AiChatService;
 import pro.sketchware.ai.AiPaths;
+import pro.sketchware.ai.AiProvider;
 import pro.sketchware.ai.AiProviderConfig;
 import pro.sketchware.ai.ChatAdapter;
 import pro.sketchware.ai.ChatMessage;
