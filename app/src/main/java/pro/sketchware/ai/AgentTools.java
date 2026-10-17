@@ -192,7 +192,7 @@ public final class AgentTools {
 
         @Override
         public JsonObject parameters() {
-            return parameters(new JsonObject());
+            return AgentTools.parameters(new JsonObject());
         }
 
         @Override
@@ -238,7 +238,7 @@ public final class AgentTools {
 
         @Override
         public JsonObject parameters() {
-            return parameters(new JsonObject());
+            return AgentTools.parameters(new JsonObject());
         }
 
         @Override
@@ -279,7 +279,7 @@ public final class AgentTools {
             JsonObject properties = new JsonObject();
             properties.add("activity", stringSchema(
                     "The activity name, e.g. MainActivity"));
-            return parameters(properties, "activity");
+            return AgentTools.parameters(properties, "activity");
         }
 
         @Override

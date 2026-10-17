@@ -87,13 +87,13 @@ public class AgentLoop {
                 continue;
             }
             if (message.role == ChatMessage.Role.ASSISTANT
-                    && message.displayText().trim().isEmpty()) {
+                    && message.text.trim().isEmpty()) {
                 continue;
             }
             JsonObject entry = new JsonObject();
             entry.addProperty("role",
                     message.role == ChatMessage.Role.USER ? "user" : "assistant");
-            entry.addProperty("content", message.displayText());
+            entry.addProperty("content", message.text);
             messages.add(1, entry);
             kept++;
         }

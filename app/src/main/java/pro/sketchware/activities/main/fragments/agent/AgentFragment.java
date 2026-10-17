@@ -480,7 +480,7 @@ public class AgentFragment extends qA {
                             providerConfig.setWorkingProjectId(chosen);
                             providerConfig.save(requireContext());
                             updateWorkingOnCard();
-                            appendMessage(ChatMessage.system(getString(chosen.isEmpty()
+                            appendMessage(ChatMessage.error(getString(chosen.isEmpty()
                                     ? R.string.agent_working_on_cleared
                                     : R.string.agent_working_on_set,
                                     chosen.isEmpty() ? ""
@@ -502,7 +502,7 @@ public class AgentFragment extends qA {
         if (index < 0) {
             index = messages.size();
         }
-        messages.add(index, ChatMessage.system(line));
+        messages.add(index, ChatMessage.error(line));
         adapter.notifyItemInserted(index);
     }
 
