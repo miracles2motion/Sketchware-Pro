@@ -185,6 +185,11 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
             return;
         }
 
+        if (modelManager.state() == AiModelManager.State.IDLE
+                || modelManager.state() == AiModelManager.State.ERROR) {
+            modelManager.loadModel(model.file(), config.activeBackend(), engineCacheDir(),
+                    nativeLibraryDir());
+        }
         appendMessage(ChatMessage.user(text));
         ChatMessage reply = ChatMessage.assistant("");
         streamingMessage = reply;
@@ -468,9 +473,9 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
             return;
         }
         updateActionButton();
-        if (state == AiModelManager.State.READY) {
-            setStreamingComplete();
-        }
+        // Turn completion is reported through onTurnComplete. READY also
+        // fires when a model load finishes, which must not finalise a
+        // bubble whose turn has not run yet.
     }
 
     @Override

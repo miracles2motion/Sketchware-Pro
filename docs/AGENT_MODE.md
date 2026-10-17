@@ -87,29 +87,29 @@ Mitigation, implemented in `AiModelManager`:
 4. a failed engine can be torn down and reloaded, so the manager treats
    "engine is dead" as recoverable.
 
-### 3.1.1 The native conversation memory cannot be trusted
+### 3.1.1 Conversation memory: match AI Edge Gallery's configuration
 
-The reused conversation above keeps its history in the native KV cache,
-and in the field that memory simply was not there: the model answered
-every message as if it were the first. Whether the cache survives across
-turns depends on the model file and its chat template, and the app can
-inspect neither.
+Field report: with a reused `Conversation`, the model answered every
+message as if it were the first. Two things were tried before the cause
+was pinned down by comparing against Google's AI Edge Gallery
+(`LlmChatModelHelper.kt`, the reference app for this API):
 
-So the app owns the transcript and sends it as **plain text inside each
-turn's message** ("Here is our conversation so far: User: … Assistant: …"),
-bounded to the newest 16 messages / ~8000 characters. Two alternatives
-were tried and rejected on evidence:
+- Pasting the transcript into every message as plain text. The 1B model
+  began answering the previous message and imitating its own bad replies
+  (a feedback loop through the pasted history). Rejected on evidence.
+- A fresh seeded conversation per turn with the synchronous
+  `sendMessage`. Returned nothing on device. Rejected on evidence.
 
-- seeding a fresh conversation per turn via `initialMessages` plus the
-  synchronous `sendMessage` (the #3266 workaround on paper) returned
-  nothing on the user's device;
-- the same fresh conversation with the streaming API is exactly the
-  single-use shape #3266 breaks.
-
-Because the history now rides inside the prompt text, the native context
-still grows every turn, so the conversation is recreated when
-`getTokenCount()` passes 3000; the text transcript carries the memory
-across the reset.
+The configuration now mirrors Gallery's, which is the variable that was
+actually different: `EngineConfig.maxNumTokens` is set from the model
+file (`ModelInfo.maxContextTokens()`), `ConversationConfig.channels` is
+left null (model default) instead of an empty list, one conversation is
+created and reused, and only the new message is sent per turn. The app
+still records the transcript, but only to re-seed a fresh conversation
+if `getTokenCount()` passes 3000 - Gallery's `resetConversation`
+pattern. A message sent before the engine is ready is queued and
+delivered when loading finishes, instead of failing with "no model is
+loaded".
 
 ### 3.2 Model output can abort the process — #3849
 

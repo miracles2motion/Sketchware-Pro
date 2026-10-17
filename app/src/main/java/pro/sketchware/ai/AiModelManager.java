@@ -42,24 +42,19 @@ import java.util.concurrent.TimeUnit;
  * thermal and memory budget, so all engine work runs on a single background
  * thread and only one turn may be in flight.
  *
- * <p><b>The app owns the transcript; the model does not.</b> A LiteRT-LM
- * conversation is supposed to remember earlier turns in its KV cache, but on
- * a real device the model answered every message as if it were the first:
- * the native session memory cannot be trusted across model files and chat
- * templates. So each turn's message carries a compact copy of the recent
- * conversation as plain text. That works with every model, because it does
- * not depend on the runtime remembering anything.
- *
- * <p><b>One conversation is reused and answers are streamed.</b> This call
- * shape is the one verified on a device: {@code MessageCallback.onDone()}
- * is delivered and turns complete. (A fresh conversation per turn cannot
- * use it - for a conversation used exactly once, {@code onDone()} is never
- * delivered: google-ai-edge/LiteRT-LM#3266. The synchronous alternative
- * was tried and returned nothing on device, so it is not used.) Because
- * the transcript is re-sent as text, the native context still grows, so
- * the conversation is recreated once its token count passes
- * {@link #RESET_TOKEN_LIMIT}; the text transcript carries the memory over
- * the reset.
+ * <p><b>Memory is the runtime's job; configuration is ours.</b> Each turn
+ * sends only the user's new message and the reused conversation carries
+ * the history, which is how Google's AI Edge Gallery uses this API. Two
+ * configuration details of that app matter and were originally wrong
+ * here: the engine is given the model's own context size
+ * ({@code maxNumTokens}), and the conversation's {@code channels} are left
+ * at the model default instead of being disabled. The transcript is still
+ * recorded by the app, but only so a conversation whose context fills up
+ * can be recreated and re-seeded with it - the Gallery
+ * {@code resetConversation} pattern. (An earlier build pasted the whole
+ * transcript into every message as plain text; on device the model began
+ * answering the previous message and copying its own bad replies, so that
+ * approach was removed.)
  *
  * <p><b>A watchdog closes turns that go quiet.</b> A turn is also
  * considered finished when no token has arrived for
@@ -95,8 +90,10 @@ public class AiModelManager {
     private static final String SYSTEM_INSTRUCTION =
             "You are the assistant of Sketchware Pro, an Android app builder for people who do "
                     + "not write code. You answer in the language of the user, you are brief, and "
-                    + "you never invent APIs. When you are asked to change something in a project, "
-                    + "you describe the change first and wait for the user to approve it.";
+                    + "you never invent APIs. You answer general questions directly, and you only "
+                    + "talk about building an app when the user asks about one. When you are asked "
+                    + "to change something in a project, you describe the change first and wait for "
+                    + "the user to approve it.";
 
     /** State of the model. */
     public enum State {
@@ -161,6 +158,10 @@ public class AiModelManager {
     private final List<ChatMessage> transcript = new ArrayList<>();
     /** Text of the reply currently streaming in. */
     private final StringBuilder currentReply = new StringBuilder();
+    /** A message sent before the engine was ready. Guarded by engineLock. */
+    private String pendingPrompt;
+    /** History to seed the next conversation with. Guarded by engineLock. */
+    private List<Message> pendingSeed = new ArrayList<>();
     private File modelFile;
     private AiModelConfig.Backend backend = AiModelConfig.Backend.CPU;
     private volatile State state = State.IDLE;
@@ -243,7 +244,7 @@ public class AiModelManager {
                 /* backend        */ toLiteRtBackend(backend, nativeLibraryDir),
                 /* visionBackend  */ null,
                 /* audioBackend   */ null,
-                /* maxNumTokens   */ null,
+                /* maxNumTokens   */ maxContextTokens(file),
                 /* maxNumImages   */ null,
                 /* cacheDir       */ cacheDir == null ? null : cacheDir.getAbsolutePath());
 
@@ -257,6 +258,15 @@ public class AiModelManager {
             conversation = null;
         }
         setState(State.READY);
+        // A message sent while no model was loaded is delivered now.
+        String pending;
+        synchronized (engineLock) {
+            pending = pendingPrompt;
+            pendingPrompt = null;
+        }
+        if (pending != null && !pending.isEmpty()) {
+            send(pending);
+        }
     }
 
     /** Stores the verdict that the GPU backend does not work on this device. */
@@ -284,14 +294,16 @@ public class AiModelManager {
             if (conversation != null) {
                 return conversation;
             }
+            List<Message> seed = pendingSeed;
+            pendingSeed = new ArrayList<>();
             SamplerConfig samplerConfig = new SamplerConfig(64, 0.95, 1.0f, 0);
             ConversationConfig config = new ConversationConfig(
                     /* systemInstruction    */ Contents.Companion.of(SYSTEM_INSTRUCTION),
-                    /* initialMessages      */ Collections.emptyList(),
+                    /* initialMessages      */ seed,
                     /* tools                */ Collections.emptyList(),
                     /* samplerConfig        */ samplerConfig,
                     /* automaticToolCalling */ false,
-                    /* channels             */ Collections.emptyList());
+                    /* channels             */ null);
             conversation = engine.createConversation(config);
             return conversation;
         }
@@ -324,6 +336,14 @@ public class AiModelManager {
                 Log.w(TAG, "Closing the full conversation failed", t);
             }
             conversation = null;
+            // The replacement starts on an empty KV cache, so it is seeded
+            // with the transcript, the way AI Edge Gallery restores a chat.
+            pendingSeed = new ArrayList<>();
+            for (ChatMessage message : transcript) {
+                pendingSeed.add(message.isFromUser()
+                        ? Message.Companion.user(message.text)
+                        : Message.Companion.model(message.text));
+            }
         }
     }
 
@@ -425,6 +445,12 @@ public class AiModelManager {
                 if (generating) {
                     return;
                 }
+                if (engine == null) {
+                    // Sent too early: hold the message; it is delivered when
+                    // the engine becomes ready instead of failing the turn.
+                    pendingPrompt = prompt;
+                    return;
+                }
                 generating = true;
             }
             Conversation active;
@@ -453,7 +479,7 @@ public class AiModelManager {
             armWatchdog();
 
             try {
-                Message message = Message.Companion.user(buildPromptWithHistory(prompt));
+                Message message = Message.Companion.user(prompt);
                 active.sendMessageAsync(message, new MessageCallback() {
                     @Override
                     public void onMessage(@NonNull Message response) {
@@ -493,31 +519,6 @@ public class AiModelManager {
                 notifyError(t);
             }
         });
-    }
-
-    /**
-     * Prepends the recent conversation to the new message as plain text.
-     *
-     * <p>This is the model's memory: it cannot be lost by the runtime,
-     * because it travels inside the message itself. The roles are spelled
-     * out so a small model can follow who said what.
-     */
-    private String buildPromptWithHistory(String prompt) {
-        List<ChatMessage> history;
-        synchronized (engineLock) {
-            history = new ArrayList<>(transcript);
-        }
-        if (history.isEmpty()) {
-            return prompt;
-        }
-        StringBuilder builder = new StringBuilder();
-        builder.append("Here is our conversation so far:\n");
-        for (ChatMessage message : history) {
-            builder.append(message.isFromUser() ? "User: " : "Assistant: ");
-            builder.append(message.text.trim()).append('\n');
-        }
-        builder.append("\nUser: ").append(prompt);
-        return builder.toString();
     }
 
     /** Stores a finished exchange in the transcript, trimmed to budget. */
@@ -599,6 +600,18 @@ public class AiModelManager {
      * @param file the candidate {@code .litertlm} file
      * @return a short description, or null when the file cannot be read
      */
+    /** The context size the model file declares, or null when unreadable. */
+    @Nullable
+    private static Integer maxContextTokens(File file) {
+        try (ModelInfo info = ModelInfo.from(file.getAbsolutePath())) {
+            int tokens = info.maxContextTokens();
+            return tokens > 0 ? tokens : null;
+        } catch (Throwable t) {
+            Log.w(TAG, "Cannot read the context size of " + file, t);
+            return null;
+        }
+    }
+
     @Nullable
     public static String describeModel(File file) {
         try (ModelInfo info = ModelInfo.from(file.getAbsolutePath())) {
