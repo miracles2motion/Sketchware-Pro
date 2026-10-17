@@ -264,3 +264,56 @@ is a slot for a widget of a known type, not a free text.
 The widget palette is **not** compiled into the app. It lives in
 `/storage/emulated/0/.sketchware/resources/widgets/widgets.json` and can be
 extended by the user, so it is copied verbatim instead of being rebuilt.
+
+## Phase 2 plan (agreed 2026-10-17, discussion state — not yet built)
+
+**Principle:** model proposes, app executes. The model emits tool calls;
+the app validates, the user authorizes, the app executes on the real
+`ViewBean`/`BlockBean` data through the editor's own classes, so agent work
+opens in the normal editor indistinguishable from hand-made work.
+
+**Tool catalog v1:** `project_summary`, `create_project`/`open_project`,
+`list_activities`/`create_activity`/`delete_activity`,
+`edit_screen(activity, ops[])`, `set_event_handler(activity, widget, event, blocks)`,
+`read_file`/`write_file` (sandboxed escape hatch), `build()`,
+`get_build_errors()`. ~20 calls/turn cap, Stop always live.
+
+**Five safety gates:** schema validation (`E_*` rejections), preconditions
+(screen revisions — stale edits refused, user always wins), transactional
+execution with snapshots, human approval for every mutation, containment
+(project-jailed paths, catalog-validated ids).
+
+**Plan-first execution (user decision):** substantial tasks begin with ONE
+implementation plan with two sections — **Interface** and **Logic** —
+generated in one pass so names/ids agree across sections. The user approves
+whole or per section, edits it in plain words before approval, and execution
+follows it (screens first, then wiring, build last). Trivial single edits
+skip the plan and go straight to an approval card. The approved plan is
+written into the project's `ai-manifest.md`.
+
+**Approval tiers (user decision):** default is per-mutation approval;
+"Approve plan & run" is the sanctioned auto mode; deletes and file
+overwrites always ask in every mode.
+
+**Reference resolution:** every turn carries a context snapshot — working
+project (`sc_id`), last activity open in the editor, and that screen's
+condensed widget list (id/type/text/colors). Referring expressions resolve
+against that list; ambiguity produces a choice card, never a guess.
+
+**Needs protocol:** when the agent needs something the user must supply
+(asset, decision, permission, target project), it asks via an options card
+(provide / placeholder / skip), or proceeds with a *declared* assumption for
+safe cosmetics only.
+
+**Gaps folded in (user-approved additions):**
+1. Context budgeting — condensed projections and summaries, never raw files.
+2. Turn-level **Undo** as a user-visible feature, not just plumbing.
+3. Failed-step mid-plan card: retry / skip / stop.
+4. Verify-after-execute: re-read the screen and report what is seen, plus
+   the build result.
+5. Pause/resume: leaving mid-turn parks execution safely.
+6. Cost visibility: "n of 20 actions used" per turn.
+
+**Build order:** read-only tools + Working-On card → create project/activity
++ approval cards → `edit_screen` → `set_event_handler` → build loop +
+file tools. Each slice device-verified before the next.
