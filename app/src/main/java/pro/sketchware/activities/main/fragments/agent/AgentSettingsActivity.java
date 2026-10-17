@@ -49,6 +49,11 @@ public class AgentSettingsActivity extends AppCompatActivity {
                 applyProvider(AiProvider.values()[position], true));
 
         binding.fetchModelsButton.setOnClickListener(v -> fetchModels(false));
+        binding.showAllModelsSwitch.setOnCheckedChangeListener((button, checked) -> {
+            config.settings(selected).showAllModels = checked;
+            config.save(this);
+            refreshModelAdapter();
+        });
         binding.saveButton.setOnClickListener(v -> save());
         binding.modelInput.setOnItemClickListener((parent, view, position, id) -> {
             // Choosing a model is the last step of the setup: persist all.
@@ -127,6 +132,15 @@ public class AgentSettingsActivity extends AppCompatActivity {
                 showStatus(describe(error), true);
             }
         });
+    }
+
+    /** Fills the model dropdown through the chat-model filter. */
+    private void refreshModelAdapter() {
+        AiProviderConfig.Settings settings = config.settings(selected);
+        binding.modelInput.setAdapter(new ArrayAdapter<>(
+                this, android.R.layout.simple_list_item_1,
+                new ArrayList<>(AiProviderConfig.pickerModels(
+                        settings.models, settings.showAllModels))));
     }
 
     /** Once a key has a model list, fetching again is a refresh. */
