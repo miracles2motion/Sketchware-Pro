@@ -127,16 +127,37 @@
             app:icon="@drawable/ic_mtrl_settings" />
     </LinearLayout>
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/chat_list"
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clipToPadding="false"
-        android:paddingHorizontal="12dp"
-        android:paddingVertical="8dp"
-        android:scrollbars="vertical"
-        tools:listitem="@layout/agent_chat_item_assistant" />
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/chat_list"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="8dp"
+            android:scrollbars="vertical"
+            tools:listitem="@layout/agent_chat_item_assistant" />
+
+        <!-- Scrolls smoothly to the newest message; also dismisses the
+             keyboard. Shown when the end of the chat is out of view or the
+             keyboard is open. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/scroll_down_button"
+            style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="10dp"
+            android:contentDescription="@string/agent_action_scroll_down"
+            android:visibility="gone"
+            app:icon="@drawable/ic_mtrl_arrow_down"
+            tools:visibility="visible" />
+    </FrameLayout>
 
     <!-- Shown until a provider has been set up. -->
     <com.google.android.material.button.MaterialButton

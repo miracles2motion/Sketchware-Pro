@@ -1,6 +1,8 @@
 package pro.sketchware.activities.main.fragments.agent;
 
+import android.content.Context;
 import android.content.Intent;
+import android.view.inputmethod.InputMethodManager;
 import android.graphics.Rect;
 import android.os.Bundle;
 import android.view.LayoutInflater;
@@ -58,6 +60,8 @@ public class AgentFragment extends qA {
     private ChatMessage failedBubble;
     private String lastUserText = "";
     private volatile boolean generating;
+    /** True while the soft keyboard is up (measured, not guessed). */
+    private boolean keyboardOpen;
 
     @Nullable
     @Override
@@ -88,6 +92,15 @@ public class AgentFragment extends qA {
         layoutManager.setStackFromEnd(true);
         binding.chatList.setLayoutManager(layoutManager);
         binding.chatList.setAdapter(adapter);
+
+        binding.scrollDownButton.setOnClickListener(v -> scrollToEndAndDismissKeyboard());
+        binding.chatList.addOnScrollListener(new androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull androidx.recyclerview.widget.RecyclerView recyclerView,
+                                   int dx, int dy) {
+                updateScrollButtonVisibility();
+            }
+        });
 
         binding.sendButton.setOnClickListener(v -> {
             if (generating) {
@@ -506,6 +519,47 @@ public class AgentFragment extends qA {
             appliedBottomPadding = overflow;
             root.setPadding(root.getPaddingLeft(), root.getPaddingTop(),
                     root.getPaddingRight(), overflow);
+        }
+        // When the keyboard opens, the visible frame shrinks by much more
+        // than the navigation bar ever could.
+        boolean open = overflow > root.getHeight() * 0.15f;
+        if (open != keyboardOpen) {
+            keyboardOpen = open;
+            updateScrollButtonVisibility();
+        }
+    }
+
+    /** Smoothly returns to the newest message and puts the keyboard away. */
+    private void scrollToEndAndDismissKeyboard() {
+        if (binding == null) {
+            return;
+        }
+        int last = adapter.getItemCount() - 1;
+        if (last >= 0) {
+            binding.chatList.smoothScrollToPosition(last);
+        }
+        if (getContext() != null) {
+            InputMethodManager manager = (InputMethodManager)
+                    requireContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (manager != null) {
+                manager.hideSoftInputFromWindow(binding.chatInput.getWindowToken(), 0);
+            }
+        }
+    }
+
+    /**
+     * The scroll button only earns its place when the newest message is out
+     * of view, or while the keyboard is up (when it doubles as dismiss).
+     */
+    private void updateScrollButtonVisibility() {
+        if (binding == null) {
+            return;
+        }
+        boolean awayFromEnd = binding.chatList.canScrollVertically(1);
+        boolean show = awayFromEnd || keyboardOpen;
+        int target = show ? View.VISIBLE : View.GONE;
+        if (binding.scrollDownButton.getVisibility() != target) {
+            binding.scrollDownButton.setVisibility(target);
         }
     }
 
