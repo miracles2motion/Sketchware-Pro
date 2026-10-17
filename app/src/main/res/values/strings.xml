@@ -934,7 +934,7 @@ ACTION_VIEW
     <string name="agent_provider_empty_body">Agent Mode chats through an online AI service using your own API key. Add a key for Gemini, OpenRouter, NVIDIA or any OpenAI-compatible provider to get started.</string>
     <string name="agent_provider_missing">Set up an AI provider first — use the button above or Settings.</string>
     <string name="agent_settings_title">AI provider settings</string>
-    <string name="agent_settings_intro">Agent Mode uses your own API key. The key stays on this device, in the app's private storage, and is only sent to the provider you choose.</string>
+    <string name="agent_settings_intro">Agent Mode uses your own API key. The key stays on this device, in the app\'s private storage, and is only sent to the provider you choose.</string>
     <string name="agent_settings_provider">Provider</string>
     <string name="agent_settings_base_url">Base URL</string>
     <string name="agent_settings_api_key">API key</string>
