@@ -27,6 +27,19 @@ public final class AiPaths {
     /** Name of the settings file inside the agent root. */
     public static final String CONFIG_FILE_NAME = "agent-config.json";
 
+    /** Directory holding the knowledge pack. */
+    public static final String KNOWLEDGE_DIR_NAME = "knowledge";
+
+    /** Root of the Agent Mode storage tree. */
+    public static File agentRoot() {
+        return ensureDir(new File(wq.getAbsolutePathOf(wq.q)));
+    }
+
+    /** The settings file with the provider choices. */
+    public static File configFile() {
+        return new File(agentRoot(), CONFIG_FILE_NAME);
+    }
+
     /** Directory holding the versioned knowledge pack. */
     public static File knowledgeDir() {
         return ensureDir(new File(agentRoot(), KNOWLEDGE_DIR_NAME));

@@ -581,7 +581,7 @@ public class AgentFragment extends qA {
             return;
         }
         int first = manager.findFirstVisibleItemPosition();
-        if (first == LinearLayoutManager.NO_POSITION || last - first < 3) {
+        if (first == androidx.recyclerview.widget.RecyclerView.NO_POSITION || last - first < 3) {
             binding.chatList.scrollToPosition(last);
         }
     }
