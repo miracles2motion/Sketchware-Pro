@@ -456,9 +456,8 @@ public class AgentFragment extends qA {
                         (dialog, which) -> openSettings())
                 .setNeutralButton(android.R.string.cancel, null);
         if (providerConfig.keys(providerConfig.activeProvider()).size() > 1) {
-            // Neutral is taken by Cancel; the key choice rides along as a
-            // fourth action by replacing Cancel's slot order: use the
-            // positive-area via a list instead when keys exist.
+            // With spare keys, switching key replaces Cancel in the
+            // neutral slot; the dialog still dismisses by tapping away.
             builder.setNeutralButton(R.string.agent_action_switch_key,
                     (dialog, which) -> showKeyPicker());
         }
