@@ -380,8 +380,13 @@ public class AgentFragment extends qA {
             showQuotaDialog(error);
             return;
         }
-        appendMessage(ChatMessage.error(errorTitle(error)
-                + (error.message.isEmpty() ? "" : "\n" + error.message)));
+        String note = errorTitle(error)
+                + (error.message.isEmpty() ? "" : "\n" + error.message);
+        // Retrying a dead connection must not stack the same note again.
+        int lastIndex = messages.size() - 1;
+        if (lastIndex < 0 || !note.equals(messages.get(lastIndex).text)) {
+            appendMessage(ChatMessage.error(note));
+        }
     }
 
     private String errorTitle(AiChatService.AiError error) {

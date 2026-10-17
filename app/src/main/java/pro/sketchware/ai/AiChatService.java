@@ -12,6 +12,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -19,6 +21,9 @@ import java.util.concurrent.TimeUnit;
 
 import okhttp3.Call;
 import okhttp3.Callback;
+import okhttp3.Dns;
+import okhttp3.HttpUrl;
+import okhttp3.dnsoverhttps.DnsOverHttps;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -102,6 +107,7 @@ public class AiChatService {
     }
 
     private final OkHttpClient client = new OkHttpClient.Builder()
+            .dns(new ResilientDns())
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(180, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
@@ -244,6 +250,42 @@ public class AiChatService {
             // A malformed chunk is skipped, not fatal to the stream.
         }
         return parts;
+    }
+
+    /**
+     * System DNS first. When the carrier's resolver fails outright (the
+     * classic flaky-network "Unable to resolve host"), names are resolved
+     * over HTTPS instead, so a send survives a broken local resolver.
+     */
+    private static final class ResilientDns implements Dns {
+
+        private final Dns fallback = buildFallback();
+
+        private static Dns buildFallback() {
+            try {
+                return new DnsOverHttps.Builder()
+                        .client(new OkHttpClient())
+                        .url(HttpUrl.get("https://dns.google/dns-query"))
+                        .bootstrapDnsHosts(
+                                InetAddress.getByName("8.8.8.8"),
+                                InetAddress.getByName("8.8.4.4"))
+                        .build();
+            } catch (UnknownHostException impossible) {
+                // Numeric addresses never need resolving; unreachable.
+                return Dns.SYSTEM;
+            }
+        }
+
+        @NonNull
+        @Override
+        public List<InetAddress> lookup(@NonNull String hostname)
+                throws UnknownHostException {
+            try {
+                return Dns.SYSTEM.lookup(hostname);
+            } catch (UnknownHostException systemFailed) {
+                return fallback.lookup(hostname);
+            }
+        }
     }
 
     /** Lists the models a key may call: {@code GET <base>/models}. */
