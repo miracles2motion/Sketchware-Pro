@@ -994,4 +994,10 @@ ACTION_VIEW
     <string name="agent_action_open_settings">Provider settings</string>
     <string name="agent_no_active_project">No project yet — the agent can create one.</string>
 
+    <string name="agent_working_on_label">Working on</string>
+    <string name="agent_working_on_choose">Choose a project for the agent</string>
+    <string name="agent_working_on_hint">It can look at the project. Changes always need your approval.</string>
+    <string name="agent_working_on_none">No project</string>
+    <string name="agent_working_on_set">Now working on %1$s. Ask me anything about it.</string>
+    <string name="agent_working_on_cleared">No project selected. I can still chat.</string>
 </resources>

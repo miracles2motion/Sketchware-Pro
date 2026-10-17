@@ -22,7 +22,8 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.io.File;
-import java.util.ArrayList;
+import java.util.ArrayList;import java.util.List;
+
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -30,6 +31,8 @@ import java.util.concurrent.Executors;
 import a.a.a.qA;
 import pro.sketchware.R;
 import pro.sketchware.ai.AgentKnowledgePack;
+import pro.sketchware.ai.AgentLoop;
+import pro.sketchware.ai.SketchwareProjects;
 import pro.sketchware.ai.AiChatService;
 import pro.sketchware.ai.AiPaths;
 import pro.sketchware.ai.AiProvider;
@@ -49,6 +52,7 @@ public class AgentFragment extends qA {
 
     private final List<ChatMessage> messages = new ArrayList<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private AgentLoop agentLoop;
     /** Tokens that arrived but are not in the list yet. */
     /** Tokens that have arrived but are not on screen yet. */
     private final StringBuilder pendingReveal = new StringBuilder();
@@ -140,6 +144,9 @@ public class AgentFragment extends qA {
 
         chatService = new AiChatService();
         providerConfig = AiProviderConfig.load(requireContext());
+        binding.workingOnCard.setOnClickListener(v -> showProjectPicker());
+        agentLoop = new AgentLoop(chatService, io);
+        updateWorkingOnCard();
 
         showCurrentState();
         ensureKnowledgePack();
@@ -185,6 +192,7 @@ public class AgentFragment extends qA {
         // Returning from the provider settings: pick up the new key/model.
         if (getContext() != null) {
             providerConfig = AiProviderConfig.load(requireContext());
+            updateWorkingOnCard();
         }
         dropSetupSeedIfConfigured();
         updateProviderUi();
@@ -318,6 +326,63 @@ public class AgentFragment extends qA {
             }
             history.add(message);
         }
+        runAgentTurn(history);
+    }
+
+    /**
+     * One agent turn: the model may use read-only tools to look at the
+     * working project before answering. Providers that cannot do tool
+     * calling fall back to the plain streaming conversation below.
+     */
+    private void runAgentTurn(List<ChatMessage> history) {
+        AiProviderConfig.Settings settings = providerConfig.activeSettings();
+        agentLoop.run(settings.baseUrl,
+                providerConfig.apiKey(providerConfig.activeProvider()),
+                settings.model, history,
+                providerConfig.workingProjectId(),
+                new AgentLoop.Listener() {
+                    @Override
+                    public void onToolNote(String line) {
+                        runOnUi(() -> insertToolNote(line));
+                    }
+
+                    @Override
+                    public void onAnswer(String text) {
+                        runOnUi(() -> {
+                            generating = false;
+                            appendToken(text);
+                            flushPendingTokens();
+                            setStreamingComplete();
+                            updateActionButton();
+                        });
+                    }
+
+                    @Override
+                    public void onError(AiChatService.AiError error) {
+                        runOnUi(() -> {
+                            if (isToolUnsupported(error)) {
+                                startStreamingTurn(history);
+                                return;
+                            }
+                            generating = false;
+                            handleError(error);
+                            updateActionButton();
+                        });
+                    }
+                });
+    }
+
+    /** True when the provider rejected the tool definitions themselves. */
+    private boolean isToolUnsupported(AiChatService.AiError error) {
+        if (error.kind != AiChatService.ErrorKind.HTTP || error.message == null) {
+            return false;
+        }
+        String message = error.message.toLowerCase(java.util.Locale.ROOT);
+        return message.contains("tool") || message.contains("function");
+    }
+
+    /** The plain streaming conversation, kept as the safety net. */
+    private void startStreamingTurn(List<ChatMessage> history) {
         AiProviderConfig.Settings settings = providerConfig.activeSettings();
         chatService.chat(settings.baseUrl, providerConfig.apiKey(providerConfig.activeProvider()),
                 settings.model, history, new AiChatService.ChatListener() {
@@ -349,12 +414,103 @@ public class AgentFragment extends qA {
     }
 
     private void stopGeneration() {
+        if (agentLoop != null) {
+            agentLoop.cancel();
+        }
         if (chatService != null) {
             chatService.cancel();
         }
         generating = false;
         setStreamingComplete();
         updateActionButton();
+    }
+
+    /** Binds the card to the chosen project, or to the empty state. */
+    private void updateWorkingOnCard() {
+        if (binding == null || providerConfig == null) {
+            return;
+        }
+        String scId = providerConfig.workingProjectId();
+        if (scId.isEmpty()) {
+            binding.workingOnName.setText(R.string.agent_working_on_choose);
+            binding.workingOnSubtitle.setText(R.string.agent_working_on_hint);
+            return;
+        }
+        io.execute(() -> {
+            SketchwareProjects.ProjectInfo project = SketchwareProjects.project(scId);
+            runOnUi(() -> {
+                if (project == null) {
+                    binding.workingOnName.setText(R.string.agent_working_on_choose);
+                    binding.workingOnSubtitle.setText(R.string.agent_working_on_hint);
+                    return;
+                }
+                binding.workingOnName.setText(project.name);
+                binding.workingOnSubtitle.setText(
+                        project.appName + " · " + project.packageName);
+            });
+        });
+    }
+
+    /** The project list behind the Working-On card. */
+    private void showProjectPicker() {
+        io.execute(() -> {
+            List<SketchwareProjects.ProjectInfo> projects =
+                    SketchwareProjects.listProjects();
+            runOnUi(() -> {
+                if (binding == null) {
+                    return;
+                }
+                String current = providerConfig.workingProjectId();
+                String[] labels = new String[projects.size() + 1];
+                labels[0] = getString(R.string.agent_working_on_none);
+                int checked = 0;
+                for (int i = 0; i < projects.size(); i++) {
+                    SketchwareProjects.ProjectInfo project = projects.get(i);
+                    labels[i + 1] = project.name;
+                    if (project.scId.equals(current)) {
+                        checked = i + 1;
+                    }
+                }
+                new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                        .setTitle(R.string.agent_working_on_label)
+                        .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                            dialog.dismiss();
+                            String chosen = which == 0 ? ""
+                                    : projects.get(which - 1).scId;
+                            providerConfig.setWorkingProjectId(chosen);
+                            providerConfig.save(requireContext());
+                            updateWorkingOnCard();
+                            appendMessage(ChatMessage.system(getString(chosen.isEmpty()
+                                    ? R.string.agent_working_on_cleared
+                                    : R.string.agent_working_on_set,
+                                    chosen.isEmpty() ? ""
+                                            : projects.get(which - 1).name)));
+                        })
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+            });
+        });
+    }
+
+    /** A quiet activity line, slipped in above the streaming bubble. */
+    private void insertToolNote(String line) {
+        if (binding == null) {
+            return;
+        }
+        int index = streamingMessage != null
+                ? messages.indexOf(streamingMessage) : messages.size();
+        if (index < 0) {
+            index = messages.size();
+        }
+        messages.add(index, ChatMessage.system(line));
+        adapter.notifyItemInserted(index);
+    }
+
+    /** Posts to the UI thread when a view is still attached. */
+    private void runOnUi(Runnable action) {
+        if (binding != null) {
+            binding.getRoot().post(action);
+        }
     }
 
     private void handleError(AiChatService.AiError error) {

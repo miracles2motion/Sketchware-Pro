@@ -6,15 +6,14 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <!-- "Working on" card: shows the project the agent is bound to. Hidden
-         until the agent creates or opens a project. -->
+    <!-- "Working on" card: tap to bind the agent to a project. Shows the
+         empty "choose" state until one is picked. -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/working_on_card"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="16dp"
         android:layout_marginTop="8dp"
-        android:visibility="gone"
         app:cardBackgroundColor="?attr/colorSurfaceContainer"
         app:cardCornerRadius="16dp"
         tools:visibility="visible">

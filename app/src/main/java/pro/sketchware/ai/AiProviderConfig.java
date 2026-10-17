@@ -110,12 +110,15 @@ public class AiProviderConfig {
     private static class Stored {
         String activeProvider = AiProvider.GEMINI.name();
         Map<String, Settings> providers = new HashMap<>();
+        /** The project the agent is working on ("" = none chosen). */
+        String workingProjectId = "";
     }
 
     private static final String KEYS_FILE_NAME = "agent_keys.json";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private AiProvider active = AiProvider.GEMINI;
+    private String workingProjectId = "";
     private final Map<AiProvider, Settings> settings = new EnumMap<>(AiProvider.class);
     private final Map<AiProvider, java.util.List<KeyEntry>> keyLists =
             new EnumMap<>(AiProvider.class);
@@ -139,6 +142,9 @@ public class AiProviderConfig {
                 Stored stored = GSON.fromJson(reader, Stored.class);
                 if (stored != null) {
                     config.active = AiProvider.fromId(stored.activeProvider);
+                    if (stored.workingProjectId != null) {
+                        config.workingProjectId = stored.workingProjectId;
+                    }
                     if (stored.providers != null) {
                         for (Map.Entry<String, Settings> entry : stored.providers.entrySet()) {
                             Settings target = config.settings.get(AiProvider.fromId(entry.getKey()));
@@ -207,6 +213,7 @@ public class AiProviderConfig {
     public void save(Context context) {
         Stored stored = new Stored();
         stored.activeProvider = active.name();
+        stored.workingProjectId = workingProjectId;
         for (Map.Entry<AiProvider, Settings> entry : settings.entrySet()) {
             stored.providers.put(entry.getKey().name(), entry.getValue());
         }
@@ -224,6 +231,15 @@ public class AiProviderConfig {
         } catch (IOException ignored) {
             // Losing keys only means re-entering them.
         }
+    }
+
+    /** The project the agent is working on ("" = none chosen). */
+    public String workingProjectId() {
+        return workingProjectId;
+    }
+
+    public void setWorkingProjectId(String scId) {
+        workingProjectId = scId == null ? "" : scId;
     }
 
     public AiProvider activeProvider() {

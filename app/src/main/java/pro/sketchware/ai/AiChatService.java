@@ -48,7 +48,7 @@ public class AiChatService {
     /** How many past messages are sent with each request. */
     private static final int MAX_HISTORY_MESSAGES = 40;
 
-    private static final String SYSTEM_PROMPT =
+    static final String SYSTEM_PROMPT =
             "You are a helpful assistant inside Sketchware Pro, an Android app builder. "
                     + "Answer clearly and completely. Format longer answers with short "
                     + "paragraphs or simple lists when that helps.";
@@ -290,6 +290,122 @@ public class AiChatService {
                 return fallback.lookup(hostname);
             }
         }
+    }
+
+    /** One proposed tool invocation out of an agent turn. */
+    public static final class ToolCallData {
+        public String id = "";
+        public String name = "";
+        /** The arguments, as a JSON object string. */
+        public String arguments = "{}";
+    }
+
+    /** What the model sent back from one agent turn. */
+    public static final class AgentReply {
+        public String content = "";
+        public final List<ToolCallData> toolCalls = new ArrayList<>();
+        /** The assistant message verbatim, to echo back next turn. */
+        public JsonObject rawMessage;
+    }
+
+    /** An agent request that failed before or at the provider. */
+    public static final class AgentRequestException extends Exception {
+        public final AiError error;
+
+        AgentRequestException(AiError error) {
+            super(error.toString());
+            this.error = error;
+        }
+    }
+
+    /**
+     * One non-streaming agent turn. When {@code tools} is non-empty the
+     * model may answer with tool calls instead of (or besides) text.
+     * Blocking: call off the main thread. {@link #cancel()} interrupts it.
+     */
+    public AgentReply agentTurnSync(String baseUrl, String apiKey, String model,
+                                    List<JsonObject> messages, JsonArray tools)
+            throws AgentRequestException {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("model", model);
+        payload.addProperty("stream", false);
+        JsonArray messageArray = new JsonArray();
+        for (JsonObject message : messages) {
+            messageArray.add(message);
+        }
+        payload.add("messages", messageArray);
+        if (tools != null && tools.size() > 0) {
+            payload.add("tools", tools);
+            payload.addProperty("tool_choice", "auto");
+        }
+        Request request = new Request.Builder()
+                .url(normalize(baseUrl) + "chat/completions")
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Accept-Encoding", "identity")
+                .post(RequestBody.create(payload.toString(), JSON))
+                .build();
+        Call call = client.newCall(request);
+        activeCall = call;
+        try (Response response = call.execute()) {
+            ResponseBody body = response.body();
+            String text = body == null ? "" : body.string();
+            if (!response.isSuccessful()) {
+                throw new AgentRequestException(classify(response.code(), text));
+            }
+            return parseAgentReply(text);
+        } catch (IOException e) {
+            if (call.isCanceled()) {
+                throw new AgentRequestException(new AiError(
+                        ErrorKind.NETWORK, 0, "cancelled"));
+            }
+            throw new AgentRequestException(new AiError(
+                    ErrorKind.NETWORK, 0, String.valueOf(e.getMessage())));
+        }
+    }
+
+    private static AgentReply parseAgentReply(String text) throws AgentRequestException {
+        AgentReply reply = new AgentReply();
+        try {
+            JsonObject root = JsonParser.parseString(text).getAsJsonObject();
+            JsonArray choices = root.getAsJsonArray("choices");
+            if (choices == null || choices.size() == 0) {
+                throw new AgentRequestException(new AiError(ErrorKind.EMPTY, 200,
+                        "The provider returned an empty reply."));
+            }
+            JsonObject message = choices.get(0).getAsJsonObject()
+                    .getAsJsonObject("message");
+            reply.rawMessage = message;
+            if (message.has("content") && !message.get("content").isJsonNull()) {
+                reply.content = message.get("content").getAsString();
+            }
+            JsonArray calls = message.getAsJsonArray("tool_calls");
+            if (calls != null) {
+                for (JsonElement element : calls) {
+                    JsonObject call = element.getAsJsonObject();
+                    ToolCallData data = new ToolCallData();
+                    if (call.has("id")) {
+                        data.id = call.get("id").getAsString();
+                    }
+                    JsonObject function = call.getAsJsonObject("function");
+                    if (function != null) {
+                        if (function.has("name")) {
+                            data.name = function.get("name").getAsString();
+                        }
+                        if (function.has("arguments")
+                                && !function.get("arguments").isJsonNull()) {
+                            data.arguments = function.get("arguments").getAsString();
+                        }
+                    }
+                    reply.toolCalls.add(data);
+                }
+            }
+        } catch (AgentRequestException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AgentRequestException(new AiError(ErrorKind.EMPTY, 200,
+                    "The provider returned an unreadable reply."));
+        }
+        return reply;
     }
 
     /** Lists the models a key may call: {@code GET <base>/models}. */

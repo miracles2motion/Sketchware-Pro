@@ -391,3 +391,25 @@ per-widget properties/events (edit_screen slice), block parameter/usage
 detail (event-handler slice), build-error meanings. Knowledge is injected
 as relevant slices and pulled via read-only lookups — never uploaded whole
 per request.
+
+## Phase 2 build log
+
+### Slice 1 — read-only tools + Working-On card (built 2026-10-17, pending device test)
+
+- `SketchwareProjects` — the read-only gateway: projects via `lC.a()/b(sc_id)`,
+  activities via `jC.b(sc_id).b()`, screens via `jC.a(sc_id).d(xmlName)`.
+  Nothing hand-parses project files; nothing writes.
+- `AgentTools` — validated JSON-form tool contracts with `E_*` codes.
+  Slice 1 tools: `project_summary`, `list_activities`, `get_screen`
+  (condensed widget lines: id, type, text, bg colour, parent; capped 120).
+- `AgentLoop` — non-streaming tool turns (`AiChatService.agentTurnSync`),
+  ~20 calls/message cap, same-failure-twice circuit breaker, quiet
+  activity lines in the transcript. Providers that reject tool calling
+  fall back to the plain streaming chat automatically.
+- Working-On card: always visible; tap binds a project (stored as
+  `workingProjectId` in the config), shows name + app + package; the
+  loop's system prompt carries the binding. No-project answers come from
+  the tool result (`E_NO_PROJECT`), never a guess.
+- Device test: bind a sacrificial project, ask "what screens does my
+  project have?", "what widgets are on MainActivity?", and ask the same
+  with no project bound (must explain the card, not invent screens).
