@@ -70,6 +70,55 @@
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
+    <!-- Provider/model bar: icon, the model in use (tap to switch), settings. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="2dp">
+
+        <LinearLayout
+            android:id="@+id/model_picker_area"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingVertical="6dp">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@null"
+                android:src="@drawable/agent_ic_spark"
+                app:tint="?attr/colorPrimary" />
+
+            <TextView
+                android:id="@+id/model_label"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurface"
+                tools:text="gemini-2.5-flash" />
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/settings_button"
+            style="@style/Widget.Material3.Button.IconButton"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:contentDescription="@string/agent_action_settings"
+            app:icon="@drawable/ic_mtrl_settings" />
+    </LinearLayout>
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/chat_list"
         android:layout_width="match_parent"
@@ -81,7 +130,7 @@
         android:scrollbars="vertical"
         tools:listitem="@layout/agent_chat_item_assistant" />
 
-    <!-- Shown until a model has been imported. -->
+    <!-- Shown until a provider has been set up. -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/choose_model_button"
         style="@style/Widget.Material3.Button.TonalButton"
@@ -89,7 +138,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center_horizontal"
         android:layout_marginBottom="8dp"
-        android:text="@string/agent_action_choose_model"
+        android:text="@string/agent_action_setup_provider"
         android:visibility="gone"
         tools:visibility="visible" />
 
@@ -99,36 +148,34 @@
         android:layout_height="wrap_content"
         android:gravity="bottom"
         android:orientation="horizontal"
-        android:paddingHorizontal="12dp"
-        android:paddingBottom="8dp">
+        android:paddingHorizontal="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="12dp">
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/input_layout"
-            style="@style/Widget.Material3.TextInputLayout.FilledBox"
+        <EditText
+            android:id="@+id/chat_input"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:background="@drawable/agent_input_background"
+            android:gravity="center_vertical"
             android:hint="@string/agent_hint_message"
-            app:boxCornerRadiusBottomEnd="24dp"
-            app:boxCornerRadiusBottomStart="24dp"
-            app:boxCornerRadiusTopEnd="24dp"
-            app:boxCornerRadiusTopStart="24dp">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/chat_input"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="textMultiLine|textCapSentences"
-                android:maxLines="6"
-                android:minHeight="48dp" />
-        </com.google.android.material.textfield.TextInputLayout>
+            android:inputType="textMultiLine|textCapSentences"
+            android:maxLines="6"
+            android:minHeight="52dp"
+            android:paddingHorizontal="18dp"
+            android:paddingVertical="14dp"
+            android:textColor="?attr/colorOnSurface"
+            android:textColorHint="?attr/colorOnSurfaceVariant"
+            android:textSize="16sp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/send_button"
             style="@style/Widget.Material3.Button.IconButton.Filled"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:layout_marginStart="8dp"
+            android:layout_marginStart="10dp"
+            android:layout_marginBottom="2dp"
             android:contentDescription="@string/agent_action_send"
             android:enabled="false"
             app:icon="@drawable/ic_mtrl_email_sent" />

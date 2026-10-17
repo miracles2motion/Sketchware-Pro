@@ -27,14 +27,10 @@
         android:theme="@style/Theme.SketchwarePro"
         android:usesCleartextTraffic="true"
         tools:targetApi="p">
-        <!-- LiteRT-LM GPU backend. Both are optional: the engine falls back to
-             CPU when the OpenCL/VNDK libraries are unavailable. -->
-        <uses-native-library
-            android:name="libvndksupport.so"
-            android:required="false" />
-        <uses-native-library
-            android:name="libOpenCL.so"
-            android:required="false" />
+        <activity
+            android:name="pro.sketchware.activities.main.fragments.agent.AgentSettingsActivity"
+            android:exported="false"
+            android:label="@string/agent_settings_title" />
         <activity
             android:name=".activities.iconcreator.IconCreatorActivity"
             android:exported="false"
@@ -96,6 +92,7 @@
             android:name="pro.sketchware.activities.main.activities.MainActivity"
             android:configChanges="orientation|screenSize"
             android:exported="true"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.SketchwarePro.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

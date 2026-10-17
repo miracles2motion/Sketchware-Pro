@@ -410,12 +410,35 @@ public class MainActivity extends BasePermissionAppCompatActivity {
         } else {
             binding.bottomNav.setVisibility(View.VISIBLE);
             binding.toolbarTitle.setText(R.string.agent_mode_projects_hint);
-            if (wasAgent) {
-                // Leaving Agent Mode gives the memory back to the rest of the
-                // app; a 1B class model holds about a gigabyte of RAM.
-                pro.sketchware.ai.AiModelManager.getInstance().unload();
+        }
+        setAppBarPinned(agent);
+    }
+
+    /** Scroll flags of the app bar children, captured before first change. */
+    private int[] defaultAppBarScrollFlags;
+
+    /**
+     * The project list scrolls its toolbar away; a chat must not. In Agent
+     * mode the app bar is pinned, otherwise scrolling the chat drags it
+     * halfway under the status bar and leaves it clipped there.
+     */
+    private void setAppBarPinned(boolean pinned) {
+        View[] scrollable = {binding.statusBarOverlapper, binding.toolbarCard};
+        if (defaultAppBarScrollFlags == null) {
+            defaultAppBarScrollFlags = new int[scrollable.length];
+            for (int i = 0; i < scrollable.length; i++) {
+                defaultAppBarScrollFlags[i] = ((com.google.android.material.appbar.AppBarLayout.LayoutParams)
+                        scrollable[i].getLayoutParams()).getScrollFlags();
             }
         }
+        for (int i = 0; i < scrollable.length; i++) {
+            com.google.android.material.appbar.AppBarLayout.LayoutParams params =
+                    (com.google.android.material.appbar.AppBarLayout.LayoutParams)
+                            scrollable[i].getLayoutParams();
+            params.setScrollFlags(pinned ? 0 : defaultAppBarScrollFlags[i]);
+            scrollable[i].setLayoutParams(params);
+        }
+        binding.appbar.setExpanded(true, false);
     }
 
     private void navigateToSketchubFragment() {

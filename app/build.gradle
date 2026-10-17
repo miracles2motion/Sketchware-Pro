@@ -103,10 +103,6 @@ dependencies {
     implementation libs.conscrypt.android
     implementation libs.androidsvg
 
-    // On-device LLM runtime for Agent Mode (LiteRT-LM).
-    // Pinned: `latest.release` is not reproducible and the 0.18.x line is the
-    // first with the ModelInfo (metadata-only) inspection API.
-    implementation libs.litertlm.android
 
     implementation libs.asm
     implementation libs.stringfog.core

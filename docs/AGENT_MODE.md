@@ -4,6 +4,24 @@ Grounding for the Agent Mode design: what was verified against the code in
 this repository, what had to be corrected, and the defects in the upstream
 LiteRT-LM runtime that the design has to work around.
 
+## 0. Pivot: cloud providers instead of an on-device model
+
+Agent Mode no longer runs a local LiteRT-LM model. On-device testing
+showed the 1B model class cannot carry the agent's workload (recall and
+basic knowledge fail inside Google's own AI Edge Gallery too), while the
+runtime integration cost repeated broken builds. The model layer was
+removed completely (dependency, native libraries, import flow, engine
+lifecycle) and replaced with one OpenAI-compatible HTTP client
+(`AiChatService`) plus provider presets: Gemini (through Google's
+official `https://generativelanguage.googleapis.com/v1beta/openai/`
+compatibility endpoint), OpenRouter, NVIDIA, and custom base URLs.
+Users bring their own API key; keys live in app-private storage, never
+in `.sketchware/ai/`. Model lists are fetched per key (`GET /models`),
+quota failures (402/429) surface as a switch-model popup, and OpenRouter
+keys additionally report remaining credit via `/auth/key`. The
+tool-calling design below is unchanged; cloud models emit native
+function calls for the same propose/execute gates.
+
 ## 1. Verified against the code
 
 | Design claim | Where it lives | Status |

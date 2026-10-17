@@ -49,7 +49,6 @@ stringfogXor = "5.0.0"
 apksig = "9.4.1"
 conscrypt = "2.7.0"
 androidsvg = "1.4"
-litertlm = "0.18.0"
 
 [libraries]
 dalvik-dx = { module = "com.jakewharton.android.repackaged:dalvik-dx", version.ref = "dalvikDx" }
@@ -125,7 +124,6 @@ stringfog-xor = { module = "com.github.megatronking.stringfog:xor", version.ref 
 apksig = { module = "com.android.tools.build:apksig", version.ref = "apksig" }
 conscrypt-android = { module = "org.conscrypt:conscrypt-android", version.ref = "conscrypt" }
 androidsvg = { module = "com.caverock:androidsvg-aar", version.ref = "androidsvg" }
-litertlm-android = { module = "com.google.ai.edge.litertlm:litertlm-android", version.ref = "litertlm" }
 
 [bundles]
 ui = ["androidx-activity", "androidx-appcompat", "androidx-splashscreen", "androidx-recyclerview",

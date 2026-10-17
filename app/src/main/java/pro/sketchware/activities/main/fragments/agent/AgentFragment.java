@@ -1,27 +1,19 @@
 package pro.sketchware.activities.main.fragments.agent;
 
-import android.content.Context;
-import android.database.Cursor;
-import android.net.Uri;
+import android.content.Intent;
 import android.graphics.Rect;
 import android.os.Bundle;
-import android.util.Log;
-import android.provider.OpenableColumns;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.inputmethod.InputMethodManager;
 
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.LinearLayoutManager;
 
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -30,23 +22,21 @@ import java.util.concurrent.Executors;
 import a.a.a.qA;
 import pro.sketchware.R;
 import pro.sketchware.ai.AgentKnowledgePack;
-import pro.sketchware.ai.AiModelConfig;
-import pro.sketchware.ai.AiModelManager;
+import pro.sketchware.ai.AiChatService;
 import pro.sketchware.ai.AiPaths;
+import pro.sketchware.ai.AiProviderConfig;
 import pro.sketchware.ai.ChatAdapter;
 import pro.sketchware.ai.ChatMessage;
 import pro.sketchware.databinding.AgentChatBinding;
 
 /**
- * Agent Mode: a chat with a model that runs on the device.
+ * Agent Mode: a chat with an online AI provider (Gemini, OpenRouter, NVIDIA
+ * or any OpenAI-compatible endpoint), using the user's own API key.
  *
- * <p>The fragment owns the chat UI only. The model lifecycle lives in
- * {@link AiModelManager}, which is shared so that the engine is loaded once
- * and torn down when the app needs the memory for a build.
+ * <p>The fragment owns the chat UI only; {@link AiChatService} owns the
+ * HTTP conversation and {@link AiProviderConfig} the key and model choice.
  */
-public class AgentFragment extends qA implements AiModelManager.Listener {
-
-    private static final String TAG = "AgentFragment";
+public class AgentFragment extends qA {
 
     private final List<ChatMessage> messages = new ArrayList<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -61,12 +51,13 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
     private android.view.ViewTreeObserver.OnGlobalLayoutListener layoutListener;
     private AgentChatBinding binding;
     private ChatAdapter adapter;
-    private AiModelManager modelManager;
-    private AiModelConfig config;
+    private AiChatService chatService;
+    private AiProviderConfig providerConfig;
     private ChatMessage streamingMessage;
-
-    private final ActivityResultLauncher<String[]> pickModel =
-            registerForActivityResult(new ActivityResultContracts.OpenDocument(), this::onModelPicked);
+    /** The reply bubble of a turn that failed on quota, kept for a retry. */
+    private ChatMessage failedBubble;
+    private String lastUserText = "";
+    private volatile boolean generating;
 
     @Nullable
     @Override
@@ -87,17 +78,11 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
          * measured and taken off as padding, so the input bar always sits
          * just above the navigation bar.
          */
-        layoutListener = new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
-            @Override
-            public void onGlobalLayout() {
-                fitToVisibleArea(binding == null ? null : binding.getRoot());
-            }
-        };
+        layoutListener = () -> fitToVisibleArea(binding == null ? null : binding.getRoot());
         view.getViewTreeObserver().addOnGlobalLayoutListener(layoutListener);
 
         adapter = new ChatAdapter(messages);
-        androidx.recyclerview.widget.LinearLayoutManager layoutManager =
-                new androidx.recyclerview.widget.LinearLayoutManager(getContext());
+        LinearLayoutManager layoutManager = new LinearLayoutManager(getContext());
         // A short conversation sits above the input bar, not at the top of an
         // empty screen.
         layoutManager.setStackFromEnd(true);
@@ -105,8 +90,8 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
         binding.chatList.setAdapter(adapter);
 
         binding.sendButton.setOnClickListener(v -> {
-            if (modelManager != null && modelManager.isGenerating()) {
-                modelManager.stop();
+            if (generating) {
+                stopGeneration();
                 return;
             }
             sendCurrentInput();
@@ -114,16 +99,17 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
 
         binding.chatInput.addTextChangedListener(new SimpleTextWatcher(text -> {
             boolean hasText = !text.trim().isEmpty();
-            binding.sendButton.setEnabled(hasText || isGenerating());
+            binding.sendButton.setEnabled(hasText || generating);
             binding.sendButton.setIconResource(
-                    isGenerating() ? R.drawable.ic_mtrl_close : R.drawable.ic_mtrl_email_sent);
+                    generating ? R.drawable.ic_mtrl_close : R.drawable.ic_mtrl_email_sent);
         }));
 
-        binding.chooseModelButton.setOnClickListener(v -> chooseModel());
+        binding.chooseModelButton.setOnClickListener(v -> openSettings());
+        binding.settingsButton.setOnClickListener(v -> openSettings());
+        binding.modelPickerArea.setOnClickListener(v -> showModelPicker());
 
-        config = AiModelConfig.load();
-        modelManager = AiModelManager.getInstance();
-        modelManager.addListener(this);
+        chatService = new AiChatService();
+        providerConfig = AiProviderConfig.load(requireContext());
 
         showCurrentState();
         ensureKnowledgePack();
@@ -145,8 +131,8 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
 
     @Override
     public void onDestroyView() {
-        if (modelManager != null) {
-            modelManager.removeListener(this);
+        if (chatService != null) {
+            chatService.cancel();
         }
         if (layoutListener != null && binding != null) {
             binding.getRoot().getViewTreeObserver()
@@ -166,35 +152,328 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
     @Override
     public void onResume() {
         super.onResume();
-        // The transcript survives; only the model state is refreshed.
+        // Returning from the provider settings: pick up the new key/model.
+        if (getContext() != null) {
+            providerConfig = AiProviderConfig.load(requireContext());
+        }
+        updateProviderUi();
         updateActionButton();
     }
 
     // region chat
 
     private void sendCurrentInput() {
-        String text = binding.chatInput.getText() == null ? "" : binding.chatInput.getText().toString().trim();
+        String text = binding.chatInput.getText() == null
+                ? "" : binding.chatInput.getText().toString().trim();
         if (text.isEmpty()) {
             return;
         }
         binding.chatInput.setText("");
 
-        AiModelConfig.ModelEntry model = config == null ? null : config.activeModel();
-        if (model == null || model.file() == null || !model.file().exists()) {
-            appendMessage(ChatMessage.error(getString(R.string.agent_model_missing)));
+        if (providerConfig == null || !providerConfig.isConfigured()) {
+            appendMessage(ChatMessage.error(getString(R.string.agent_provider_missing)));
             return;
         }
 
-        if (modelManager.state() == AiModelManager.State.IDLE
-                || modelManager.state() == AiModelManager.State.ERROR) {
-            modelManager.loadModel(model.file(), config.activeBackend(), engineCacheDir(),
-                    nativeLibraryDir());
-        }
         appendMessage(ChatMessage.user(text));
+        lastUserText = text;
         ChatMessage reply = ChatMessage.assistant("");
         streamingMessage = reply;
         appendMessage(reply);
-        modelManager.send(text);
+        startRequest();
+    }
+
+    /** Sends the current history (ending in {@link #lastUserText}) off. */
+    private void startRequest() {
+        if (providerConfig == null || streamingMessage == null) {
+            return;
+        }
+        generating = true;
+        updateActionButton();
+        List<ChatMessage> history = new ArrayList<>();
+        for (ChatMessage message : messages) {
+            if (message == streamingMessage || message.role == ChatMessage.Role.SYSTEM) {
+                continue;
+            }
+            if (message.role == ChatMessage.Role.ASSISTANT && message.text.trim().isEmpty()) {
+                continue;
+            }
+            history.add(message);
+        }
+        AiProviderConfig.Settings settings = providerConfig.activeSettings();
+        chatService.chat(settings.baseUrl, providerConfig.apiKey(providerConfig.activeProvider()),
+                settings.model, history, new AiChatService.ChatListener() {
+                    @Override
+                    public void onToken(String text) {
+                        appendToken(text);
+                    }
+
+                    @Override
+                    public void onComplete() {
+                        generating = false;
+                        setStreamingComplete();
+                        updateActionButton();
+                    }
+
+                    @Override
+                    public void onError(AiChatService.AiError error) {
+                        generating = false;
+                        handleError(error);
+                        updateActionButton();
+                    }
+                });
+    }
+
+    private void stopGeneration() {
+        if (chatService != null) {
+            chatService.cancel();
+        }
+        generating = false;
+        setStreamingComplete();
+        updateActionButton();
+    }
+
+    private void handleError(AiChatService.AiError error) {
+        if (binding == null) {
+            return;
+        }
+        flushPendingTokens();
+        if (error.kind == AiChatService.ErrorKind.QUOTA) {
+            // Keep the bubble: after a model switch the same turn is retried.
+            failedBubble = streamingMessage;
+            if (failedBubble != null) {
+                failedBubble.state = ChatMessage.State.COMPLETE;
+                streamingMessage = null;
+                adapter.notifyDataSetChanged();
+            }
+            showQuotaDialog(error);
+            return;
+        }
+        setStreamingComplete();
+        appendMessage(ChatMessage.error(errorTitle(error)
+                + (error.message.isEmpty() ? "" : "\n" + error.message)));
+    }
+
+    private String errorTitle(AiChatService.AiError error) {
+        switch (error.kind) {
+            case AUTH:
+                return getString(R.string.agent_error_auth);
+            case NETWORK:
+                return getString(R.string.agent_error_network);
+            case EMPTY:
+                return getString(R.string.agent_error_empty);
+            default:
+                return getString(R.string.agent_error_generic) + " (" + error.httpCode + ")";
+        }
+    }
+
+    /**
+     * The quota popup: the provider just said this model is out of quota, so
+     * offer another model from the same key instead of a dead end.
+     */
+    private void showQuotaDialog(AiChatService.AiError error) {
+        if (getContext() == null) {
+            return;
+        }
+        String message = error.message.isEmpty()
+                ? getString(R.string.agent_quota_body) : error.message;
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.agent_quota_title)
+                .setMessage(message)
+                .setPositiveButton(R.string.agent_action_switch_model,
+                        (dialog, which) -> fetchModelsAndPick())
+                .setNegativeButton(R.string.agent_action_open_settings,
+                        (dialog, which) -> openSettings())
+                .setNeutralButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /**
+     * Tapping the model name offers every model this key can call, neatly
+     * listed. The list comes from the settings cache (fetched when the key
+     * was saved) and is refreshed in the background for next time.
+     */
+    private void showModelPicker() {
+        if (providerConfig == null || !providerConfig.isConfigured()) {
+            openSettings();
+            return;
+        }
+        AiProviderConfig.Settings settings = providerConfig.activeSettings();
+        if (settings.models != null && !settings.models.isEmpty()) {
+            pickModel(settings, settings.models);
+            refreshModelCache(settings);
+            return;
+        }
+        binding.modelLabel.setText(R.string.agent_settings_checking);
+        chatService.fetchModels(settings.baseUrl,
+                providerConfig.apiKey(providerConfig.activeProvider()),
+                new AiChatService.ModelsListener() {
+                    @Override
+                    public void onModels(List<String> models) {
+                        settings.models = models;
+                        providerConfig.save(requireContext());
+                        updateProviderUi();
+                        if (!models.isEmpty()) {
+                            pickModel(settings, models);
+                        }
+                    }
+
+                    @Override
+                    public void onError(AiChatService.AiError error) {
+                        updateProviderUi();
+                        appendMessage(ChatMessage.error(errorTitle(error)
+                                + (error.message.isEmpty() ? "" : "\n" + error.message)));
+                    }
+                });
+    }
+
+    private void pickModel(AiProviderConfig.Settings settings, List<String> models) {
+        if (getContext() == null) {
+            return;
+        }
+        String[] items = models.toArray(new String[0]);
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.agent_pick_model)
+                .setItems(items, (dialog, which) -> {
+                    settings.model = items[which];
+                    providerConfig.save(requireContext());
+                    updateProviderUi();
+                    appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM,
+                            getString(R.string.agent_switched_model, items[which])));
+                })
+                .show();
+    }
+
+    private void refreshModelCache(AiProviderConfig.Settings settings) {
+        chatService.fetchModels(settings.baseUrl,
+                providerConfig.apiKey(providerConfig.activeProvider()),
+                new AiChatService.ModelsListener() {
+                    @Override
+                    public void onModels(List<String> models) {
+                        settings.models = models;
+                        if (getContext() != null) {
+                            providerConfig.save(requireContext());
+                        }
+                    }
+
+                    @Override
+                    public void onError(AiChatService.AiError error) {
+                        // The cached list stays; nothing to tell the user.
+                    }
+                });
+    }
+
+    private void fetchModelsAndPick() {
+        AiProviderConfig.Settings settings = providerConfig.activeSettings();
+        chatService.fetchModels(settings.baseUrl,
+                providerConfig.apiKey(providerConfig.activeProvider()),
+                new AiChatService.ModelsListener() {
+                    @Override
+                    public void onModels(List<String> models) {
+                        settings.models = models;
+                        providerConfig.save(requireContext());
+                        if (binding == null || models.isEmpty()) {
+                            appendMessage(ChatMessage.error(
+                                    getString(R.string.agent_error_no_models)));
+                            return;
+                        }
+                        String[] items = models.toArray(new String[0]);
+                        new MaterialAlertDialogBuilder(requireContext())
+                                .setTitle(R.string.agent_action_switch_model)
+                                .setItems(items, (dialog, which) -> {
+                                    settings.model = items[which];
+                                    providerConfig.save(requireContext());
+                                    updateProviderUi();
+                                    retryFailedTurn();
+                                })
+                                .show();
+                    }
+
+                    @Override
+                    public void onError(AiChatService.AiError error) {
+                        appendMessage(ChatMessage.error(errorTitle(error)
+                                + (error.message.isEmpty() ? "" : "\n" + error.message)));
+                    }
+                });
+    }
+
+    /** Re-runs the quota-failed turn on the newly chosen model. */
+    private void retryFailedTurn() {
+        if (failedBubble == null) {
+            return;
+        }
+        streamingMessage = failedBubble;
+        failedBubble = null;
+        streamingMessage.text = "";
+        streamingMessage.state = ChatMessage.State.STREAMING;
+        adapter.notifyDataSetChanged();
+        startRequest();
+    }
+
+    private void appendToken(String text) {
+        if (binding == null || streamingMessage == null) {
+            return;
+        }
+        // Tokens can arrive faster than the list can be diffed, so they are
+        // collected and flushed to the list in batches.
+        synchronized (pendingToken) {
+            pendingToken.append(text);
+        }
+        if (!flushScheduled) {
+            flushScheduled = true;
+            binding.chatList.postDelayed(flushTokens, TOKEN_FLUSH_MS);
+        }
+    }
+
+    /** Moves the collected tokens into the streaming message. */
+    private final Runnable flushTokens = () -> {
+        flushScheduled = false;
+        flushPendingTokens();
+    };
+
+    private void flushPendingTokens() {
+        if (binding == null || streamingMessage == null) {
+            synchronized (pendingToken) {
+                pendingToken.setLength(0);
+            }
+            return;
+        }
+        synchronized (pendingToken) {
+            if (pendingToken.length() > 0) {
+                streamingMessage.text += pendingToken;
+                pendingToken.setLength(0);
+            }
+        }
+        streamingMessage.state = ChatMessage.State.STREAMING;
+        int index = messages.indexOf(streamingMessage);
+        if (index >= 0) {
+            adapter.notifyItemChanged(index);
+            scrollToNewest();
+        }
+    }
+
+    private void setStreamingComplete() {
+        if (streamingMessage == null) {
+            return;
+        }
+        if (binding != null) {
+            binding.chatList.removeCallbacks(flushTokens);
+        }
+        flushScheduled = false;
+        synchronized (pendingToken) {
+            if (pendingToken.length() > 0) {
+                streamingMessage.text += pendingToken;
+                pendingToken.setLength(0);
+            }
+        }
+        streamingMessage.state = ChatMessage.State.COMPLETE;
+        if (streamingMessage.text.isEmpty()) {
+            streamingMessage.text = "…";
+        }
+        streamingMessage = null;
+        if (binding != null) {
+            adapter.notifyDataSetChanged();
+        }
     }
 
     /**
@@ -233,8 +512,8 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
         if (binding == null) {
             return;
         }
-        androidx.recyclerview.widget.LinearLayoutManager manager =
-                (androidx.recyclerview.widget.LinearLayoutManager) binding.chatList.getLayoutManager();
+        LinearLayoutManager manager =
+                (LinearLayoutManager) binding.chatList.getLayoutManager();
         if (manager == null) {
             return;
         }
@@ -243,8 +522,7 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
             return;
         }
         int first = manager.findFirstVisibleItemPosition();
-        if (first == androidx.recyclerview.widget.RecyclerView.NO_POSITION
-                || last - first < 3) {
+        if (first == LinearLayoutManager.NO_POSITION || last - first < 3) {
             binding.chatList.scrollToPosition(last);
         }
     }
@@ -257,317 +535,52 @@ public class AgentFragment extends qA implements AiModelManager.Listener {
         }
     }
 
-    /** Replaces the transcript with the current model state. */
+    /** Replaces the transcript with the current provider state. */
     private void showCurrentState() {
         if (binding == null) {
             return;
         }
         messages.clear();
         streamingMessage = null;
-        AiModelConfig.ModelEntry model = config == null ? null : config.activeModel();
-        boolean hasModel = model != null && model.file() != null && model.file().exists();
-        if (!hasModel) {
-            messages.add(new ChatMessage(ChatMessage.Role.SYSTEM, getString(R.string.agent_empty_title)));
-            messages.add(new ChatMessage(ChatMessage.Role.SYSTEM, getString(R.string.agent_empty_body)));
+        if (providerConfig == null || !providerConfig.isConfigured()) {
+            messages.add(new ChatMessage(ChatMessage.Role.SYSTEM,
+                    getString(R.string.agent_provider_empty_title)));
+            messages.add(new ChatMessage(ChatMessage.Role.SYSTEM,
+                    getString(R.string.agent_provider_empty_body)));
         }
-        binding.chooseModelButton.setVisibility(hasModel ? View.GONE : View.VISIBLE);
         adapter.notifyDataSetChanged();
+        updateProviderUi();
         updateActionButton();
-
-        if (hasModel && modelManager.state() == AiModelManager.State.IDLE) {
-            // The engine is loaded lazily: a 500 MB model must not be resident
-            // while the user is just looking at the project list.
-            modelManager.loadModel(model.file(), config.activeBackend(), engineCacheDir(),
-                    nativeLibraryDir());
-        }
     }
 
-    /** Refreshes the model state without touching the transcript. */
-    private void refreshModelState() {
-        if (binding == null || config == null) {
+    private void updateProviderUi() {
+        if (binding == null || providerConfig == null) {
             return;
         }
-        AiModelConfig.ModelEntry model = config.activeModel();
-        boolean hasModel = model != null && model.file() != null && model.file().exists();
-        binding.chooseModelButton.setVisibility(hasModel ? View.GONE : View.VISIBLE);
-        if (hasModel && modelManager.state() == AiModelManager.State.IDLE) {
-            modelManager.loadModel(model.file(), config.activeBackend(), engineCacheDir(),
-                    nativeLibraryDir());
-        }
+        boolean configured = providerConfig.isConfigured();
+        binding.chooseModelButton.setVisibility(configured ? View.GONE : View.VISIBLE);
+        binding.modelLabel.setText(configured
+                ? providerConfig.activeSettings().model
+                : getString(R.string.agent_no_provider));
     }
 
-    /**
-     * The directory that holds the NPU libraries. LiteRT-LM needs it for the
-     * NPU backend, see {@code Backend.NPU}.
-     */
-    private String nativeLibraryDir() {
-        Context context = getContext();
-        if (context == null) {
-            return null;
+    private void openSettings() {
+        if (getContext() != null) {
+            startActivity(new Intent(getContext(), AgentSettingsActivity.class));
         }
-        return context.getApplicationInfo().nativeLibraryDir;
-    }
-
-    private File engineCacheDir() {
-        Context context = getContext();
-        if (context == null) {
-            return null;
-        }
-        File cache = new File(context.getCacheDir(), "litertlm");
-        if (!cache.exists()) {
-            //noinspection ResultOfMethodCallIgnored
-            cache.mkdirs();
-        }
-        return cache;
-    }
-
-    private boolean isGenerating() {
-        return modelManager != null && modelManager.isGenerating();
     }
 
     private void updateActionButton() {
         if (binding == null) {
             return;
         }
-        boolean generating = isGenerating();
         binding.sendButton.setIconResource(
                 generating ? R.drawable.ic_mtrl_close : R.drawable.ic_mtrl_email_sent);
         binding.sendButton.setContentDescription(
                 getString(generating ? R.string.agent_action_stop : R.string.agent_action_send));
-    }
-
-    // endregion
-
-    // region model import
-
-    /** Opens the system picker so the user can point at a {@code .litertlm} file. */
-    public void chooseModel() {
-        try {
-            pickModel.launch(new String[]{"*/*"});
-        } catch (Exception e) {
-            // Some file providers do not support MIME filtering; fall back to all.
-            pickModel.launch(new String[]{"application/octet-stream", "application/zip"});
-        }
-    }
-
-    private void onModelPicked(Uri uri) {
-        if (uri == null) {
-            return;
-        }
-        // The resolver has to be resolved while the fragment is still attached.
-        Context context = getContext();
-        if (context == null) {
-            return;
-        }
-        Context appContext = context.getApplicationContext();
-        io.execute(() -> {
-            try {
-                AiModelConfig.ModelEntry entry = importModel(appContext, uri);
-                AiModelConfig registry = config == null ? AiModelConfig.load() : config;
-                registry.putModel(entry);
-                registry.setActiveModel(entry.id);
-                registry.save();
-                if (binding != null) {
-                    binding.chatList.post(() -> {
-                        refreshModelState();
-                        appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM,
-                                getString(R.string.agent_model_imported)));
-                    });
-                }
-            } catch (IOException e) {
-                Log.e(TAG, "Importing the model failed", e);
-                boolean noStorage = !isStorageWritable(appContext);
-                if (binding != null) {
-                    // The string is read on the main thread, the fragment may
-                    // be detached by the time the copy failed.
-                    binding.chatList.post(() -> appendMessage(ChatMessage.error(getString(
-                            noStorage ? R.string.agent_model_no_storage
-                                    : R.string.agent_model_invalid))));
-                }
-            }
-        });
-    }
-
-    /**
-     * Copies the picked file into the agent model directory so LiteRT-LM can be
-     * pointed at a plain filesystem path (it cannot read a {@code content://}
-     * URI).
-     */
-    private AiModelConfig.ModelEntry importModel(Context context, Uri uri) throws IOException {
-        String name = queryDisplayName(context, uri);
-        String id = AiPaths.sanitizeId(stripExtension(name));
-        File target = AiPaths.modelFile(id);
-        File parent = target.getParentFile();
-        if (parent != null && !parent.exists() && !parent.mkdirs()) {
-            throw new IOException("Cannot create " + parent);
-        }
-
-        try (InputStream in = context.getContentResolver().openInputStream(uri);
-             FileOutputStream out = new FileOutputStream(target)) {
-            if (in == null) {
-                throw new IOException("Cannot open " + uri);
-            }
-            byte[] buffer = new byte[64 * 1024];
-            int read;
-            while ((read = in.read(buffer)) != -1) {
-                out.write(buffer, 0, read);
-            }
-        }
-
-        AiModelConfig.ModelEntry entry = new AiModelConfig.ModelEntry(id, target.getAbsolutePath());
-        entry.sizeBytes = target.length();
-        entry.importedAt = System.currentTimeMillis();
-        entry.backend = config.activeBackend().name();
-        // Read the metadata without loading the weights, so a file that is not
-        // a usable model is rejected here and not after a long load.
-        entry.description = AiModelManager.describeModel(target);
-        return entry;
-    }
-
-    /**
-     * Tells whether the app may write into the agent directory.
-     *
-     * <p>On Android 11 and later that needs the "all files access" permission,
-     * which the user can refuse. Without it the model cannot be copied into
-     * the app and the reason has to be said, not guessed.
-     */
-    private boolean isStorageWritable(Context context) {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R
-                && !android.os.Environment.isExternalStorageManager()) {
-            return false;
-        }
-        File dir = AiPaths.agentRoot();
-        return dir.exists() && dir.canWrite();
-    }
-
-    private String queryDisplayName(Context context, Uri uri) {
-        try (Cursor cursor = context.getContentResolver().query(uri, null, null, null, null)) {
-            if (cursor != null && cursor.moveToFirst()) {
-                int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                if (index >= 0) {
-                    String name = cursor.getString(index);
-                    if (name != null && !name.isEmpty()) {
-                        return name;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            // Fall through to the last path segment.
-        }
-        String name = uri.getLastPathSegment();
-        return name == null ? "model" : name;
-    }
-
-    private static String stripExtension(String name) {
-        int dot = name.lastIndexOf('.');
-        return dot > 0 ? name.substring(0, dot) : name;
-    }
-
-    // endregion
-
-    // region AiModelManager.Listener
-
-    @Override
-    public void onEngineStateChanged(AiModelManager.State state) {
-        if (binding == null) {
-            return;
-        }
-        updateActionButton();
-        // Turn completion is reported through onTurnComplete. READY also
-        // fires when a model load finishes, which must not finalise a
-        // bubble whose turn has not run yet.
-    }
-
-    @Override
-    public void onToken(String text) {
-        if (binding == null || streamingMessage == null) {
-            return;
-        }
-        // A model on a phone emits tokens faster than the list can be
-        // diffed, so the tokens are collected and flushed to the list in
-        // batches.
-        synchronized (pendingToken) {
-            pendingToken.append(text);
-        }
-        if (!flushScheduled) {
-            flushScheduled = true;
-            binding.chatList.postDelayed(flushTokens, TOKEN_FLUSH_MS);
-        }
-    }
-
-    /** Moves the collected tokens into the streaming message. */
-    private final Runnable flushTokens = new Runnable() {
-        @Override
-        public void run() {
-            flushScheduled = false;
-            if (binding == null || streamingMessage == null) {
-                synchronized (pendingToken) {
-                    pendingToken.setLength(0);
-                }
-                return;
-            }
-            synchronized (pendingToken) {
-                if (pendingToken.length() > 0) {
-                    streamingMessage.text += pendingToken;
-                    pendingToken.setLength(0);
-                }
-            }
-            streamingMessage.state = ChatMessage.State.STREAMING;
-            int index = messages.indexOf(streamingMessage);
-            if (index >= 0) {
-                adapter.notifyItemChanged(index);
-                scrollToNewest();
-            }
-        }
-    };
-
-    @Override
-    public void onTurnComplete() {
-        setStreamingComplete();
-    }
-
-    @Override
-    public void onError(Throwable error) {
-        if (binding == null) {
-            return;
-        }
-        setStreamingComplete();
-        // Show what actually failed: a generic "stopped unexpectedly" gives
-        // nobody anything to act on.
-        String detail = error == null ? "" : String.valueOf(error.getMessage()).trim();
-        if (detail.isEmpty() || "null".equals(detail)) {
-            detail = error == null ? "" : error.getClass().getSimpleName();
-        }
-        if (detail.length() > 160) {
-            detail = detail.substring(0, 160) + "…";
-        }
-        appendMessage(ChatMessage.error(detail.isEmpty()
-                ? getString(R.string.agent_state_error)
-                : getString(R.string.agent_state_error) + "\n" + detail));
-    }
-
-    private void setStreamingComplete() {
-        if (streamingMessage == null) {
-            return;
-        }
-        if (binding != null) {
-            binding.chatList.removeCallbacks(flushTokens);
-        }
-        flushScheduled = false;
-        synchronized (pendingToken) {
-            if (pendingToken.length() > 0) {
-                streamingMessage.text += pendingToken;
-                pendingToken.setLength(0);
-            }
-        }
-        streamingMessage.state = ChatMessage.State.COMPLETE;
-        if (streamingMessage.text.isEmpty()) {
-            streamingMessage.text = "…";
-        }
-        streamingMessage = null;
-        if (binding != null) {
-            adapter.notifyDataSetChanged();
-        }
+        boolean hasText = binding.chatInput.getText() != null
+                && !binding.chatInput.getText().toString().trim().isEmpty();
+        binding.sendButton.setEnabled(hasText || generating);
     }
 
     // endregion
