@@ -4,6 +4,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.text.format.DateFormat;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.PopupMenu;
 import android.widget.Toast;
@@ -206,6 +207,15 @@ public class AgentFragment extends qA {
         }
     }
 
+    /** 95 seconds reads as "1m 35s"; under a minute it stays "42s". */
+    private static String formatDuration(long millis) {
+        long seconds = Math.max(1L, millis / 1000L);
+        if (seconds < 60L) {
+            return seconds + "s";
+        }
+        return (seconds / 60L) + "m " + (seconds % 60L) + "s";
+    }
+
     /**
      * A tap on a bubble: the retry line resends a failed turn at once;
      * anything else offers to copy the text.
@@ -225,11 +235,25 @@ public class AgentFragment extends qA {
             return;
         }
         PopupMenu menu = new PopupMenu(requireContext(), anchor);
+        String time = DateFormat.format("h:mm a",
+                new java.util.Date(message.timestamp)).toString();
+        String info;
+        if (message.role == ChatMessage.Role.ASSISTANT
+                && message.repliedAt > 0 && message.durationMs > 0) {
+            String replyTime = DateFormat.format("h:mm a",
+                    new java.util.Date(message.repliedAt)).toString();
+            info = getString(R.string.agent_info_reply,
+                    replyTime, formatDuration(message.durationMs));
+        } else {
+            info = getString(R.string.agent_info_sent, time);
+        }
+        // Information, not an action: visible but not clickable.
+        menu.getMenu().add(0, 0, 0, info).setEnabled(false);
         if (hasText) {
-            menu.getMenu().add(0, 1, 0, R.string.agent_action_copy);
+            menu.getMenu().add(0, 1, 1, R.string.agent_action_copy);
         }
         if (failed) {
-            menu.getMenu().add(0, 2, 1, R.string.agent_action_retry);
+            menu.getMenu().add(0, 2, 2, R.string.agent_action_retry);
         }
         menu.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == 1) {
@@ -599,6 +623,9 @@ public class AgentFragment extends qA {
             }
         }
         streamingMessage.state = ChatMessage.State.COMPLETE;
+        streamingMessage.repliedAt = System.currentTimeMillis();
+        streamingMessage.durationMs =
+                SystemClock.elapsedRealtime() - requestStartedAt;
         if (streamingMessage.text.isEmpty()) {
             streamingMessage.text = "…";
         }

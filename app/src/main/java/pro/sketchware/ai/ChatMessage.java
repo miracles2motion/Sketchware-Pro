@@ -33,6 +33,12 @@ public class ChatMessage {
      */
     public transient String statusText;
 
+    /** When the reply finished (assistant messages only). */
+    public long repliedAt;
+
+    /** How long the reply took to generate, in milliseconds. */
+    public long durationMs;
+
     public Role role = Role.USER;
     public String text = "";
     public State state = State.COMPLETE;
