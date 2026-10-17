@@ -107,6 +107,11 @@ public class AgentFragment extends qA {
         binding.chooseModelButton.setOnClickListener(v -> openSettings());
         binding.settingsButton.setOnClickListener(v -> openSettings());
         binding.modelPickerArea.setOnClickListener(v -> showModelPicker());
+        binding.historyButton.setOnClickListener(v ->
+                // Reserved for the history phase: saved conversations will
+                // live behind this icon.
+                android.widget.Toast.makeText(getContext(),
+                        R.string.agent_history_soon, android.widget.Toast.LENGTH_SHORT).show());
 
         chatService = new AiChatService();
         providerConfig = AiProviderConfig.load(requireContext());

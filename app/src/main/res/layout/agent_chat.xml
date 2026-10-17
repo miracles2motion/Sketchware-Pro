@@ -111,6 +111,14 @@
         </LinearLayout>
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/history_button"
+            style="@style/Widget.Material3.Button.IconButton"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:contentDescription="@string/agent_action_history"
+            app:icon="@drawable/ic_mtrl_history" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/settings_button"
             style="@style/Widget.Material3.Button.IconButton"
             android:layout_width="40dp"
