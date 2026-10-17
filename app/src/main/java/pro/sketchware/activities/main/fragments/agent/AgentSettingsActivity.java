@@ -121,7 +121,7 @@ public class AgentSettingsActivity extends AppCompatActivity {
             final int index = i;
             row.getRoot().setOnClickListener(v -> {
                 if (config.activeKeyIndex(selected) == index) {
-                    showRenameDialog(index);
+                    showKeyActions(index);
                 } else {
                     config.setActiveKey(selected, index);
                     config.save(this);
@@ -131,6 +131,56 @@ public class AgentSettingsActivity extends AppCompatActivity {
             row.deleteButton.setOnClickListener(v -> confirmRemoveKey(index, entry));
             binding.keysContainer.addView(row.getRoot());
         }
+    }
+
+    /**
+     * Everything that can happen to the key in use, labelled in one place:
+     * rename it, replace the secret, or remove it entirely.
+     */
+    private void showKeyActions(int index) {
+        AiProviderConfig.KeyEntry entry = config.keys(selected).get(index);
+        String[] actions = {
+                getString(R.string.agent_key_rename),
+                getString(R.string.agent_key_replace),
+                getString(R.string.agent_key_remove)};
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(entry.label + " · " + AiProviderConfig.mask(entry))
+                .setItems(actions, (dialog, which) -> {
+                    if (which == 0) {
+                        showRenameDialog(index);
+                    } else if (which == 1) {
+                        showReplaceDialog(index);
+                    } else {
+                        confirmRemoveKey(index, entry);
+                    }
+                })
+                .show();
+    }
+
+    /** Swaps the secret under an existing name; the key starts fresh. */
+    private void showReplaceDialog(int index) {
+        AiProviderConfig.KeyEntry entry = config.keys(selected).get(index);
+        pro.sketchware.databinding.DialogKeyReplaceBinding dialogBinding =
+                pro.sketchware.databinding.DialogKeyReplaceBinding.inflate(
+                        getLayoutInflater());
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(getString(R.string.agent_key_replace) + " · "
+                        + AiProviderConfig.mask(entry))
+                .setView(dialogBinding.getRoot())
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    String typed = dialogBinding.keyValueInput.getText() == null
+                            ? "" : dialogBinding.keyValueInput.getText().toString().trim();
+                    if (!typed.isEmpty()) {
+                        entry.key = typed;
+                        // A new secret has never hit a limit.
+                        entry.exhaustedUntil = 0L;
+                        config.save(this);
+                        renderKeys();
+                        showStatus(getString(R.string.agent_key_replaced), false);
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     private void showRenameDialog(int index) {
