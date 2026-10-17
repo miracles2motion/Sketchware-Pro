@@ -956,6 +956,7 @@ ACTION_VIEW
     <string name="agent_key_remove">Remove key</string>
     <string name="agent_key_remove_confirm">Remove %1$s? You can add it again later.</string>
     <string name="agent_key_rename">Rename key</string>
+    <string name="agent_key_name">Key name</string>
     <string name="agent_key_added">Key added</string>
     <string name="agent_key_already">That key is already in the list.</string>
     <string name="agent_action_switch_key">Switch key</string>

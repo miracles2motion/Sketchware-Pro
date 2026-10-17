@@ -135,18 +135,18 @@ public class AgentSettingsActivity extends AppCompatActivity {
 
     private void showRenameDialog(int index) {
         AiProviderConfig.KeyEntry entry = config.keys(selected).get(index);
-        EditText input = new EditText(this);
-        input.setText(entry.label);
-        input.setSingleLine(true);
-        input.setSelectAllOnFocus(true);
-        int padding = (int) (20 * getResources().getDisplayMetrics().density);
-        input.setPadding(padding, padding / 2, padding, 0);
+        pro.sketchware.databinding.DialogKeyRenameBinding dialogBinding =
+                pro.sketchware.databinding.DialogKeyRenameBinding.inflate(
+                        getLayoutInflater());
+        dialogBinding.keyNameInput.setText(entry.label);
+        dialogBinding.keyNameInput.setSelectAllOnFocus(true);
         new MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.agent_key_rename)
-                .setView(input)
+                .setTitle(getString(R.string.agent_key_rename) + " · "
+                        + AiProviderConfig.mask(entry))
+                .setView(dialogBinding.getRoot())
                 .setPositiveButton(android.R.string.ok, (dialog, which) -> {
-                    String name = input.getText() == null
-                            ? "" : input.getText().toString().trim();
+                    String name = dialogBinding.keyNameInput.getText() == null
+                            ? "" : dialogBinding.keyNameInput.getText().toString().trim();
                     if (!name.isEmpty()) {
                         entry.label = name;
                         config.save(this);
