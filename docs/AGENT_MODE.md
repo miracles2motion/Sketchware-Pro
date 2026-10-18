@@ -532,6 +532,29 @@ Device test findings (SportyNivida / Sporty Bet):
   screen's widgets/events/blocks; an activity's drawer file is
   removed with it, as the screen manager does. The main screen is
   refused (it is the app's starting screen).
+- Property ops round two: `set_image`/`set_scale_type`
+  (`image.resName`/`scaleType`), `set_background_image`
+  (`layout.backgroundResource`), `set_checked`/`set_enabled`
+  (`ViewBean` fields), `set_text_style` (`text.textType`),
+  `set_input_type` (`text.inputType`) — the property editor's own
+  fields (`ViewPropertyItems`), gated to the widget kinds carrying
+  them.
+- Slice-4 (blocks) storage facts, from `LogicEditorActivity`: one
+  event's blocks read via `eC.a(javaName, id + "_" + eventName)` and
+  saved by the same 3-arg `eC.a(javaName, key, blocks)`; the full
+  map is `eC.b(javaName)`; events register via
+  `eC.a(javaName, 1, type, id, eventName)` (already mirrored for
+  Buttons). `BlockBean` carries `id`, `nextBlock`, `subStack1/2`,
+  `opCode`, `spec`, `type`, `parameters`, `paramClassInfo`,
+  `classInfo`. Open before building: how the editor canvas assigns
+  block ids and next/sub-stack links (construction lives in JAR
+  classes, not repo sources) — derive from saved examples + the
+  code generator's walk (`Fx`/`Hx`) before proposing any block.
+- Build-loop groundwork: the in-app builder is
+  `a.a.a.ProjectBuilder` (resources → javac → dex → sign), driven
+  from `DesignActivity` with a progress receiver; a `build()` tool
+  must run it headlessly and harvest its error text — its own slice,
+  after event wiring.
 - One-time project backup (slice 2) precedes the first edit too.
   Approval details warn when the screen might be open in the editor.
 - Still open from the risk register: a hard editor-open lock (the
