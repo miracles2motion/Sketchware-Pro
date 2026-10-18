@@ -710,3 +710,13 @@ Device test findings (SportyNivida / Sporty Bet):
   own gaps or invent manual walkthroughs — say "I
   can't do that yet" plainly (prompted by a device answer that
   blamed Sketchware for missing variables).
+- Block census (`docs/BLOCK_CENSUS.md` + `docs/block_census.json`,
+  2026-10-18): all 584 palette blocks enumerated from the app's
+  own sources (palette builders, `lq` stock table, Pro block data,
+  `Fx`). The translator goes data-driven from here; waves are
+  (1) block editing (replace/remove, fixing "change means
+  append"), (2) literal-only statements + `edit_project_theme`
+  (theme colours in `lC.b(scId)`, five keys incl. controls),
+  (3) reporter values everywhere, (4) control-flow containers,
+  (5) components (Intent first), (6) map/list families. Raw-source
+  and hosted-backend families stay out by design.
