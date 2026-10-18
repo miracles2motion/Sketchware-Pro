@@ -36,9 +36,12 @@ import a.a.a.xB;
  * runtime: the parameter slots of every block ({@code lq.a}), the
  * canonical spec text ({@code xB}), the palette colour ({@code kq}),
  * the events a widget class raises ({@code oq}). The model-facing
- * vocabulary is deliberately tiny — statement blocks with literal
- * values only, appended after whatever the event already does. No
- * reporter (value) blocks, no control flow, no raw code.
+ * vocabulary is deliberately small — statement blocks with literal
+ * values, plus variable assignment/arithmetic and variable values
+ * fed into text and messages (the one reporter shape the editor
+ * stores: a {@code getVar} bean whose spec is the variable name,
+ * referenced from a slot as "@id"), appended after whatever the
+ * event already does. No control flow, no raw code.
  *
  * <p>Stored shape, from the editor's load path and the code
  * generator: an event's blocks are one flat list keyed by
@@ -84,6 +87,12 @@ public final class AgentLogic {
         public final ArrayList<String> lines = new ArrayList<>();
         final ArrayList<Stmt> statements = new ArrayList<>();
         final ArrayList<BlockBean> fresh = new ArrayList<>();
+        /** Statement beans in chain order (what {@link #verify} walks). */
+        final ArrayList<BlockBean> chain = new ArrayList<>();
+        /** Reporter beans (e.g. a variable's value) referenced from a
+         * statement's parameters as "@id"; they sit in the same stored
+         * list but never on the statement chain. */
+        final ArrayList<BlockBean> extras = new ArrayList<>();
     }
 
     /**
@@ -119,6 +128,10 @@ public final class AgentLogic {
         for (ViewBean bean : beans) {
             byId.put(bean.id, bean);
         }
+        // The variables this activity declares (name to editor type
+        // code), so variable blocks are checked before they run.
+        LinkedHashMap<String, Integer> variables =
+                variablesOf(store, javaName);
 
         if ("activity".equalsIgnoreCase(target)) {
             plan.activityEvent = true;
@@ -184,7 +197,8 @@ public final class AgentLogic {
                         "Every block must be an object like "
                                 + "{\"block\":\"toast\",\"message\":\"Hi\"}.");
             }
-            Stmt stmt = translate(context, element.getAsJsonObject(), byId);
+            Stmt stmt = translate(context, element.getAsJsonObject(), byId,
+                    variables);
             plan.statements.add(stmt);
             BlockBean bean = new BlockBean(String.valueOf(nextId),
                     specFor(context, stmt.opCode), stmt.type, "",
@@ -196,14 +210,41 @@ public final class AgentLogic {
             }
             bean.parameters.addAll(stmt.params);
             plan.fresh.add(bean);
+            plan.chain.add(bean);
             plan.lines.add(stmt.sentence);
             nextId++;
         }
+        // Resolve variable-value reporters: each "@var:" placeholder
+        // in a statement's parameters becomes an "@id" reference to a
+        // getVar bean (spec = the variable name, the shape the editor
+        // stores) appended after the statement beans, unchained.
+        for (BlockBean bean : plan.chain) {
+            for (int i = 0; i < bean.parameters.size(); i++) {
+                String param = bean.parameters.get(i);
+                if (!param.startsWith("@var:")) {
+                    continue;
+                }
+                String name = param.substring("@var:".length());
+                BlockBean reporter = new BlockBean(
+                        String.valueOf(nextId), name,
+                        variableTypeLetter(variables.get(name)), "",
+                        "getVar");
+                try {
+                    reporter.color = kq.a("getVar", reporter.type);
+                } catch (Exception ignored) {
+                    // Colour is display-only.
+                }
+                plan.extras.add(reporter);
+                plan.fresh.add(reporter);
+                bean.parameters.set(i, "@" + nextId);
+                nextId++;
+            }
+        }
         // Chain the fresh beans among themselves; the applier joins
         // them to the existing chain's tail.
-        for (int i = 0; i + 1 < plan.fresh.size(); i++) {
-            plan.fresh.get(i).nextBlock =
-                    Integer.parseInt(plan.fresh.get(i + 1).id);
+        for (int i = 0; i + 1 < plan.chain.size(); i++) {
+            plan.chain.get(i).nextBlock =
+                    Integer.parseInt(plan.chain.get(i + 1).id);
         }
 
         // Prove with the app's own code generator that the combined
@@ -279,7 +320,7 @@ public final class AgentLogic {
             }
             JsonObject result = new JsonObject();
             result.addProperty("applied", true);
-            result.addProperty("blocks_added", plan.fresh.size());
+            result.addProperty("blocks_added", plan.chain.size());
             result.addProperty("blocks_total", readBack.size());
             result.addProperty("verified",
                     plan.header + " now runs "
@@ -315,12 +356,32 @@ public final class AgentLogic {
     // -- translation --------------------------------------------------------
 
     private static Stmt translate(Context context, JsonObject op,
-                                  Map<String, ViewBean> byId)
+                                  Map<String, ViewBean> byId,
+                                  Map<String, Integer> variables)
             throws AgentTools.ToolException {
         String kind = stringOf(op, "block").toLowerCase();
         Stmt stmt = new Stmt();
         switch (kind) {
             case "toast" -> {
+                String fromVariable = stringOf(op, "from_variable");
+                stmt.opCode = "doToast";
+                stmt.type = " ";
+                if (!fromVariable.isEmpty()) {
+                    requireVariable(variables, fromVariable);
+                    requireVariableKind(variables, fromVariable, 2,
+                            "A message can only show a string variable; \""
+                                    + fromVariable + "\" is a "
+                                    + SketchwareProjects.variableTypeName(
+                                            variables.get(fromVariable))
+                                    + " variable.");
+                    stmt.params.add("@var:" + fromVariable);
+                    stmt.sentence = "Show the value of variable “"
+                            + fromVariable + "” as a message";
+                    stmt.expectCode =
+                            "showMessage(getApplicationContext(), "
+                                    + fromVariable;
+                    break;
+                }
                 String message = stringOf(op, "message");
                 if (message.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
@@ -330,8 +391,6 @@ public final class AgentLogic {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
                             "Toast messages are capped at 200 characters.");
                 }
-                stmt.opCode = "doToast";
-                stmt.type = " ";
                 stmt.params.add(message);
                 stmt.sentence = "Show message “" + message + "”";
                 stmt.expectCode = "SketchwareUtil.showMessage";
@@ -344,10 +403,26 @@ public final class AgentLogic {
                                     + AgentEdits.typeName(widget.type)
                                     + ", which has no text to set.");
                 }
-                String text = stringOf(op, "text");
+                String fromVariable = stringOf(op, "from_variable");
                 stmt.opCode = "setText";
                 stmt.type = " ";
                 stmt.params.add(widget.id);
+                if (!fromVariable.isEmpty()) {
+                    requireVariable(variables, fromVariable);
+                    requireVariableKind(variables, fromVariable, 2,
+                            "Text can only come from a string variable; \""
+                                    + fromVariable + "\" is a "
+                                    + SketchwareProjects.variableTypeName(
+                                            variables.get(fromVariable))
+                                    + " variable.");
+                    stmt.params.add("@var:" + fromVariable);
+                    stmt.sentence = "Set " + widget.id
+                            + " text to the value of variable “"
+                            + fromVariable + "”";
+                    stmt.expectCode = widget.id + ".setText(" + fromVariable;
+                    break;
+                }
+                String text = stringOf(op, "text");
                 stmt.params.add(text);
                 stmt.sentence = "Set " + widget.id + " text to “"
                         + text + "”";
@@ -400,10 +475,99 @@ public final class AgentLogic {
                 stmt.sentence = "Close this screen";
                 stmt.expectCode = "finish();";
             }
+            case "set_variable" -> {
+                String name = stringOf(op, "variable");
+                requireVariable(variables, name);
+                int kind2 = variables.get(name);
+                if (kind2 == 3) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "\"" + name + "\" is a map variable; map "
+                                    + "variables can't be set this way "
+                                    + "yet — only boolean, number and "
+                                    + "string variables.");
+                }
+                stmt.type = " ";
+                String copyFrom = stringOf(op, "from_variable");
+                if (!copyFrom.isEmpty()) {
+                    requireVariable(variables, copyFrom);
+                    if (variables.get(copyFrom) != kind2) {
+                        throw new AgentTools.ToolException("E_BAD_BLOCK",
+                                "Types don't match: \"" + copyFrom
+                                        + "\" is a "
+                                        + SketchwareProjects
+                                                .variableTypeName(
+                                                        variables.get(
+                                                                copyFrom))
+                                        + " variable, but \"" + name
+                                        + "\" is a "
+                                        + SketchwareProjects
+                                                .variableTypeName(kind2)
+                                        + " variable.");
+                    }
+                    stmt.opCode = setVarOpCode(kind2);
+                    stmt.params.add(name);
+                    stmt.params.add("@var:" + copyFrom);
+                    stmt.sentence = "Set variable “" + name
+                            + "” to the value of “" + copyFrom + "”";
+                    stmt.expectCode = name + " = ";
+                    break;
+                }
+                stmt.opCode = setVarOpCode(kind2);
+                stmt.params.add(name);
+                if (kind2 == 1) {
+                    String value = stringOf(op, "value");
+                    try {
+                        Double.parseDouble(value);
+                    } catch (Exception e) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "Variable \"" + name + "\" is a number "
+                                        + "variable, so \"value\" must be "
+                                        + "a number (got \"" + value
+                                        + "\").");
+                    }
+                    stmt.params.add(value);
+                    stmt.sentence = "Set variable “" + name + "” to "
+                            + value;
+                } else if (kind2 == 0) {
+                    boolean value = boolOf(op, "value", false);
+                    stmt.params.add(String.valueOf(value));
+                    stmt.sentence = "Set variable “" + name + "” to "
+                            + (value ? "true" : "false");
+                } else {
+                    String value = stringOf(op, "value");
+                    if (value.length() > 1000) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "Variable text is capped at 1000 "
+                                        + "characters.");
+                    }
+                    stmt.params.add(value);
+                    stmt.sentence = "Set variable “" + name + "” to “"
+                            + value + "”";
+                }
+                stmt.expectCode = name + " = ";
+            }
+            case "increase", "decrease" -> {
+                String name = stringOf(op, "variable");
+                requireVariable(variables, name);
+                requireVariableKind(variables, name, 1,
+                        "Increase/decrease only work on number variables; "
+                                + "\"" + name + "\" is a "
+                                + SketchwareProjects.variableTypeName(
+                                        variables.get(name)) + " variable.");
+                boolean up = "increase".equals(kind);
+                stmt.opCode = up ? "increaseInt" : "decreaseInt";
+                stmt.type = " ";
+                stmt.params.add(name);
+                stmt.sentence = (up ? "Add 1 to" : "Subtract 1 from")
+                        + " variable “" + name + "”";
+                stmt.expectCode = name + (up ? "++;" : "--;");
+            }
             default -> throw new AgentTools.ToolException("E_BAD_BLOCK",
                     "Unknown block \"" + kind + "\". Blocks are: toast, "
                             + "set_text, set_visibility, set_enabled, "
-                            + "finish.");
+                            + "finish, set_variable, increase, decrease.");
         }
         // The app's own slot table is the shape authority: what the
         // editor would store for this block has exactly these slots.
@@ -423,6 +587,92 @@ public final class AgentLogic {
     }
 
     // -- stored-shape helpers ----------------------------------------------
+
+    /**
+     * The variables one activity declares: name to the editor's type
+     * code (0 boolean, 1 number, 2 string, 3 map), read through the
+     * same accessor ({@code eC.k}) the logic editor and the code
+     * generator use. Other stored entries (raw fields, imports) are
+     * not variables and stay invisible here.
+     */
+    static LinkedHashMap<String, Integer> variablesOf(eC store,
+                                                      String javaName) {
+        LinkedHashMap<String, Integer> variables = new LinkedHashMap<>();
+        try {
+            ArrayList<android.util.Pair<Integer, String>> stored =
+                    store.k(javaName);
+            if (stored != null) {
+                for (android.util.Pair<Integer, String> pair : stored) {
+                    if (pair.first >= 0 && pair.first <= 3
+                            && pair.second != null) {
+                        variables.put(pair.second, pair.first);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // Unreadable logic reads as "no variables declared".
+        }
+        return variables;
+    }
+
+    /** The statement opCode that assigns to a variable of this kind. */
+    private static String setVarOpCode(int kind) {
+        return switch (kind) {
+            case 0 -> "setVarBoolean";
+            case 2 -> "setVarString";
+            default -> "setVarInt";
+        };
+    }
+
+    /** The palette type letter for a variable's value block. */
+    private static String variableTypeLetter(Integer kind) {
+        if (kind == null) {
+            return "s";
+        }
+        return switch (kind) {
+            case 0 -> "b";
+            case 1 -> "d";
+            case 3 -> "a";
+            default -> "s";
+        };
+    }
+
+    /** Fails unless the activity declares a variable with this name. */
+    private static void requireVariable(Map<String, Integer> variables,
+                                        String name)
+            throws AgentTools.ToolException {
+        if (name == null || name.isEmpty()
+                || !variables.containsKey(name)) {
+            StringBuilder declared = new StringBuilder();
+            for (Map.Entry<String, Integer> entry : variables.entrySet()) {
+                if (declared.length() > 0) {
+                    declared.append(", ");
+                }
+                declared.append(entry.getKey()).append(" (")
+                        .append(SketchwareProjects.variableTypeName(
+                                entry.getValue())).append(")");
+            }
+            throw new AgentTools.ToolException("E_NO_VARIABLE",
+                    "This screen has no variable named \"" + name
+                            + "\"."
+                            + (variables.isEmpty()
+                                    ? " It declares no variables yet — "
+                                            + "declare one with "
+                                            + "create_variable first."
+                                    : " Its variables are: "
+                                            + declared + "."));
+        }
+    }
+
+    /** Fails unless the named variable is of the wanted editor kind. */
+    private static void requireVariableKind(
+            Map<String, Integer> variables, String name, int kind,
+            String message) throws AgentTools.ToolException {
+        Integer actual = variables.get(name);
+        if (actual == null || actual != kind) {
+            throw new AgentTools.ToolException("E_BAD_BLOCK", message);
+        }
+    }
 
     /** The event's blocks, or an empty list when it has none. */
     private static ArrayList<BlockBean> readBlocks(eC store,
@@ -505,7 +755,7 @@ public final class AgentLogic {
         for (BlockBean bean : readBack) {
             byId.put(parseId(bean.id), bean);
         }
-        int expectedFirst = Integer.parseInt(plan.fresh.get(0).id);
+        int expectedFirst = Integer.parseInt(plan.chain.get(0).id);
         // The chain from the head must pass through every fresh bean,
         // in proposal order, and end after the last one.
         java.util.Set<Integer> seen = new java.util.HashSet<>();
@@ -520,11 +770,20 @@ public final class AgentLogic {
         if (at < 0) {
             return "the new blocks are not on the event's chain";
         }
-        for (int i = 0; i < plan.fresh.size(); i++) {
+        for (int i = 0; i < plan.chain.size(); i++) {
             if (at + i >= chain.size()
                     || chain.get(at + i)
-                            != Integer.parseInt(plan.fresh.get(i).id)) {
+                            != Integer.parseInt(plan.chain.get(i).id)) {
                 return "the new blocks are out of order";
+            }
+        }
+        for (BlockBean extra : plan.extras) {
+            BlockBean stored = byId.get(parseId(extra.id));
+            if (stored == null
+                    || !"getVar".equals(stored.opCode)
+                    || !extra.spec.equals(stored.spec)) {
+                return "a variable value (\"" + extra.spec
+                        + "\") did not read back";
             }
         }
         return null;

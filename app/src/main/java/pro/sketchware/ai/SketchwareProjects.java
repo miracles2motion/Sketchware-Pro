@@ -205,6 +205,8 @@ public final class SketchwareProjects {
                 // is a variable name.
                 if (variable.first != 6 && variable.first != 9) {
                     summary.variables.add(variable.second);
+                    summary.variableTypes.put(variable.second,
+                            variableTypeName(variable.first));
                 }
             }
             for (android.util.Pair<Integer, String> list
@@ -291,9 +293,38 @@ public final class SketchwareProjects {
     public static final class LogicSummary {
         public final List<String> components = new ArrayList<>();
         public final List<String> variables = new ArrayList<>();
+        /** Variable name to its declared kind ("boolean", "number",
+         * "string", "map") — parallel to {@link #variables}. */
+        public final java.util.LinkedHashMap<String, String> variableTypes =
+                new java.util.LinkedHashMap<>();
         public final List<String> lists = new ArrayList<>();
         public final List<String> moreBlocks = new ArrayList<>();
         public int events;
+    }
+
+    /** The editor's variable kinds by their stored type code. */
+    public static String variableTypeName(int typeCode) {
+        return switch (typeCode) {
+            case 0 -> "boolean";
+            case 1 -> "number";
+            case 2 -> "string";
+            case 3 -> "map";
+            default -> "other";
+        };
+    }
+
+    /** The stored type code for an editor variable kind name. */
+    public static int variableTypeCode(String typeName) {
+        if (typeName == null) {
+            return -1;
+        }
+        return switch (typeName.trim().toLowerCase()) {
+            case "boolean", "bool" -> 0;
+            case "number", "int", "double" -> 1;
+            case "string", "text" -> 2;
+            case "map" -> 3;
+            default -> -1;
+        };
     }
 
     /**

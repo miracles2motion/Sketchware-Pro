@@ -133,6 +133,7 @@ public final class AgentTools {
         register(new EditActivity());
         register(new EditScreen());
         register(new SetEventHandler());
+        register(new CreateVariable());
         register(new BuildProject());
     }
 
@@ -293,6 +294,23 @@ public final class AgentTools {
         return workingProjectId;
     }
 
+    /** Declared variables (name + kind) for one screen's summary. */
+    private static JsonArray variablesJson(
+            SketchwareProjects.LogicSummary logic) {
+        JsonArray array = new JsonArray();
+        for (Map.Entry<String, String> variable
+                : logic.variableTypes.entrySet()) {
+            if (array.size() >= 24) {
+                break;
+            }
+            JsonObject entry = new JsonObject();
+            entry.addProperty("name", variable.getKey());
+            entry.addProperty("type", variable.getValue());
+            array.add(entry);
+        }
+        return array;
+    }
+
     /** Names as a JSON array, capped so a huge project stays one read. */
     private static JsonArray namesJson(List<String> names) {
         JsonArray array = new JsonArray();
@@ -378,7 +396,7 @@ public final class AgentTools {
                 SketchwareProjects.LogicSummary logic =
                         SketchwareProjects.logicSummary(scId, activity);
                 screen.add("components", namesJson(logic.components));
-                screen.add("variables", namesJson(logic.variables));
+                screen.add("variables", variablesJson(logic));
                 screen.add("lists", namesJson(logic.lists));
                 screen.add("more_blocks", namesJson(logic.moreBlocks));
                 screen.addProperty("events", logic.events);
@@ -953,11 +971,21 @@ public final class AgentTools {
                     + "check get_screen first, which lists each event "
                     + "and how many blocks it already has. Blocks (1 to "
                     + AgentLogic.MAX_BLOCKS + "): toast {message} "
-                    + "(show a short message), set_text {target,text} "
-                    + "(change a text widget's text), set_visibility "
-                    + "{target,visible} or {target,state} (visible, "
-                    + "gone, invisible), set_enabled {target,enabled}, "
-                    + "finish {} (close the screen). Example: "
+                    + "(show a short message) or {from_variable} (show "
+                    + "a string variable's value), set_text {target,"
+                    + "text} (change a text widget's text) or {target,"
+                    + "from_variable} (use a string variable's value), "
+                    + "set_visibility {target,visible} or {target,state} "
+                    + "(visible, gone, invisible), set_enabled {target,"
+                    + "enabled}, finish {} (close the screen), "
+                    + "set_variable {variable,value} or {variable,"
+                    + "from_variable} (assign), increase {variable} "
+                    + "and decrease {variable} (add or subtract 1 from "
+                    + "a number variable). Variable blocks need the "
+                    + "variable declared first — project_summary lists "
+                    + "each screen's variables with types; declare "
+                    + "missing ones with create_variable. Only string "
+                    + "variables can provide text. Example: "
                     + "{\"activity\":\"MainActivity\",\"target\":"
                     + "\"button1\",\"event\":\"onClick\",\"blocks\":[{"
                     + "\"block\":\"toast\",\"message\":\"Saved\"},{\"block\":"
@@ -1094,6 +1122,240 @@ public final class AgentTools {
                                 + "a fresh one.");
             }
             return AgentLogic.apply(session.context, plan);
+        }
+    }
+
+    /** create_variable: declare one activity variable. */
+    private static final class CreateVariable implements Tool {
+        /** The editor's own name rule (ZB): a valid identifier. */
+        private static final Pattern NAME_PATTERN =
+                Pattern.compile("^[a-zA-Z][a-zA-Z0-9_]*$");
+
+        @Override
+        public String name() {
+            return "create_variable";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes declaring one variable on one screen, "
+                    + "the way Sketchware's own logic editor adds it. "
+                    + "Types: boolean, number, string. Sketchware also "
+                    + "has map and list variables, which this tool does "
+                    + "not create yet. A new variable starts as false / "
+                    + "0 / empty text; give it an initial value by "
+                    + "wiring the screen's start event (onCreate or "
+                    + "initializeLogic) with a set_variable block. "
+                    + "project_summary shows each screen's variables "
+                    + "and their types. The user must approve before "
+                    + "anything is declared.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("activity", stringSchema(
+                    "The screen, e.g. MainActivity"));
+            properties.add("name", stringSchema(
+                    "The variable name, e.g. score"));
+            properties.add("type", stringSchema(
+                    "boolean, number or string"));
+            return AgentTools.parameters(properties,
+                    "activity", "name", "type");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to add a variable";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        /** The frozen, re-validatable shape of one declaration. */
+        private record Checked(ProjectFileBean activity, String name,
+                               int typeCode, String typeName) {
+        }
+
+        private Checked check(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String asked = stringArg(args, "activity");
+            ProjectFileBean activity =
+                    SketchwareProjects.findActivity(scId, asked);
+            if (activity == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "There is no activity named \"" + asked
+                                + "\" in the working project.");
+            }
+            if (activity.fileType
+                    != ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
+                throw new ToolException("E_NOT_ACTIVITY",
+                        "Custom views have no variables to declare. "
+                                + "Pick an activity screen instead.");
+            }
+            String typeName = stringArg(args, "type");
+            int typeCode = SketchwareProjects.variableTypeCode(typeName);
+            if (typeCode < 0 || typeCode == 3) {
+                throw new ToolException("E_BAD_TYPE",
+                        "Variables created this way are boolean, number "
+                                + "or string. Map and list variables "
+                                + "are not supported yet.");
+            }
+            String name = stringArg(args, "name");
+            if (!NAME_PATTERN.matcher(name).matches()
+                    || name.length() > 100) {
+                throw new ToolException("E_BAD_NAME",
+                        "A variable name starts with a letter and uses "
+                                + "only letters, numbers and "
+                                + "underscores, up to 100 characters "
+                                + "(Sketchware's own rule).");
+            }
+            String problem = nameConflict(session, scId, activity, name);
+            if (problem != null) {
+                throw new ToolException("E_NAME_TAKEN", problem);
+            }
+            return new Checked(activity, name, typeCode,
+                    SketchwareProjects.variableTypeName(typeCode));
+        }
+
+        /** The editor's exclusion rule: the name must be free across
+         * the screen's fields — keywords, variables, lists,
+         * components, widgets and views alike. */
+        private String nameConflict(Session session, String scId,
+                                    ProjectFileBean activity,
+                                    String name) {
+            for (String keyword : a.a.a.uq.b) {
+                if (keyword.equals(name)) {
+                    return "\"" + name + "\" is a reserved word in "
+                            + "Sketchware and cannot be a variable "
+                            + "name.";
+                }
+            }
+            eC store = a.a.a.jC.a(scId);
+            String javaName = activity.getJavaName();
+            try {
+                ArrayList<android.util.Pair<Integer, String>> stored =
+                        store.k(javaName);
+                if (stored != null) {
+                    for (android.util.Pair<Integer, String> pair
+                            : stored) {
+                        if (name.equals(pair.second)) {
+                            return "\"" + name + "\" is already "
+                                    + "declared on this screen.";
+                        }
+                    }
+                }
+                ArrayList<android.util.Pair<Integer, String>> lists =
+                        store.j(javaName);
+                if (lists != null) {
+                    for (android.util.Pair<Integer, String> pair
+                            : lists) {
+                        if (name.equals(pair.second)) {
+                            return "\"" + name + "\" is already the "
+                                    + "name of a list on this screen.";
+                        }
+                    }
+                }
+                ArrayList<com.besome.sketch.beans.ComponentBean>
+                        components = store.e(javaName);
+                if (components != null) {
+                    for (com.besome.sketch.beans.ComponentBean component
+                            : components) {
+                        if (name.equals(component.componentId)) {
+                            return "\"" + name + "\" is already a "
+                                    + "component on this screen.";
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+                // An unreadable logic side simply defers to the
+                // pattern and keyword checks above.
+            }
+            for (com.besome.sketch.beans.ViewBean bean
+                    : SketchwareProjects.screenBeans(scId, activity)) {
+                if (name.equals(bean.id)) {
+                    return "\"" + name + "\" is already a widget on "
+                            + "this screen; a variable cannot share "
+                            + "its name.";
+                }
+            }
+            return null;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            Checked checked = check(session, args);
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("activity",
+                    checked.activity().fileName);
+            clean.addProperty("name", checked.name());
+            clean.addProperty("type", checked.typeName());
+            String startValue = switch (checked.typeCode()) {
+                case 0 -> "false";
+                case 1 -> "0";
+                default -> "empty text";
+            };
+            return new AgentProposal(name(), clean, scId,
+                    "Add a variable to "
+                            + SketchwareProjects.activityName(
+                                    checked.activity())
+                            + " in " + project.name,
+                    "New " + checked.typeName() + " variable: "
+                            + checked.name() + " (starts as "
+                            + startValue + ")",
+                    "Declares the variable on the screen, the same "
+                            + "entry Sketchware's logic editor adds. "
+                            + "Nothing else on the screen changes. A "
+                            + "safety backup of the project is made "
+                            + "first.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            if (!scId.equals(session.workingProjectId)) {
+                throw new ToolException("E_PROJECT_CHANGED",
+                        "The working project changed since this "
+                                + "variable was proposed, so it was not "
+                                + "added.");
+            }
+            Checked checked = check(session, proposal.args);
+            eC store = a.a.a.jC.a(scId);
+            String javaName = checked.activity().getJavaName();
+            try {
+                SketchwareActions.backupProjectOnce(scId);
+                store.c(javaName, checked.typeCode(), checked.name());
+                SketchwareActions.commitProject(scId);
+            } catch (Exception e) {
+                throw new ToolException("E_APPLY_FAILED",
+                        "Adding the variable failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+            LinkedHashMap<String, Integer> after =
+                    AgentLogic.variablesOf(store, javaName);
+            Integer stored = after.get(checked.name());
+            if (stored == null || stored != checked.typeCode()) {
+                throw new ToolException("E_APPLY_FAILED",
+                        "The variable was written but did not read "
+                                + "back from the screen's logic.");
+            }
+            JsonObject result = new JsonObject();
+            result.addProperty("declared", checked.name());
+            result.addProperty("type", checked.typeName());
+            result.addProperty("verified",
+                    SketchwareProjects.activityName(checked.activity())
+                            + " now has a " + checked.typeName()
+                            + " variable named " + checked.name()
+                            + " (read back and checked).");
+            return result;
         }
     }
 

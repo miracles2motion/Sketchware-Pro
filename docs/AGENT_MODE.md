@@ -685,4 +685,28 @@ Device test findings (SportyNivida / Sporty Bet):
   a fix for errors a previous build reported, never chained onto
   routine edits. Device test of the install slice before these
   fixes: install-from-card, editor-swap honesty after a rebind,
-  and conversational point-to-card all behaved.
+  and conversational point-to-card all behaved. Build-card bundle
+  device-verified 2026-10-18.
+- Variables slice (built 2026-10-18, bundled with the build-card
+  bundle for one download; awaiting device test):
+  (a) new `create_variable` tool — declares one boolean/number/
+  string variable on an activity through the editor's own add
+  call (`eC.c(javaName, type, name)`), with the editor's own name
+  rules (ZB pattern, `uq.b` keywords) plus duplicate checks
+  across variables, lists, components and widgets; commit +
+  read-back verify. Map/list variables deferred (components and
+  the intent path are next in the logic line).
+  (b) `set_event_handler` vocabulary grows: `set_variable`
+  (literal or `from_variable` copy, type-checked against the
+  declaration), `increase`/`decrease` for number variables, and
+  `from_variable` on `toast`/`set_text` for string variables.
+  Variable values use the editor's stored shape — a `getVar`
+  bean whose spec is the variable name, referenced as "@id"
+  (`Fx` resolves it raw), with the palette type letters from
+  `ExtraPaletteBlock` (b/d/s). `project_summary` now reports
+  each variable's type. Variables are read via `eC.k`, the
+  accessor the editor and code generator share.
+  (c) Guidance honesty rule: never blame the app for the agent's
+  own gaps or invent manual walkthroughs — say "I
+  can't do that yet" plainly (prompted by a device answer that
+  blamed Sketchware for missing variables).
