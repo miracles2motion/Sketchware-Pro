@@ -835,6 +835,8 @@ public final class AgentEdits {
         TYPE_BY_NAME.put("Switch", ViewBean.VIEW_TYPE_WIDGET_SWITCH);
         TYPE_BY_NAME.put("SeekBar", ViewBean.VIEW_TYPE_WIDGET_SEEKBAR);
         TYPE_BY_NAME.put("CalendarView", ViewBean.VIEW_TYPE_WIDGET_CALENDARVIEW);
+        TYPE_BY_NAME.put("AdView", ViewBean.VIEW_TYPE_WIDGET_ADVIEW);
+        TYPE_BY_NAME.put("MapView", ViewBean.VIEW_TYPE_WIDGET_MAPVIEW);
         TYPE_BY_NAME.put("FloatingActionButton", ViewBean.VIEW_TYPE_WIDGET_FAB);
     }
 
@@ -1180,6 +1182,24 @@ public final class AgentEdits {
                 pad(bean);
                 bean.text.hint = typeName(type);
             }
+            case ViewBean.VIEW_TYPE_WIDGET_ADVIEW -> {
+                // IconAdView: no padding, match width, debug ad unit.
+                bean.layout.paddingLeft = 0;
+                bean.layout.paddingTop = 0;
+                bean.layout.paddingRight = 0;
+                bean.layout.paddingBottom = 0;
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                bean.adSize = "SMART_BANNER";
+                bean.adUnitId = "debug : ca-app-pub-3940256099942544/6300978111";
+            }
+            case ViewBean.VIEW_TYPE_WIDGET_MAPVIEW -> {
+                bean.layout.paddingLeft = 0;
+                bean.layout.paddingTop = 0;
+                bean.layout.paddingRight = 0;
+                bean.layout.paddingBottom = 0;
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                bean.layout.height = LayoutBean.LAYOUT_MATCH_PARENT;
+            }
             default -> {
                 // ImageView and anything else start from the plain bean,
                 // exactly as their palette icons do.
@@ -1196,6 +1216,10 @@ public final class AgentEdits {
      */
     private static String convertFor(int type) {
         return switch (type) {
+            case ViewBean.VIEW_TYPE_WIDGET_ADVIEW ->
+                    "com.google.android.gms.ads.AdView";
+            case ViewBean.VIEW_TYPE_WIDGET_MAPVIEW ->
+                    "com.google.android.gms.maps.MapView";
             case ViewBeans.VIEW_TYPE_WIDGET_BADGEVIEW ->
                     "com.allenliu.badgeview.BadgeView";
             case ViewBeans.VIEW_TYPE_LAYOUT_BOTTOMNAVIGATIONVIEW ->
