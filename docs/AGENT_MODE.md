@@ -815,3 +815,12 @@ Device test findings (SportyNivida / Sporty Bet):
   item_of (getAtListStr/Int), list_has (containListStr/Int),
   map_get, map_has. All Fx-verified; slot counts re-checked by
   translate's lq table pass. List-of-maps item access stays out.
+- Reorder + anti-rebuild (2026-10-18, from device screenshot:
+  agent rebuilt the screen to reorder one widget and corrupted
+  textview1 into a layout): move_widget gains before/after a
+  sibling id (reorders the sibling group by index, destination
+  inferred from the sibling when parent omitted). A batch that
+  removes 2+ widgets and re-adds one by name is refused
+  (E_REBUILD) - one-for-one replacement stays allowed. Guidance
+  and tool docs: never remove+re-add to reorder. Size values
+  tolerate fill_parent and "120dp"/decimals.

@@ -134,6 +134,23 @@ public final class AgentEdits {
         }
         List<String> lines = new ArrayList<>();
         JsonArray frozenOps = new JsonArray();
+        // Rebuild guard: a batch that removes several widgets and
+        // re-adds one of them by name is remaking the screen, not
+        // editing it — the re-added widget loses its text, sizes
+        // and other widgets inside it. One-for-one replacement in
+        // a small edit stays allowed (the card spells it out).
+        java.util.Set<String> removedIds = new java.util.HashSet<>();
+        for (JsonElement element : ops) {
+            if (element != null && element.isJsonObject()) {
+                JsonObject candidate = element.getAsJsonObject();
+                if ("remove_widget".equals(normalizeKind(candidate))) {
+                    String removedId = widgetIdOf(candidate);
+                    if (!removedId.isEmpty()) {
+                        removedIds.add(removedId);
+                    }
+                }
+            }
+        }
         // Container-first standard: building into an EMPTY screen starts
         // with a real main layout the user can select and restyle in the
         // editor (the editor's own root is fixed and untouchable), and
@@ -188,6 +205,22 @@ public final class AgentEdits {
             }
             switch (kind) {
                 case "add_widget" -> {
+                    String requestedId = stringOf(op, "id");
+                    if (removedIds.size() >= 2
+                            && removedIds.contains(requestedId)) {
+                        throw new AgentTools.ToolException("E_REBUILD",
+                                "This edit removes " + removedIds.size()
+                                        + " widgets and re-adds "
+                                        + requestedId + ". Re-adding "
+                                        + "a removed widget loses its "
+                                        + "text and settings, so "
+                                        + "rebuilds like this are "
+                                        + "refused. To change order, "
+                                        + "use move_widget with "
+                                        + "\"before\" or \"after\"; "
+                                        + "to replace one widget, remove "
+                                        + "and re-add just that one.");
+                    }
                     if (!preHandled) {
                         if (!buildingFromEmpty && !frozen
                                 && stringOf(op, "parent").isEmpty()) {
@@ -702,7 +735,35 @@ public final class AgentEdits {
                 }
                 case "move_widget" -> {
                     ViewBean bean = requireWidget(op, byId);
+                    // Position next to a sibling ("before"/"after"
+                    // a widget id) is how order inside one layout
+                    // changes; without one, a move lands at the end.
+                    String anchorId = stringOf(op, "before");
+                    boolean before = !anchorId.isEmpty();
+                    if (!before) {
+                        anchorId = stringOf(op, "after");
+                    }
+                    ViewBean anchor = anchorId.isEmpty() ? null
+                            : resolveWidget(byId, anchorId);
+                    if (!anchorId.isEmpty() && anchor == null) {
+                        throw new AgentTools.ToolException(
+                                "E_NO_WIDGET",
+                                "There is no widget called " + anchorId
+                                        + " to move next to. Widgets "
+                                        + "here: " + idList(byId)
+                                        + ".");
+                    }
+                    if (anchor == bean) {
+                        throw new AgentTools.ToolException("E_BAD_OP",
+                                "A widget cannot be moved next to "
+                                        + "itself.");
+                    }
                     String parentId = stringOf(op, "parent");
+                    if (parentId.isEmpty() && anchor != null) {
+                        // Next to a sibling means: its layout.
+                        parentId = anchor.parent == null
+                                ? ROOT_PARENT : anchor.parent;
+                    }
                     boolean toScreen = parentId.isEmpty()
                             || ROOT_PARENT.equalsIgnoreCase(parentId);
                     ViewBean parent = toScreen ? null
@@ -737,10 +798,48 @@ public final class AgentEdits {
                     }
                     bean.parent = toScreen ? ROOT_PARENT : parent.id;
                     bean.parentType = toScreen ? rootParentType : parent.type;
-                    bean.index = nextIndex(work, bean.parent, bean.id);
-                    lines.add(toScreen
-                            ? "Move " + bean.id + " to the screen"
-                            : "Move " + bean.id + " into " + parent.id);
+                    String destName = toScreen ? "the screen" : parent.id;
+                    if (anchor == null) {
+                        bean.index = nextIndex(work, bean.parent,
+                                bean.id);
+                        lines.add(toScreen
+                                ? "Move " + bean.id + " to the screen"
+                                : "Move " + bean.id + " into "
+                                        + parent.id);
+                    } else {
+                        String anchorParent = anchor.parent == null
+                                ? ROOT_PARENT : anchor.parent;
+                        if (!anchorParent.equals(bean.parent)) {
+                            throw new AgentTools.ToolException(
+                                    "E_BAD_OP",
+                                    anchor.id + " is not inside "
+                                            + destName + ", so "
+                                            + bean.id + " cannot be "
+                                            + "placed next to it "
+                                            + "there.");
+                        }
+                        // Reorder the destination group: stored
+                        // order is sibling index order, so the
+                        // group is resequenced around the anchor.
+                        ArrayList<ViewBean> group = new ArrayList<>();
+                        for (ViewBean other : work) {
+                            if (other != bean && bean.parent.equals(
+                                    other.parent)) {
+                                group.add(other);
+                            }
+                        }
+                        group.sort(java.util.Comparator.comparingInt(
+                                b -> b.index));
+                        int insert = group.indexOf(anchor)
+                                + (before ? 0 : 1);
+                        group.add(insert, bean);
+                        for (int i = 0; i < group.size(); i++) {
+                            group.get(i).index = i;
+                        }
+                        lines.add("Move " + bean.id + " to just "
+                                + (before ? "before " : "after ")
+                                + anchor.id + " in " + destName);
+                    }
                 }
                 default -> throw new AgentTools.ToolException("E_BAD_OP",
                         "Unknown operation \"" + kind + "\". Every "
@@ -1348,11 +1447,23 @@ public final class AgentEdits {
                 && element.getAsJsonPrimitive().isString()) {
             String word = element.getAsString().trim()
                     .toLowerCase(Locale.ROOT).replace(' ', '_');
-            if (word.equals("match_parent")) {
+            if (word.equals("match_parent")
+                    || word.equals("fill_parent")) {
                 return LayoutBean.LAYOUT_MATCH_PARENT;
             }
             if (word.equals("wrap_content")) {
                 return LayoutBean.LAYOUT_WRAP_CONTENT;
+            }
+            // "120dp" and "120.5" mean 120 to the property editor.
+            String digits = word.replace("dp", "")
+                    .replace("sp", "").replace("px", "");
+            try {
+                int dp = (int) Math.round(Double.parseDouble(digits));
+                if (dp >= 0 && dp <= 2000) {
+                    return dp;
+                }
+            } catch (Exception ignored) {
+                // Falls through to the checked integer read below.
             }
         }
         int value = intOf(op, key, Integer.MIN_VALUE);
