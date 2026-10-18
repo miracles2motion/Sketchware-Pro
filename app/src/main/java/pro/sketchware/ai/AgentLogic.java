@@ -136,6 +136,16 @@ public final class AgentLogic {
         } else {
             ViewBean widget = findWidget(byId, target);
             if (widget == null) {
+                String wanted = target == null ? "" : target.trim();
+                if (Arrays.asList(oq.getAllActivityEvents())
+                        .contains(wanted)) {
+                    throw new AgentTools.ToolException("E_BAD_TARGET",
+                            "\"" + wanted + "\" is an activity event, "
+                                    + "not a widget. For screen-level "
+                                    + "behaviour, call again with target "
+                                    + "\"activity\" and event \"" + wanted
+                                    + "\".");
+                }
                 throw new AgentTools.ToolException("E_NO_WIDGET",
                         "There is no widget with id \"" + target
                                 + "\" on this screen. Use get_screen to "

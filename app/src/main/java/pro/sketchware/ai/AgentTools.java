@@ -1022,7 +1022,11 @@ public final class AgentTools {
                     SketchwareProjects.project(scId);
             JsonObject clean = new JsonObject();
             clean.addProperty("activity", activity.fileName);
-            clean.addProperty("target", plan.targetId);
+            // Freeze the target FORM the executor must re-resolve: for
+            // activity events the resolved id is the event name
+            // itself, which re-reads as a (nonexistent) widget id.
+            clean.addProperty("target", plan.activityEvent
+                    ? "activity" : plan.targetId);
             clean.addProperty("event", plan.eventName);
             clean.addProperty("activity_event", plan.activityEvent);
             clean.addProperty("existing", plan.existingCount);
