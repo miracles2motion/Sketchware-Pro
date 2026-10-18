@@ -510,6 +510,47 @@ public final class AgentEdits {
                     bean.text.inputType = inputType;
                     lines.add("Set " + bean.id + " input type to " + value);
                 }
+                case "set_root" -> {
+                    // The screen's own layout is virtual: its class and
+                    // attributes live in InjectRootLayoutManager's
+                    // view_root data, not in a widget bean. Only the
+                    // values are resolved and frozen here; the execute
+                    // path writes them through that manager.
+                    boolean changed = false;
+                    if (op.has("background")) {
+                        String raw = stringOf(op, "background");
+                        int color = parseColor(scId, raw);
+                        op.addProperty("background_hex",
+                                String.format(Locale.ROOT, "#%08X", color));
+                        lines.add("Set the screen background to "
+                                + colorWord(scId, raw, color));
+                        changed = true;
+                    }
+                    if (op.has("orientation")) {
+                        if (rootParentType
+                                != ViewBean.VIEW_TYPE_LAYOUT_LINEAR) {
+                            throw new AgentTools.ToolException("E_BAD_OP",
+                                    "The screen's root layout is not a "
+                                            + "LinearLayout, so it has no "
+                                            + "orientation to set.");
+                        }
+                        String value = stringOf(op, "orientation")
+                                .toLowerCase(Locale.ROOT);
+                        if (!value.equals("vertical")
+                                && !value.equals("horizontal")) {
+                            throw new AgentTools.ToolException("E_BAD_VALUE",
+                                    "Orientation is \"vertical\" or "
+                                            + "\"horizontal\".");
+                        }
+                        lines.add("Make the screen stack " + value);
+                        changed = true;
+                    }
+                    if (!changed) {
+                        throw new AgentTools.ToolException("E_BAD_OP",
+                                "set_root needs a background colour and/or "
+                                        + "an orientation.");
+                    }
+                }
                 case "remove_widget" -> {
                     ViewBean bean = requireWidget(op, byId);
                     Set<String> removed = subtreeIds(bean.id, work);
@@ -577,7 +618,7 @@ public final class AgentEdits {
                                 + "set_enabled, set_text_style, "
                                 + "set_input_type, set_font, set_progress, "
                                 + "set_indeterminate, set_alpha, "
-                                + "set_clickable, remove_widget, "
+                                + "set_clickable, set_root, remove_widget, "
                                 + "move_widget.");
             }
             frozenOps.add(op);
@@ -746,6 +787,7 @@ public final class AgentEdits {
             case "settextstyle", "textstyle", "setbold" -> "set_text_style";
             case "setinputtype", "inputtype" -> "set_input_type";
             case "setfont", "font" -> "set_font";
+            case "setroot", "rootbackground", "setrootbackground" -> "set_root";
             case "setprogress", "progress" -> "set_progress";
             case "setindeterminate", "indeterminate" -> "set_indeterminate";
             case "setalpha", "alpha", "setopacity" -> "set_alpha";

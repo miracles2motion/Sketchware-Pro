@@ -256,6 +256,36 @@ public final class SketchwareProjects {
         public int events;
     }
 
+    /**
+     * How a screen's own root layout reads, from the root manager the
+     * editor and XML generator share: its class, orientation and
+     * background when set.
+     */
+    public static String rootDescription(String scId,
+                                         ProjectFileBean activity) {
+        try {
+            InjectRootLayoutManager manager =
+                    new InjectRootLayoutManager(scId);
+            InjectRootLayoutManager.Root root =
+                    manager.getLayoutByFileName(activity.getXmlName());
+            StringBuilder text = new StringBuilder(root.getClassName());
+            java.util.Map<String, String> attributes = root.getAttributes();
+            if (attributes != null) {
+                String orientation = attributes.get("android:orientation");
+                if (orientation != null) {
+                    text.append(", ").append(orientation);
+                }
+                String background = attributes.get("android:background");
+                if (background != null) {
+                    text.append(", background ").append(background);
+                }
+            }
+            return text.toString();
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
     /** Display name of any editable screen file. */
     public static String screenName(ProjectFileBean file) {
         return file.fileType == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY

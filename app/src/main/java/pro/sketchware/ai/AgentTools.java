@@ -521,6 +521,8 @@ public final class AgentTools {
                     activity.fileType
                             == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY
                             ? "activity" : "custom_view");
+            result.addProperty("root",
+                    SketchwareProjects.rootDescription(scId, activity));
             JsonArray widgets = new JsonArray();
             for (String line : SketchwareProjects.screenLines(scId, activity, 120)) {
                 widgets.add(line);
@@ -575,6 +577,9 @@ public final class AgentTools {
                     + "set_progress {id,progress?,max?} (ProgressBar/SeekBar), "
                     + "set_indeterminate {id,indeterminate}, set_alpha "
                     + "{id,alpha} (0 to 1), set_clickable {id,clickable}, "
+                    + "set_root {background?,orientation?} (the screen "
+                    + "itself: background colour and, for a LinearLayout "
+                    + "root, how it stacks), "
                     + "remove_widget {id} (removes what is inside it too), "
                     + "move_widget {id,parent}. "
                     + "Colours are #RRGGBB or the project tokens @primary, "
@@ -699,6 +704,8 @@ public final class AgentTools {
             for (com.besome.sketch.beans.ViewBean bean : outcome.beans) {
                 outcomeIds.add(bean.id);
             }
+            pro.sketchware.managers.inject.InjectRootLayoutManager.Root
+                    previousRoot = null;
             try {
                 SketchwareActions.backupProjectOnce(located.scId);
                 // Removed widgets go through the editor's own delete,
@@ -712,6 +719,31 @@ public final class AgentTools {
                 }
                 SketchwareActions.saveScreen(located.scId, located.activity,
                         outcome.beans);
+                // Screen-level changes ride in set_root ops; they are
+                // written through the root layout manager the editor
+                // itself uses, with the previous root kept for rollback.
+                java.util.Map<String, String> rootUpdates =
+                        new java.util.LinkedHashMap<>();
+                for (com.google.gson.JsonElement element
+                        : outcome.frozenOps) {
+                    JsonObject op = element.getAsJsonObject();
+                    if (!"set_root".equals(op.has("op")
+                            ? op.get("op").getAsString() : "")) {
+                        continue;
+                    }
+                    if (op.has("background_hex")) {
+                        rootUpdates.put("android:background",
+                                op.get("background_hex").getAsString());
+                    }
+                    if (op.has("orientation")) {
+                        rootUpdates.put("android:orientation",
+                                op.get("orientation").getAsString());
+                    }
+                }
+                if (!rootUpdates.isEmpty()) {
+                    previousRoot = SketchwareActions.setRootAttributes(
+                            located.scId, located.activity, rootUpdates);
+                }
                 // A Button the editor adds always gets its empty onClick
                 // event registered; mirror that for added Buttons.
                 // Custom views have no logic file, so no event is
@@ -736,6 +768,8 @@ public final class AgentTools {
                 try {
                     SketchwareActions.saveScreen(located.scId,
                             located.activity, previous);
+                    SketchwareActions.restoreRoot(located.scId,
+                            located.activity, previousRoot);
                 } catch (Exception ignored) {
                     // Best effort: the save failure is the error to report.
                 }

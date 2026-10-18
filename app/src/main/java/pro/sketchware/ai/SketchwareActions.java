@@ -251,6 +251,41 @@ public final class SketchwareActions {
     }
 
     /**
+     * Changes attributes of a screen's root layout through
+     * {@link pro.sketchware.managers.inject.InjectRootLayoutManager} —
+     * the same store the editor's root editing and the XML generator
+     * read. Returns the previous root so a failed save can put it back.
+     */
+    public static pro.sketchware.managers.inject.InjectRootLayoutManager.Root
+            setRootAttributes(String scId, ProjectFileBean activity,
+                              java.util.Map<String, String> updates) {
+        pro.sketchware.managers.inject.InjectRootLayoutManager manager =
+                new pro.sketchware.managers.inject.InjectRootLayoutManager(
+                        scId);
+        String xmlName = activity.getXmlName();
+        pro.sketchware.managers.inject.InjectRootLayoutManager.Root
+                previous = manager.getLayoutByFileName(xmlName);
+        java.util.Map<String, String> attributes =
+                new java.util.LinkedHashMap<>(previous.getAttributes());
+        attributes.putAll(updates);
+        manager.set(xmlName, new pro.sketchware.managers.inject
+                .InjectRootLayoutManager.Root(
+                        previous.getClassName(), attributes));
+        return previous;
+    }
+
+    /** Puts back a root layout captured by {@link #setRootAttributes}. */
+    public static void restoreRoot(String scId, ProjectFileBean activity,
+            pro.sketchware.managers.inject.InjectRootLayoutManager.Root
+                    previous) {
+        if (previous == null) {
+            return;
+        }
+        new pro.sketchware.managers.inject.InjectRootLayoutManager(scId)
+                .set(activity.getXmlName(), previous);
+    }
+
+    /**
      * Gives a newly added Button the empty onClick event the editor itself
      * registers the moment a Button is dropped or preset-added
      * ({@code ViewEditor}'s drop path, {@code ManageViewActivity}'s preset
