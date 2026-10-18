@@ -606,3 +606,13 @@ Device test findings (SportyNivida / Sporty Bet):
   not invented hex. (3) "agree first / no coding yet" now means no
   tool call at all, and a later "yes" only approves the
   interpretation stated back in the user's own words.
+  **Device-verified 2026-10-18** (build `0ad290e`): the tint card
+  named #FFCDA291 — exactly 40% from the copper primary #FFAC6448;
+  the picked #FFEF9A9A still needed a card; closing the picker
+  produced a plain-language ask, no error; agree-first produced no
+  card and the three tints were offered by name; container-first
+  led the EmptyActivity card ("First, the main layout to hold the
+  screen"). One blemish: after a pick the model asked in chat *and*
+  showed the card — fixed by instructing straight-to-card after a
+  pick. Slices 1–3, container-first and the colour work are now all
+  device-verified; next is slice 4, `set_event_handler`.

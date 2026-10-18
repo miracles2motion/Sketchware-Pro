@@ -952,7 +952,9 @@ public final class AgentTools {
                     + "Pass a starting colour in \"initial\" when one is "
                     + "being replaced. If the user closes the picker, "
                     + "the result says cancelled — then ask in words or "
-                    + "continue without that change. Never call this when "
+                    + "continue without that change. Once the user picks, "
+                    + "go straight to the approval card for the change; "
+                    + "do not ask again in chat first. Never call this when "
                     + "the user already named an exact colour or token.";
         }
 

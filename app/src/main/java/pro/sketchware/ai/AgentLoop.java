@@ -280,9 +280,10 @@ public class AgentLoop {
         result.add("picked_colour", picked);
         result.addProperty("message",
                 "The user picked this colour themselves in Sketchware's "
-                        + "colour picker. Use the hex exactly, and still "
-                        + "show any change on an approval card before "
-                        + "applying it.");
+                        + "colour picker. Use the hex exactly, and propose "
+                        + "the change on an approval card right away — the "
+                        + "card is the confirmation, so do not ask again "
+                        + "in chat first.");
         return result;
     }
 
