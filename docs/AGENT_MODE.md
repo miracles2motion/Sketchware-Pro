@@ -787,3 +787,12 @@ Device test findings (SportyNivida / Sporty Bet):
   last problem, so the user sees why it stopped.
   (d) Guidance: fix placement (move into the main container, or
   sizes/weights) instead of restructuring screens unprompted.
+- View reporters wave (2026-10-18): expressions can now read
+  widgets live - {"text_of":widget} (getText, s),
+  {"url_of":webview} (webViewGetUrl, s), {"checked":checkbox}
+  (getChecked, b), {"enabled":widget} (getEnable, b),
+  {"progress_of":seekbar} (seekBarGetProgress, d); widget kind
+  checked against each block's slot menu. "=" between text
+  expressions routes to stringEquals (Fx emits .equals) instead
+  of the numeric == block. Card lines read "text of edittext1",
+  "checkbox1 is checked", etc.

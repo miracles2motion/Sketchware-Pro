@@ -535,6 +535,95 @@ public final class AgentLogic {
                 return object.get("bool").getAsBoolean()
                         ? "true" : "false";
             }
+            if (object.has("text_of") || object.has("url_of")
+                    || object.has("checked") || object.has("enabled")
+                    || object.has("progress_of")) {
+                // Reporters that read a widget's live value: the
+                // editor's getText/webViewGetUrl/getChecked/
+                // getEnable/seekBarGetProgress blocks, one widget-id
+                // parameter each, Fx-verified emissions.
+                String key = object.has("text_of") ? "text_of"
+                        : object.has("url_of") ? "url_of"
+                        : object.has("checked") ? "checked"
+                        : object.has("enabled") ? "enabled"
+                        : "progress_of";
+                String id = stringOf(object, key);
+                ViewBean widget = findWidget(byId, id);
+                if (widget == null) {
+                    throw badValue(what, "there is no widget called "
+                            + id + " on this screen");
+                }
+                String typeName = AgentEdits.typeName(widget.type);
+                switch (key) {
+                    case "text_of" -> {
+                        if (slot != 's') {
+                            throw badValue(what, "the text of "
+                                    + widget.id + " is text and does "
+                                    + "not fit here");
+                        }
+                        if (!TEXT_TYPES.contains(typeName)) {
+                            throw badValue(what, widget.id + " is a "
+                                    + typeName + ", which has no text");
+                        }
+                        BlockBean bean = newBean("getText", "s");
+                        bean.parameters.add(widget.id);
+                        return "@" + bean.id;
+                    }
+                    case "url_of" -> {
+                        if (slot != 's') {
+                            throw badValue(what, "the url of "
+                                    + widget.id + " is text and does "
+                                    + "not fit here");
+                        }
+                        if (!"WebView".equals(typeName)) {
+                            throw badValue(what, widget.id + " is a "
+                                    + typeName + ", not a WebView");
+                        }
+                        BlockBean bean = newBean("webViewGetUrl", "s");
+                        bean.parameters.add(widget.id);
+                        return "@" + bean.id;
+                    }
+                    case "checked" -> {
+                        if (slot != 'b') {
+                            throw badValue(what, "whether " + widget.id
+                                    + " is checked is true/false and "
+                                    + "does not fit here");
+                        }
+                        if (!"CheckBox".equals(typeName)) {
+                            throw badValue(what, widget.id + " is a "
+                                    + typeName + ", not a CheckBox");
+                        }
+                        BlockBean bean = newBean("getChecked", "b");
+                        bean.parameters.add(widget.id);
+                        return "@" + bean.id;
+                    }
+                    case "enabled" -> {
+                        if (slot != 'b') {
+                            throw badValue(what, "whether " + widget.id
+                                    + " is enabled is true/false and "
+                                    + "does not fit here");
+                        }
+                        BlockBean bean = newBean("getEnable", "b");
+                        bean.parameters.add(widget.id);
+                        return "@" + bean.id;
+                    }
+                    default -> {
+                        if (slot != 'd') {
+                            throw badValue(what, "the progress of "
+                                    + widget.id + " is a number and "
+                                    + "does not fit here");
+                        }
+                        if (!"SeekBar".equals(typeName)) {
+                            throw badValue(what, widget.id + " is a "
+                                    + typeName + ", not a SeekBar");
+                        }
+                        BlockBean bean = newBean(
+                                "seekBarGetProgress", "d");
+                        bean.parameters.add(widget.id);
+                        return "@" + bean.id;
+                    }
+                }
+            }
             if (object.has("op")) {
                 String operation = stringOf(object, "op");
                 switch (operation) {
@@ -554,6 +643,20 @@ public final class AgentLogic {
                         if (slot != 'b') {
                             throw badValue(what, "a comparison does "
                                     + "not fit here");
+                        }
+                        if ("=".equals(operation)
+                                && (isTextExpr(object.get("a"))
+                                        || isTextExpr(object.get("b")))) {
+                            // Text equality is its own editor block;
+                            // the numeric "=" would emit ==, which
+                            // compares string objects, not text.
+                            BlockBean bean = newBean("stringEquals",
+                                    "b");
+                            bean.parameters.add(expr(object.get("a"),
+                                    's', what));
+                            bean.parameters.add(expr(object.get("b"),
+                                    's', what));
+                            return "@" + bean.id;
                         }
                         BlockBean bean = newBean(operation, "b");
                         bean.parameters.add(expr(object.get("a"), 'd',
@@ -608,6 +711,21 @@ public final class AgentLogic {
                 return "?";
             }
             JsonObject object = element.getAsJsonObject();
+            if (object.has("text_of")) {
+                return "text of " + stringOf(object, "text_of");
+            }
+            if (object.has("url_of")) {
+                return "url of " + stringOf(object, "url_of");
+            }
+            if (object.has("checked")) {
+                return stringOf(object, "checked") + " is checked";
+            }
+            if (object.has("enabled")) {
+                return stringOf(object, "enabled") + " is enabled";
+            }
+            if (object.has("progress_of")) {
+                return "progress of " + stringOf(object, "progress_of");
+            }
             if (object.has("var")) {
                 return stringOf(object, "var");
             }
@@ -642,6 +760,29 @@ public final class AgentLogic {
             stmt.expectCode = expectCode;
             stmt.sentence = sentence;
             stmts.add(stmt);
+        }
+
+        /** True when an expression yields text (for "=" routing). */
+        private boolean isTextExpr(JsonElement element) {
+            if (element == null || element.isJsonNull()) {
+                return false;
+            }
+            if (element.isJsonPrimitive()) {
+                return element.getAsJsonPrimitive().isString();
+            }
+            if (!element.isJsonObject()) {
+                return false;
+            }
+            JsonObject object = element.getAsJsonObject();
+            if (object.has("text_of") || object.has("url_of")
+                    || object.has("text")) {
+                return true;
+            }
+            if (object.has("var")) {
+                Integer kind = variables.get(stringOf(object, "var"));
+                return kind != null && kind == 2;
+            }
+            return false;
         }
 
         private AgentTools.ToolException badValue(String what,
