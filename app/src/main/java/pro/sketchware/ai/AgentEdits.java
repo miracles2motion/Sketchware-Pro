@@ -378,6 +378,83 @@ public final class AgentEdits {
                     bean.text.textType = textType;
                     lines.add("Make " + bean.id + " text " + value);
                 }
+                case "set_progress" -> {
+                    // bean.progress / bean.max, the property editor's
+                    // own fields for progress widgets.
+                    ViewBean bean = requireWidget(op, byId);
+                    if (bean.type != ViewBean.VIEW_TYPE_WIDGET_PROGRESSBAR
+                            && bean.type != ViewBean.VIEW_TYPE_WIDGET_SEEKBAR) {
+                        throw new AgentTools.ToolException("E_WRONG_WIDGET",
+                                "Only a ProgressBar or SeekBar has "
+                                        + "progress: " + bean.id + " is a "
+                                        + typeName(bean.type) + ".");
+                    }
+                    if (op.has("max")) {
+                        int max = intOf(op, "max", 0);
+                        if (max < 1 || max > 100000) {
+                            throw new AgentTools.ToolException("E_BAD_VALUE",
+                                    "Max is a whole number from 1 to "
+                                            + "100000.");
+                        }
+                        bean.max = max;
+                        lines.add("Set " + bean.id + " maximum to " + max);
+                    }
+                    if (op.has("progress")) {
+                        int progress = intOf(op, "progress", -1);
+                        if (progress < 0 || progress > 100000) {
+                            throw new AgentTools.ToolException("E_BAD_VALUE",
+                                    "Progress is a whole number from 0.");
+                        }
+                        bean.progress = progress;
+                        lines.add("Set " + bean.id + " progress to "
+                                + progress);
+                    }
+                    if (!op.has("max") && !op.has("progress")) {
+                        throw new AgentTools.ToolException("E_BAD_OP",
+                                "set_progress needs a progress and/or max.");
+                    }
+                }
+                case "set_indeterminate" -> {
+                    ViewBean bean = requireWidget(op, byId);
+                    if (bean.type != ViewBean.VIEW_TYPE_WIDGET_PROGRESSBAR) {
+                        throw new AgentTools.ToolException("E_WRONG_WIDGET",
+                                "Only a ProgressBar can spin indefinitely: "
+                                        + bean.id + " is a "
+                                        + typeName(bean.type) + ".");
+                    }
+                    boolean indeterminate = boolOf(op, "indeterminate");
+                    bean.indeterminate = String.valueOf(indeterminate);
+                    lines.add(indeterminate
+                            ? "Make " + bean.id + " spin indefinitely"
+                            : "Make " + bean.id + " show real progress");
+                }
+                case "set_alpha" -> {
+                    ViewBean bean = requireWidget(op, byId);
+                    float alpha;
+                    try {
+                        alpha = Float.parseFloat(
+                                stringOf(op, "alpha").trim());
+                    } catch (NumberFormatException e) {
+                        throw new AgentTools.ToolException("E_BAD_VALUE",
+                                "Alpha is a number from 0 (invisible) to 1 "
+                                        + "(fully visible).");
+                    }
+                    if (alpha < 0f || alpha > 1f) {
+                        throw new AgentTools.ToolException("E_BAD_VALUE",
+                                "Alpha is a number from 0 (invisible) to 1 "
+                                        + "(fully visible).");
+                    }
+                    bean.alpha = alpha;
+                    lines.add("Set " + bean.id + " opacity to " + alpha);
+                }
+                case "set_clickable" -> {
+                    ViewBean bean = requireWidget(op, byId);
+                    boolean clickable = boolOf(op, "clickable");
+                    bean.clickable = clickable ? 1 : 0;
+                    lines.add(clickable
+                            ? "Make " + bean.id + " clickable"
+                            : "Make " + bean.id + " ignore taps");
+                }
                 case "set_input_type" -> {
                     ViewBean bean = requireWidget(op, byId);
                     if (bean.type != ViewBean.VIEW_TYPE_WIDGET_EDITTEXT
@@ -482,7 +559,9 @@ public final class AgentEdits {
                                 + "set_weight, set_image, set_scale_type, "
                                 + "set_background_image, set_checked, "
                                 + "set_enabled, set_text_style, "
-                                + "set_input_type, remove_widget, "
+                                + "set_input_type, set_progress, "
+                                + "set_indeterminate, set_alpha, "
+                                + "set_clickable, remove_widget, "
                                 + "move_widget.");
             }
             frozenOps.add(op);
@@ -650,6 +729,10 @@ public final class AgentEdits {
             case "setenabled", "enabled" -> "set_enabled";
             case "settextstyle", "textstyle", "setbold" -> "set_text_style";
             case "setinputtype", "inputtype" -> "set_input_type";
+            case "setprogress", "progress" -> "set_progress";
+            case "setindeterminate", "indeterminate" -> "set_indeterminate";
+            case "setalpha", "alpha", "setopacity" -> "set_alpha";
+            case "setclickable", "clickable" -> "set_clickable";
             case "setbackground", "setbackgroundcolor",
                     "setbackgroundcolour" -> "set_background";
             case "settextcolor", "settextcolour" -> "set_text_color";
