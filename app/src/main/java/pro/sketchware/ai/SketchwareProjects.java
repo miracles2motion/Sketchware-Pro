@@ -240,6 +240,32 @@ public final class SketchwareProjects {
         return resources;
     }
 
+    /**
+     * The events an activity already has, as "widgetId eventName" lines,
+     * through the data manager's own event list ({@code eC.g}).
+     * Activities only; custom views have no logic.
+     */
+    public static List<String> eventLines(String scId,
+                                          ProjectFileBean activity) {
+        List<String> lines = new ArrayList<>();
+        if (activity.fileType
+                != ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
+            return lines;
+        }
+        try {
+            for (com.besome.sketch.beans.EventBean event
+                    : jC.a(scId).g(activity.getJavaName())) {
+                lines.add(event.targetId + " " + event.eventName);
+                if (lines.size() >= 60) {
+                    break;
+                }
+            }
+        } catch (Exception ignored) {
+            // Unreadable events read as "none wired".
+        }
+        return lines;
+    }
+
     /** A project's image, sound and font names. */
     public static final class Resources {
         public final List<String> images = new ArrayList<>();

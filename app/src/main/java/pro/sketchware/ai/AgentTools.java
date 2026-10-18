@@ -528,6 +528,11 @@ public final class AgentTools {
                 widgets.add(line);
             }
             result.add("widgets", widgets);
+            JsonArray events = new JsonArray();
+            for (String line : SketchwareProjects.eventLines(scId, activity)) {
+                events.add(line);
+            }
+            result.add("events", events);
             return result;
         }
     }
