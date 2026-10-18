@@ -3,6 +3,7 @@ package pro.sketchware.ai;
 import android.content.Context;
 
 import com.besome.sketch.beans.BlockBean;
+import com.besome.sketch.beans.ComponentBean;
 import com.besome.sketch.beans.EventBean;
 import com.besome.sketch.beans.ProjectFileBean;
 import com.besome.sketch.beans.ViewBean;
@@ -95,6 +96,8 @@ public final class AgentLogic {
         public boolean activityEvent;
         public boolean eventExists;
         public int existingCount;
+        /** Intent component apply() must create first, or null. */
+        public String newComponentId;
         public String header;
         public final ArrayList<String> lines = new ArrayList<>();
         final ArrayList<Stmt> statements = new ArrayList<>();
@@ -203,7 +206,28 @@ public final class AgentLogic {
         plan.existingCount = existing.size();
         int nextId = nextFreeId(existing);
 
+        // The components this activity already has (id to editor
+        // type code), so Intent blocks are checked before they run.
+        LinkedHashMap<String, Integer> components =
+                new LinkedHashMap<>();
+        try {
+            ArrayList<ComponentBean> stored = store.e(javaName);
+            if (stored != null) {
+                for (ComponentBean component : stored) {
+                    if (component != null
+                            && component.componentId != null) {
+                        components.put(component.componentId,
+                                component.type);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // No components readable; Intent blocks will say so.
+        }
+
         Builder builder = new Builder(context, byId, variables, nextId);
+        builder.components = components;
+        builder.scId = scId;
         for (JsonElement element : blocks) {
             if (!element.isJsonObject()) {
                 throw new AgentTools.ToolException("E_BAD_BLOCK",
@@ -212,6 +236,11 @@ public final class AgentLogic {
             }
             plan.chain.add(builder.buildStatement(
                     element.getAsJsonObject(), 0));
+        }
+        if (builder.componentToCreate != null) {
+            plan.newComponentId = builder.componentToCreate;
+            plan.lines.add(0, "Add an Intent component ("
+                    + plan.newComponentId + ") to this screen");
         }
         plan.fresh.addAll(builder.created);
         plan.statements.addAll(builder.stmts);
@@ -245,9 +274,21 @@ public final class AgentLogic {
         }
         // Chain the fresh beans among themselves; the applier joins
         // them to the existing chain's tail.
+        HashMap<String, BlockBean> freshById = new HashMap<>();
+        for (BlockBean bean : plan.fresh) {
+            freshById.put(bean.id, bean);
+        }
         for (int i = 0; i + 1 < plan.chain.size(); i++) {
-            plan.chain.get(i).nextBlock =
-                    Integer.parseInt(plan.chain.get(i + 1).id);
+            // Link from the tail: a statement may itself be a short
+            // chain (open_screen is two blocks).
+            BlockBean tail = plan.chain.get(i);
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            while (tail.nextBlock >= 0 && seen.add(tail.id)
+                    && freshById.containsKey(
+                            String.valueOf(tail.nextBlock))) {
+                tail = freshById.get(String.valueOf(tail.nextBlock));
+            }
+            tail.nextBlock = Integer.parseInt(plan.chain.get(i + 1).id);
         }
 
         // Prove with the app's own code generator that the combined
@@ -293,6 +334,12 @@ public final class AgentLogic {
         final ArrayList<String> lines = new ArrayList<>();
         int nextId;
         int total;
+        /** Component id to editor type code, for Intent blocks. */
+        Map<String, Integer> components = new LinkedHashMap<>();
+        /** Project id, for resolving screens an Intent opens. */
+        String scId;
+        /** Intent component apply() must create, once per plan. */
+        String componentToCreate;
 
         Builder(Context context, Map<String, ViewBean> byId,
                 Map<String, Integer> variables, int nextId) {
@@ -393,6 +440,80 @@ public final class AgentLogic {
                     lines.add(indent(depth) + "Break out of the loop");
                     return bean;
                 }
+                case "open_screen" -> {
+                    // The editor's intentSetScreen + startActivity
+                    // pair, over an Intent component: an existing one
+                    // when the screen has one, otherwise one the
+                    // applier creates first (named on the card).
+                    String screen = stringOf(op, "screen");
+                    if (screen.isEmpty()) {
+                        screen = stringOf(op, "to");
+                    }
+                    ProjectFileBean target =
+                            SketchwareProjects.findActivity(scId, screen);
+                    if (target == null) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "There is no screen called " + screen
+                                        + " in this project to open. "
+                                        + "Create it first, or check "
+                                        + "list_activities.");
+                    }
+                    String componentId = stringOf(op, "component");
+                    if (!componentId.isEmpty()) {
+                        Integer type = components.get(componentId);
+                        if (type == null || type
+                                != ComponentBean.COMPONENT_TYPE_INTENT) {
+                            throw new AgentTools.ToolException(
+                                    "E_BAD_BLOCK",
+                                    "There is no Intent component "
+                                            + "called " + componentId
+                                            + " on this screen.");
+                        }
+                    } else {
+                        for (Map.Entry<String, Integer> entry
+                                : components.entrySet()) {
+                            if (entry.getValue()
+                                    == ComponentBean
+                                            .COMPONENT_TYPE_INTENT) {
+                                componentId = entry.getKey();
+                                break;
+                            }
+                        }
+                    }
+                    if (componentId.isEmpty()) {
+                        if (componentToCreate == null) {
+                            int n = 1;
+                            while (components.containsKey(
+                                    "intent" + n)
+                                    || byId.containsKey("intent" + n)
+                                    || variables.containsKey(
+                                            "intent" + n)) {
+                                n++;
+                            }
+                            componentToCreate = "intent" + n;
+                        }
+                        componentId = componentToCreate;
+                    }
+                    String targetName = SketchwareProjects.activityName(target);
+                    BlockBean setScreen = newBean("intentSetScreen",
+                            " ");
+                    setScreen.parameters.add(componentId);
+                    setScreen.parameters.add(targetName);
+                    allStatements.add(setScreen);
+                    addExpect(componentId + ".setClass",
+                            "Point " + componentId + " at "
+                                    + targetName);
+                    BlockBean start = newBean("startActivity", " ");
+                    start.parameters.add(componentId);
+                    allStatements.add(start);
+                    addExpect("startActivity(" + componentId,
+                            "Open " + targetName);
+                    setScreen.nextBlock = Integer.parseInt(start.id);
+                    lines.add(indent(depth) + "Open "
+                            + SketchwareProjects.activityName(target));
+                    return setScreen;
+                }
                 default -> {
                     Stmt stmt = translate(context, op, byId, variables);
                     stmts.add(stmt);
@@ -439,9 +560,22 @@ public final class AgentLogic {
                 heads.add(buildStatement(element.getAsJsonObject(),
                         depth));
             }
+            HashMap<String, BlockBean> createdById = new HashMap<>();
+            for (BlockBean bean : created) {
+                createdById.put(bean.id, bean);
+            }
             for (int i = 0; i + 1 < heads.size(); i++) {
-                heads.get(i).nextBlock = Integer.parseInt(
-                        heads.get(i + 1).id);
+                // Link from the tail: a statement may itself be a
+                // short chain (open_screen is two blocks).
+                BlockBean tail = heads.get(i);
+                java.util.Set<String> seen = new java.util.HashSet<>();
+                while (tail.nextBlock >= 0 && seen.add(tail.id)
+                        && createdById.containsKey(
+                                String.valueOf(tail.nextBlock))) {
+                    tail = createdById.get(
+                            String.valueOf(tail.nextBlock));
+                }
+                tail.nextBlock = Integer.parseInt(heads.get(i + 1).id);
             }
             return heads;
         }
@@ -534,6 +668,23 @@ public final class AgentLogic {
                 }
                 return object.get("bool").getAsBoolean()
                         ? "true" : "false";
+            }
+            if (object.has("extra")) {
+                // The value another screen passed when it opened
+                // this one: the editor's intentGetString reporter
+                // (getIntent().getStringExtra(key)).
+                if (slot != 's') {
+                    throw badValue(what, "an extra passed to this "
+                            + "screen is text and does not fit here");
+                }
+                String key = stringOf(object, "extra");
+                if (key.isEmpty()) {
+                    throw badValue(what, "an extra needs its key, "
+                            + "e.g. {\"extra\":\"name\"}");
+                }
+                BlockBean bean = newBean("intentGetString", "s");
+                bean.parameters.add(key);
+                return "@" + bean.id;
             }
             if (object.has("text_of") || object.has("url_of")
                     || object.has("checked") || object.has("enabled")
@@ -711,6 +862,10 @@ public final class AgentLogic {
                 return "?";
             }
             JsonObject object = element.getAsJsonObject();
+            if (object.has("extra")) {
+                return "extra \u201C" + stringOf(object, "extra")
+                        + "\u201D";
+            }
             if (object.has("text_of")) {
                 return "text of " + stringOf(object, "text_of");
             }
@@ -823,6 +978,13 @@ public final class AgentLogic {
         boolean registeredHere = false;
         try {
             SketchwareActions.backupProjectOnce(plan.scId);
+            if (plan.newComponentId != null) {
+                // The editor's own component-add path; like an event
+                // registered below, it stays if a later step fails —
+                // an unused Intent component is harmless.
+                store.a(javaName, ComponentBean.COMPONENT_TYPE_INTENT,
+                        plan.newComponentId);
+            }
             if (!plan.eventExists
                     && !eventRegistered(store, javaName, plan)) {
                 if (plan.activityEvent) {
@@ -844,6 +1006,24 @@ public final class AgentLogic {
             String problem = verify(readBack, combined, plan);
             if (problem != null) {
                 throw new IllegalStateException(problem);
+            }
+            if (plan.newComponentId != null) {
+                boolean found = false;
+                ArrayList<ComponentBean> components =
+                        store.e(javaName);
+                if (components != null) {
+                    for (ComponentBean component : components) {
+                        if (plan.newComponentId.equals(
+                                component.componentId)) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if (!found) {
+                    throw new IllegalStateException(
+                            "The Intent component was not saved.");
+                }
             }
             JsonObject result = new JsonObject();
             result.addProperty("applied", true);

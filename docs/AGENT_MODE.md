@@ -796,3 +796,12 @@ Device test findings (SportyNivida / Sporty Bet):
   expressions routes to stringEquals (Fx emits .equals) instead
   of the numeric == block. Card lines read "text of edittext1",
   "checkbox1 is checked", etc.
+- Components wave 1: Intent (2026-10-18): new statement
+  open_screen {screen, component?} = the editor's intentSetScreen
+  + startActivity pair over an Intent component. Existing Intent
+  component reused; when none exists, apply() creates intent1 (or
+  next free) via eC.a(javaName, COMPONENT_TYPE_INTENT, id) - the
+  component picker's own call - named on the approval card and
+  verified by read-back. Statement chains are now linked from
+  their tail (top level and nested), since open_screen is two
+  blocks. New reporter {"extra":"key"} = intentGetString.
