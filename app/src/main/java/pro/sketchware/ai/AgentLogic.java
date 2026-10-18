@@ -324,7 +324,7 @@ public final class AgentLogic {
             dryExisting.add(bean.clone());
         }
         String combined = generate(context, scId, activity,
-                joined(dryExisting, plan.fresh));
+                joined(dryExisting, freshGenerationList(plan)));
         Stmt unproven = null;
         for (Stmt stmt : plan.statements) {
             if (combined == null || !combined.contains(stmt.expectCode)) {
@@ -1211,7 +1211,13 @@ public final class AgentLogic {
                 }
                 registeredHere = true;
             }
-            ArrayList<BlockBean> combined = joined(current, plan.fresh);
+            // Join at the chain head and store in the editor's
+            // own order: Fx and the loader both start from list
+            // element 0, so the head statement must sit there —
+            // linking to the first created bean instead strands
+            // the new chain behind a condition reporter.
+            ArrayList<BlockBean> combined = editorOrder(
+                    joined(current, freshGenerationList(plan)));
             java.util.Set<String> freshIds = new java.util.HashSet<>();
             for (BlockBean bean : plan.fresh) {
                 freshIds.add(bean.id);
@@ -2093,6 +2099,29 @@ public final class AgentLogic {
             }
         }
         return 0;
+    }
+
+    /**
+     * A stored list reordered the way the editor writes it: main
+     * chain first (head at index 0), then everything else —
+     * container bodies and reporters — in its existing order.
+     * Both Fx ({@code eventBlocks.get(0)}) and the editor loader
+     * start from element 0.
+     */
+    private static ArrayList<BlockBean> editorOrder(
+            ArrayList<BlockBean> beans) {
+        ArrayList<BlockBean> ordered = new ArrayList<>();
+        java.util.Set<Integer> inChain = new java.util.HashSet<>();
+        for (int index : chainIndices(beans)) {
+            inChain.add(index);
+            ordered.add(beans.get(index));
+        }
+        for (int i = 0; i < beans.size(); i++) {
+            if (!inChain.contains(i)) {
+                ordered.add(beans.get(i));
+            }
+        }
+        return ordered;
     }
 
     /**

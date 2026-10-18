@@ -872,3 +872,14 @@ Device test findings (SportyNivida / Sporty Bet):
   a named warning), and on the full result of edit_event_block.
   Same-failure loop signature now includes the payload hash, so
   a different second attempt is not killed as a repeat.
+  Same-failure loop signature now includes the payload hash, so
+  a different second attempt is not killed as a repeat.
+- Chain-join fix (2026-10-19, device: proposals correct but
+  apply failed "new blocks are not on the event's chain"):
+  joined() linked the old chain's tail to plan.fresh.get(0),
+  which for an if is a condition REPORTER created before the if
+  bean - the new chain hung off a dead-end reporter. Both the
+  proposal dry run and apply now join via freshGenerationList
+  (chain heads first), and apply stores the combined list in
+  editor order (editorOrder: main chain from element 0, the
+  order Fx eventBlocks.get(0) and loadEventBlocks assume).
