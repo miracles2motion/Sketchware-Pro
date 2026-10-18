@@ -570,6 +570,8 @@ public final class AgentTools {
                     + "{id,enabled}, set_text_style {id,style} (normal, bold, "
                     + "italic, bold_italic), set_input_type {id,input_type} "
                     + "(text, number, phone, password, number_decimal), "
+                    + "set_font {id,font} (a font from list_resources, or "
+                    + "default_font), "
                     + "set_progress {id,progress?,max?} (ProgressBar/SeekBar), "
                     + "set_indeterminate {id,indeterminate}, set_alpha "
                     + "{id,alpha} (0 to 1), set_clickable {id,clickable}, "

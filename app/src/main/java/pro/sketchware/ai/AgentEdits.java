@@ -378,6 +378,22 @@ public final class AgentEdits {
                     bean.text.textType = textType;
                     lines.add("Make " + bean.id + " text " + value);
                 }
+                case "set_font" -> {
+                    // text.textFont holds a project font name; the
+                    // property editor only offers fonts the project has.
+                    ViewBean bean = requireWidget(op, byId);
+                    String font = stringOf(op, "font");
+                    if (!font.equals("default_font")
+                            && !SketchwareProjects.resources(scId)
+                                    .fonts.contains(font)) {
+                        throw new AgentTools.ToolException("E_BAD_VALUE",
+                                "The project has no font called " + font
+                                        + ". Use list_resources to see "
+                                        + "its fonts, or \"default_font\".");
+                    }
+                    bean.text.textFont = font;
+                    lines.add("Set " + bean.id + " font to " + font);
+                }
                 case "set_progress" -> {
                     // bean.progress / bean.max, the property editor's
                     // own fields for progress widgets.
@@ -559,7 +575,7 @@ public final class AgentEdits {
                                 + "set_weight, set_image, set_scale_type, "
                                 + "set_background_image, set_checked, "
                                 + "set_enabled, set_text_style, "
-                                + "set_input_type, set_progress, "
+                                + "set_input_type, set_font, set_progress, "
                                 + "set_indeterminate, set_alpha, "
                                 + "set_clickable, remove_widget, "
                                 + "move_widget.");
@@ -729,6 +745,7 @@ public final class AgentEdits {
             case "setenabled", "enabled" -> "set_enabled";
             case "settextstyle", "textstyle", "setbold" -> "set_text_style";
             case "setinputtype", "inputtype" -> "set_input_type";
+            case "setfont", "font" -> "set_font";
             case "setprogress", "progress" -> "set_progress";
             case "setindeterminate", "indeterminate" -> "set_indeterminate";
             case "setalpha", "alpha", "setopacity" -> "set_alpha";
