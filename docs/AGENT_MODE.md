@@ -765,3 +765,14 @@ Device test findings (SportyNivida / Sporty Bet):
   card and in the tool result so the model fixes placement.
   (c) `get_screen` now renders the screen as an indented tree in
   stored order instead of a flat list with parent tags.
+- Control flow + reporter values (2026-10-18, CI-pending):
+  `set_event_handler` blocks can now nest: if/if_else/repeat/
+  forever/break built through subStack1/subStack2 with the app's
+  own opCodes and type letters (checked against Fx's generator:
+  `if (%s)`, for-loop repeat, while(true), break;). Conditions
+  and counts are recursive value expressions — variables,
+  literals, + - * / %, < > =, and/or/not — stored as reporter
+  beans referenced "@id", variables keeping the getVar shape.
+  Caps: 8 per list, 3 containers deep, 24 statements total.
+  Remaining waves: view/component reporters (e.g. text-of),
+  components (Intent first), map/list variables.

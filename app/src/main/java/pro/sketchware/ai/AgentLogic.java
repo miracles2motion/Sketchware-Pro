@@ -58,6 +58,12 @@ public final class AgentLogic {
     /** At most this many blocks per handler call. */
     public static final int MAX_BLOCKS = 8;
 
+    /** Deepest container nesting in one handler. */
+    private static final int MAX_DEPTH = 3;
+
+    /** Every statement in one handler, nested ones included. */
+    private static final int MAX_TOTAL = 24;
+
     /** Slot token separators, for finding editable values. */
     private static final java.util.regex.Pattern SLOT_PATTERN =
             java.util.regex.Pattern.compile("%[a-zA-Z]+(?:\\.[a-zA-Z]+)?");
@@ -197,34 +203,25 @@ public final class AgentLogic {
         plan.existingCount = existing.size();
         int nextId = nextFreeId(existing);
 
+        Builder builder = new Builder(context, byId, variables, nextId);
         for (JsonElement element : blocks) {
             if (!element.isJsonObject()) {
                 throw new AgentTools.ToolException("E_BAD_BLOCK",
                         "Every block must be an object like "
                                 + "{\"block\":\"toast\",\"message\":\"Hi\"}.");
             }
-            Stmt stmt = translate(context, element.getAsJsonObject(), byId,
-                    variables);
-            plan.statements.add(stmt);
-            BlockBean bean = new BlockBean(String.valueOf(nextId),
-                    specFor(context, stmt.opCode), stmt.type, "",
-                    stmt.opCode);
-            try {
-                bean.color = kq.a(stmt.opCode, stmt.type);
-            } catch (Exception ignored) {
-                // Colour is display-only; the palette default stands.
-            }
-            bean.parameters.addAll(stmt.params);
-            plan.fresh.add(bean);
-            plan.chain.add(bean);
-            plan.lines.add(stmt.sentence);
-            nextId++;
+            plan.chain.add(builder.buildStatement(
+                    element.getAsJsonObject(), 0));
         }
+        plan.fresh.addAll(builder.created);
+        plan.statements.addAll(builder.stmts);
+        plan.lines.addAll(builder.lines);
+        nextId = builder.nextId;
         // Resolve variable-value reporters: each "@var:" placeholder
         // in a statement's parameters becomes an "@id" reference to a
         // getVar bean (spec = the variable name, the shape the editor
         // stores) appended after the statement beans, unchained.
-        for (BlockBean bean : plan.chain) {
+        for (BlockBean bean : builder.allStatements) {
             for (int i = 0; i < bean.parameters.size(); i++) {
                 String param = bean.parameters.get(i);
                 if (!param.startsWith("@var:")) {
@@ -274,6 +271,389 @@ public final class AgentLogic {
             }
         }
         return plan;
+    }
+
+    /**
+     * Builds the beans for one handler, recursively: container blocks
+     * (if, if/else, repeat, forever) own sub-chains through
+     * subStack1/subStack2 exactly as the editor stores them, and
+     * value expressions become reporter beans referenced as "@id"
+     * (variables keep the "@var:" placeholder the getVar pass below
+     * resolves). Every opCode, slot and type letter comes from the
+     * app's own tables via {@link #specFor} and {@code kq}; every
+     * container shape was checked against Fx's generator cases.
+     */
+    private static final class Builder {
+        final Context context;
+        final Map<String, ViewBean> byId;
+        final Map<String, Integer> variables;
+        final ArrayList<BlockBean> created = new ArrayList<>();
+        final ArrayList<BlockBean> allStatements = new ArrayList<>();
+        final ArrayList<Stmt> stmts = new ArrayList<>();
+        final ArrayList<String> lines = new ArrayList<>();
+        int nextId;
+        int total;
+
+        Builder(Context context, Map<String, ViewBean> byId,
+                Map<String, Integer> variables, int nextId) {
+            this.context = context;
+            this.byId = byId;
+            this.variables = variables;
+            this.nextId = nextId;
+        }
+
+        BlockBean newBean(String opCode, String type) {
+            BlockBean bean = new BlockBean(String.valueOf(nextId),
+                    specFor(context, opCode), type, "", opCode);
+            try {
+                bean.color = kq.a(opCode, type);
+            } catch (Exception ignored) {
+                // Colour is display-only; the palette default stands.
+            }
+            created.add(bean);
+            nextId++;
+            return bean;
+        }
+
+        BlockBean buildStatement(JsonObject op, int depth)
+                throws AgentTools.ToolException {
+            if (depth > MAX_DEPTH) {
+                throw new AgentTools.ToolException("E_TOO_DEEP",
+                        "Blocks can nest at most " + MAX_DEPTH
+                                + " containers deep in one handler.");
+            }
+            if (++total > MAX_TOTAL) {
+                throw new AgentTools.ToolException("E_BLOCKS_LIMIT",
+                        "At most " + MAX_TOTAL + " blocks per handler, "
+                                + "nested ones included.");
+            }
+            String kind = stringOf(op, "block").toLowerCase();
+            switch (kind) {
+                case "if", "if_else" -> {
+                    boolean withElse = "if_else".equals(kind);
+                    String condition = expr(op.get("condition"), 'b',
+                            "An if needs a \"condition\"");
+                    BlockBean bean = newBean(
+                            withElse ? "ifElse" : "if",
+                            withElse ? "e" : "c");
+                    bean.parameters.add(condition);
+                    allStatements.add(bean);
+                    addExpect(withElse ? "} else {" : "if (",
+                            (withElse ? "If " : "If ")
+                                    + describeExpr(op.get("condition")));
+                    lines.add(indent(depth) + "If "
+                            + describeExpr(op.get("condition")) + ":");
+                    ArrayList<BlockBean> then = buildList(
+                            arrayOf(op, "then"), depth + 1, "then");
+                    bean.subStack1 = Integer.parseInt(then.get(0).id);
+                    if (withElse) {
+                        lines.add(indent(depth) + "Otherwise:");
+                        ArrayList<BlockBean> otherwise = buildList(
+                                arrayOf(op, "else"), depth + 1, "else");
+                        bean.subStack2 = Integer.parseInt(
+                                otherwise.get(0).id);
+                    }
+                    return bean;
+                }
+                case "repeat" -> {
+                    if (!op.has("times") || op.get("times").isJsonNull()) {
+                        throw new AgentTools.ToolException("E_BAD_BLOCK",
+                                "repeat needs \"times\": how many times "
+                                        + "to run its blocks.");
+                    }
+                    String times = expr(op.get("times"), 'd',
+                            "repeat needs a numeric \"times\"");
+                    BlockBean bean = newBean("repeat", "c");
+                    bean.parameters.add(times);
+                    allStatements.add(bean);
+                    addExpect("for(int _repeat",
+                            "Repeat " + describeExpr(op.get("times"))
+                                    + " times");
+                    lines.add(indent(depth) + "Repeat "
+                            + describeExpr(op.get("times")) + " times:");
+                    ArrayList<BlockBean> body = buildList(
+                            arrayOf(op, "blocks"), depth + 1, "blocks");
+                    bean.subStack1 = Integer.parseInt(body.get(0).id);
+                    return bean;
+                }
+                case "forever" -> {
+                    BlockBean bean = newBean("forever", "c");
+                    allStatements.add(bean);
+                    addExpect("while(true) {", "Repeat forever");
+                    lines.add(indent(depth) + "Repeat forever:");
+                    ArrayList<BlockBean> body = buildList(
+                            arrayOf(op, "blocks"), depth + 1, "blocks");
+                    bean.subStack1 = Integer.parseInt(body.get(0).id);
+                    return bean;
+                }
+                case "break" -> {
+                    BlockBean bean = newBean("break", "f");
+                    allStatements.add(bean);
+                    addExpect("break;", "Break out of the loop");
+                    lines.add(indent(depth) + "Break out of the loop");
+                    return bean;
+                }
+                default -> {
+                    Stmt stmt = translate(context, op, byId, variables);
+                    stmts.add(stmt);
+                    BlockBean bean = newBean(stmt.opCode, stmt.type);
+                    bean.parameters.addAll(stmt.params);
+                    allStatements.add(bean);
+                    lines.add(indent(depth) + stmt.sentence);
+                    return bean;
+                }
+            }
+        }
+
+        /** A JSON array member, or null when absent/misshapen. */
+        static JsonArray arrayOf(JsonObject object, String key) {
+            try {
+                return object.getAsJsonArray(key);
+            } catch (Exception e) {
+                return null;
+            }
+        }
+
+        /** Builds one sub-chain and links it among itself. */
+        ArrayList<BlockBean> buildList(JsonArray array, int depth,
+                                       String what)
+                throws AgentTools.ToolException {
+            if (array == null || array.isEmpty()) {
+                throw new AgentTools.ToolException("E_BAD_BLOCK",
+                        "A container needs at least one block in its \""
+                                + what + "\" list.");
+            }
+            if (array.size() > MAX_BLOCKS) {
+                throw new AgentTools.ToolException("E_BLOCKS_LIMIT",
+                        "At most " + MAX_BLOCKS + " blocks in one \""
+                                + what + "\" list.");
+            }
+            ArrayList<BlockBean> heads = new ArrayList<>();
+            for (JsonElement element : array) {
+                if (!element.isJsonObject()) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "Every block must be an object like "
+                                    + "{\"block\":\"toast\","
+                                    + "\"message\":\"Hi\"}.");
+                }
+                heads.add(buildStatement(element.getAsJsonObject(),
+                        depth));
+            }
+            for (int i = 0; i + 1 < heads.size(); i++) {
+                heads.get(i).nextBlock = Integer.parseInt(
+                        heads.get(i + 1).id);
+            }
+            return heads;
+        }
+
+        /**
+         * Turns one value expression into a stored parameter: a
+         * literal inline, or "@id"/"@var:name" pointing at a reporter
+         * bean. {@code slot} is the editor slot kind — 'd' number,
+         * 'b' boolean, 's' string — and shapes are checked against it.
+         */
+        String expr(JsonElement element, char slot, String what)
+                throws AgentTools.ToolException {
+            if (element == null || element.isJsonNull()) {
+                throw new AgentTools.ToolException("E_BAD_VALUE",
+                        what + ", e.g. {\"var\":\"taps\"}, {\"number\":3} "
+                                + "or {\"op\":\">\",\"a\":...,\"b\":...}.");
+            }
+            if (element.isJsonPrimitive()) {
+                if (element.getAsJsonPrimitive().isNumber()) {
+                    if (slot != 'd') {
+                        throw badValue(what, "a number does not fit "
+                                + "here");
+                    }
+                    return element.getAsString();
+                }
+                if (element.getAsJsonPrimitive().isBoolean()) {
+                    if (slot != 'b') {
+                        throw badValue(what, "a true/false value does "
+                                + "not fit here");
+                    }
+                    return element.getAsString();
+                }
+                String text = element.getAsString();
+                if (slot == 's') {
+                    return text;
+                }
+                if (slot == 'd') {
+                    try {
+                        Double.parseDouble(text);
+                        return text;
+                    } catch (Exception ignored) {
+                        throw badValue(what, "\"" + text
+                                + "\" is not a number");
+                    }
+                }
+                throw badValue(what, "\"" + text + "\" does not fit "
+                        + "here");
+            }
+            if (!element.isJsonObject()) {
+                throw badValue(what, "unsupported value shape");
+            }
+            JsonObject object = element.getAsJsonObject();
+            if (object.has("var")) {
+                String name = stringOf(object, "var");
+                requireVariable(variables, name);
+                int kind = variables.get(name);
+                int needed = slot == 'd' ? 1 : slot == 'b' ? 0 : 2;
+                if (kind != needed) {
+                    throw new AgentTools.ToolException("E_BAD_VALUE",
+                            "Variable \"" + name + "\" is a "
+                                    + SketchwareProjects.variableTypeName(
+                                            kind) + " variable and does "
+                                    + "not fit here.");
+                }
+                return "@var:" + name;
+            }
+            if (object.has("number")) {
+                if (slot != 'd') {
+                    throw badValue(what, "a number does not fit here");
+                }
+                String number = object.get("number").getAsString();
+                try {
+                    Double.parseDouble(number);
+                } catch (Exception ignored) {
+                    throw badValue(what, "\"" + number
+                            + "\" is not a number");
+                }
+                return number;
+            }
+            if (object.has("text")) {
+                if (slot != 's') {
+                    throw badValue(what, "text does not fit here");
+                }
+                return object.get("text").getAsString();
+            }
+            if (object.has("bool")) {
+                if (slot != 'b') {
+                    throw badValue(what, "a true/false value does not "
+                            + "fit here");
+                }
+                return object.get("bool").getAsBoolean()
+                        ? "true" : "false";
+            }
+            if (object.has("op")) {
+                String operation = stringOf(object, "op");
+                switch (operation) {
+                    case "+", "-", "*", "/", "%" -> {
+                        if (slot != 'd') {
+                            throw badValue(what, "a calculation does "
+                                    + "not fit here");
+                        }
+                        BlockBean bean = newBean(operation, "d");
+                        bean.parameters.add(expr(object.get("a"), 'd',
+                                what));
+                        bean.parameters.add(expr(object.get("b"), 'd',
+                                what));
+                        return "@" + bean.id;
+                    }
+                    case "<", ">", "=" -> {
+                        if (slot != 'b') {
+                            throw badValue(what, "a comparison does "
+                                    + "not fit here");
+                        }
+                        BlockBean bean = newBean(operation, "b");
+                        bean.parameters.add(expr(object.get("a"), 'd',
+                                what));
+                        bean.parameters.add(expr(object.get("b"), 'd',
+                                what));
+                        return "@" + bean.id;
+                    }
+                    case "and", "or" -> {
+                        if (slot != 'b') {
+                            throw badValue(what, "a logic value does "
+                                    + "not fit here");
+                        }
+                        BlockBean bean = newBean(
+                                "and".equals(operation) ? "&&" : "||",
+                                "b");
+                        bean.parameters.add(expr(object.get("a"), 'b',
+                                what));
+                        bean.parameters.add(expr(object.get("b"), 'b',
+                                what));
+                        return "@" + bean.id;
+                    }
+                    case "not" -> {
+                        if (slot != 'b') {
+                            throw badValue(what, "a logic value does "
+                                    + "not fit here");
+                        }
+                        BlockBean bean = newBean("not", "b");
+                        bean.parameters.add(expr(object.get("a"), 'b',
+                                what));
+                        return "@" + bean.id;
+                    }
+                    default -> throw badValue(what, "unknown operation "
+                            + "\"" + operation + "\" (use + - * / % "
+                            + "< > = and or not)");
+                }
+            }
+            throw badValue(what, "unsupported value shape");
+        }
+
+        /** One value expression in plain words, for the card. */
+        String describeExpr(JsonElement element) {
+            if (element == null || element.isJsonNull()) {
+                return "?";
+            }
+            if (element.isJsonPrimitive()) {
+                return element.getAsJsonPrimitive().isString()
+                        ? "“" + element.getAsString() + "”"
+                        : element.getAsString();
+            }
+            if (!element.isJsonObject()) {
+                return "?";
+            }
+            JsonObject object = element.getAsJsonObject();
+            if (object.has("var")) {
+                return stringOf(object, "var");
+            }
+            if (object.has("number")) {
+                return object.get("number").getAsString();
+            }
+            if (object.has("text")) {
+                return "“" + object.get("text").getAsString() + "”";
+            }
+            if (object.has("bool")) {
+                return object.get("bool").getAsBoolean()
+                        ? "true" : "false";
+            }
+            if (object.has("op")) {
+                String operation = stringOf(object, "op");
+                if ("not".equals(operation)) {
+                    return "not (" + describeExpr(object.get("a")) + ")";
+                }
+                String symbol = switch (operation) {
+                    case "and" -> " and ";
+                    case "or" -> " or ";
+                    default -> " " + operation + " ";
+                };
+                return describeExpr(object.get("a")) + symbol
+                        + describeExpr(object.get("b"));
+            }
+            return "?";
+        }
+
+        private void addExpect(String expectCode, String sentence) {
+            Stmt stmt = new Stmt();
+            stmt.expectCode = expectCode;
+            stmt.sentence = sentence;
+            stmts.add(stmt);
+        }
+
+        private AgentTools.ToolException badValue(String what,
+                                                  String why) {
+            return new AgentTools.ToolException("E_BAD_VALUE",
+                    Character.toUpperCase(what.charAt(0))
+                            + what.substring(1) + ": " + why + ".");
+        }
+
+        private static String indent(int depth) {
+            return "  ".repeat(depth);
+        }
     }
 
     /**
