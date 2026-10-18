@@ -1,5 +1,6 @@
 package pro.sketchware.ai;
 
+import com.besome.sketch.beans.ProjectFileBean;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
@@ -185,8 +186,34 @@ public class AgentLoop {
                         + "project \"").append(project.name)
                         .append("\" (app \"").append(project.appName)
                         .append("\", package ").append(project.packageName)
-                        .append("). Its screens and widgets are available "
-                                + "through your tools.");
+                        .append(").");
+                // Per-turn snapshot: the bound project's screens as they
+                // are right now, so a basic "what's in my project" never
+                // has to be answered from conversation memory — which is
+                // exactly how the agent once described the previous
+                // project after the user switched mid-chat.
+                StringBuilder screens = new StringBuilder();
+                for (ProjectFileBean activity
+                        : SketchwareProjects.activities(workingProjectId)) {
+                    if (screens.length() > 0) {
+                        screens.append(", ");
+                    }
+                    screens.append(SketchwareProjects.activityName(activity))
+                            .append(" (")
+                            .append(SketchwareProjects
+                                    .screenBeans(workingProjectId, activity)
+                                    .size())
+                            .append(" widgets)");
+                }
+                if (screens.length() > 0) {
+                    prompt.append(" Its screens right now: ")
+                            .append(screens).append(".");
+                }
+                prompt.append(" Widget details are available through your "
+                        + "tools. If earlier replies in this conversation "
+                        + "describe a different project or different "
+                        + "screens, the user switched projects since; trust "
+                        + "this snapshot and your tools over them.");
             }
         } else {
             prompt.append("\n\nNo working project is chosen right now. If "
