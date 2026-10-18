@@ -37,6 +37,7 @@ import pro.sketchware.ai.AgentLoop;
 import pro.sketchware.ai.AgentProposal;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import pro.sketchware.ai.SketchwareProjects;
 import pro.sketchware.ai.AiChatService;
 import pro.sketchware.ai.AiPaths;
@@ -752,7 +753,7 @@ public class AgentFragment extends qA {
                         deliverPick("#" + String.format("%08X", color));
                     }
                 });
-                dialog.setOnDismissListener(d -> deliverPick(null));
+                dialog.setOnDismissListener(() -> deliverPick(null));
                 dialog.showAtLocation(anchor,
                         android.view.Gravity.CENTER, 0, 0);
             } catch (Exception e) {
