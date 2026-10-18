@@ -805,3 +805,13 @@ Device test findings (SportyNivida / Sporty Bet):
   verified by read-back. Statement chains are now linked from
   their tail (top level and nested), since open_screen is two
   blocks. New reporter {"extra":"key"} = intentGetString.
+- Lists & maps wave (2026-10-18): create_variable now declares
+  map variables (eC.c code 3) and lists (list_string/list_number/
+  list_map via eC.b, the variable dialog's list callback; eC.j
+  codes 1=ListInt, 2=ListString, 3=ListMap per mq.b/Jx).
+  project_summary reports list kinds. Statements: add_to_list,
+  clear_list, show_list (listSetData on a ListView),
+  put_in_map, clear_map, new_map. Reporters: list_length,
+  item_of (getAtListStr/Int), list_has (containListStr/Int),
+  map_get, map_has. All Fx-verified; slot counts re-checked by
+  translate's lq table pass. List-of-maps item access stays out.

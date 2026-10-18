@@ -42,7 +42,7 @@ public class AgentLoop {
                     + "don't have yet: Sketchware is a full app builder "
                     + "and can do far more than your current tools. When "
                     + "asked for something your tools can't do (most components, "
-                    + "map or list variables, reading files, and the "
+                    + "reading files, and the "
                     + "like), say plainly that YOU "
                     + "can't do that yet — never invent manual "
                     + "instructions or walkthrough steps to cover the "

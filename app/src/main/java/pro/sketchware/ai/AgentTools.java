@@ -300,9 +300,16 @@ public final class AgentTools {
     /** Declared variables (name + kind) for one screen's summary. */
     private static JsonArray variablesJson(
             SketchwareProjects.LogicSummary logic) {
+        return variablesJson(logic.variables, logic.variableTypes);
+    }
+
+    /** Name+kind entries as JSON, capped at 24. */
+    private static JsonArray variablesJson(
+            List<String> names,
+            java.util.LinkedHashMap<String, String> types) {
         JsonArray array = new JsonArray();
         for (Map.Entry<String, String> variable
-                : logic.variableTypes.entrySet()) {
+                : types.entrySet()) {
             if (array.size() >= 24) {
                 break;
             }
@@ -417,7 +424,8 @@ public final class AgentTools {
                         SketchwareProjects.logicSummary(scId, activity);
                 screen.add("components", namesJson(logic.components));
                 screen.add("variables", variablesJson(logic));
-                screen.add("lists", namesJson(logic.lists));
+                screen.add("lists", variablesJson(logic.lists,
+                        logic.listTypes));
                 screen.add("more_blocks", namesJson(logic.moreBlocks));
                 screen.addProperty("events", logic.events);
                 screens.add(screen);
@@ -1034,6 +1042,11 @@ public final class AgentTools {
                     + "ImageView), set_progress {target,value} (a "
                     + "SeekBar's progress), copy_to_clipboard {text}, "
                     + "set_screen_title {text}, open_drawer {} and "
+                    + "add_to_list {list,text|value|from_variable}, "
+                    + "clear_list {list}, show_list {target,list} "
+                    + "(a ListView shows a list of text), "
+                    + "put_in_map {variable,key,text|from_variable}, "
+                    + "clear_map {variable}, new_map {variable}, and "
                     + "close_drawer {} (the screen's navigation drawer), "
                     + "open_screen {screen} (open another screen of "
                     + "the project; adds an Intent component if the "
@@ -1059,7 +1072,11 @@ public final class AgentTools {
                     + "(a text widget's current text), {\"url_of\":\"webview1\"}, "
                     + "{\"checked\":\"checkbox1\"}, {\"enabled\":\"button1\"}, "
                     + "{\"progress_of\":\"seekbar1\"}, {\"extra\":\"name\"} "
-                    + "(text another screen passed this one); = between texts "
+                    + "(text another screen passed this one), "
+                    + "{\"list_length\":\"items\"}, {\"item_of\":\"items\","
+                    + "\"index\":0}, {\"list_has\":\"items\",\"value\":...}, "
+                    + "{\"map_get\":\"info\",\"key\":\"name\"}, "
+                    + "{\"map_has\":\"info\",\"key\":\"name\"}; = between texts "
                     + "compares their text. At most "
                     + "8 blocks per list and 24 blocks total per handler. "
                     + "Variable blocks need the "
@@ -1221,9 +1238,9 @@ public final class AgentTools {
         public String description() {
             return "Proposes declaring one variable on one screen, "
                     + "the way Sketchware's own logic editor adds it. "
-                    + "Types: boolean, number, string. Sketchware also "
-                    + "has map and list variables, which this tool does "
-                    + "not create yet. A new variable starts as false / "
+                    + "Types: boolean, number, string, map, "
+                    + "list_string, list_number, list_map. A new "
+                    + "variable starts as false / "
                     + "0 / empty text; give it an initial value by "
                     + "wiring the screen's start event (onCreate or "
                     + "initializeLogic) with a set_variable block. "
@@ -1240,7 +1257,8 @@ public final class AgentTools {
             properties.add("name", stringSchema(
                     "The variable name, e.g. score"));
             properties.add("type", stringSchema(
-                    "boolean, number or string"));
+                    "boolean, number, string, map, list_string, "
+                            + "list_number or list_map"));
             return AgentTools.parameters(properties,
                     "activity", "name", "type");
         }
@@ -1257,7 +1275,8 @@ public final class AgentTools {
 
         /** The frozen, re-validatable shape of one declaration. */
         private record Checked(ProjectFileBean activity, String name,
-                               int typeCode, String typeName) {
+                               int typeCode, String typeName,
+                               boolean list) {
         }
 
         private Checked check(Session session, JsonObject args)
@@ -1278,12 +1297,31 @@ public final class AgentTools {
                                 + "Pick an activity screen instead.");
             }
             String typeName = stringArg(args, "type");
-            int typeCode = SketchwareProjects.variableTypeCode(typeName);
-            if (typeCode < 0 || typeCode == 3) {
-                throw new ToolException("E_BAD_TYPE",
-                        "Variables created this way are boolean, number "
-                                + "or string. Map and list variables "
-                                + "are not supported yet.");
+            String lowered = typeName.trim().toLowerCase();
+            boolean list = lowered.startsWith("list");
+            int typeCode;
+            if (list) {
+                typeCode = switch (lowered) {
+                    case "list_number", "list of numbers" -> 1;
+                    case "list_string", "list of text",
+                            "list of strings" -> 2;
+                    case "list_map", "list of maps" -> 3;
+                    default -> -1;
+                };
+                if (typeCode < 0) {
+                    throw new ToolException("E_BAD_TYPE",
+                            "List variables are list_string, "
+                                    + "list_number or list_map.");
+                }
+            } else {
+                typeCode = SketchwareProjects.variableTypeCode(typeName);
+                if (typeCode < 0) {
+                    throw new ToolException("E_BAD_TYPE",
+                            "Variables created this way are boolean, "
+                                    + "number, string, map, "
+                                    + "list_string, list_number or "
+                                    + "list_map.");
+                }
             }
             String name = stringArg(args, "name");
             if (!NAME_PATTERN.matcher(name).matches()
@@ -1303,7 +1341,10 @@ public final class AgentTools {
                         + "creating it again or asking about it.");
             }
             return new Checked(activity, name, typeCode,
-                    SketchwareProjects.variableTypeName(typeCode));
+                    list ? SketchwareProjects.listTypeName(typeCode)
+                            : SketchwareProjects.variableTypeName(
+                                    typeCode),
+                    list);
         }
 
         /** The editor's exclusion rule: the name must be free across
@@ -1382,11 +1423,13 @@ public final class AgentTools {
                     checked.activity().fileName);
             clean.addProperty("name", checked.name());
             clean.addProperty("type", checked.typeName());
-            String startValue = switch (checked.typeCode()) {
-                case 0 -> "false";
-                case 1 -> "0";
-                default -> "empty text";
-            };
+            String startValue = checked.list() ? "empty"
+                    : switch (checked.typeCode()) {
+                        case 0 -> "false";
+                        case 1 -> "0";
+                        case 3 -> "empty";
+                        default -> "empty text";
+                    };
             return new AgentProposal(name(), clean, scId,
                     "Add a variable to "
                             + SketchwareProjects.activityName(
@@ -1417,16 +1460,26 @@ public final class AgentTools {
             String javaName = checked.activity().getJavaName();
             try {
                 SketchwareActions.backupProjectOnce(scId);
-                store.c(javaName, checked.typeCode(), checked.name());
+                if (checked.list()) {
+                    // The editor's list-add path (eC.b), as the
+                    // variable dialog's list callback calls it.
+                    store.b(javaName, checked.typeCode(),
+                            checked.name());
+                } else {
+                    store.c(javaName, checked.typeCode(),
+                            checked.name());
+                }
                 SketchwareActions.commitProject(scId);
             } catch (Exception e) {
                 throw new ToolException("E_APPLY_FAILED",
                         "Adding the variable failed: "
                                 + String.valueOf(e.getMessage()));
             }
-            LinkedHashMap<String, Integer> after =
-                    AgentLogic.variablesOf(store, javaName);
-            Integer stored = after.get(checked.name());
+            Integer stored = checked.list()
+                    ? AgentLogic.listsOf(store, javaName)
+                            .get(checked.name())
+                    : AgentLogic.variablesOf(store, javaName)
+                            .get(checked.name());
             if (stored == null || stored != checked.typeCode()) {
                 throw new ToolException("E_APPLY_FAILED",
                         "The variable was written but did not read "

@@ -212,6 +212,8 @@ public final class SketchwareProjects {
             for (android.util.Pair<Integer, String> list
                     : store.j(javaName)) {
                 summary.lists.add(list.second);
+                summary.listTypes.put(list.second,
+                        listTypeName(list.first));
             }
             for (android.util.Pair<String, String> moreBlock
                     : store.i(javaName)) {
@@ -298,6 +300,9 @@ public final class SketchwareProjects {
         public final java.util.LinkedHashMap<String, String> variableTypes =
                 new java.util.LinkedHashMap<>();
         public final List<String> lists = new ArrayList<>();
+        /** List name to its declared kind ("list of text", ...). */
+        public final java.util.LinkedHashMap<String, String> listTypes =
+                new java.util.LinkedHashMap<>();
         public final List<String> moreBlocks = new ArrayList<>();
         public int events;
     }
@@ -310,6 +315,16 @@ public final class SketchwareProjects {
             case 2 -> "string";
             case 3 -> "map";
             default -> "other";
+        };
+    }
+
+    /** The editor's list kinds by their stored type code. */
+    public static String listTypeName(int typeCode) {
+        return switch (typeCode) {
+            case 1 -> "list of numbers";
+            case 2 -> "list of text";
+            case 3 -> "list of maps";
+            default -> "list";
         };
     }
 

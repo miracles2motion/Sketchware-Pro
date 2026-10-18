@@ -226,6 +226,7 @@ public final class AgentLogic {
         }
 
         Builder builder = new Builder(context, byId, variables, nextId);
+        builder.lists = listsOf(store, javaName);
         builder.components = components;
         builder.scId = scId;
         for (JsonElement element : blocks) {
@@ -334,6 +335,8 @@ public final class AgentLogic {
         final ArrayList<String> lines = new ArrayList<>();
         int nextId;
         int total;
+        /** List name to editor list type code (1/2/3). */
+        Map<String, Integer> lists = new LinkedHashMap<>();
         /** Component id to editor type code, for Intent blocks. */
         Map<String, Integer> components = new LinkedHashMap<>();
         /** Project id, for resolving screens an Intent opens. */
@@ -515,7 +518,7 @@ public final class AgentLogic {
                     return setScreen;
                 }
                 default -> {
-                    Stmt stmt = translate(context, op, byId, variables);
+                    Stmt stmt = translate(context, op, byId, variables, lists);
                     stmts.add(stmt);
                     BlockBean bean = newBean(stmt.opCode, stmt.type);
                     bean.parameters.addAll(stmt.params);
@@ -668,6 +671,109 @@ public final class AgentLogic {
                 }
                 return object.get("bool").getAsBoolean()
                         ? "true" : "false";
+            }
+            if (object.has("list_length") || object.has("item_of")
+                    || object.has("list_has") || object.has("map_get")
+                    || object.has("map_has")) {
+                // List and map reporters: lengthList,
+                // getAtListStr/Int, containListStr/Int, mapGet and
+                // mapContainKey — one or two slots each, Fx-verified.
+                if (object.has("list_length")) {
+                    String list = stringOf(object, "list_length");
+                    if (!lists.containsKey(list)) {
+                        throw badValue(what, "there is no list "
+                                + "called " + list + " on this "
+                                + "screen");
+                    }
+                    if (slot != 'd') {
+                        throw badValue(what, "the length of " + list
+                                + " is a number and does not fit "
+                                + "here");
+                    }
+                    BlockBean bean = newBean("lengthList", "d");
+                    bean.parameters.add(list);
+                    return "@" + bean.id;
+                }
+                if (object.has("item_of")) {
+                    String list = stringOf(object, "item_of");
+                    Integer listKind = lists.get(list);
+                    if (listKind == null) {
+                        throw badValue(what, "there is no list "
+                                + "called " + list + " on this "
+                                + "screen");
+                    }
+                    if (listKind == 3) {
+                        throw badValue(what, "items of a list of "
+                                + "maps do not fit here yet");
+                    }
+                    char needed = listKind == 2 ? 's' : 'd';
+                    if (slot != needed) {
+                        throw badValue(what, "an item of " + list
+                                + " does not fit here");
+                    }
+                    BlockBean bean = newBean(
+                            listKind == 2 ? "getAtListStr"
+                                    : "getAtListInt",
+                            String.valueOf(needed));
+                    bean.parameters.add(expr(object.get("index"),
+                            'd', what));
+                    bean.parameters.add(list);
+                    return "@" + bean.id;
+                }
+                if (object.has("list_has")) {
+                    String list = stringOf(object, "list_has");
+                    Integer listKind = lists.get(list);
+                    if (listKind == null || listKind == 3) {
+                        throw badValue(what, "there is no list of "
+                                + "text or numbers called " + list
+                                + " on this screen");
+                    }
+                    if (slot != 'b') {
+                        throw badValue(what, "whether " + list
+                                + " contains a value is true/false "
+                                + "and does not fit here");
+                    }
+                    BlockBean bean = newBean(
+                            listKind == 2 ? "containListStr"
+                                    : "containListInt", "b");
+                    bean.parameters.add(list);
+                    bean.parameters.add(expr(object.get("value"),
+                            listKind == 2 ? 's' : 'd', what));
+                    return "@" + bean.id;
+                }
+                String mapKey = object.has("map_get") ? "map_get"
+                        : "map_has";
+                String name = stringOf(object, mapKey);
+                Integer kind = variables.get(name);
+                if (kind == null || kind != 3) {
+                    throw badValue(what, "\\"" + name + "\\" is not "
+                            + "a map variable on this screen");
+                }
+                String key = stringOf(object, "key");
+                if (key.isEmpty()) {
+                    throw badValue(what, "reading a map needs its "
+                            + "\\"key\\"");
+                }
+                if ("map_get".equals(mapKey)) {
+                    if (slot != 's') {
+                        throw badValue(what, "a value from map "
+                                + name + " is text and does not fit "
+                                + "here");
+                    }
+                    BlockBean bean = newBean("mapGet", "s");
+                    bean.parameters.add(name);
+                    bean.parameters.add(key);
+                    return "@" + bean.id;
+                }
+                if (slot != 'b') {
+                    throw badValue(what, "whether map " + name
+                            + " has a key is true/false and does "
+                            + "not fit here");
+                }
+                BlockBean bean = newBean("mapContainKey", "b");
+                bean.parameters.add(name);
+                bean.parameters.add(key);
+                return "@" + bean.id;
             }
             if (object.has("extra")) {
                 // The value another screen passed when it opened
@@ -864,6 +970,27 @@ public final class AgentLogic {
             JsonObject object = element.getAsJsonObject();
             if (object.has("extra")) {
                 return "extra \u201C" + stringOf(object, "extra")
+                        + "\u201D";
+            }
+            if (object.has("list_length")) {
+                return "length of " + stringOf(object, "list_length");
+            }
+            if (object.has("item_of")) {
+                return "item " + describeExpr(object.get("index"))
+                        + " of " + stringOf(object, "item_of");
+            }
+            if (object.has("list_has")) {
+                return stringOf(object, "list_has") + " contains "
+                        + describeExpr(object.get("value"));
+            }
+            if (object.has("map_get")) {
+                return "map " + stringOf(object, "map_get") + " at "
+                        + "\u201C" + stringOf(object, "key")
+                        + "\u201D";
+            }
+            if (object.has("map_has")) {
+                return "map " + stringOf(object, "map_has")
+                        + " has \u201C" + stringOf(object, "key")
                         + "\u201D";
             }
             if (object.has("text_of")) {
@@ -1064,7 +1191,8 @@ public final class AgentLogic {
 
     private static Stmt translate(Context context, JsonObject op,
                                   Map<String, ViewBean> byId,
-                                  Map<String, Integer> variables)
+                                  Map<String, Integer> variables,
+                                  Map<String, Integer> lists)
             throws AgentTools.ToolException {
         String kind = stringOf(op, "block").toLowerCase();
         Stmt stmt = new Stmt();
@@ -1359,10 +1487,9 @@ public final class AgentLogic {
                 int kind2 = variables.get(name);
                 if (kind2 == 3) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
-                            "\"" + name + "\" is a map variable; map "
-                                    + "variables can't be set this way "
-                                    + "yet — only boolean, number and "
-                                    + "string variables.");
+                            "\"" + name + "\" is a map variable; "
+                                    + "use put_in_map, clear_map or "
+                                    + "new_map for it instead.");
                 }
                 stmt.type = " ";
                 String copyFrom = stringOf(op, "from_variable");
@@ -1442,10 +1569,178 @@ public final class AgentLogic {
                         + " variable “" + name + "”";
                 stmt.expectCode = name + (up ? "++;" : "--;");
             }
+            case "add_to_list" -> {
+                String list = stringOf(op, "list");
+                Integer listKind = lists.get(list);
+                if (listKind == null) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "There is no list called " + list
+                                    + " on this screen. Declare one "
+                                    + "with create_variable (type "
+                                    + "list_string or list_number).");
+                }
+                if (listKind == 3) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "Adding to a list of maps is not "
+                                    + "supported yet; " + list
+                                    + " is a list of maps.");
+                }
+                String fromVariable = stringOf(op, "from_variable");
+                stmt.type = " ";
+                if (listKind == 2) {
+                    stmt.opCode = "addListStr";
+                    if (!fromVariable.isEmpty()) {
+                        requireVariable(variables, fromVariable);
+                        requireVariableKind(variables, fromVariable, 2,
+                                "Only a string variable's value can "
+                                        + "go into a list of text.");
+                        stmt.params.add("@var:" + fromVariable);
+                        stmt.sentence = "Add the value of “"
+                                + fromVariable + "” to list “" + list
+                                + "”";
+                    } else {
+                        String text = stringOf(op, "text");
+                        if (text.isEmpty()) {
+                            text = stringOf(op, "value");
+                        }
+                        stmt.params.add(text);
+                        stmt.sentence = "Add “" + text + "” to list “"
+                                + list + "”";
+                    }
+                    stmt.params.add(list);
+                } else {
+                    stmt.opCode = "addListInt";
+                    if (!fromVariable.isEmpty()) {
+                        requireVariable(variables, fromVariable);
+                        requireVariableKind(variables, fromVariable, 1,
+                                "Only a number variable's value can "
+                                        + "go into a list of numbers.");
+                        stmt.params.add("@var:" + fromVariable);
+                        stmt.sentence = "Add the value of “"
+                                + fromVariable + "” to list “" + list
+                                + "”";
+                    } else {
+                        String value = stringOf(op, "value");
+                        try {
+                            Double.parseDouble(value);
+                        } catch (Exception e) {
+                            throw new AgentTools.ToolException(
+                                    "E_BAD_BLOCK",
+                                    "List “" + list + "” holds "
+                                            + "numbers, so \\"value\\" "
+                                            + "must be a number (got "
+                                            + "\\"" + value + "\\").");
+                        }
+                        stmt.params.add(value);
+                        stmt.sentence = "Add " + value + " to list “"
+                                + list + "”";
+                    }
+                    stmt.params.add(list);
+                }
+                stmt.expectCode = list + ".add(";
+            }
+            case "clear_list" -> {
+                String list = stringOf(op, "list");
+                if (!lists.containsKey(list)) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "There is no list called " + list
+                                    + " on this screen.");
+                }
+                stmt.opCode = "clearList";
+                stmt.type = " ";
+                stmt.params.add(list);
+                stmt.sentence = "Empty list “" + list + "”";
+                stmt.expectCode = list + ".clear()";
+            }
+            case "show_list" -> {
+                ViewBean widget = requireWidget(op, byId);
+                if (!"ListView".equals(AgentEdits.typeName(widget.type))) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            widget.id + " is a "
+                                    + AgentEdits.typeName(widget.type)
+                                    + ", not a ListView.");
+                }
+                String list = stringOf(op, "list");
+                Integer listKind = lists.get(list);
+                if (listKind == null || listKind != 2) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "show_list needs a list of text on this "
+                                    + "screen; “" + list + "” is not "
+                                    + "one.");
+                }
+                stmt.opCode = "listSetData";
+                stmt.type = " ";
+                stmt.params.add(widget.id);
+                stmt.params.add(list);
+                stmt.sentence = "Show list “" + list + "” in "
+                        + widget.id;
+                stmt.expectCode = widget.id + ".setAdapter(";
+            }
+            case "put_in_map" -> {
+                String name = stringOf(op, "variable");
+                requireVariable(variables, name);
+                requireVariableKind(variables, name, 3,
+                        "put_in_map needs a map variable; “" + name
+                                + "” is not one. Declare it with "
+                                + "create_variable (type map).");
+                String key = stringOf(op, "key");
+                if (key.isEmpty()) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "put_in_map needs a \\"key\\".");
+                }
+                stmt.opCode = "mapPut";
+                stmt.type = " ";
+                stmt.params.add(name);
+                stmt.params.add(key);
+                String fromVariable = stringOf(op, "from_variable");
+                if (!fromVariable.isEmpty()) {
+                    requireVariable(variables, fromVariable);
+                    requireVariableKind(variables, fromVariable, 2,
+                            "A map stores text, so the value must "
+                                    + "come from a string variable.");
+                    stmt.params.add("@var:" + fromVariable);
+                    stmt.sentence = "In map “" + name + "”, store "
+                            + "the value of “" + fromVariable
+                            + "” under “" + key + "”";
+                } else {
+                    String text = stringOf(op, "text");
+                    if (text.isEmpty()) {
+                        text = stringOf(op, "value");
+                    }
+                    stmt.params.add(text);
+                    stmt.sentence = "In map “" + name + "”, store “"
+                            + text + "” under “" + key + "”";
+                }
+                stmt.expectCode = name + ".put(";
+            }
+            case "clear_map" -> {
+                String name = stringOf(op, "variable");
+                requireVariable(variables, name);
+                requireVariableKind(variables, name, 3,
+                        "clear_map needs a map variable.");
+                stmt.opCode = "mapClear";
+                stmt.type = " ";
+                stmt.params.add(name);
+                stmt.sentence = "Empty map “" + name + "”";
+                stmt.expectCode = name + ".clear()";
+            }
+            case "new_map" -> {
+                String name = stringOf(op, "variable");
+                requireVariable(variables, name);
+                requireVariableKind(variables, name, 3,
+                        "new_map needs a map variable.");
+                stmt.opCode = "mapCreateNew";
+                stmt.type = " ";
+                stmt.params.add(name);
+                stmt.sentence = "Start map “" + name + "” fresh";
+                stmt.expectCode = name + " = new HashMap";
+            }
             default -> throw new AgentTools.ToolException("E_BAD_BLOCK",
                     "Unknown block \"" + kind + "\". Blocks are: toast, "
                             + "set_text, set_visibility, set_enabled, "
-                            + "finish, set_variable, increase, decrease.");
+                            + "finish, set_variable, increase, decrease, "
+                            + "add_to_list, clear_list, show_list, "
+                            + "put_in_map, clear_map, new_map.");
         }
         // The app's own slot table is the shape authority: what the
         // editor would store for this block has exactly these slots.
@@ -1491,6 +1786,31 @@ public final class AgentLogic {
             // Unreadable logic reads as "no variables declared".
         }
         return variables;
+    }
+
+    /**
+     * The lists one activity declares: name to the editor's list
+     * type code (1 numbers, 2 text, 3 maps), through {@code eC.j} —
+     * the accessor the logic editor and the code generator use.
+     */
+    static LinkedHashMap<String, Integer> listsOf(eC store,
+                                                  String javaName) {
+        LinkedHashMap<String, Integer> lists = new LinkedHashMap<>();
+        try {
+            ArrayList<android.util.Pair<Integer, String>> stored =
+                    store.j(javaName);
+            if (stored != null) {
+                for (android.util.Pair<Integer, String> pair : stored) {
+                    if (pair.first >= 1 && pair.first <= 3
+                            && pair.second != null) {
+                        lists.put(pair.second, pair.first);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // Unreadable logic reads as "no lists declared".
+        }
+        return lists;
     }
 
     /** The statement opCode that assigns to a variable of this kind. */
