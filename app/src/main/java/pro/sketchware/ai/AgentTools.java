@@ -1041,6 +1041,142 @@ public final class AgentTools {
         }
     }
 
+    /** edit_activity: toolbar/fullscreen/orientation of one screen. */
+    private static final class EditActivity implements Tool {
+        @Override
+        public String name() {
+            return "edit_activity";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes changing one activity's toolbar, fullscreen "
+                    + "or orientation setting. Only what is passed "
+                    + "changes; the drawer and floating-button settings "
+                    + "are not touched by this tool.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("activity", stringSchema(
+                    "The activity, e.g. SettingsActivity"));
+            JsonObject toolbar = new JsonObject();
+            toolbar.addProperty("type", "boolean");
+            toolbar.addProperty("description",
+                    "Show the top toolbar (true) or hide it (false)");
+            properties.add("toolbar", toolbar);
+            JsonObject fullscreen = new JsonObject();
+            fullscreen.addProperty("type", "boolean");
+            fullscreen.addProperty("description",
+                    "Fullscreen (true) or normal (false)");
+            properties.add("fullscreen", fullscreen);
+            JsonObject orientation = new JsonObject();
+            orientation.addProperty("type", "string");
+            orientation.addProperty("description",
+                    "portrait, landscape, or both");
+            properties.add("orientation", orientation);
+            return AgentTools.parameters(properties, "activity");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to change a screen's settings";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String asked = stringArg(args, "activity");
+            ProjectFileBean target =
+                    SketchwareProjects.findActivity(scId, asked);
+            if (target == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "There is no screen named \"" + asked + "\" in "
+                                + "the working project.");
+            }
+            int options = target.options;
+            int orientation = target.orientation;
+            List<String> lines = new java.util.ArrayList<>();
+            if (args.has("toolbar")) {
+                boolean show = args.get("toolbar").getAsBoolean();
+                options = show
+                        ? options | ProjectFileBean.OPTION_ACTIVITY_TOOLBAR
+                        : options & ~ProjectFileBean.OPTION_ACTIVITY_TOOLBAR;
+                lines.add((show ? "Show " : "Hide ")
+                        + SketchwareProjects.activityName(target)
+                        + "'s top toolbar");
+            }
+            if (args.has("fullscreen")) {
+                boolean full = args.get("fullscreen").getAsBoolean();
+                options = full
+                        ? options | ProjectFileBean.OPTION_ACTIVITY_FULLSCREEN
+                        : options & ~ProjectFileBean.OPTION_ACTIVITY_FULLSCREEN;
+                lines.add("Make " + SketchwareProjects.activityName(target)
+                        + (full ? " fullscreen" : " not fullscreen"));
+            }
+            if (args.has("orientation")) {
+                String word = stringArg(args, "orientation")
+                        .toLowerCase(Locale.ROOT);
+                orientation = switch (word) {
+                    case "portrait" -> ProjectFileBean.ORIENTATION_PORTRAIT;
+                    case "landscape" -> ProjectFileBean.ORIENTATION_LANDSCAPE;
+                    case "both" -> ProjectFileBean.ORIENTATION_BOTH;
+                    default -> throw new ToolException("E_BAD_VALUE",
+                            "Orientation is portrait, landscape or both.");
+                };
+                lines.add("Let " + SketchwareProjects.activityName(target)
+                        + " rotate: " + word);
+            }
+            if (lines.isEmpty()) {
+                throw new ToolException("E_BAD_OP",
+                        "Nothing to change: pass toolbar, fullscreen "
+                                + "and/or orientation.");
+            }
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("activity", target.fileName);
+            clean.addProperty("options", options);
+            clean.addProperty("orientation", orientation);
+            return new AgentProposal(name(), clean, scId,
+                    "Change " + SketchwareProjects.activityName(target)
+                            + " in " + project.name,
+                    String.join("; ", lines) + ".",
+                    "Only this screen's settings change. A safety backup "
+                            + "of the project is made first.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String fileName = stringArg(proposal.args, "activity");
+            int options = proposal.args.get("options").getAsInt();
+            int orientation = proposal.args.get("orientation").getAsInt();
+            try {
+                SketchwareActions.editActivityOptions(
+                        scId, fileName, options, orientation);
+                JsonObject result = new JsonObject();
+                result.addProperty("edited_activity", fileName);
+                result.addProperty("verified",
+                        "The screen's settings now match what was "
+                                + "approved.");
+                return result;
+            } catch (Exception e) {
+                throw new ToolException("E_EDIT_FAILED",
+                        "Changing the screen failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
     /** delete_activity: removes one screen, always behind approval. */
     private static final class DeleteActivity implements Tool {
         @Override
