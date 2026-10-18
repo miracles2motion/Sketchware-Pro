@@ -316,14 +316,34 @@ public final class AgentLogic {
         }
         String combined = generate(context, scId, activity,
                 joined(dryExisting, plan.fresh));
-        if (combined != null) {
-            for (Stmt stmt : plan.statements) {
-                if (!combined.contains(stmt.expectCode)) {
-                    throw new AgentTools.ToolException("E_GENERATE",
-                            "The new blocks did not survive Sketchware's "
-                                    + "code generator (\"" + stmt.sentence
-                                    + "\"). Nothing was changed.");
+        Stmt unproven = null;
+        for (Stmt stmt : plan.statements) {
+            if (combined == null || !combined.contains(stmt.expectCode)) {
+                unproven = stmt;
+                break;
+            }
+        }
+        if (unproven != null) {
+            // The combined run can fail on an older broken block in
+            // this same event; prove the new blocks on their own
+            // before blaming them.
+            String freshCode = generate(context, scId, activity,
+                    freshGenerationList(plan));
+            boolean proven = freshCode != null;
+            if (proven) {
+                for (Stmt stmt : plan.statements) {
+                    if (!freshCode.contains(stmt.expectCode)) {
+                        proven = false;
+                        unproven = stmt;
+                        break;
+                    }
                 }
+            }
+            if (!proven) {
+                throw new AgentTools.ToolException("E_GENERATE",
+                        "The new blocks did not survive Sketchware's "
+                                + "code generator (\"" + unproven.sentence
+                                + "\"). Nothing was changed.");
             }
         }
         return plan;
@@ -916,6 +936,20 @@ public final class AgentLogic {
                                     + "not fit here");
                         }
                         if ("=".equals(operation)
+                                && (isBoolExpr(object.get("a"))
+                                        || isBoolExpr(object.get("b")))) {
+                            // True/false equality (a checkbox
+                            // checked, a flag set): the same "="
+                            // block, fed booleans — Fx emits ==,
+                            // which is correct for booleans.
+                            BlockBean bean = newBean(operation, "b");
+                            bean.parameters.add(expr(object.get("a"),
+                                    'b', what));
+                            bean.parameters.add(expr(object.get("b"),
+                                    'b', what));
+                            return "@" + bean.id;
+                        }
+                        if ("=".equals(operation)
                                 && (isTextExpr(object.get("a"))
                                         || isTextExpr(object.get("b")))) {
                             // Text equality is its own editor block;
@@ -1056,6 +1090,36 @@ public final class AgentLogic {
             stmt.expectCode = expectCode;
             stmt.sentence = sentence;
             stmts.add(stmt);
+        }
+
+        /** True when an expression yields true/false. */
+        private boolean isBoolExpr(JsonElement element) {
+            if (element == null || element.isJsonNull()) {
+                return false;
+            }
+            if (element.isJsonPrimitive()) {
+                return element.getAsJsonPrimitive().isBoolean();
+            }
+            if (!element.isJsonObject()) {
+                return false;
+            }
+            JsonObject object = element.getAsJsonObject();
+            if (object.has("checked") || object.has("enabled")
+                    || object.has("map_has") || object.has("list_has")
+                    || object.has("bool")) {
+                return true;
+            }
+            if (object.has("var")) {
+                Integer kind = variables.get(stringOf(object, "var"));
+                return kind != null && kind == 0;
+            }
+            if (object.has("op")) {
+                String operation = stringOf(object, "op");
+                return operation.equals("and") || operation.equals("or")
+                        || operation.equals("not")
+                        || operation.equals("=");
+            }
+            return false;
         }
 
         /** True when an expression yields text (for "=" routing). */
@@ -1222,6 +1286,28 @@ public final class AgentLogic {
         }
         if (kind.isEmpty()) {
             kind = stringOf(op, "opcode");
+        }
+        if (kind.isEmpty()) {
+            kind = stringOf(op, "type");
+        }
+        if (kind.isEmpty()) {
+            kind = stringOf(op, "action");
+        }
+        if (kind.isEmpty()) {
+            kind = stringOf(op, "name");
+        }
+        if (kind.isEmpty()) {
+            // Shape alone names some blocks unambiguously.
+            if (op.has("condition")) {
+                return op.has("else") ? "if_else" : "if";
+            }
+            if (op.has("times")) {
+                return "repeat";
+            }
+            if (op.has("screen")) {
+                return "open_screen";
+            }
+            return "";
         }
         String key = kind.toLowerCase(Locale.ROOT)
                 .replace("_", "").replace(" ", "");
@@ -1968,6 +2054,36 @@ public final class AgentLogic {
         return 0;
     }
 
+    /**
+     * The fresh beans in generation order: chain statements first
+     * (each followed through its own nextBlock links, since a
+     * statement can be two blocks), then every reporter. Fx
+     * generates from list index 0, so the head must come first.
+     */
+    private static ArrayList<BlockBean> freshGenerationList(Plan plan) {
+        ArrayList<BlockBean> ordered = new ArrayList<>();
+        java.util.Set<String> added = new java.util.HashSet<>();
+        HashMap<String, BlockBean> byId = new HashMap<>();
+        for (BlockBean bean : plan.fresh) {
+            byId.put(bean.id, bean);
+        }
+        for (BlockBean head : plan.chain) {
+            BlockBean cursor = head;
+            while (cursor != null && added.add(cursor.id)) {
+                ordered.add(cursor);
+                cursor = cursor.nextBlock >= 0
+                        ? byId.get(String.valueOf(cursor.nextBlock))
+                        : null;
+            }
+        }
+        for (BlockBean bean : plan.fresh) {
+            if (added.add(bean.id)) {
+                ordered.add(bean);
+            }
+        }
+        return ordered;
+    }
+
     /** Existing blocks plus the fresh chain joined to the tail. */
     private static ArrayList<BlockBean> joined(
             ArrayList<BlockBean> existing, ArrayList<BlockBean> fresh) {
@@ -2438,6 +2554,7 @@ public final class AgentLogic {
                 }
                 final String removedId = removed.id;
                 combined.removeIf(bean -> removedId.equals(bean.id));
+                dropOrphanReporters(combined);
             } else {
                 for (EditableValue value : plan.values) {
                     combined.get(value.beanIndex).parameters.set(
@@ -2499,6 +2616,60 @@ public final class AgentLogic {
                             + String.valueOf(e.getMessage())
                             + "); the event's blocks were restored as "
                             + "they were.");
+        }
+    }
+
+    /**
+     * Drops beans nothing references any more: reporter beans a
+     * removed statement owned (including any holding an unresolved
+     * "@var:" placeholder, which crashes the logic editor) stay
+     * behind as orphans otherwise. Reachability walks the main
+     * chain, container stacks, and "@id" parameter references.
+     */
+    private static void dropOrphanReporters(ArrayList<BlockBean> beans) {
+        if (beans.isEmpty()) {
+            return;
+        }
+        HashMap<Integer, Integer> indexById = new HashMap<>();
+        for (int i = 0; i < beans.size(); i++) {
+            indexById.put(parseId(beans.get(i).id), i);
+        }
+        java.util.Set<Integer> keep = new java.util.HashSet<>();
+        java.util.ArrayDeque<Integer> stack = new java.util.ArrayDeque<>();
+        for (int index : chainIndices(beans)) {
+            stack.push(index);
+        }
+        while (!stack.isEmpty()) {
+            int index = stack.pop();
+            if (index < 0 || index >= beans.size() || !keep.add(index)) {
+                continue;
+            }
+            BlockBean bean = beans.get(index);
+            for (int link : new int[]{bean.nextBlock, bean.subStack1,
+                    bean.subStack2}) {
+                Integer next = indexById.get(link);
+                if (next != null) {
+                    stack.push(next);
+                }
+            }
+            for (String param : bean.parameters) {
+                if (param != null && param.startsWith("@")) {
+                    try {
+                        Integer ref = indexById.get(
+                                Integer.parseInt(param.substring(1)));
+                        if (ref != null) {
+                            stack.push(ref);
+                        }
+                    } catch (Exception ignored) {
+                        // An unparseable reference keeps nothing.
+                    }
+                }
+            }
+        }
+        for (int i = beans.size() - 1; i >= 0; i--) {
+            if (!keep.contains(i)) {
+                beans.remove(i);
+            }
         }
     }
 

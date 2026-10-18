@@ -847,3 +847,15 @@ Device test findings (SportyNivida / Sporty Bet):
   Passed on device in the same run: open_screen + initializeLogic
   toast, list declare/add/show on SecondActivity, theme via
   picker, move-before reorder.
+- Batch 2 from device test (2026-10-18): (a) block names also
+  accepted as type/action/name, and inferred from shape
+  (condition->if/if_else, times->repeat, screen->open_screen) -
+  "no block name" failures. (b) "=" between booleans routes to
+  the boolean "=" (models write checked == true). (c) The Fx
+  generation proof falls back to the fresh blocks alone, so an
+  older broken handler in the same event cannot veto new work
+  (the corrupted taps handler blocked the edit-text test).
+  (d) Removing a statement now drops its orphaned reporter
+  beans (incl. "@var:" carriers) - the rescue path for the
+  corrupted handler. (e) Guidance: never mirror a widget's
+  value in a variable to compare it.
