@@ -112,6 +112,8 @@ public class AiProviderConfig {
         Map<String, Settings> providers = new HashMap<>();
         /** The project the agent is working on ("" = none chosen). */
         String workingProjectId = "";
+        /** Whether the agent may change projects at all (still asks first). */
+        boolean allowAgentModify = false;
     }
 
     private static final String KEYS_FILE_NAME = "agent_keys.json";
@@ -119,6 +121,7 @@ public class AiProviderConfig {
 
     private AiProvider active = AiProvider.GEMINI;
     private String workingProjectId = "";
+    private boolean allowAgentModify;
     private final Map<AiProvider, Settings> settings = new EnumMap<>(AiProvider.class);
     private final Map<AiProvider, java.util.List<KeyEntry>> keyLists =
             new EnumMap<>(AiProvider.class);
@@ -145,6 +148,7 @@ public class AiProviderConfig {
                     if (stored.workingProjectId != null) {
                         config.workingProjectId = stored.workingProjectId;
                     }
+                    config.allowAgentModify = stored.allowAgentModify;
                     if (stored.providers != null) {
                         for (Map.Entry<String, Settings> entry : stored.providers.entrySet()) {
                             Settings target = config.settings.get(AiProvider.fromId(entry.getKey()));
@@ -214,6 +218,7 @@ public class AiProviderConfig {
         Stored stored = new Stored();
         stored.activeProvider = active.name();
         stored.workingProjectId = workingProjectId;
+        stored.allowAgentModify = allowAgentModify;
         for (Map.Entry<AiProvider, Settings> entry : settings.entrySet()) {
             stored.providers.put(entry.getKey().name(), entry.getValue());
         }
@@ -236,6 +241,15 @@ public class AiProviderConfig {
     /** The project the agent is working on ("" = none chosen). */
     public String workingProjectId() {
         return workingProjectId;
+    }
+
+    /** Whether the agent may change projects (approval still applies). */
+    public boolean allowAgentModify() {
+        return allowAgentModify;
+    }
+
+    public void setAllowAgentModify(boolean allow) {
+        allowAgentModify = allow;
     }
 
     public void setWorkingProjectId(String scId) {

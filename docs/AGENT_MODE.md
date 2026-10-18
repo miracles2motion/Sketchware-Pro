@@ -433,3 +433,25 @@ Device test findings (SportyNivida / Sporty Bet):
   collapsed "Thinking" block on the bubble; Markwon rendering for
   assistant bubbles (user/system text stays literal; plain text while
   streaming, formatted at completion).
+
+### Slice 2 — creation behind approval cards (built 2026-10-18, pending device test)
+
+- `SketchwareActions`: mutations through the app's own flows only.
+  `createProject` mirrors MyProjectSettingActivity (lC registry, wq
+  skeleton, default ProjectSettings); `createActivity` mirrors
+  ManageViewActivity's persist sequence; one-time project backup under
+  `.sketchware/ai-backups/<sc_id>` before the first change to an
+  existing project. Every action verifies by reading back.
+- `AgentTools`: read tools execute via dispatch as before; mutating
+  tools (`create_project`, `create_activity`) can only `propose`
+  (validate + plain-words card text) and `execute` (after approval).
+  Dispatch refuses mutations by construction.
+- `AgentLoop`: proposals pause the loop; the fragment shows an
+  approval card in the transcript and blocks the loop thread until
+  the user decides. Rejection returns `E_REJECTED` (never trips the
+  circuit breaker). A created project auto-binds as working project.
+- Approval card: title/body in plain words, collapsed Details, soft
+  green ✓ Approve / muted red ✕ Reject, outcome confirmed on the card
+  ("Done — verified…"). Cards never enter the provider history.
+- Kill switch: Settings → "Allow the agent to modify projects" (off
+  by default) gates all proposals with `E_MODIFY_OFF`.

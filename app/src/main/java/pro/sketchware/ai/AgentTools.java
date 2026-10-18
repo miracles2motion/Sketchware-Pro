@@ -1,5 +1,7 @@
 package pro.sketchware.ai;
 
+import android.content.Context;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -7,6 +9,7 @@ import com.google.gson.JsonParser;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import com.besome.sketch.beans.ProjectFileBean;
 
@@ -15,9 +18,12 @@ import com.besome.sketch.beans.ProjectFileBean;
  * model proposes a call, this class validates it against the schema it
  * declared, and only then does app code run.
  *
- * <p>Slice 1 ships read-only tools only — nothing here can change a
- * project. That rule is structural: no mutation tool exists to be
- * approved yet.
+ * <p>Read-only tools execute immediately through {@link #dispatch}.
+ * Mutating tools never execute there: {@link #propose} validates and
+ * describes the change in plain words, and {@link #execute} runs it
+ * only after the user has approved that description. That split is the
+ * core safety rule of the agent — model proposes, user decides, app
+ * executes.
  */
 public final class AgentTools {
 
@@ -32,6 +38,21 @@ public final class AgentTools {
         }
     }
 
+    /** Everything a tool needs besides its arguments. */
+    public static final class Session {
+        public final Context context;
+        public final String workingProjectId;
+        /** The Settings kill switch for any project change. */
+        public final boolean allowModify;
+
+        public Session(Context context, String workingProjectId,
+                       boolean allowModify) {
+            this.context = context;
+            this.workingProjectId = workingProjectId;
+            this.allowModify = allowModify;
+        }
+    }
+
     /** One callable tool. */
     public interface Tool {
         String name();
@@ -43,8 +64,46 @@ public final class AgentTools {
         /** Activity lines the user sees while this tool runs. */
         String activityLabel(JsonObject args);
 
-        /** Executes and returns the result object handed back to the model. */
-        JsonObject run(String workingProjectId, JsonObject args) throws ToolException;
+        /** True when the tool changes something and needs approval. */
+        default boolean mutates() {
+            return false;
+        }
+
+        /** Read-only tools: validate and run in one step. */
+        default JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            throw new ToolException("E_INTERNAL", "Tool cannot run directly.");
+        }
+
+        /** Mutating tools: validate and describe, without executing. */
+        default AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            throw new ToolException("E_INTERNAL", "Tool cannot propose.");
+        }
+
+        /** Mutating tools: perform an approved proposal and Verify. */
+        default JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            throw new ToolException("E_INTERNAL", "Tool cannot execute.");
+        }
+    }
+
+    /** The outcome of asking a mutating tool to propose. */
+    public static final class ProposalResult {
+        public AgentProposal proposal;
+        public JsonObject error;
+
+        static ProposalResult of(AgentProposal proposal) {
+            ProposalResult result = new ProposalResult();
+            result.proposal = proposal;
+            return result;
+        }
+
+        static ProposalResult failed(JsonObject error) {
+            ProposalResult result = new ProposalResult();
+            result.error = error;
+            return result;
+        }
     }
 
     private static final Map<String, Tool> TOOLS = new LinkedHashMap<>();
@@ -53,6 +112,8 @@ public final class AgentTools {
         register(new ProjectSummary());
         register(new ListActivities());
         register(new GetScreen());
+        register(new CreateProject());
+        register(new CreateActivity());
     }
 
     private static void register(Tool tool) {
@@ -75,6 +136,12 @@ public final class AgentTools {
         return tools;
     }
 
+    /** True when executing this tool would change something. */
+    public static boolean isMutation(String name) {
+        Tool tool = TOOLS.get(name);
+        return tool != null && tool.mutates();
+    }
+
     /** The human activity label for a proposed call. */
     public static String labelFor(String name, String argumentsJson) {
         Tool tool = TOOLS.get(name);
@@ -89,15 +156,18 @@ public final class AgentTools {
     }
 
     /**
-     * Validates and runs one proposed call, returning the result object.
-     * Unknown tools and malformed arguments fail as tool results — the
-     * model is told what went wrong and may try again.
+     * Validates and runs one read-only call, returning the result object.
+     * Mutating tools are refused here by construction — they must go
+     * through {@link #propose} and user approval first.
      */
     public static JsonObject dispatch(String name, String argumentsJson,
-                                      String workingProjectId) {
+                                      Session session) {
         Tool tool = TOOLS.get(name);
         if (tool == null) {
             return error("E_UNKNOWN_TOOL", "There is no tool named " + name + ".");
+        }
+        if (tool.mutates()) {
+            return error("E_INTERNAL", "That change must be proposed first.");
         }
         JsonObject args;
         try {
@@ -106,12 +176,62 @@ public final class AgentTools {
             return error("E_BAD_ARGS", "The tool arguments were not valid JSON.");
         }
         try {
-            return tool.run(workingProjectId, args);
+            return tool.run(session, args);
         } catch (ToolException e) {
             return error(e.code, e.getMessage());
         } catch (Exception e) {
             return error("E_TOOL_FAILED",
                     "The tool failed: " + String.valueOf(e.getMessage()));
+        }
+    }
+
+    /**
+     * Asks a mutating tool to validate and describe a change. Nothing
+     * executes here; the description is what the approval card shows.
+     */
+    public static ProposalResult propose(String name, String argumentsJson,
+                                         Session session) {
+        Tool tool = TOOLS.get(name);
+        if (tool == null || !tool.mutates()) {
+            return ProposalResult.failed(error("E_UNKNOWN_TOOL",
+                    "There is no change-making tool named " + name + "."));
+        }
+        if (!session.allowModify) {
+            return ProposalResult.failed(error("E_MODIFY_OFF",
+                    "The user has not allowed the agent to modify projects. "
+                            + "Ask them to open Agent settings and turn on "
+                            + "\"Allow the agent to modify projects\" first."));
+        }
+        JsonObject args;
+        try {
+            args = parseArgs(argumentsJson);
+        } catch (Exception e) {
+            return ProposalResult.failed(error("E_BAD_ARGS",
+                    "The tool arguments were not valid JSON."));
+        }
+        try {
+            return ProposalResult.of(tool.propose(session, args));
+        } catch (ToolException e) {
+            return ProposalResult.failed(error(e.code, e.getMessage()));
+        } catch (Exception e) {
+            return ProposalResult.failed(error("E_TOOL_FAILED",
+                    "The tool failed: " + String.valueOf(e.getMessage())));
+        }
+    }
+
+    /** Runs an approved proposal and returns the verified result. */
+    public static JsonObject execute(AgentProposal proposal, Session session) {
+        Tool tool = TOOLS.get(proposal.tool);
+        if (tool == null) {
+            return error("E_INTERNAL", "The tool no longer exists.");
+        }
+        try {
+            return tool.execute(session, proposal);
+        } catch (ToolException e) {
+            return error(e.code, e.getMessage());
+        } catch (Exception e) {
+            return error("E_TOOL_FAILED",
+                    "The change failed: " + String.valueOf(e.getMessage()));
         }
     }
 
@@ -201,9 +321,9 @@ public final class AgentTools {
         }
 
         @Override
-        public JsonObject run(String workingProjectId, JsonObject args)
+        public JsonObject run(Session session, JsonObject args)
                 throws ToolException {
-            String scId = requiredProject(workingProjectId);
+            String scId = requiredProject(session.workingProjectId);
             SketchwareProjects.ProjectInfo project =
                     SketchwareProjects.project(scId);
             JsonObject result = new JsonObject();
@@ -247,9 +367,9 @@ public final class AgentTools {
         }
 
         @Override
-        public JsonObject run(String workingProjectId, JsonObject args)
+        public JsonObject run(Session session, JsonObject args)
                 throws ToolException {
-            String scId = requiredProject(workingProjectId);
+            String scId = requiredProject(session.workingProjectId);
             JsonArray activities = new JsonArray();
             for (ProjectFileBean activity : SketchwareProjects.activities(scId)) {
                 activities.add(SketchwareProjects.activityName(activity));
@@ -290,9 +410,9 @@ public final class AgentTools {
         }
 
         @Override
-        public JsonObject run(String workingProjectId, JsonObject args)
+        public JsonObject run(Session session, JsonObject args)
                 throws ToolException {
-            String scId = requiredProject(workingProjectId);
+            String scId = requiredProject(session.workingProjectId);
             String asked = stringArg(args, "activity");
             ProjectFileBean activity =
                     SketchwareProjects.findActivity(scId, asked);
@@ -319,6 +439,210 @@ public final class AgentTools {
             }
             result.add("widgets", widgets);
             return result;
+        }
+    }
+
+    // -- the change-making tools (approval required) -----------------------
+
+    /** create_project: a brand-new project, the app's own way. */
+    private static final class CreateProject implements Tool {
+        private static final Pattern PACKAGE_PATTERN =
+                Pattern.compile("[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+");
+
+        @Override
+        public String name() {
+            return "create_project";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes creating a brand-new Sketchware project with "
+                    + "an empty main screen. The user must approve before "
+                    + "anything is created. The new project becomes the "
+                    + "working project.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("name", stringSchema(
+                    "The app's display name, e.g. \"Notes App\""));
+            properties.add("package_name", stringSchema(
+                    "Optional package name, e.g. com.example.notes. "
+                            + "Leave empty for a sensible default."));
+            return AgentTools.parameters(properties, "name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to create a project";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String name = stringArg(args, "name");
+            if (name.isEmpty() || name.length() > 60) {
+                throw new ToolException("E_BAD_NAME",
+                        "A project needs a name of 1 to 60 characters.");
+            }
+            String pkg = stringArg(args, "package_name");
+            if (!pkg.isEmpty() && (pkg.length() > 120
+                    || !PACKAGE_PATTERN.matcher(pkg).matches())) {
+                throw new ToolException("E_BAD_PACKAGE",
+                        "The package name must look like com.example.app "
+                                + "(lowercase words joined by dots).");
+            }
+            JsonObject clean = new JsonObject();
+            clean.addProperty("name", name);
+            clean.addProperty("package_name", pkg);
+            return new AgentProposal(name(), clean, "",
+                    "Create a new project",
+                    "“" + name + "”"
+                            + (pkg.isEmpty() ? "" : " · " + pkg),
+                    "Makes the project with an empty main screen, like "
+                            + "using New project. The new project becomes "
+                            + "the working project. Nothing else changes.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String name = stringArg(proposal.args, "name");
+            String pkg = stringArg(proposal.args, "package_name");
+            try {
+                SketchwareProjects.ProjectInfo created =
+                        SketchwareActions.createProject(
+                                session.context, name, pkg);
+                JsonObject result = new JsonObject();
+                result.addProperty("created_project", created.appName);
+                result.addProperty("package", created.packageName);
+                result.addProperty("verified",
+                        "The project now exists in the user's project list.");
+                result.addProperty("bind_project", created.scId);
+                return result;
+            } catch (Exception e) {
+                throw new ToolException("E_CREATE_FAILED",
+                        "Creating the project failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /** create_activity: one new empty screen in the working project. */
+    private static final class CreateActivity implements Tool {
+        private static final Pattern NAME_PATTERN =
+                Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,39}");
+
+        @Override
+        public String name() {
+            return "create_activity";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes adding one new empty activity (screen) to "
+                    + "the working project. The user must approve before "
+                    + "anything is added.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("activity", stringSchema(
+                    "The new activity name, e.g. SettingsActivity"));
+            return AgentTools.parameters(properties, "activity");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to add a screen";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String asked = stringArg(args, "activity");
+            String fileName = fileNameFor(asked);
+            if (!NAME_PATTERN.matcher(fileName).matches()) {
+                throw new ToolException("E_BAD_NAME",
+                        "An activity name must start with a letter and use "
+                                + "only letters, numbers and underscores, "
+                                + "e.g. SettingsActivity.");
+            }
+            if (SketchwareProjects.findActivity(scId, asked) != null
+                    || SketchwareProjects.findActivity(scId, fileName) != null) {
+                throw new ToolException("E_ACTIVITY_EXISTS",
+                        "The project already has a screen named " + asked + ".");
+            }
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("activity", fileName);
+            return new AgentProposal(name(), clean, scId,
+                    "Add a screen to " + project.name,
+                    "New activity: "
+                            + SketchwareProjects.activityName(
+                                    new ProjectFileBean(
+                                            ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY,
+                                            fileName)),
+                    "Adds one empty screen. Nothing already in the project "
+                            + "changes. A safety backup of the project is "
+                            + "made first.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String fileName = stringArg(proposal.args, "activity");
+            if (SketchwareProjects.findActivity(scId, fileName) != null) {
+                throw new ToolException("E_ACTIVITY_EXISTS",
+                        "That screen already exists now, so it was not "
+                                + "added again.");
+            }
+            try {
+                SketchwareActions.createActivity(scId, fileName);
+                JsonObject result = new JsonObject();
+                result.addProperty("created_activity",
+                        SketchwareProjects.activityName(
+                                SketchwareProjects.findActivity(scId, fileName)));
+                result.addProperty("verified",
+                        "The screen now exists in the project.");
+                return result;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_CREATE_FAILED",
+                        "Adding the screen failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+
+        /** The on-disk file name for a name like "SettingsActivity". */
+        private static String fileNameFor(String asked) {
+            String name = asked == null ? "" : asked.trim();
+            if (name.endsWith(".xml")) {
+                name = name.substring(0, name.length() - ".xml".length());
+            }
+            if (name.endsWith("Activity") && name.length() > "Activity".length()) {
+                name = name.substring(0, name.length() - "Activity".length());
+            }
+            if (!name.isEmpty()) {
+                name = Character.toLowerCase(name.charAt(0)) + name.substring(1);
+            }
+            return name;
         }
     }
 }

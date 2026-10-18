@@ -34,6 +34,9 @@ import a.a.a.qA;
 import pro.sketchware.R;
 import pro.sketchware.ai.AgentKnowledgePack;
 import pro.sketchware.ai.AgentLoop;
+import pro.sketchware.ai.AgentProposal;
+
+import java.util.concurrent.CountDownLatch;
 import pro.sketchware.ai.SketchwareProjects;
 import pro.sketchware.ai.AiChatService;
 import pro.sketchware.ai.AiPaths;
@@ -54,7 +57,14 @@ public class AgentFragment extends qA {
 
     private final List<ChatMessage> messages = new ArrayList<>();
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    /** The agent loop gets its own thread: approvals block it by design. */
+    private final ExecutorService agentExecutor =
+            Executors.newSingleThreadExecutor();
     private AgentLoop agentLoop;
+    /** The approval the user is currently deciding on, if any. */
+    private volatile CountDownLatch approvalLatch;
+    private volatile boolean approvalDecision;
+    private ChatMessage approvalCardMessage;
     /** Tokens that arrived but are not in the list yet. */
     /** Tokens that have arrived but are not on screen yet. */
     private final StringBuilder pendingReveal = new StringBuilder();
@@ -104,6 +114,7 @@ public class AgentFragment extends qA {
 
         adapter = new ChatAdapter(messages);
         adapter.setOnMessageClickListener(this::onMessageClicked);
+        adapter.setOnApprovalListener(this::onApprovalDecision);
         LinearLayoutManager layoutManager = new LinearLayoutManager(getContext());
         // A short conversation sits above the input bar, not at the top of an
         // empty screen.
@@ -147,7 +158,7 @@ public class AgentFragment extends qA {
         chatService = new AiChatService();
         providerConfig = AiProviderConfig.load(requireContext());
         binding.workingOnCard.setOnClickListener(v -> showProjectPicker());
-        agentLoop = new AgentLoop(chatService, io);
+        agentLoop = new AgentLoop(requireContext(), chatService, agentExecutor);
         updateWorkingOnCard();
 
         showCurrentState();
@@ -184,7 +195,9 @@ public class AgentFragment extends qA {
 
     @Override
     public void onDestroy() {
+        releaseApproval(false);
         io.shutdownNow();
+        agentExecutor.shutdownNow();
         super.onDestroy();
     }
 
@@ -320,7 +333,8 @@ public class AgentFragment extends qA {
         updateActionButton();
         List<ChatMessage> history = new ArrayList<>();
         for (ChatMessage message : messages) {
-            if (message == streamingMessage || message.role == ChatMessage.Role.SYSTEM) {
+            if (message == streamingMessage || message.role == ChatMessage.Role.SYSTEM
+                    || message.role == ChatMessage.Role.APPROVAL) {
                 continue;
             }
             if (message.role == ChatMessage.Role.ASSISTANT && message.text.trim().isEmpty()) {
@@ -342,6 +356,7 @@ public class AgentFragment extends qA {
                 providerConfig.apiKey(providerConfig.activeProvider()),
                 settings.model, history,
                 providerConfig.workingProjectId(),
+                providerConfig.allowAgentModify(),
                 new AgentLoop.Listener() {
                     @Override
                     public void onToolNote(String line) {
@@ -372,6 +387,26 @@ public class AgentFragment extends qA {
                             generating = false;
                             handleError(error);
                             updateActionButton();
+                        });
+                    }
+
+                    @Override
+                    public boolean onApproval(AgentProposal proposal) {
+                        return awaitApproval(proposal);
+                    }
+
+                    @Override
+                    public void onApprovalResolved(AgentProposal proposal,
+                                                   com.google.gson.JsonObject result) {
+                        runOnUi(() -> resolveApprovalCard(proposal, result));
+                    }
+
+                    @Override
+                    public void onWorkingProjectChanged(String scId) {
+                        runOnUi(() -> {
+                            providerConfig.setWorkingProjectId(scId);
+                            providerConfig.save(requireContext());
+                            updateWorkingOnCard();
                         });
                     }
                 });
@@ -419,6 +454,7 @@ public class AgentFragment extends qA {
     }
 
     private void stopGeneration() {
+        releaseApproval(false);
         if (agentLoop != null) {
             agentLoop.cancel();
         }
@@ -554,6 +590,87 @@ public class AgentFragment extends qA {
                         ? View.VISIBLE : View.GONE);
             }
             return row;
+        }
+    }
+
+    /**
+     * Shows the approval card and blocks the agent thread until the
+     * user decides. The card is the only way a change can happen.
+     */
+    private boolean awaitApproval(AgentProposal proposal) {
+        CountDownLatch latch = new CountDownLatch(1);
+        approvalLatch = latch;
+        approvalDecision = false;
+        runOnUi(() -> insertApprovalCard(proposal));
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            return false;
+        }
+        return approvalDecision;
+    }
+
+    /** Puts a pending approval card above the streaming bubble. */
+    private void insertApprovalCard(AgentProposal proposal) {
+        if (binding == null) {
+            releaseApproval(false);
+            return;
+        }
+        ChatMessage card = new ChatMessage(ChatMessage.Role.APPROVAL, "");
+        card.approvalTitle = proposal.title;
+        card.approvalBody = proposal.body;
+        card.approvalDetails = proposal.details;
+        proposal.card = card;
+        approvalCardMessage = card;
+        int index = streamingMessage != null
+                ? messages.indexOf(streamingMessage) : messages.size();
+        if (index < 0) {
+            index = messages.size();
+        }
+        messages.add(index, card);
+        adapter.notifyItemInserted(index);
+        binding.chatList.scrollToPosition(messages.size() - 1);
+    }
+
+    /** The user tapped Approve or Reject on the pending card. */
+    private void onApprovalDecision(ChatMessage message, boolean approved) {
+        if (message != approvalCardMessage
+                || !ChatMessage.APPROVAL_PENDING.equals(message.approvalState)) {
+            return;
+        }
+        message.approvalState = approved
+                ? ChatMessage.APPROVAL_WORKING : ChatMessage.APPROVAL_REJECTED;
+        adapter.notifyItemChanged(messages.indexOf(message));
+        releaseApproval(approved);
+    }
+
+    /** Shows the verified outcome on the card after execution. */
+    private void resolveApprovalCard(AgentProposal proposal,
+                                     com.google.gson.JsonObject result) {
+        ChatMessage card = proposal.card;
+        if (card == null || binding == null
+                || ChatMessage.APPROVAL_REJECTED.equals(card.approvalState)) {
+            return;
+        }
+        if (result.has("error")) {
+            card.approvalState = ChatMessage.APPROVAL_FAILED;
+            card.approvalOutcome = result.has("message")
+                    ? result.get("message").getAsString() : "";
+        } else {
+            card.approvalState = ChatMessage.APPROVAL_DONE;
+            card.approvalOutcome = result.has("verified")
+                    ? result.get("verified").getAsString() : "";
+        }
+        adapter.notifyItemChanged(messages.indexOf(card));
+    }
+
+    /** Releases a blocked agent thread with the given decision. */
+    private void releaseApproval(boolean approved) {
+        CountDownLatch latch = approvalLatch;
+        if (latch != null) {
+            approvalDecision = approved;
+            approvalLatch = null;
+            latch.countDown();
         }
     }
 

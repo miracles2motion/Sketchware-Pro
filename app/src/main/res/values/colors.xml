@@ -88,4 +88,7 @@
     <color name="splash_bg_color">@color/md_theme_light_background</color>
     <color name="splash_content_color">@color/md_theme_light_on_background</color>
 
+    <!-- Approval-card decisions: soft on purpose, always with labels. -->
+    <color name="agent_approve_green">#4C8055</color>
+    <color name="agent_reject_red">#B05A52</color>
 </resources>

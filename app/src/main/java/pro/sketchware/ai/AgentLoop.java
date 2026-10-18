@@ -1,5 +1,7 @@
 package pro.sketchware.ai;
 
+import android.content.Context;
+
 import com.besome.sketch.beans.ProjectFileBean;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -29,7 +31,13 @@ public class AgentLoop {
             "\n\nYou are connected to the user's Sketchware Pro app and can "
                     + "look at the project they are working on with your "
                     + "tools. Use the tools when a question is about their "
-                    + "project instead of guessing. Always check a project's "
+                    + "project instead of guessing. You can also create "
+                    + "projects and screens: every change is shown to the "
+                    + "user on an approval card first and only runs if "
+                    + "they approve it, so propose changes freely but "
+                    + "never claim a change happened before the tool "
+                    + "confirms it — and if the user rejects one, do not "
+                    + "retry it. Always check a project's "
                     + "current screens and widgets with the tools, even if "
                     + "earlier messages mention them — the user may have "
                     + "changed the project since, and remembered details go "
@@ -48,13 +56,27 @@ public class AgentLoop {
 
         /** The turn failed (or tool calling is unsupported). */
         void onError(AiChatService.AiError error);
+
+        /**
+         * A change needs the user's decision. Called on the loop thread
+         * and expected to block until the user decides; false rejects.
+         */
+        boolean onApproval(AgentProposal proposal);
+
+        /** The decision was acted on; the card can show the outcome. */
+        void onApprovalResolved(AgentProposal proposal, JsonObject result);
+
+        /** A created project just became the working project. */
+        void onWorkingProjectChanged(String scId);
     }
 
+    private final Context context;
     private final AiChatService service;
     private final Executor io;
     private volatile boolean cancelled;
 
-    public AgentLoop(AiChatService service, Executor io) {
+    public AgentLoop(Context context, AiChatService service, Executor io) {
+        this.context = context.getApplicationContext();
         this.service = service;
         this.io = io;
     }
@@ -70,25 +92,24 @@ public class AgentLoop {
      * (user/assistant text); the loop takes it from there.
      */
     public void run(final String baseUrl, final String apiKey, final String model,
-                    final List<ChatMessage> history, final String workingProjectId,
-                    final Listener listener) {
+                    final List<ChatMessage> history, String workingProjectId,
+                    final boolean allowModify, final Listener listener) {
         cancelled = false;
-        io.execute(() -> {
-            dispatch(listener, () -> runTurn(baseUrl, apiKey, model, history,
-                    workingProjectId, listener));
-        });
+        io.execute(() -> runTurn(baseUrl, apiKey, model, history,
+                workingProjectId, allowModify, listener));
     }
 
     private void runTurn(String baseUrl, String apiKey, String model,
                          List<ChatMessage> history, String workingProjectId,
-                         Listener listener) {
+                         boolean allowModify, Listener listener) {
         List<JsonObject> messages = new ArrayList<>();
         messages.add(systemMessage(workingProjectId));
         int kept = 0;
         for (int i = history.size() - 1; i >= 0 && kept < 40; i--) {
             ChatMessage message = history.get(i);
             if (message.state == ChatMessage.State.STREAMING
-                    || message.role == ChatMessage.Role.SYSTEM) {
+                    || message.role == ChatMessage.Role.SYSTEM
+                    || message.role == ChatMessage.Role.APPROVAL) {
                 continue;
             }
             if (message.role == ChatMessage.Role.ASSISTANT
@@ -142,11 +163,28 @@ public class AgentLoop {
                                     + " tool calls for one message.")));
                     return;
                 }
-                String label = AgentTools.labelFor(call.name, call.arguments);
-                dispatch(listener, () -> listener.onToolNote(label));
-                JsonObject result = AgentTools.dispatch(call.name, call.arguments,
-                        workingProjectId);
-                boolean failed = result.has("error");
+                AgentTools.Session session = new AgentTools.Session(
+                        context, workingProjectId, allowModify);
+                JsonObject result;
+                if (AgentTools.isMutation(call.name)) {
+                    result = proposeAndExecute(call, session, listener);
+                    if (cancelled) {
+                        return;
+                    }
+                    if (result.has("bind_project")) {
+                        workingProjectId = result.get("bind_project").getAsString();
+                        result.remove("bind_project");
+                        String bound = workingProjectId;
+                        dispatch(listener,
+                                () -> listener.onWorkingProjectChanged(bound));
+                    }
+                } else {
+                    String label = AgentTools.labelFor(call.name, call.arguments);
+                    dispatch(listener, () -> listener.onToolNote(label));
+                    result = AgentTools.dispatch(call.name, call.arguments, session);
+                }
+                boolean failed = result.has("error")
+                        && !"E_REJECTED".equals(result.get("error").getAsString());
                 if (failed) {
                     String signature = call.name + "|" + result.get("error").getAsString();
                     sameFailure = signature.equals(lastFailedCall)
@@ -173,6 +211,37 @@ public class AgentLoop {
                 messages.add(toolMessage);
             }
         }
+    }
+
+    /**
+     * The mutation path: validate into a proposal, let the user decide
+     * on the card, and only then execute. Any refusal along the way is
+     * reported to the model as a normal tool result.
+     */
+    private JsonObject proposeAndExecute(AiChatService.ToolCallData call,
+                                         AgentTools.Session session,
+                                         Listener listener) {
+        AgentTools.ProposalResult proposed =
+                AgentTools.propose(call.name, call.arguments, session);
+        if (proposed.error != null) {
+            return proposed.error;
+        }
+        AgentProposal proposal = proposed.proposal;
+        boolean approved = listener.onApproval(proposal);
+        if (!approved) {
+            JsonObject rejected = new JsonObject();
+            rejected.addProperty("error", "E_REJECTED");
+            rejected.addProperty("message",
+                    "The user rejected this change. Do not retry it or "
+                            + "argue; ask what they would like instead.");
+            dispatch(listener, () -> listener.onApprovalResolved(proposal, rejected));
+            return rejected;
+        }
+        JsonObject result = AgentTools.execute(proposal,
+                new AgentTools.Session(context, proposal.workingProjectId,
+                        session.allowModify));
+        dispatch(listener, () -> listener.onApprovalResolved(proposal, result));
+        return result;
     }
 
     private JsonObject systemMessage(String workingProjectId) {

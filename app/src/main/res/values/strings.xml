@@ -1002,4 +1002,13 @@ ACTION_VIEW
     <string name="agent_working_on_none">No project</string>
     <string name="agent_working_on_set">Now working on %1$s. Ask me anything about it.</string>
     <string name="agent_working_on_cleared">No project selected. I can still chat.</string>
+    <string name="agent_approval_approve">✓ Approve</string>
+    <string name="agent_approval_reject">✕ Reject</string>
+    <string name="agent_approval_details">Details</string>
+    <string name="agent_approval_working">Working…</string>
+    <string name="agent_approval_done">Done</string>
+    <string name="agent_approval_rejected">Rejected</string>
+    <string name="agent_approval_failed">Something went wrong</string>
+    <string name="agent_settings_allow_modify">Allow the agent to modify projects</string>
+    <string name="agent_settings_allow_modify_hint">The agent still asks for your approval before every change</string>
 </resources>

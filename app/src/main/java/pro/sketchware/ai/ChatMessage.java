@@ -12,8 +12,17 @@ public class ChatMessage {
     public enum Role {
         USER,
         ASSISTANT,
-        SYSTEM
+        SYSTEM,
+        /** An approval card for a proposed change. Never sent to a model. */
+        APPROVAL
     }
+
+    /** Approval-card lifecycle. */
+    public static final String APPROVAL_PENDING = "PENDING";
+    public static final String APPROVAL_WORKING = "WORKING";
+    public static final String APPROVAL_DONE = "DONE";
+    public static final String APPROVAL_REJECTED = "REJECTED";
+    public static final String APPROVAL_FAILED = "FAILED";
 
     /** Lifecycle of the message, used to drive the streaming UI. */
     public enum State {
@@ -39,6 +48,15 @@ public class ChatMessage {
     public String thinking = "";
     /** Whether the thinking block is expanded in the transcript. */
     public boolean thinkingExpanded;
+
+    // Approval cards (role == APPROVAL): plain words only, never beans.
+    public String approvalTitle = "";
+    public String approvalBody = "";
+    public String approvalDetails = "";
+    public String approvalState = APPROVAL_PENDING;
+    /** What was seen after the change ran (or why it did not). */
+    public String approvalOutcome = "";
+    public boolean approvalDetailsExpanded;
     public State state = State.COMPLETE;
     public long timestamp;
 

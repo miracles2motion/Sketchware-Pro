@@ -60,6 +60,11 @@ public class AgentSettingsActivity extends AppCompatActivity {
             config.save(this);
             refreshModelAdapter();
         });
+        binding.allowAgentModifySwitch.setChecked(config.allowAgentModify());
+        binding.allowAgentModifySwitch.setOnCheckedChangeListener((button, checked) -> {
+            config.setAllowAgentModify(checked);
+            config.save(this);
+        });
         binding.saveButton.setOnClickListener(v -> save());
         binding.modelInput.setOnItemClickListener((parent, view, position, id) -> {
             // Choosing a model is the last step of the setup: persist all.

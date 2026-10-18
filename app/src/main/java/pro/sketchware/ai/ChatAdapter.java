@@ -15,6 +15,7 @@ import java.util.List;
 import io.noties.markwon.Markwon;
 
 import pro.sketchware.R;
+import pro.sketchware.databinding.AgentChatItemApprovalBinding;
 import pro.sketchware.databinding.AgentChatItemAssistantBinding;
 import pro.sketchware.databinding.AgentChatItemSystemBinding;
 import pro.sketchware.databinding.AgentChatItemUserBinding;
@@ -35,6 +36,7 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
     private static final int TYPE_USER = 0;
     private static final int TYPE_ASSISTANT = 1;
     private static final int TYPE_SYSTEM = 2;
+    private static final int TYPE_APPROVAL = 3;
 
     /** The list the fragment owns; the adapter never copies it. */
     private final List<ChatMessage> items;
@@ -54,6 +56,17 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
         this.clickListener = listener;
     }
 
+    /** Approve/Reject taps on an approval card. */
+    public interface OnApprovalListener {
+        void onApprovalDecision(ChatMessage message, boolean approved);
+    }
+
+    private OnApprovalListener approvalListener;
+
+    public void setOnApprovalListener(OnApprovalListener listener) {
+        this.approvalListener = listener;
+    }
+
     private void fireClick(View view, int position) {
         if (clickListener != null && position != RecyclerView.NO_POSITION) {
             clickListener.onMessageClick(view, items.get(position));
@@ -65,6 +78,9 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
         ChatMessage message = items.get(position);
         if (message.isFromUser()) {
             return TYPE_USER;
+        }
+        if (message.role == ChatMessage.Role.APPROVAL) {
+            return TYPE_APPROVAL;
         }
         if (message.isFromApp()) {
             return TYPE_SYSTEM;
@@ -91,6 +107,10 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
         }
         if (viewType == TYPE_SYSTEM) {
             return new SystemHolder(AgentChatItemSystemBinding.inflate(inflater, parent, false));
+        }
+        if (viewType == TYPE_APPROVAL) {
+            return new ApprovalHolder(
+                    AgentChatItemApprovalBinding.inflate(inflater, parent, false));
         }
         return new AssistantHolder(AgentChatItemAssistantBinding.inflate(inflater, parent, false));
     }
@@ -273,6 +293,69 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
             binding.dot1.setAlpha(1f);
             binding.dot2.setAlpha(1f);
             binding.dot3.setAlpha(1f);
+        }
+    }
+
+    static class ApprovalHolder extends Holder {
+        private final AgentChatItemApprovalBinding binding;
+
+        ApprovalHolder(@NonNull AgentChatItemApprovalBinding binding) {
+            super(binding.getRoot());
+            this.binding = binding;
+        }
+
+        @Override
+        void bind(ChatMessage message) {
+            android.content.Context context = itemView.getContext();
+            binding.approvalTitle.setText(message.approvalTitle);
+            binding.approvalBody.setText(message.approvalBody);
+            binding.approvalDetails.setText(message.approvalDetails);
+            binding.approvalDetails.setVisibility(
+                    message.approvalDetailsExpanded ? View.VISIBLE : View.GONE);
+            binding.approvalDetailsToggle.setText(
+                    context.getString(R.string.agent_approval_details)
+                            + (message.approvalDetailsExpanded ? " ▴" : " ▾"));
+            binding.approvalDetailsToggle.setOnClickListener(v -> {
+                message.approvalDetailsExpanded = !message.approvalDetailsExpanded;
+                bind(message);
+            });
+            boolean pending = ChatMessage.APPROVAL_PENDING.equals(message.approvalState);
+            binding.approvalButtons.setVisibility(pending ? View.VISIBLE : View.GONE);
+            binding.approvalState.setVisibility(pending ? View.GONE : View.VISIBLE);
+            binding.approvalState.setText(stateText(context, message));
+            if (pending && owner != null) {
+                binding.approvalApprove.setOnClickListener(v -> {
+                    if (owner.approvalListener != null) {
+                        owner.approvalListener.onApprovalDecision(message, true);
+                    }
+                });
+                binding.approvalReject.setOnClickListener(v -> {
+                    if (owner.approvalListener != null) {
+                        owner.approvalListener.onApprovalDecision(message, false);
+                    }
+                });
+            }
+        }
+
+        /** The quiet status line once the decision has been made. */
+        private String stateText(android.content.Context context,
+                                 ChatMessage message) {
+            switch (message.approvalState) {
+                case ChatMessage.APPROVAL_WORKING:
+                    return context.getString(R.string.agent_approval_working);
+                case ChatMessage.APPROVAL_DONE:
+                    return "✓ " + context.getString(R.string.agent_approval_done)
+                            + (message.approvalOutcome.isEmpty() ? ""
+                                    : " — " + message.approvalOutcome);
+                case ChatMessage.APPROVAL_REJECTED:
+                    return "✕ " + context.getString(R.string.agent_approval_rejected);
+                case ChatMessage.APPROVAL_FAILED:
+                    return context.getString(R.string.agent_approval_failed)
+                            + (message.approvalOutcome.isEmpty() ? ""
+                                    : " — " + message.approvalOutcome);
+                default:
+                    return "";
+            }
         }
     }
 
