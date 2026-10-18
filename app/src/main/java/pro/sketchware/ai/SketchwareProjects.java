@@ -232,6 +232,31 @@ public final class SketchwareProjects {
             line.append(String.format(Locale.ROOT, " · bg=#%08X",
                     bean.layout.backgroundColor));
         }
+        if (bean.layout != null) {
+            if (bean.layout.width
+                    == com.besome.sketch.beans.LayoutBean.LAYOUT_MATCH_PARENT) {
+                line.append(" · width match_parent");
+            } else if (bean.layout.width
+                    != com.besome.sketch.beans.LayoutBean.LAYOUT_WRAP_CONTENT) {
+                line.append(" · width ").append(bean.layout.width)
+                        .append("dp");
+            }
+            if (bean.layout.height
+                    == com.besome.sketch.beans.LayoutBean.LAYOUT_MATCH_PARENT) {
+                line.append(" · height match_parent");
+            } else if (bean.layout.height
+                    != com.besome.sketch.beans.LayoutBean.LAYOUT_WRAP_CONTENT) {
+                line.append(" · height ").append(bean.layout.height)
+                        .append("dp");
+            }
+            if (bean.layout.orientation
+                    == com.besome.sketch.beans.LayoutBean.ORIENTATION_VERTICAL) {
+                line.append(" · vertical");
+            } else if (bean.layout.orientation
+                    == com.besome.sketch.beans.LayoutBean.ORIENTATION_HORIZONTAL) {
+                line.append(" · horizontal");
+            }
+        }
         if (bean.parent != null && !bean.parent.isEmpty()) {
             line.append(" · in ").append(bean.parent);
         }
@@ -260,7 +285,11 @@ public final class SketchwareProjects {
             case ViewBean.VIEW_TYPE_WIDGET_FAB -> "FloatingActionButton";
             case ViewBean.VIEW_TYPE_WIDGET_ADVIEW -> "AdView";
             case ViewBean.VIEW_TYPE_WIDGET_MAPVIEW -> "MapView";
-            default -> "View(" + type + ")";
+            default -> {
+                String extended = mod.agus.jcoderz.beans.ViewBeans
+                        .getViewTypeName(type);
+                yield extended.isEmpty() ? "View(" + type + ")" : extended;
+            }
         };
     }
 

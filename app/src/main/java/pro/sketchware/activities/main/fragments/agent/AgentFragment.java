@@ -173,10 +173,13 @@ public class AgentFragment extends qA {
      */
     private void ensureKnowledgePack() {
         File blocks = new File(AiPaths.knowledgeDir(), AgentKnowledgePack.BLOCKS_FILE_NAME);
-        if (blocks.exists()) {
-            return;
+        if (!blocks.exists()) {
+            io.execute(AgentKnowledgePack::exportBlocks);
         }
-        io.execute(AgentKnowledgePack::exportBlocks);
+        File widgets = new File(AiPaths.knowledgeDir(), AgentKnowledgePack.WIDGETS_FILE_NAME);
+        if (!widgets.exists()) {
+            io.execute(AgentKnowledgePack::exportWidgets);
+        }
     }
 
     @Override

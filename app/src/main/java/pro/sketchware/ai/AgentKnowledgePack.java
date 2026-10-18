@@ -17,6 +17,9 @@ import java.util.HashMap;
 
 import mod.hilal.saif.blocks.BlocksHandler;
 
+import a.a.a.oq;
+import com.besome.sketch.beans.ViewBean;
+
 /**
  * The knowledge pack: the vocabulary the model needs to talk about the app.
  *
@@ -42,6 +45,9 @@ public final class AgentKnowledgePack {
 
     /** Name of the file inside the knowledge directory. */
     public static final String BLOCKS_FILE_NAME = "blocks.json";
+
+    /** Name of the widget catalog inside the knowledge directory. */
+    public static final String WIDGETS_FILE_NAME = "widgets.json";
 
     private AgentKnowledgePack() {
     }
@@ -96,6 +102,61 @@ public final class AgentKnowledgePack {
         root.addProperty("version", VERSION);
         root.addProperty("kind", "blocks");
         root.add("blocks", blocks);
+        return new GsonBuilder().setPrettyPrinting().create().toJson(root);
+    }
+
+    /**
+     * Writes the widget catalog to the knowledge directory.
+     *
+     * @return the file that was written, or null when it could not be written
+     */
+    public static File exportWidgets() {
+        File file = new File(AiPaths.knowledgeDir(), WIDGETS_FILE_NAME);
+        try (Writer writer = new FileWriter(file)) {
+            writer.write(widgetsJson());
+            return file;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Builds the widget catalog as JSON: every widget type the editor
+     * knows, whether it can hold other widgets, and the events it can
+     * raise. Names come from the app's own type tables
+     * ({@link ViewBean} and the extended {@code ViewBeans}); events from
+     * the same catalog the logic editor offers ({@code oq}).
+     */
+    public static String widgetsJson() {
+        JsonArray widgets = new JsonArray();
+        for (int type = 0; type <= 48; type++) {
+            String name = AgentEdits.typeName(type);
+            if (name.startsWith("View(")) {
+                continue;
+            }
+            JsonObject widget = new JsonObject();
+            widget.addProperty("type", type);
+            widget.addProperty("name", name);
+            widget.addProperty("container", AgentEdits.isContainer(type));
+            JsonArray events = new JsonArray();
+            try {
+                String[] forClass = oq.getEventsForClass(
+                        new ViewBean("widget", type).buildClassInfo(type));
+                if (forClass != null) {
+                    for (String event : forClass) {
+                        events.add(event);
+                    }
+                }
+            } catch (Exception ignored) {
+                // Some classes have no event catalog entry; empty is true.
+            }
+            widget.add("events", events);
+            widgets.add(widget);
+        }
+        JsonObject root = new JsonObject();
+        root.addProperty("version", VERSION);
+        root.addProperty("kind", "widgets");
+        root.add("widgets", widgets);
         return new GsonBuilder().setPrettyPrinting().create().toJson(root);
     }
 

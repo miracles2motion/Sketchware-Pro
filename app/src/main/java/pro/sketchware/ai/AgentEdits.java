@@ -20,6 +20,7 @@ import java.util.regex.Pattern;
 import a.a.a.wq;
 import com.besome.sketch.beans.LayoutBean;
 import com.besome.sketch.beans.ViewBean;
+import mod.agus.jcoderz.beans.ViewBeans;
 
 /**
  * The screen-editing engine. A list of small operations is first
@@ -152,9 +153,13 @@ public final class AgentEdits {
                 }
                 case "set_hint" -> {
                     ViewBean bean = requireWidget(op, byId);
-                    if (bean.type != ViewBean.VIEW_TYPE_WIDGET_EDITTEXT) {
+                    if (bean.type != ViewBean.VIEW_TYPE_WIDGET_EDITTEXT
+                            && bean.type
+                                    != ViewBeans.VIEW_TYPE_WIDGET_AUTOCOMPLETETEXTVIEW
+                            && bean.type
+                                    != ViewBeans.VIEW_TYPE_WIDGET_MULTIAUTOCOMPLETETEXTVIEW) {
                         throw new AgentTools.ToolException("E_WRONG_WIDGET",
-                                "Only an EditText has a hint: " + bean.id
+                                "Only a text input has a hint: " + bean.id
                                         + " is a " + typeName(bean.type) + ".");
                     }
                     bean.text.hint = stringOf(op, "hint");
@@ -184,6 +189,92 @@ public final class AgentEdits {
                     }
                     bean.text.textSize = size;
                     lines.add("Set " + bean.id + " text size to " + size);
+                }
+                case "set_size" -> {
+                    // layout.width/height, the property editor's own
+                    // encoding: -1 match_parent, -2 wrap_content, else dp.
+                    ViewBean bean = requireWidget(op, byId);
+                    if (op.has("width")) {
+                        int width = sizeOf(op, "width");
+                        bean.layout.width = width;
+                        lines.add("Set " + bean.id + " width to "
+                                + sizeWord(width));
+                    }
+                    if (op.has("height")) {
+                        int height = sizeOf(op, "height");
+                        bean.layout.height = height;
+                        lines.add("Set " + bean.id + " height to "
+                                + sizeWord(height));
+                    }
+                    if (!op.has("width") && !op.has("height")) {
+                        throw new AgentTools.ToolException("E_BAD_OP",
+                                "set_size needs a width and/or height: "
+                                        + "\"match_parent\", \"wrap_content\" "
+                                        + "or a dp number.");
+                    }
+                }
+                case "set_orientation" -> {
+                    ViewBean bean = requireWidget(op, byId);
+                    String value = stringOf(op, "orientation")
+                            .toLowerCase(Locale.ROOT);
+                    int orientation = switch (value) {
+                        case "vertical" -> LayoutBean.ORIENTATION_VERTICAL;
+                        case "horizontal" -> LayoutBean.ORIENTATION_HORIZONTAL;
+                        default -> throw new AgentTools.ToolException(
+                                "E_BAD_VALUE",
+                                "Orientation is \"vertical\" or \"horizontal\".");
+                    };
+                    bean.layout.orientation = orientation;
+                    lines.add("Make " + bean.id + " stack " + value);
+                }
+                case "set_padding" -> {
+                    ViewBean bean = requireWidget(op, byId);
+                    int[] padding = boxOf(op, bean.layout.paddingLeft,
+                            bean.layout.paddingTop, bean.layout.paddingRight,
+                            bean.layout.paddingBottom);
+                    bean.layout.paddingLeft = padding[0];
+                    bean.layout.paddingTop = padding[1];
+                    bean.layout.paddingRight = padding[2];
+                    bean.layout.paddingBottom = padding[3];
+                    lines.add("Set " + bean.id + " padding to "
+                            + boxWord(padding));
+                }
+                case "set_margin" -> {
+                    ViewBean bean = requireWidget(op, byId);
+                    int[] margin = boxOf(op, bean.layout.marginLeft,
+                            bean.layout.marginTop, bean.layout.marginRight,
+                            bean.layout.marginBottom);
+                    bean.layout.marginLeft = margin[0];
+                    bean.layout.marginTop = margin[1];
+                    bean.layout.marginRight = margin[2];
+                    bean.layout.marginBottom = margin[3];
+                    lines.add("Set " + bean.id + " margin to "
+                            + boxWord(margin));
+                }
+                case "set_gravity" -> {
+                    ViewBean bean = requireWidget(op, byId);
+                    int gravity = gravityOf(op);
+                    if (op.has("layout_gravity")
+                            || "layout".equalsIgnoreCase(
+                                    stringOf(op, "target"))) {
+                        bean.layout.layoutGravity = gravity;
+                        lines.add("Set " + bean.id + " position gravity to "
+                                + stringOf(op, "gravity"));
+                    } else {
+                        bean.layout.gravity = gravity;
+                        lines.add("Set " + bean.id + " content gravity to "
+                                + stringOf(op, "gravity"));
+                    }
+                }
+                case "set_weight" -> {
+                    ViewBean bean = requireWidget(op, byId);
+                    int weight = intOf(op, "weight", -1);
+                    if (weight < 0 || weight > 100) {
+                        throw new AgentTools.ToolException("E_BAD_VALUE",
+                                "Weight is a whole number from 0 to 100.");
+                    }
+                    bean.layout.weight = weight;
+                    lines.add("Set " + bean.id + " weight to " + weight);
                 }
                 case "remove_widget" -> {
                     ViewBean bean = requireWidget(op, byId);
@@ -245,7 +336,9 @@ public final class AgentEdits {
                                 + "\"type\":\"Button\",\"text\":\"Save\"}. "
                                 + "Valid ops: add_widget, set_text, set_hint, "
                                 + "set_background, set_text_color, "
-                                + "set_text_size, remove_widget, move_widget.");
+                                + "set_text_size, set_size, set_orientation, "
+                                + "set_padding, set_margin, set_gravity, "
+                                + "set_weight, remove_widget, move_widget.");
             }
             frozenOps.add(op);
         }
@@ -350,7 +443,7 @@ public final class AgentEdits {
         ViewBean bean = new ViewBean(id, type);
         // The palette beans the editor drops carry the class name here
         // (IconButton/IconLinear*/ViewBeanParser all set it).
-        bean.convert = typeName(type);
+        bean.convert = convertFor(type);
         applyPaletteDefaults(bean, type);
         bean.parent = onScreen ? ROOT_PARENT : parent.id;
         bean.parentType = onScreen ? rootParentType : parent.type;
@@ -398,6 +491,12 @@ public final class AgentEdits {
                     "insertwidget", "newwidget" -> "add_widget";
             case "settext", "changetext", "updatetext" -> "set_text";
             case "sethint" -> "set_hint";
+            case "setsize", "resize", "setwidth", "setheight" -> "set_size";
+            case "setorientation", "orientation" -> "set_orientation";
+            case "setpadding", "padding" -> "set_padding";
+            case "setmargin", "margin" -> "set_margin";
+            case "setgravity", "gravity", "setlayoutgravity" -> "set_gravity";
+            case "setweight", "weight" -> "set_weight";
             case "setbackground", "setbackgroundcolor",
                     "setbackgroundcolour" -> "set_background";
             case "settextcolor", "settextcolour" -> "set_text_color";
@@ -445,7 +544,28 @@ public final class AgentEdits {
     }
 
     private static Integer typeByName(String name) {
-        return TYPE_BY_NAME.get(name);
+        Integer type = TYPE_BY_NAME.get(name);
+        if (type != null) {
+            return type;
+        }
+        for (Map.Entry<String, Integer> entry : TYPE_BY_NAME.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase(name)) {
+                return entry.getValue();
+            }
+        }
+        // The extended widget table is the app's own (ViewBeans); ask it
+        // rather than keeping a second copy that can drift. It returns 0
+        // for unknown names, so confirm the name round-trips.
+        int extended = ViewBeans.getViewTypeByTypeName(name);
+        if (ViewBeans.getViewTypeName(extended).equals(name)) {
+            return extended;
+        }
+        for (int candidate = 19; candidate <= 48; candidate++) {
+            if (ViewBeans.getViewTypeName(candidate).equalsIgnoreCase(name)) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     /** Widget type names in {@link ViewBean} type order. */
@@ -455,14 +575,22 @@ public final class AgentEdits {
                 return entry.getKey();
             }
         }
-        return "View(" + type + ")";
+        String extended = ViewBeans.getViewTypeName(type);
+        return extended.isEmpty() ? "View(" + type + ")" : extended;
     }
 
     public static boolean isContainer(int type) {
         return type == ViewBean.VIEW_TYPE_LAYOUT_LINEAR
                 || type == ViewBean.VIEW_TYPE_LAYOUT_RELATIVE
                 || type == ViewBean.VIEW_TYPE_LAYOUT_HSCROLLVIEW
-                || type == ViewBean.VIEW_TYPE_LAYOUT_VSCROLLVIEW;
+                || type == ViewBean.VIEW_TYPE_LAYOUT_VSCROLLVIEW
+                // Extended layouts the editor treats as linear parents
+                // (ViewPane's own effective-parent mapping), plus CardView.
+                || type == ViewBeans.VIEW_TYPE_LAYOUT_CARDVIEW
+                || type == ViewBeans.VIEW_TYPE_LAYOUT_COLLAPSINGTOOLBARLAYOUT
+                || type == ViewBeans.VIEW_TYPE_LAYOUT_TEXTINPUTLAYOUT
+                || type == ViewBeans.VIEW_TYPE_LAYOUT_SWIPEREFRESHLAYOUT
+                || type == ViewBeans.VIEW_TYPE_LAYOUT_RADIOGROUP;
     }
 
     /** The same prefix-plus-counter naming the app itself uses. */
@@ -534,6 +662,119 @@ public final class AgentEdits {
     }
 
     // -- small helpers ------------------------------------------------------
+
+    /**
+     * Parses a size value with the property editor's encoding:
+     * {@code "match_parent"} or {@code -1}, {@code "wrap_content"} or
+     * {@code -2}, otherwise a dp count from 0 to 2000.
+     */
+    private static int sizeOf(JsonObject op, String key) {
+        JsonElement element = op.get(key);
+        if (element != null && element.isJsonPrimitive()
+                && element.getAsJsonPrimitive().isString()) {
+            String word = element.getAsString().trim()
+                    .toLowerCase(Locale.ROOT).replace(' ', '_');
+            if (word.equals("match_parent")) {
+                return LayoutBean.LAYOUT_MATCH_PARENT;
+            }
+            if (word.equals("wrap_content")) {
+                return LayoutBean.LAYOUT_WRAP_CONTENT;
+            }
+        }
+        int value = intOf(op, key, Integer.MIN_VALUE);
+        if (value == LayoutBean.LAYOUT_MATCH_PARENT
+                || value == LayoutBean.LAYOUT_WRAP_CONTENT) {
+            return value;
+        }
+        if (value < 0 || value > 2000) {
+            throw new AgentTools.ToolException("E_BAD_SIZE",
+                    "A size is \"match_parent\", \"wrap_content\" or a dp "
+                            + "number from 0 to 2000.");
+        }
+        return value;
+    }
+
+    private static String sizeWord(int value) {
+        if (value == LayoutBean.LAYOUT_MATCH_PARENT) {
+            return "match the parent";
+        }
+        if (value == LayoutBean.LAYOUT_WRAP_CONTENT) {
+            return "wrap its content";
+        }
+        return value + "dp";
+    }
+
+    /**
+     * Reads a four-sided box: {@code dp} sets all sides, or individual
+     * {@code left/top/right/bottom} fields override. Values are dp.
+     */
+    private static int[] boxOf(
+            JsonObject op, int left, int top, int right, int bottom) {
+        if (op.has("dp")) {
+            int all = boxSide(op, "dp");
+            left = top = right = bottom = all;
+        }
+        if (op.has("left")) {
+            left = boxSide(op, "left");
+        }
+        if (op.has("top")) {
+            top = boxSide(op, "top");
+        }
+        if (op.has("right")) {
+            right = boxSide(op, "right");
+        }
+        if (op.has("bottom")) {
+            bottom = boxSide(op, "bottom");
+        }
+        return new int[]{left, top, right, bottom};
+    }
+
+    private static int boxSide(JsonObject op, String key) {
+        int value = intOf(op, key, -1);
+        if (value < 0 || value > 500) {
+            throw new AgentTools.ToolException("E_BAD_SIZE",
+                    "Padding and margin values are dp numbers from 0 to "
+                            + "500.");
+        }
+        return value;
+    }
+
+    private static String boxWord(int[] box) {
+        if (box[0] == box[1] && box[1] == box[2] && box[2] == box[3]) {
+            return box[0] + "dp on all sides";
+        }
+        return box[0] + "/" + box[1] + "/" + box[2] + "/" + box[3]
+                + "dp (left/top/right/bottom)";
+    }
+
+    /** Android gravity names to {@link LayoutBean} constants. */
+    private static int gravityOf(JsonObject op) {
+        String word = stringOf(op, "gravity").trim()
+                .toLowerCase(Locale.ROOT).replace(' ', '_');
+        return switch (word) {
+            case "", "none", "no_gravity" -> LayoutBean.GRAVITY_NONE;
+            case "left" -> LayoutBean.GRAVITY_LEFT;
+            case "right" -> LayoutBean.GRAVITY_RIGHT;
+            case "top" -> LayoutBean.GRAVITY_TOP;
+            case "bottom" -> LayoutBean.GRAVITY_BOTTOM;
+            case "center" -> LayoutBean.GRAVITY_CENTER;
+            case "center_horizontal" -> LayoutBean.GRAVITY_CENTER_HORIZONTAL;
+            case "center_vertical" -> LayoutBean.GRAVITY_CENTER_VERTICAL;
+            case "top_left" -> LayoutBean.GRAVITY_TOP
+                    | LayoutBean.GRAVITY_LEFT;
+            case "top_right" -> LayoutBean.GRAVITY_TOP
+                    | LayoutBean.GRAVITY_RIGHT;
+            case "bottom_left" -> LayoutBean.GRAVITY_BOTTOM
+                    | LayoutBean.GRAVITY_LEFT;
+            case "bottom_right" -> LayoutBean.GRAVITY_BOTTOM
+                    | LayoutBean.GRAVITY_RIGHT;
+            default -> throw new AgentTools.ToolException("E_BAD_VALUE",
+                    "Gravity is one of: left, right, top, bottom, center, "
+                            + "center_horizontal, center_vertical, "
+                            + "top_left, top_right, bottom_left, "
+                            + "bottom_right, none.");
+        };
+    }
 
     private static ViewBean requireWidget(JsonObject op,
                                           Map<String, ViewBean> byId)
@@ -619,6 +860,212 @@ public final class AgentEdits {
             default -> {
                 // ImageView and anything else start from the plain bean,
                 // exactly as their palette icons do.
+                applyExtendedDefaults(bean, type);
+            }
+        }
+    }
+
+    /**
+     * The class name a new bean carries in {@code convert}: the simple
+     * widget name for the built-in palette, and the fully-qualified class
+     * for the extended palette, whose icons write exactly that
+     * (e.g. {@code androidx.cardview.widget.CardView}).
+     */
+    private static String convertFor(int type) {
+        return switch (type) {
+            case ViewBeans.VIEW_TYPE_WIDGET_BADGEVIEW ->
+                    "com.allenliu.badgeview.BadgeView";
+            case ViewBeans.VIEW_TYPE_LAYOUT_BOTTOMNAVIGATIONVIEW ->
+                    "com.google.android.material.bottomnavigation.BottomNavigationView";
+            case ViewBeans.VIEW_TYPE_LAYOUT_CARDVIEW ->
+                    "androidx.cardview.widget.CardView";
+            case ViewBeans.VIEW_TYPE_WIDGET_CIRCLEIMAGEVIEW ->
+                    "de.hdodenhof.circleimageview.CircleImageView";
+            case ViewBeans.VIEW_TYPE_WIDGET_CODEVIEW ->
+                    "br.tiagohm.codeview.CodeView";
+            case ViewBeans.VIEW_TYPE_LAYOUT_COLLAPSINGTOOLBARLAYOUT ->
+                    "com.google.android.material.appbar.CollapsingToolbarLayout";
+            case ViewBeans.VIEW_TYPE_WIDGET_SIGNINBUTTON ->
+                    "com.google.android.gms.common.SignInButton";
+            case ViewBeans.VIEW_TYPE_WIDGET_LOTTIEANIMATIONVIEW ->
+                    "com.airbnb.lottie.LottieAnimationView";
+            case ViewBeans.VIEW_TYPE_WIDGET_MATERIALBUTTON ->
+                    "com.google.android.material.button.MaterialButton";
+            case ViewBeans.VIEW_TYPE_WIDGET_OTPVIEW ->
+                    "affan.ahmad.otp.OTPView";
+            case ViewBeans.VIEW_TYPE_WIDGET_PATTERNLOCKVIEW ->
+                    "com.andrognito.patternlockview.PatternLockView";
+            case ViewBeans.VIEW_TYPE_WIDGET_RECYCLERVIEW ->
+                    "androidx.recyclerview.widget.RecyclerView";
+            case ViewBeans.VIEW_TYPE_LAYOUT_SWIPEREFRESHLAYOUT ->
+                    "androidx.swiperefreshlayout.widget.SwipeRefreshLayout";
+            case ViewBeans.VIEW_TYPE_LAYOUT_TABLAYOUT ->
+                    "com.google.android.material.tabs.TabLayout";
+            case ViewBeans.VIEW_TYPE_LAYOUT_TEXTINPUTLAYOUT ->
+                    "com.google.android.material.textfield.TextInputLayout";
+            case ViewBeans.VIEW_TYPE_LAYOUT_VIEWPAGER ->
+                    "androidx.viewpager.widget.ViewPager";
+            case ViewBeans.VIEW_TYPE_WIDGET_WAVESIDEBAR ->
+                    "com.sayuti.lib.WaveSideBar";
+            case ViewBeans.VIEW_TYPE_WIDGET_YOUTUBEPLAYERVIEW ->
+                    "com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView";
+            default -> typeName(type);
+        };
+    }
+
+    /**
+     * Palette defaults for the extended widget set, transcribed from the
+     * extended palette icons' {@code getBean()} (padding, stretched axes,
+     * starting text/hint, and the attribute injection string several of
+     * them carry).
+     */
+    private static void applyExtendedDefaults(ViewBean bean, int type) {
+        switch (type) {
+            case ViewBeans.VIEW_TYPE_WIDGET_RADIOBUTTON,
+                    ViewBeans.VIEW_TYPE_WIDGET_RATINGBAR,
+                    ViewBeans.VIEW_TYPE_WIDGET_VIDEOVIEW,
+                    ViewBeans.VIEW_TYPE_WIDGET_DIGITALCLOCK,
+                    ViewBeans.VIEW_TYPE_WIDGET_ANALOGCLOCK -> {
+                pad(bean);
+                bean.text.text = typeName(type);
+            }
+            case ViewBeans.VIEW_TYPE_WIDGET_AUTOCOMPLETETEXTVIEW,
+                    ViewBeans.VIEW_TYPE_WIDGET_MULTIAUTOCOMPLETETEXTVIEW -> {
+                pad(bean);
+                bean.text.hint = typeName(type);
+            }
+            case ViewBeans.VIEW_TYPE_WIDGET_SEARCHVIEW -> {
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                pad(bean);
+                bean.text.hint = typeName(type);
+                bean.text.hintColor = 0xff607d8b;
+            }
+            case ViewBeans.VIEW_TYPE_WIDGET_DATEPICKER,
+                    ViewBeans.VIEW_TYPE_WIDGET_TIMEPICKER -> {
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                pad(bean);
+            }
+            case ViewBeans.VIEW_TYPE_WIDGET_GRIDVIEW -> {
+                bean.layout.orientation = LayoutBean.ORIENTATION_HORIZONTAL;
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                pad(bean);
+                bean.inject = "android:numColumns=\"3\"\n"
+                        + "android:stretchMode=\"columnWidth\"";
+            }
+            case ViewBeans.VIEW_TYPE_LAYOUT_CARDVIEW -> {
+                bean.layout.orientation = LayoutBean.ORIENTATION_VERTICAL;
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                pad(bean);
+                bean.inject = "app:cardElevation=\"2dp\"\n"
+                        + "app:cardCornerRadius=\"20dp\"";
+            }
+            case ViewBeans.VIEW_TYPE_LAYOUT_COLLAPSINGTOOLBARLAYOUT -> {
+                bean.layout.orientation = LayoutBean.ORIENTATION_VERTICAL;
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                pad(bean);
+                bean.inject = "android:fitsSystemWindows=\"true\"\n"
+                        + "app:layout_scrollFlags=\"scroll|exitUntilCollapsed\"";
+            }
+            case ViewBeans.VIEW_TYPE_LAYOUT_TEXTINPUTLAYOUT -> {
+                bean.layout.orientation = LayoutBean.ORIENTATION_VERTICAL;
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                bean.inject = "style=\"@style/Widget.MaterialComponents"
+                        + ".TextInputLayout.OutlinedBox\"";
+            }
+            case ViewBeans.VIEW_TYPE_LAYOUT_SWIPEREFRESHLAYOUT -> {
+                bean.layout.orientation = LayoutBean.ORIENTATION_VERTICAL;
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                bean.layout.height = LayoutBean.LAYOUT_MATCH_PARENT;
+                pad(bean);
+            }
+            case ViewBeans.VIEW_TYPE_LAYOUT_RADIOGROUP -> {
+                bean.layout.orientation = LayoutBean.ORIENTATION_HORIZONTAL;
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                pad(bean);
+            }
+            case ViewBeans.VIEW_TYPE_LAYOUT_TABLAYOUT -> {
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                bean.layout.backgroundColor = 0xff008dcd;
+                bean.inject = "app:tabGravity=\"fill\"\napp:tabMode=\"fixed\"\n"
+                        + "app:tabIndicatorHeight=\"3dp\"\n"
+                        + "app:tabIndicatorColor=\"@android:color/white\"\n"
+                        + "app:tabSelectedTextColor=\"@android:color/white\"\n"
+                        + "app:tabTextColor=\"@android:color/white\"\n"
+                        + "app:tabTextAppearance=\"@android:style/TextAppearance"
+                        + ".Widget.TabWidget\"";
+            }
+            case ViewBeans.VIEW_TYPE_LAYOUT_VIEWPAGER -> {
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                bean.layout.height = LayoutBean.LAYOUT_MATCH_PARENT;
+                pad(bean);
+                bean.text.text = typeName(type);
+            }
+            case ViewBeans.VIEW_TYPE_LAYOUT_BOTTOMNAVIGATIONVIEW -> {
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                bean.text.text = typeName(type);
+            }
+            case ViewBeans.VIEW_TYPE_WIDGET_BADGEVIEW -> {
+                bean.text.text = typeName(type);
+            }
+            case ViewBeans.VIEW_TYPE_WIDGET_PATTERNLOCKVIEW -> {
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                pad(bean);
+                bean.text.text = typeName(type);
+            }
+            case ViewBeans.VIEW_TYPE_WIDGET_WAVESIDEBAR -> {
+                bean.layout.height = LayoutBean.LAYOUT_MATCH_PARENT;
+                bean.text.text = typeName(type);
+                bean.text.textSize = 16;
+                bean.text.textColor = 0xff008dcd;
+                bean.inject = "app:sidebar_text_alignment=\"center\"\n"
+                        + "app:sidebar_position=\"left\"\n"
+                        + "app:sidebar_max_offset=\"80dp\"";
+            }
+            case ViewBeans.VIEW_TYPE_WIDGET_MATERIALBUTTON -> {
+                bean.layout.orientation = LayoutBean.ORIENTATION_VERTICAL;
+                bean.layout.gravity = LayoutBean.GRAVITY_CENTER;
+                pad(bean);
+                bean.text.textColor = 0xffffffff;
+                bean.text.text = typeName(type);
+                bean.inject = "app:cornerRadius=\"8dp\"";
+            }
+            case ViewBeans.VIEW_TYPE_WIDGET_CIRCLEIMAGEVIEW -> {
+                bean.inject = "app:civ_border_width=\"3dp\"\n"
+                        + "app:civ_border_color=\"#008DCD\"\n"
+                        + "app:civ_circle_background_color=\"#FFFFFF\"\n"
+                        + "app:civ_border_overlay=\"true\"";
+            }
+            case ViewBeans.VIEW_TYPE_WIDGET_LOTTIEANIMATIONVIEW -> {
+                bean.layout.orientation = LayoutBean.ORIENTATION_VERTICAL;
+                pad(bean);
+                bean.inject = "android:scaleType=\"fitCenter\"\n"
+                        + "android:layout_centerInParent=\"true\"\n"
+                        + "app:lottie_fileName=\"your_file.json\"\n"
+                        + "app:lottie_loop=\"true\" \n"
+                        + "app:lottie_autoPlay=\"true\"";
+            }
+            case ViewBeans.VIEW_TYPE_WIDGET_YOUTUBEPLAYERVIEW -> {
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                bean.text.text = typeName(type);
+                bean.inject = "app:autoPlay=\"false\"\napp:useWebUi=\"false\"\n"
+                        + "app:showYouTubeButton=\"true\"\n"
+                        + "app:showFullScreenButton=\"true\"\n"
+                        + "app:showVideoCurrentTime=\"true\"\n"
+                        + "app:showVideoDuration=\"true\"\n"
+                        + "app:showSeekBar=\"true\"\n"
+                        + "app:handleNetworkEvents=\"false\"\n"
+                        + "app:enableAutomaticInitialization=\"true\"";
+            }
+            case ViewBeans.VIEW_TYPE_WIDGET_OTPVIEW,
+                    ViewBeans.VIEW_TYPE_WIDGET_CODEVIEW,
+                    ViewBeans.VIEW_TYPE_WIDGET_RECYCLERVIEW -> {
+                bean.layout.orientation = LayoutBean.ORIENTATION_VERTICAL;
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                pad(bean);
+            }
+            default -> {
+                // SignInButton and anything unlisted start plain, as
+                // their palette icons do.
             }
         }
     }

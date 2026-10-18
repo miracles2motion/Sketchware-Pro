@@ -503,6 +503,19 @@ Device test findings (SportyNivida / Sporty Bet):
   floating button, and the editor would render a stored one as an
   unknown view); ScrollView parents accept only one direct child;
   screen reads now present the editor's normalized order (`eC.a`).
+- Vocabulary/property pass (audit continuation): `add_widget` now
+  covers all 48 editor widget types — name↔type and the FQCN
+  `convert` names delegate to the app's own extended table
+  (`mod.agus.jcoderz.beans.ViewBeans`), and per-type starting beans
+  transcribe the extended palette icons' `getBean()` (padding,
+  stretched axes, starting text/hint, `inject` attribute strings).
+  New edit ops use the property editor's own `LayoutBean` encodings:
+  `set_size` (match/wrap/dp), `set_orientation`, `set_padding`,
+  `set_margin`, `set_gravity` (+`layout_gravity`), `set_weight`.
+  `get_screen` reports non-default width/height/orientation. The
+  knowledge pack now also exports `widgets.json` (all 48 types,
+  container flag, and the event names the logic editor offers per
+  class, from `a.a.a.oq`) beside `blocks.json`.
 - One-time project backup (slice 2) precedes the first edit too.
   Approval details warn when the screen might be open in the editor.
 - Still open from the risk register: a hard editor-open lock (the
