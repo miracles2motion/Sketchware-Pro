@@ -635,3 +635,22 @@ Device test findings (SportyNivida / Sporty Bet):
   (value) blocks, control flow and intent navigation stay out of
   this slice — they need the component-creation path, still
   unmapped.
+- Device test of slice 4 (2026-10-18): toast append, run, text
+  append and both rejections behaved; "(Runs after the 2 blocks…)"
+  proved chaining. Activity events FAILED after approval: the
+  proposal froze the resolved target id (the event name itself for
+  activity events) and the executor re-read it as a widget id
+  (`E_NO_WIDGET`). Fixed in `ade3295` by freezing the target FORM
+  ("activity"), plus a corrective `E_BAD_TARGET` message, plus
+  guidance that the user's newest message always wins after the
+  agent re-proposed an unwelcome failed job over a new request
+  (`81c3279`). Awaiting re-test.
+- Build slice (`build_project`) built 2026-10-18, bundled with the
+  two fixes above for a single device download. It mirrors the
+  Design screen's build task step for step (`AgentBuild`) with
+  Sketchware's own `ProjectBuilder`; compiler diagnostics surface
+  through the same `zy` the app shows; the result reports the APK
+  (path verified to exist, size, seconds) and nothing in the
+  project is modified beyond the build/staging folders the app
+  itself wipes each build. `get_build_errors` is folded into the
+  build result (capped diagnostics) rather than a separate tool.

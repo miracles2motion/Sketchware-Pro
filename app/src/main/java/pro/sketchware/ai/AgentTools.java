@@ -133,6 +133,7 @@ public final class AgentTools {
         register(new EditActivity());
         register(new EditScreen());
         register(new SetEventHandler());
+        register(new BuildProject());
     }
 
     private static void register(Tool tool) {
@@ -1093,6 +1094,81 @@ public final class AgentTools {
                                 + "a fresh one.");
             }
             return AgentLogic.apply(session.context, plan);
+        }
+    }
+
+    /** build_project: compile the working project, read its errors. */
+    private static final class BuildProject implements Tool {
+        @Override
+        public String name() {
+            return "build_project";
+        }
+
+        @Override
+        public String description() {
+            return "Compiles the working project with Sketchware's own "
+                    + "builder (resources, code generation, javac, dex, "
+                    + "signing — the same pipeline as the Build button) "
+                    + "and reports success or the compiler errors. "
+                    + "Nothing in the project is changed; the APK is "
+                    + "written where Sketchware's own build puts it, and "
+                    + "the user can press run inside Sketchware to "
+                    + "install it. Build after wiring behaviour, and "
+                    + "again after fixing any error it reports. It can "
+                    + "take a minute or two. The user approves first.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            return AgentTools.parameters(new JsonObject());
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to build the project";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("project", project.name);
+            return new AgentProposal(name(), clean, scId,
+                    "Build " + project.name,
+                    "Compile “" + project.appName + "” with Sketchware's "
+                            + "builder and check for errors. Your screens "
+                            + "and blocks are not changed; the APK goes "
+                            + "to the project's build folder. This can "
+                            + "take a minute or two.",
+                    "The same pipeline as Sketchware's Build button: "
+                            + "resources → generated code → javac → dex "
+                            + "→ signed APK.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            if (!scId.equals(session.workingProjectId)) {
+                throw new ToolException("E_PROJECT_CHANGED",
+                        "The working project changed since this build "
+                                + "was proposed, so it was not run.");
+            }
+            try {
+                SketchwareActions.backupProjectOnce(scId);
+            } catch (Exception ignored) {
+                // A backup problem must not block a build; building
+                // never touches project data anyway.
+            }
+            return AgentBuild.build(session.context, scId);
         }
     }
 
