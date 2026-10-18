@@ -221,6 +221,9 @@ public class AgentFragment extends qA {
         dropSetupSeedIfConfigured();
         updateProviderUi();
         updateActionButton();
+        // Returning from the editor may mean a build card's APK was
+        // rebuilt there: its Install row must re-check before offering.
+        refreshBuildCards();
     }
 
     /**
@@ -725,12 +728,6 @@ public class AgentFragment extends qA {
                 adapter.notifyItemChanged(i);
             }
         }
-    }
-
-    @Override
-    public void onResume() {
-        super.onResume();
-        refreshBuildCards();
     }
 
     @Override
