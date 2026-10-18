@@ -370,6 +370,35 @@ public final class SketchwareActions {
         return previous;
     }
 
+    /**
+     * Changes a screen's floating button through the data manager's own
+     * fab store ({@code eC.h} returns — creating if needed — the live
+     * bean the editor edits). Returns a snapshot of the previous bean so
+     * a failed save can put it back with {@link #restoreFab}.
+     */
+    public static ViewBean setFab(String scId, ProjectFileBean activity,
+                                  String icon, Integer background) {
+        ViewBean fab = jC.a(scId).h(activity.getXmlName());
+        ViewBean snapshot = new ViewBean();
+        snapshot.copy(fab);
+        if (icon != null) {
+            fab.image.resName = icon;
+        }
+        if (background != null) {
+            fab.layout.backgroundColor = background;
+        }
+        return snapshot;
+    }
+
+    /** Puts back a floating-button bean captured by {@link #setFab}. */
+    public static void restoreFab(String scId, ProjectFileBean activity,
+                                  ViewBean snapshot) {
+        if (snapshot == null) {
+            return;
+        }
+        jC.a(scId).h(activity.getXmlName()).copy(snapshot);
+    }
+
     /** Puts back a root layout captured by {@link #setRootAttributes}. */
     public static void restoreRoot(String scId, ProjectFileBean activity,
             pro.sketchware.managers.inject.InjectRootLayoutManager.Root

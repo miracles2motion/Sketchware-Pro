@@ -9,6 +9,7 @@ import com.google.gson.JsonParser;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -642,6 +643,7 @@ public final class AgentTools {
             AgentEdits.Outcome outcome = AgentEdits.simulate(
                     located.scId, located.beans, ops, false,
                     located.rootParentType);
+            requireFabIfAsked(outcome.frozenOps, located);
             SketchwareProjects.ProjectInfo project =
                     SketchwareProjects.project(located.scId);
             JsonObject clean = new JsonObject();
@@ -700,6 +702,7 @@ public final class AgentTools {
             JsonArray ops = proposal.args.getAsJsonArray("ops");
             AgentEdits.Outcome outcome = AgentEdits.simulate(
                     located.scId, current, ops, true, located.rootParentType);
+            requireFabIfAsked(outcome.frozenOps, located);
             // The pre-edit screen, snapshotted before anything native is
             // touched: the editor's own delete path mutates the live bean
             // list, so the live list alone is not a rollback copy.
@@ -716,6 +719,7 @@ public final class AgentTools {
             }
             pro.sketchware.managers.inject.InjectRootLayoutManager.Root
                     previousRoot = null;
+            com.besome.sketch.beans.ViewBean previousFab = null;
             try {
                 SketchwareActions.backupProjectOnce(located.scId);
                 // Removed widgets go through the editor's own delete,
@@ -754,6 +758,29 @@ public final class AgentTools {
                     previousRoot = SketchwareActions.setRootAttributes(
                             located.scId, located.activity, rootUpdates);
                 }
+                // Floating-button changes ride in set_fab ops; they go
+                // to the activity's own fab bean in the data manager.
+                for (com.google.gson.JsonElement element
+                        : outcome.frozenOps) {
+                    JsonObject op = element.getAsJsonObject();
+                    if (!"set_fab".equals(op.has("op")
+                            ? op.get("op").getAsString() : "")) {
+                        continue;
+                    }
+                    String icon = op.has("icon")
+                            ? op.get("icon").getAsString() : null;
+                    Integer background = op.has("background_hex")
+                            ? Integer.valueOf((int) Long.parseLong(
+                                    op.get("background_hex").getAsString()
+                                            .substring(1), 16))
+                            : null;
+                    com.besome.sketch.beans.ViewBean snapshot =
+                            SketchwareActions.setFab(located.scId,
+                                    located.activity, icon, background);
+                    if (previousFab == null) {
+                        previousFab = snapshot;
+                    }
+                }
                 // A Button the editor adds always gets its empty onClick
                 // event registered; mirror that for added Buttons.
                 // Custom views have no logic file, so no event is
@@ -780,6 +807,8 @@ public final class AgentTools {
                             located.activity, previous);
                     SketchwareActions.restoreRoot(located.scId,
                             located.activity, previousRoot);
+                    SketchwareActions.restoreFab(located.scId,
+                            located.activity, previousFab);
                 } catch (Exception ignored) {
                     // Best effort: the save failure is the error to report.
                 }
@@ -805,6 +834,41 @@ public final class AgentTools {
                     SketchwareProjects.screenName(located.activity)
                             + " now has " + readBack.size() + " widgets.");
             return result;
+        }
+
+        /**
+         * The floating button lives outside the widget list, so
+         * {@link AgentEdits} cannot know whether it exists; that check
+         * belongs to the screen the edit targets.
+         */
+        private static void requireFabIfAsked(JsonArray frozenOps,
+                                              LocatedScreen located)
+                throws ToolException {
+            boolean asked = false;
+            for (com.google.gson.JsonElement element : frozenOps) {
+                JsonObject op = element.getAsJsonObject();
+                String kind = op.has("op") ? op.get("op").getAsString()
+                        : "";
+                if (kind.toLowerCase(Locale.ROOT)
+                        .replace("_", "").equals("setfab")) {
+                    asked = true;
+                    break;
+                }
+            }
+            if (!asked) {
+                return;
+            }
+            ProjectFileBean file = located.activity;
+            if (file.fileType != ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY
+                    || !file.hasActivityOption(
+                            ProjectFileBean.OPTION_ACTIVITY_FAB)) {
+                throw new ToolException("E_NO_FAB",
+                        SketchwareProjects.screenName(file)
+                                + " has no floating button to change. "
+                                + "Turn it on first with edit_activity's "
+                                + "floating_button setting, then set its "
+                                + "icon in a separate edit.");
+            }
         }
 
         /** The bound project, the screen, and its current beans. */
@@ -1045,6 +1109,96 @@ public final class AgentTools {
         }
     }
 
+    /** create_custom_view: one new reusable layout in the project. */
+    private static final class CreateCustomView implements Tool {
+        private static final Pattern NAME_PATTERN =
+                Pattern.compile("[a-z][a-z0-9_]{0,39}");
+
+        @Override
+        public String name() {
+            return "create_custom_view";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes adding one new empty custom view (a "
+                    + "reusable layout, e.g. a list item design) to the "
+                    + "working project. The user must approve before "
+                    + "anything is added.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("name", stringSchema(
+                    "The custom view name, lowercase with underscores, "
+                            + "e.g. item_task"));
+            return AgentTools.parameters(properties, "name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to add a custom view";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String name = stringArg(args, "name").trim()
+                    .toLowerCase(Locale.ROOT);
+            if (!NAME_PATTERN.matcher(name).matches()) {
+                throw new ToolException("E_BAD_NAME",
+                        "A custom view name starts with a lowercase letter "
+                                + "and uses only lowercase letters, numbers "
+                                + "and underscores, e.g. item_task.");
+            }
+            for (ProjectFileBean view
+                    : SketchwareProjects.customViews(scId)) {
+                if (view.fileName.equalsIgnoreCase(name)) {
+                    throw new ToolException("E_CUSTOM_VIEW_EXISTS",
+                            "The project already has a custom view named "
+                                    + name + ".");
+                }
+            }
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("name", name);
+            return new AgentProposal(name(), clean, scId,
+                    "Add a custom view to " + project.name,
+                    "New custom view: " + name,
+                    "Adds one empty reusable layout. Nothing already in "
+                            + "the project changes. A safety backup of the "
+                            + "project is made first.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String name = stringArg(proposal.args, "name");
+            try {
+                SketchwareActions.createCustomView(scId, name);
+                JsonObject result = new JsonObject();
+                result.addProperty("created_custom_view", name);
+                result.addProperty("verified",
+                        "The custom view now exists in the project and "
+                                + "can be edited with edit_screen.");
+                return result;
+            } catch (Exception e) {
+                throw new ToolException("E_CREATE_FAILED",
+                        "Adding the custom view failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
     /** edit_activity: toolbar/fullscreen/orientation of one screen. */
     private static final class EditActivity implements Tool {
         @Override
@@ -1210,91 +1364,6 @@ public final class AgentTools {
                     + "working project, with its widgets, events and "
                     + "blocks. Deleting always needs the user's approval. "
                     + "The main screen cannot be deleted.";
-        }
-
-        @Override
-        public JsonObject parameters() {
-            JsonObject properties = new JsonObject();
-            properties.add("activity", stringSchema(
-                    "The activity to delete, e.g. SettingsActivity"));
-            return AgentTools.parameters(properties, "activity");
-        }
-
-        @Override
-        public String activityLabel(JsonObject args) {
-            return "Wants to delete a screen";
-        }
-
-        @Override
-        public boolean mutates() {
-            return true;
-        }
-
-        @Override
-        public AgentProposal propose(Session session, JsonObject args)
-                throws ToolException {
-            String scId = requiredProject(session.workingProjectId);
-            String asked = stringArg(args, "activity");
-            ProjectFileBean target =
-                    SketchwareProjects.findActivity(scId, asked);
-            if (target == null) {
-                throw new ToolException("E_ACTIVITY_NOT_FOUND",
-                        "There is no screen named \"" + asked + "\" in "
-                                + "the working project.");
-            }
-            if ("main".equalsIgnoreCase(target.fileName)) {
-                throw new ToolException("E_MAIN_ACTIVITY",
-                        "The main screen is the app's starting screen and "
-                                + "cannot be deleted. Rename or rebuild it "
-                                + "instead.");
-            }
-            int widgets = SketchwareProjects
-                    .screenBeans(scId, target).size();
-            SketchwareProjects.ProjectInfo project =
-                    SketchwareProjects.project(scId);
-            JsonObject clean = new JsonObject();
-            clean.addProperty("activity", target.fileName);
-            return new AgentProposal(name(), clean, scId,
-                    "Delete a screen from " + project.name,
-                    "Delete "
-                            + SketchwareProjects.activityName(target)
-                            + " and everything in it (" + widgets
-                            + (widgets == 1 ? " widget" : " widgets")
-                            + ", plus its events and blocks).",
-                    "This cannot be undone from here. A safety backup of "
-                            + "the project is made first, and the deletion "
-                            + "goes through Sketchware's own screen-manager "
-                            + "save, like deleting it by hand.");
-        }
-
-        @Override
-        public JsonObject execute(Session session, AgentProposal proposal)
-                throws ToolException {
-            String scId = requiredProject(proposal.workingProjectId);
-            String fileName = stringArg(proposal.args, "activity");
-            if (SketchwareProjects.findActivity(scId, fileName) == null) {
-                throw new ToolException("E_ACTIVITY_NOT_FOUND",
-                        "That screen no longer exists, so nothing was "
-                                + "deleted.");
-            }
-            try {
-                SketchwareActions.deleteActivity(scId, fileName);
-                JsonObject result = new JsonObject();
-                result.addProperty("deleted_activity", fileName);
-                result.addProperty("verified",
-                        "The screen is gone from the project.");
-                return result;
-            } catch (ToolException e) {
-                throw e;
-            } catch (Exception e) {
-                throw new ToolException("E_DELETE_FAILED",
-                        "Deleting the screen failed: "
-                                + String.valueOf(e.getMessage()));
-            }
-        }
-    }
-}
-      + "The main screen cannot be deleted.";
         }
 
         @Override

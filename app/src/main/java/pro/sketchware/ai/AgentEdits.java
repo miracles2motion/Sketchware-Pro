@@ -591,6 +591,39 @@ public final class AgentEdits {
                                         + "an orientation.");
                     }
                 }
+                case "set_fab" -> {
+                    // The floating button is not a screen widget either:
+                    // it is the activity's own bean (eC's fab store).
+                    // Values are validated and frozen here; the execute
+                    // path writes them to that bean.
+                    boolean changed = false;
+                    if (op.has("icon")) {
+                        String icon = stringOf(op, "icon");
+                        if (!ID_PATTERN.matcher(icon).matches()) {
+                            throw new AgentTools.ToolException("E_BAD_VALUE",
+                                    "An icon name uses letters, numbers "
+                                            + "and underscores, like "
+                                            + "ic_add.");
+                        }
+                        lines.add("Set the floating button's icon to "
+                                + icon);
+                        changed = true;
+                    }
+                    if (op.has("background")) {
+                        String raw = stringOf(op, "background");
+                        int color = parseColor(scId, raw);
+                        op.addProperty("background_hex",
+                                String.format(Locale.ROOT, "#%08X", color));
+                        lines.add("Set the floating button's background to "
+                                + colorWord(scId, raw, color));
+                        changed = true;
+                    }
+                    if (!changed) {
+                        throw new AgentTools.ToolException("E_BAD_OP",
+                                "set_fab needs an icon and/or a background "
+                                        + "colour.");
+                    }
+                }
                 case "remove_widget" -> {
                     ViewBean bean = requireWidget(op, byId);
                     Set<String> removed = subtreeIds(bean.id, work);
@@ -659,7 +692,8 @@ public final class AgentEdits {
                                 + "set_input_type, set_font, set_list_item_view, "
                                 + "set_progress, "
                                 + "set_indeterminate, set_alpha, "
-                                + "set_clickable, set_root, remove_widget, "
+                                + "set_clickable, set_root, set_fab, "
+                                + "remove_widget, "
                                 + "move_widget.");
             }
             frozenOps.add(op);
@@ -831,6 +865,7 @@ public final class AgentEdits {
             case "setroot", "rootbackground", "setrootbackground" -> "set_root";
             case "setlistitemview", "setitemlayout", "setcustomview",
                     "listitemview" -> "set_list_item_view";
+            case "setfab", "fab" -> "set_fab";
             case "setprogress", "progress" -> "set_progress";
             case "setindeterminate", "indeterminate" -> "set_indeterminate";
             case "setalpha", "alpha", "setopacity" -> "set_alpha";

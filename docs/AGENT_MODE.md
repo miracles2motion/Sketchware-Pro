@@ -550,6 +550,17 @@ Device test findings (SportyNivida / Sporty Bet):
   block ids and next/sub-stack links (construction lives in JAR
   classes, not repo sources) — derive from saved examples + the
   code generator's walk (`Fx`/`Hx`) before proposing any block.
+- The floating button joined the surface: `edit_activity` can toggle
+  it (with the design-library `useYn` flip the screen manager
+  performs), and `edit_screen`'s `set_fab` sets its icon/background
+  through the data manager's own fab store (`eC.h`), gated on the
+  activity actually having one, with snapshot rollback.
+- Repair note: a mid-session workspace restore silently dropped the
+  `CreateCustomView` class body and appended a duplicated fragment to
+  `AgentTools.java`, and a `Locale` import was missing — commits
+  `489ffdb`/`ad601da` therefore never compiled. All three defects are
+  fixed together; treat `47687db` as the last commit whose tree was
+  structurally sound before this repair.
 - Build-loop groundwork: the in-app builder is
   `a.a.a.ProjectBuilder` (resources → javac → dex → sign), driven
   from `DesignActivity` with a progress receiver; a `build()` tool
