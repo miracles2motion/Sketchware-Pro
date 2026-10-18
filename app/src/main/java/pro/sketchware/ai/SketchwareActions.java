@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
 
+import a.a.a.cC;
 import a.a.a.GB;
 import a.a.a.jC;
 import a.a.a.lC;
@@ -19,6 +20,7 @@ import a.a.a.nB;
 import a.a.a.oB;
 import a.a.a.wq;
 import com.besome.sketch.beans.ProjectFileBean;
+import com.besome.sketch.beans.ViewBean;
 import mod.hey.studios.project.ProjectSettings;
 import mod.hey.studios.util.ProjectFile;
 
@@ -140,6 +142,12 @@ public final class SketchwareActions {
             throw new ActionException("The screen was added but cannot "
                     + "be read back.");
         }
+    }
+
+    /** Saves a whole screen through the same call the view editor uses. */
+    public static void saveScreen(String scId, ProjectFileBean activity,
+                                  ArrayList<ViewBean> beans) {
+        cC.c(scId).b(activity.getXmlName(), beans);
     }
 
     private static void splitFiles(String scId,

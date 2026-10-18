@@ -80,6 +80,31 @@ public final class SketchwareProjects {
         }
     }
 
+    /**
+     * One of the project's theme colours by registry key
+     * ({@code color_primary}, {@code color_primary_dark},
+     * {@code color_accent}); {@link Integer#MIN_VALUE} when unknown.
+     */
+    public static int projectColor(String scId, String key) {
+        if (scId == null || key == null) {
+            return Integer.MIN_VALUE;
+        }
+        try {
+            HashMap<String, Object> map = lC.b(scId);
+            Object value = map == null ? null : map.get(key);
+            if (value instanceof Number) {
+                return ((Number) value).intValue();
+            }
+            if (value instanceof String) {
+                return (int) Long.parseLong(
+                        ((String) value).replace("#", "").trim(), 16);
+            }
+        } catch (Exception ignored) {
+            // An unreadable registry reads as "no colour".
+        }
+        return Integer.MIN_VALUE;
+    }
+
     /** The activities (screens) of a project, main first. */
     public static List<ProjectFileBean> activities(String scId) {
         List<ProjectFileBean> activities = new ArrayList<>();

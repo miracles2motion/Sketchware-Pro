@@ -455,3 +455,25 @@ Device test findings (SportyNivida / Sporty Bet):
   ("Done — verified…"). Cards never enter the provider history.
 - Kill switch: Settings → "Allow the agent to modify projects" (off
   by default) gates all proposals with `E_MODIFY_OFF`.
+
+### Slice 3 — edit_screen (built 2026-10-18, pending device test)
+
+- `AgentEdits`: the op engine. Ops (add_widget, set_text, set_hint,
+  set_background, set_text_color, set_text_size, remove_widget,
+  move_widget; max 12) are simulated on a copy of the screen and
+  validated against the evolving tree (parent must exist or be added
+  earlier in the same call; containers only; no cycles; exactly one
+  root). Widget ids are app-allocated (the app's own prefix+counter
+  naming) unless the model supplies a valid free one. Colours accept
+  #RRGGBB/#AARRGGBB and the project tokens @primary/@primary_dark/
+  @accent, resolved from the project's own theme colours at write.
+- Proposals freeze allocated ids and a SHA-256 screen revision;
+  execution refuses with E_SCREEN_CHANGED if the screen moved since.
+  Save goes through the editor's own `cC.c(sc_id).b(xml, beans)`,
+  then the screen is read back and compared to the approved sim.
+- One-time project backup (slice 2) precedes the first edit too.
+  Approval details warn when the screen might be open in the editor.
+- Still open from the risk register: a hard editor-open lock (the
+  revision gate + warning cover the common cases), design-token
+  palette picking and plan-first construction (edit ops resolve
+  tokens, but palettes arrive with whole-screen planning).

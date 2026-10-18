@@ -114,6 +114,7 @@ public final class AgentTools {
         register(new GetScreen());
         register(new CreateProject());
         register(new CreateActivity());
+        register(new EditScreen());
     }
 
     private static void register(Tool tool) {
@@ -439,6 +440,188 @@ public final class AgentTools {
             }
             result.add("widgets", widgets);
             return result;
+        }
+    }
+
+    /** edit_screen: small validated operations on one screen. */
+    private static final class EditScreen implements Tool {
+        @Override
+        public String name() {
+            return "edit_screen";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes edits to one screen of the working project as "
+                    + "a list of small operations. Operations run in order "
+                    + "and each is checked against the screen as the "
+                    + "earlier ones leave it. Ops: add_widget "
+                    + "{type,parent?,id?,text?,background?} (types include "
+                    + "LinearLayout, Button, TextView, EditText, ImageView, "
+                    + "ProgressBar, ListView; parent defaults to the root "
+                    + "layout; omit id to let the app name it), set_text "
+                    + "{id,text}, set_hint {id,hint} (EditText only), "
+                    + "set_background {id,color}, set_text_color {id,color}, "
+                    + "set_text_size {id,size}, remove_widget {id} (removes "
+                    + "what is inside it too), move_widget {id,parent}. "
+                    + "Colours are #RRGGBB or the project tokens @primary, "
+                    + "@primary_dark, @accent. At most "
+                    + AgentEdits.MAX_OPS + " operations per call. The user "
+                    + "must approve before anything changes.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("activity", stringSchema(
+                    "The screen to edit, e.g. MainActivity"));
+            JsonObject opsSchema = new JsonObject();
+            opsSchema.addProperty("type", "array");
+            opsSchema.addProperty("description",
+                    "The operations, in order");
+            JsonObject item = new JsonObject();
+            item.addProperty("type", "object");
+            opsSchema.add("items", item);
+            properties.add("ops", opsSchema);
+            return AgentTools.parameters(properties, "activity", "ops");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to edit " + stringArg(args, "activity");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            LocatedScreen located = locate(session, args);
+            JsonArray ops = args.has("ops") && args.get("ops").isJsonArray()
+                    ? args.getAsJsonArray("ops") : null;
+            if (ops == null || ops.size() == 0
+                    || ops.size() > AgentEdits.MAX_OPS) {
+                throw new ToolException("E_OPS_LIMIT",
+                        "Give between 1 and " + AgentEdits.MAX_OPS
+                                + " operations per edit.");
+            }
+            AgentEdits.Outcome outcome = AgentEdits.simulate(
+                    located.scId, located.beans, ops, false);
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(located.scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("activity", located.activity.fileName);
+            clean.addProperty("revision",
+                    AgentEdits.revisionOf(located.beans));
+            clean.add("ops", outcome.frozenOps);
+
+            StringBuilder body = new StringBuilder();
+            int shown = Math.min(outcome.lines.size(), 8);
+            for (int i = 0; i < shown; i++) {
+                if (body.length() > 0) {
+                    body.append("\n");
+                }
+                body.append("• ").append(outcome.lines.get(i));
+            }
+            if (outcome.lines.size() > shown) {
+                body.append("\n…and ")
+                        .append(outcome.lines.size() - shown)
+                        .append(" more changes");
+            }
+            return new AgentProposal(name(), clean, located.scId,
+                    "Edit " + SketchwareProjects.activityName(located.activity)
+                            + " in " + project.name,
+                    body.toString(),
+                    "If this screen is open in the editor, close it before "
+                            + "approving — the editor would overwrite the "
+                            + "change when it saves. Exact operations:\n"
+                            + new com.google.gson.GsonBuilder()
+                                    .setPrettyPrinting().create()
+                                    .toJson(outcome.frozenOps));
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            LocatedScreen located;
+            try {
+                JsonObject args = new JsonObject();
+                args.addProperty("activity",
+                        stringArg(proposal.args, "activity"));
+                located = locate(new Session(session.context,
+                        proposal.workingProjectId, session.allowModify), args);
+            } catch (ToolException e) {
+                throw e;
+            }
+            ArrayList<com.besome.sketch.beans.ViewBean> current = located.beans;
+            String expected = stringArg(proposal.args, "revision");
+            if (!expected.isEmpty()
+                    && !expected.equals(AgentEdits.revisionOf(current))) {
+                throw new ToolException("E_SCREEN_CHANGED",
+                        "The screen changed since this edit was proposed, "
+                                + "so it was not applied. Look at the screen "
+                                + "again and propose a fresh edit.");
+            }
+            JsonArray ops = proposal.args.getAsJsonArray("ops");
+            AgentEdits.Outcome outcome = AgentEdits.simulate(
+                    located.scId, current, ops, true);
+            try {
+                SketchwareActions.backupProjectOnce(located.scId);
+                SketchwareActions.saveScreen(located.scId, located.activity,
+                        outcome.beans);
+            } catch (Exception e) {
+                throw new ToolException("E_SAVE_FAILED",
+                        "Saving the screen failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+            ArrayList<com.besome.sketch.beans.ViewBean> readBack =
+                    SketchwareProjects.screenBeans(located.scId, located.activity);
+            if (!AgentEdits.canonical(readBack)
+                    .equals(AgentEdits.canonical(outcome.beans))) {
+                throw new ToolException("E_VERIFY_FAILED",
+                        "The saved screen does not match the approved edit, "
+                                + "so treat the edit as not applied.");
+            }
+            JsonObject result = new JsonObject();
+            result.addProperty("edited_activity",
+                    SketchwareProjects.activityName(located.activity));
+            result.addProperty("changes", outcome.lines.size());
+            result.addProperty("verified",
+                    SketchwareProjects.activityName(located.activity)
+                            + " now has " + readBack.size() + " widgets.");
+            return result;
+        }
+
+        /** The bound project, the screen, and its current beans. */
+        private LocatedScreen locate(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String asked = stringArg(args, "activity");
+            ProjectFileBean activity =
+                    SketchwareProjects.findActivity(scId, asked);
+            if (activity == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "There is no screen named \"" + asked + "\" in "
+                                + "the working project.");
+            }
+            return new LocatedScreen(scId, activity,
+                    SketchwareProjects.screenBeans(scId, activity));
+        }
+
+        private static final class LocatedScreen {
+            final String scId;
+            final ProjectFileBean activity;
+            final ArrayList<com.besome.sketch.beans.ViewBean> beans;
+
+            LocatedScreen(String scId, ProjectFileBean activity,
+                          ArrayList<com.besome.sketch.beans.ViewBean> beans) {
+                this.scId = scId;
+                this.activity = activity;
+                this.beans = beans;
+            }
         }
     }
 
