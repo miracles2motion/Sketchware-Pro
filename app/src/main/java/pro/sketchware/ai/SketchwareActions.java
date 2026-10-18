@@ -12,8 +12,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
 
-import a.a.a.cC;
 import a.a.a.GB;
+import a.a.a.eC;
 import a.a.a.jC;
 import a.a.a.lC;
 import a.a.a.nB;
@@ -161,10 +161,20 @@ public final class SketchwareActions {
         jC.d(scId).h();
     }
 
-    /** Saves a whole screen through the same call the view editor uses. */
+    /**
+     * Replaces a screen's view beans the way the app itself does: the project
+     * data manager's ({@code eC}) live view map IS the store, and screen reads
+     * come from it — the app's own undo/redo replaces whole screens via
+     * {@code jC.a(sc_id).c.put(xmlName, beanspa)}. (The {@code cC} manager used
+     * here previously only records undo history; it never touches the store,
+     * which is why saved edits never appeared on re-read.) The change is
+     * flushed to disk by {@link #commitProject}.
+     */
     public static void saveScreen(String scId, ProjectFileBean activity,
                                   ArrayList<ViewBean> beans) {
-        cC.c(scId).b(activity.getXmlName(), beans);
+        eC store = jC.a(scId);
+        if (store == null) throw new IllegalStateException("project data is unavailable");
+        store.c.put(activity.getXmlName(), beans);
     }
 
     private static void splitFiles(String scId,
