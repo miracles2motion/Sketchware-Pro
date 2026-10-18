@@ -119,6 +119,7 @@ public class AgentFragment extends qA {
         adapter = new ChatAdapter(messages);
         adapter.setOnMessageClickListener(this::onMessageClicked);
         adapter.setOnApprovalListener(this::onApprovalDecision);
+        adapter.setOnInstallListener(this::onInstallRequest);
         LinearLayoutManager layoutManager = new LinearLayoutManager(getContext());
         // A short conversation sits above the input bar, not at the top of an
         // empty screen.
@@ -674,8 +675,59 @@ public class AgentFragment extends qA {
             card.approvalState = ChatMessage.APPROVAL_DONE;
             card.approvalOutcome = result.has("verified")
                     ? result.get("verified").getAsString() : "";
+            // A build leaves its APK behind: keep its identity on the
+            // card so the card can offer Install for it later.
+            if (result.has("apk_path")) {
+                card.buildApkPath = result.get("apk_path").getAsString();
+                card.buildApkBytes = result.has("apk_bytes")
+                        ? result.get("apk_bytes").getAsLong() : 0;
+                card.buildApkModified = result.has("apk_modified")
+                        ? result.get("apk_modified").getAsLong() : 0;
+            }
         }
         adapter.notifyItemChanged(messages.indexOf(card));
+    }
+
+    /**
+     * The user tapped Install on a finished build card: hand the APK the
+     * card points at to Android's installer, the same intent the editor
+     * sends after its own builds. The file is re-checked here (the row
+     * can be showing a stale bind), so a swapped or vanished build can
+     * never be installed silently.
+     */
+    private void onInstallRequest(ChatMessage card) {
+        if (card.buildApkPath.isEmpty()) {
+            return;
+        }
+        File apk = new File(card.buildApkPath);
+        if (!apk.exists() || apk.length() == 0) {
+            adapter.notifyItemChanged(messages.indexOf(card));
+            Toast.makeText(requireContext(), R.string.agent_install_gone,
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            android.net.Uri apkUri =
+                    androidx.core.content.FileProvider.getUriForFile(
+                            requireContext(),
+                            requireContext().getPackageName() + ".provider",
+                            apk);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+            intent.setDataAndType(apkUri,
+                    "application/vnd.android.package-archive");
+            startActivity(intent);
+            Toast.makeText(requireContext(),
+                    R.string.agent_install_launched,
+                    Toast.LENGTH_SHORT).show();
+        } catch (RuntimeException e) {
+            Toast.makeText(requireContext(),
+                    getString(R.string.agent_install_failed,
+                            card.buildApkPath),
+                    Toast.LENGTH_LONG).show();
+        }
     }
 
     /** Releases a blocked agent thread with the given decision. */

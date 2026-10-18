@@ -134,11 +134,18 @@ public final class AgentBuild {
         result.addProperty("project", project.name);
         result.addProperty("apk_kb", apk.length() / 1024);
         result.addProperty("seconds", seconds);
+        // Not for the model to act on: the build card keeps these so it
+        // can offer Install for this exact APK later, and re-check the
+        // file still is this APK before handing it to the installer.
+        result.addProperty("apk_path", apk.getAbsolutePath());
+        result.addProperty("apk_bytes", apk.length());
+        result.addProperty("apk_modified", apk.lastModified());
         result.addProperty("verified",
                 project.name + " compiled cleanly ("
                         + (apk.length() / 1024) + " KB APK, " + seconds
-                        + "s). The user can open the project and press "
-                        + "run in Sketchware to install it.");
+                        + "s). The build card now has an Install button, "
+                        + "so the user can install this APK from the "
+                        + "card now or later.");
         return result;
     }
 

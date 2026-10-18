@@ -9,8 +9,10 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import io.noties.markwon.Markwon;
 
@@ -65,6 +67,17 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
 
     public void setOnApprovalListener(OnApprovalListener listener) {
         this.approvalListener = listener;
+    }
+
+    /** Install taps on a finished build card. */
+    public interface OnInstallListener {
+        void onInstall(ChatMessage message);
+    }
+
+    private OnInstallListener installListener;
+
+    public void setOnInstallListener(OnInstallListener listener) {
+        this.installListener = listener;
     }
 
     private void fireClick(View view, int position) {
@@ -383,6 +396,60 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                     }
                 });
             }
+            bindInstall(message);
+        }
+
+        /**
+         * The build card's Install row. The finished APK stays on disk,
+         * but it may no longer be the APK this card built: the editor
+         * rebuilds into the same file, and a new agent build wipes it.
+         * So the row re-stats the file on every bind and only ever
+         * offers what is provably there: this card's build, a clearly
+         * labelled different one, or nothing.
+         */
+        private void bindInstall(ChatMessage message) {
+            boolean buildCard = message.buildApkPath != null
+                    && !message.buildApkPath.isEmpty()
+                    && ChatMessage.APPROVAL_DONE.equals(message.approvalState);
+            binding.approvalInstallRow.setVisibility(
+                    buildCard ? View.VISIBLE : View.GONE);
+            if (!buildCard) {
+                binding.approvalInstall.setOnClickListener(null);
+                return;
+            }
+            android.content.Context context = itemView.getContext();
+            File apk = new File(message.buildApkPath);
+            if (!apk.exists() || apk.length() == 0) {
+                binding.approvalInstall.setText(R.string.agent_install);
+                binding.approvalInstall.setEnabled(false);
+                binding.approvalInstall.setOnClickListener(null);
+                binding.approvalInstallNote.setText(
+                        R.string.agent_install_gone);
+                return;
+            }
+            boolean sameApk = apk.length() == message.buildApkBytes
+                    && apk.lastModified() == message.buildApkModified;
+            binding.approvalInstall.setEnabled(true);
+            binding.approvalInstall.setText(sameApk
+                    ? R.string.agent_install : R.string.agent_install_latest);
+            binding.approvalInstallNote.setText(context.getString(
+                    sameApk ? R.string.agent_install_built
+                            : R.string.agent_install_replaced,
+                    android.text.format.DateFormat.format("HH:mm",
+                            new java.util.Date(apk.lastModified())).toString(),
+                    humanSize(apk.length())));
+            binding.approvalInstall.setOnClickListener(v -> {
+                if (owner != null && owner.installListener != null) {
+                    owner.installListener.onInstall(message);
+                }
+            });
+        }
+
+        /** "100 KB" / "1.2 MB", the way the card already quotes sizes. */
+        private String humanSize(long bytes) {
+            long kb = Math.max(1, bytes / 1024);
+            return kb < 1024 ? kb + " KB"
+                    : String.format(Locale.ROOT, "%.1f MB", kb / 1024.0);
         }
 
         /** The quiet status line once the decision has been made. */

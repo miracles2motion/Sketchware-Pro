@@ -125,6 +125,36 @@
                     android:textColor="?attr/colorOnSurfaceVariant"
                     tools:text="Working…" />
             </LinearLayout>
+
+            <!-- After a successful build only: the finished APK lives
+                 on disk, so the card can hand it to Android's installer
+                 now or days later — no rebuild needed. -->
+            <LinearLayout
+                android:id="@+id/approval_install_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone"
+                tools:visibility="visible">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/approval_install"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/agent_install" />
+
+                <TextView
+                    android:id="@+id/approval_install_note"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    tools:text="Built 14:23 · 100 KB" />
+            </LinearLayout>
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 </LinearLayout>

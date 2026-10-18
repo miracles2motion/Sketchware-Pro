@@ -57,6 +57,18 @@ public class ChatMessage {
     /** What was seen after the change ran (or why it did not). */
     public String approvalOutcome = "";
     public boolean approvalDetailsExpanded;
+
+    /**
+     * Build cards (role == APPROVAL, tool build_project, once Done):
+     * which APK the card can install, and its fingerprint (size and
+     * modification time at build end). The card re-stats that file
+     * before offering install, so it can never quietly install a
+     * different build — an editor build replaces the file at the same
+     * path, and the card must say so.
+     */
+    public String buildApkPath = "";
+    public long buildApkBytes;
+    public long buildApkModified;
     public State state = State.COMPLETE;
     public long timestamp;
 

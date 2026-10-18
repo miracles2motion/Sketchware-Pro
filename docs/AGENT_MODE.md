@@ -654,3 +654,20 @@ Device test findings (SportyNivida / Sporty Bet):
   project is modified beyond the build/staging folders the app
   itself wipes each build. `get_build_errors` is folded into the
   build result (capped diagnostics) rather than a separate tool.
+  Device test (2026-10-18): welcome toast on start, clean compile
+  (100 KB, 2s), rejection honoured — the `ade3295`/`81c3279` bundle
+  verified.
+- Install continuation (built 2026-10-18, awaiting device test):
+  a Done build card keeps its APK's path/size/mtime and grows an
+  Install button; tapping it fires the editor's own installer
+  intent (FileProvider ACTION_VIEW on `finalToInstallApkPath`).
+  The row re-stats the file on every bind: same fingerprint →
+  "Install · Built HH:mm · size"; different file → "Install latest
+  build" with a note that it is probably the editor's build and
+  installing installs that one (the editor's Run wipes the staging
+  folder and rebuilds to the same path); file gone → disabled with
+  "ask the agent to build it again". The fragment re-checks at tap
+  time too, so a swapped build is never installed silently. Not a
+  model tool: the tap is consent, and the tool description tells
+  the model to point at the card rather than rebuild when asked to
+  install an unchanged app.

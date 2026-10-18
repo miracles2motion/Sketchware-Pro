@@ -1111,11 +1111,17 @@ public final class AgentTools {
                     + "signing — the same pipeline as the Build button) "
                     + "and reports success or the compiler errors. "
                     + "Nothing in the project is changed; the APK is "
-                    + "written where Sketchware's own build puts it, and "
-                    + "the user can press run inside Sketchware to "
-                    + "install it. Build after wiring behaviour, and "
-                    + "again after fixing any error it reports. It can "
-                    + "take a minute or two. The user approves first.";
+                    + "written where Sketchware's own build puts it. A "
+                    + "successful build leaves an Install button on its "
+                    + "card: the user can install that exact APK from "
+                    + "the card right away or at any later time, with "
+                    + "no rebuild. So if the user later asks to install "
+                    + "or run the app and nothing has changed since the "
+                    + "last successful build, point them to the Install "
+                    + "button on that build card instead of building "
+                    + "again. Build after wiring behaviour, and again "
+                    + "after fixing any error it reports. It can take a "
+                    + "minute or two. The user approves first.";
         }
 
         @Override
@@ -1145,8 +1151,9 @@ public final class AgentTools {
                     "Build " + project.name,
                     "Compile “" + project.appName + "” with Sketchware's "
                             + "builder and check for errors. Your screens "
-                            + "and blocks are not changed; the APK goes "
-                            + "to the project's build folder. This can "
+                            + "and blocks are not changed; when it "
+                            + "finishes, this card gets an Install button "
+                            + "so you can install the result. This can "
                             + "take a minute or two.",
                     "The same pipeline as Sketchware's Build button: "
                             + "resources → generated code → javac → dex "
