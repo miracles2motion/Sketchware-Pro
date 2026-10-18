@@ -683,9 +683,62 @@ public class AgentFragment extends qA {
                         ? result.get("apk_bytes").getAsLong() : 0;
                 card.buildApkModified = result.has("apk_modified")
                         ? result.get("apk_modified").getAsLong() : 0;
+                card.buildProjectId = result.has("build_sc_id")
+                        ? result.get("build_sc_id").getAsString() : "";
+                supersedeOlderBuildCards(card);
             }
         }
         adapter.notifyItemChanged(messages.indexOf(card));
+    }
+
+    /**
+     * A newer build of the same project replaces every earlier build
+     * card's APK on disk (same path), so those cards stop offering
+     * Install; only the newest build card carries a live button.
+     * Cards of other projects are untouched.
+     */
+    private void supersedeOlderBuildCards(ChatMessage newest) {
+        for (int i = 0; i < messages.size(); i++) {
+            ChatMessage other = messages.get(i);
+            if (other != newest && !other.buildApkPath.isEmpty()
+                    && other.buildProjectId.equals(newest.buildProjectId)) {
+                other.buildSuperseded = true;
+                adapter.notifyItemChanged(i);
+            }
+        }
+    }
+
+    /**
+     * Build cards validate their APK when bound, but nothing rebinds
+     * them while this screen is away — the user may have rebuilt in
+     * the editor meanwhile. Rebind them whenever the screen shows
+     * again so the Install row never serves a stale claim.
+     */
+    private void refreshBuildCards() {
+        if (adapter == null) {
+            return;
+        }
+        for (int i = 0; i < messages.size(); i++) {
+            ChatMessage message = messages.get(i);
+            if (message.role == ChatMessage.Role.APPROVAL
+                    && !message.buildApkPath.isEmpty()) {
+                adapter.notifyItemChanged(i);
+            }
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        refreshBuildCards();
+    }
+
+    @Override
+    public void onHiddenChanged(boolean hidden) {
+        super.onHiddenChanged(hidden);
+        if (!hidden) {
+            refreshBuildCards();
+        }
     }
 
     /**

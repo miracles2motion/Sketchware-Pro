@@ -1014,6 +1014,7 @@ ACTION_VIEW
     <string name="agent_install_built">Built %1$s · %2$s</string>
     <string name="agent_install_replaced">A different build of this project is here now (built %1$s · %2$s), probably from the editor. Installing installs that one.</string>
     <string name="agent_install_gone">That build is no longer there — ask the agent to build it again.</string>
+    <string name="agent_install_superseded">Replaced by a later build — install from the latest build card.</string>
     <string name="agent_install_launched">App install prompt launched</string>
     <string name="agent_install_failed">Couldn\'t open the installer. The APK is at %1$s</string>
     <string name="agent_settings_allow_modify">Allow the agent to modify projects</string>

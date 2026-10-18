@@ -1119,9 +1119,12 @@ public final class AgentTools {
                     + "or run the app and nothing has changed since the "
                     + "last successful build, point them to the Install "
                     + "button on that build card instead of building "
-                    + "again. Build after wiring behaviour, and again "
-                    + "after fixing any error it reports. It can take a "
-                    + "minute or two. The user approves first.";
+                    + "again. Build only when the user asks to build, "
+                    + "install or run, or to check a fix for errors a "
+                    + "previous build reported — do not build routinely "
+                    + "after edits or wiring; those are already checked "
+                    + "before they run. It can take a minute or two. "
+                    + "The user approves first.";
         }
 
         @Override

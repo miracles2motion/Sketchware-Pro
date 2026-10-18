@@ -140,6 +140,7 @@ public final class AgentBuild {
         result.addProperty("apk_path", apk.getAbsolutePath());
         result.addProperty("apk_bytes", apk.length());
         result.addProperty("apk_modified", apk.lastModified());
+        result.addProperty("build_sc_id", scId);
         result.addProperty("verified",
                 project.name + " compiled cleanly ("
                         + (apk.length() / 1024) + " KB APK, " + seconds

@@ -69,6 +69,13 @@ public class ChatMessage {
     public String buildApkPath = "";
     public long buildApkBytes;
     public long buildApkModified;
+    /** Project this build belongs to: only a newer build of the SAME
+     * project can supersede this card. */
+    public String buildProjectId = "";
+    /** A newer successful build of the same project replaced this
+     * card's APK (same path on disk), so this card no longer offers
+     * Install — only the newest build card does. */
+    public boolean buildSuperseded;
     public State state = State.COMPLETE;
     public long timestamp;
 

@@ -671,3 +671,18 @@ Device test findings (SportyNivida / Sporty Bet):
   model tool: the tap is consent, and the tool description tells
   the model to point at the card rather than rebuild when asked to
   install an unchanged app.
+- Build-card follow-ups (built 2026-10-18, bundled before any new
+  download, awaiting device test): (a) the Install row only
+  validated on bind, so returning from an editor build showed a
+  stale label until any rebind — the fragment now rebinds build
+  cards on onResume/onHiddenChanged; (b) a newer successful build
+  of the same project supersedes older build cards (they keep
+  their outcome line, lose the button, note says install from the
+  latest card); a different project's card is untouched; (c) the
+  "build after wiring behaviour" wording that made the model build
+  after every change is gone from both the tool description and
+  the loop guidance: build on ask (build/install/run), or to check
+  a fix for errors a previous build reported, never chained onto
+  routine edits. Device test of the install slice before these
+  fixes: install-from-card, editor-swap honesty after a rebind,
+  and conversational point-to-card all behaved.

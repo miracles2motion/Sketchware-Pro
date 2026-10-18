@@ -418,6 +418,16 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                 return;
             }
             android.content.Context context = itemView.getContext();
+            if (message.buildSuperseded) {
+                // A newer build of this project owns the APK path now;
+                // only its card offers Install.
+                binding.approvalInstall.setVisibility(View.GONE);
+                binding.approvalInstall.setOnClickListener(null);
+                binding.approvalInstallNote.setText(
+                        R.string.agent_install_superseded);
+                return;
+            }
+            binding.approvalInstall.setVisibility(View.VISIBLE);
             File apk = new File(message.buildApkPath);
             if (!apk.exists() || apk.length() == 0) {
                 binding.approvalInstall.setText(R.string.agent_install);
