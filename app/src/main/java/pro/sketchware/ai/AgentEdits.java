@@ -1092,8 +1092,25 @@ public final class AgentEdits {
             throws AgentTools.ToolException {
         String color = value == null ? "" : value.trim();
         if (color.startsWith("@")) {
+            String word = color.toLowerCase(Locale.ROOT);
+            // Derived tints: a base token lightened toward white by a
+            // fixed step, computed here from the project's real colour —
+            // "a lighter shade of the primary" is arithmetic, not a
+            // guess the model makes up.
+            float tint = -1f;
+            String base = word;
+            if (word.endsWith("_tint")) {
+                tint = 0.40f;
+                base = word.substring(0, word.length() - "_tint".length());
+            } else if (word.endsWith("_light")) {
+                tint = 0.65f;
+                base = word.substring(0, word.length() - "_light".length());
+            } else if (word.endsWith("_pale")) {
+                tint = 0.85f;
+                base = word.substring(0, word.length() - "_pale".length());
+            }
             int token = SketchwareProjects.projectColor(scId,
-                    switch (color.toLowerCase(Locale.ROOT)) {
+                    switch (base) {
                         case "@primary" -> "color_primary";
                         case "@primary_dark" -> "color_primary_dark";
                         case "@accent" -> "color_accent";
@@ -1102,10 +1119,14 @@ public final class AgentEdits {
             if (token == Integer.MIN_VALUE) {
                 throw new AgentTools.ToolException("E_BAD_COLOR",
                         "Unknown colour token \"" + color + "\". Use "
-                                + "@primary, @primary_dark, @accent or a hex "
-                                + "colour like #3F51B5.");
+                                + "@primary, @primary_dark, @accent, a "
+                                + "lighter tint of them (@primary_tint, "
+                                + "@primary_light, @primary_pale, "
+                                + "@accent_tint, @accent_light, "
+                                + "@accent_pale), or a hex colour like "
+                                + "#3F51B5.");
             }
-            return token;
+            return tint < 0f ? token : lighten(token, tint);
         }
         if (!COLOR_PATTERN.matcher(color).matches()) {
             throw new AgentTools.ToolException("E_BAD_COLOR",
@@ -1117,6 +1138,18 @@ public final class AgentEdits {
             hex = "FF" + hex;
         }
         return (int) Long.parseLong(hex, 16);
+    }
+
+    /** Mixes a colour toward white; 0 is unchanged, 1 is white. */
+    private static int lighten(int color, float fraction) {
+        int alpha = (color >> 24) & 0xFF;
+        int red = (color >> 16) & 0xFF;
+        int green = (color >> 8) & 0xFF;
+        int blue = color & 0xFF;
+        red += (int) ((255 - red) * fraction);
+        green += (int) ((255 - green) * fraction);
+        blue += (int) ((255 - blue) * fraction);
+        return (alpha << 24) | (red << 16) | (green << 8) | blue;
     }
 
     private static int colorOf(String scId, JsonObject op)
@@ -1135,6 +1168,12 @@ public final class AgentEdits {
             case "@primary" -> "Primary (" + hex + ")";
             case "@primary_dark" -> "Primary dark (" + hex + ")";
             case "@accent" -> "Accent (" + hex + ")";
+            case "@primary_tint" -> "a tint of Primary (" + hex + ")";
+            case "@primary_light" -> "a light tint of Primary (" + hex + ")";
+            case "@primary_pale" -> "a pale tint of Primary (" + hex + ")";
+            case "@accent_tint" -> "a tint of Accent (" + hex + ")";
+            case "@accent_light" -> "a light tint of Accent (" + hex + ")";
+            case "@accent_pale" -> "a pale tint of Accent (" + hex + ")";
             default -> "colour " + hex;
         };
     }

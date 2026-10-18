@@ -590,3 +590,19 @@ Device test findings (SportyNivida / Sporty Bet):
   revision gate + warning cover the common cases), design-token
   palette picking and plan-first construction (edit ops resolve
   tokens, but palettes arrive with whole-screen planning).
+- Colour honesty (from two device screenshots): (1) when the user
+  says "show me" colours, the model was hiding a guessed hex in an
+  approval card — now the guidance requires naming options and
+  ending the turn, and a new interactive `ask_color` tool opens
+  Sketchware's own `ColorPickerDialog` (the same PopupWindow the
+  editor's colour property row uses) so the user picks by eye; the
+  pick returns as a tool result and any change still needs a card.
+  Cancelling the picker is a normal `{cancelled:true}` result,
+  never an error, so it can't trip the same-failure stop.
+  (2) "a lighter shade of the primary" was applied as the exact
+  `@primary` — derived tints are now computed app-side from the
+  project's real colour: `@primary_tint/_light/_pale` and
+  `@accent_*` (40/65/85% toward white), so shades are arithmetic,
+  not invented hex. (3) "agree first / no coding yet" now means no
+  tool call at all, and a later "yes" only approves the
+  interpretation stated back in the user's own words.

@@ -72,6 +72,15 @@ public final class AgentTools {
             return false;
         }
 
+        /**
+         * True when the tool pauses the turn for the user to do
+         * something in the app's own UI (e.g. pick a colour). The loop
+         * routes these to the listener instead of {@link #run}.
+         */
+        default boolean interactive() {
+            return false;
+        }
+
         /** Read-only tools: validate and run in one step. */
         default JsonObject run(Session session, JsonObject args)
                 throws ToolException {
@@ -116,6 +125,7 @@ public final class AgentTools {
         register(new ListActivities());
         register(new ListResources());
         register(new GetScreen());
+        register(new AskColor());
         register(new CreateProject());
         register(new CreateActivity());
         register(new CreateCustomView());
@@ -148,6 +158,12 @@ public final class AgentTools {
     public static boolean isMutation(String name) {
         Tool tool = TOOLS.get(name);
         return tool != null && tool.mutates();
+    }
+
+    /** True when the named tool pauses for an in-app user action. */
+    public static boolean isInteractive(String name) {
+        Tool tool = TOOLS.get(name);
+        return tool != null && tool.interactive();
     }
 
     /** The human activity label for a proposed call. */
@@ -601,7 +617,12 @@ public final class AgentTools {
                     + "remove_widget {id} (removes what is inside it too), "
                     + "move_widget {id,parent}. "
                     + "Colours are #RRGGBB or the project tokens @primary, "
-                    + "@primary_dark, @accent. Example: [{\"op\":"
+                    + "@primary_dark, @accent — including lighter tints "
+                    + "computed from them here: @primary_tint, "
+                    + "@primary_light, @primary_pale (and the @accent_ "
+                    + "equivalents). Use a tint token, never a guessed hex, "
+                    + "when the user asks for a shade of a theme colour. "
+                    + "Example: [{\"op\":"
                     + "\"add_widget\",\"type\":\"Button\",\"text\":\"Save\"},"
                     + "{\"op\":\"set_background\",\"id\":\"button1\","
                     + "\"color\":\"@primary\"}]. At most "
@@ -909,6 +930,52 @@ public final class AgentTools {
                 this.beans = beans;
                 this.rootParentType = rootParentType;
             }
+        }
+    }
+
+    // -- interactive tools (the user acts; nothing changes yet) ---------
+
+    /** ask_color: Sketchware's own colour picker, answered by the user. */
+    private static final class AskColor implements Tool {
+        @Override
+        public String name() {
+            return "ask_color";
+        }
+
+        @Override
+        public String description() {
+            return "Opens Sketchware's colour picker so the USER picks "
+                    + "a colour by eye; you get the exact colour back. "
+                    + "Use it whenever a colour choice is theirs: they "
+                    + "asked to see options, want a shade or tint judged "
+                    + "visually, or you would otherwise be guessing. "
+                    + "Pass a starting colour in \"initial\" when one is "
+                    + "being replaced. If the user closes the picker, "
+                    + "the result says cancelled — then ask in words or "
+                    + "continue without that change. Never call this when "
+                    + "the user already named an exact colour or token.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("question", stringSchema(
+                    "What the colour is for, in the user's words, "
+                            + "e.g. \"the main screen background\""));
+            properties.add("initial", stringSchema(
+                    "Optional starting colour (#RRGGBB or #AARRGGBB), "
+                            + "e.g. the colour being replaced"));
+            return AgentTools.parameters(properties, "question");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Asked you to pick a colour";
+        }
+
+        @Override
+        public boolean interactive() {
+            return true;
         }
     }
 

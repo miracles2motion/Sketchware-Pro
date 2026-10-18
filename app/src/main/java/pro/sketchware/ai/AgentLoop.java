@@ -56,7 +56,18 @@ public class AgentLoop {
                     + "you'd suggest in one short line, and end your turn "
                     + "so they can pick. Only trivial cosmetics needed to "
                     + "finish a build you've already been asked for "
-                    + "(spacing, placeholder text) may be chosen quietly.";
+                    + "(spacing, placeholder text) may be chosen quietly. "
+                    + "When the user asks to agree or discuss first (\"let's "
+                    + "agree first\", \"no coding yet\", \"what do you "
+                    + "think\"), do not call any tool: talk it through and "
+                    + "rest the agreement in their own words, exactly as "
+                    + "they meant them — a \"shade of the primary\" is a "
+                    + "lighter tint of it, not the primary itself, and a "
+                    + "later \"yes\" only ever approves the interpretation "
+                    + "you stated back, never a different one you quietly "
+                    + "substituted. Vague amounts (\"a shade\", \"a bit "
+                    + "bigger\", \"a few\") are choices to offer, not "
+                    + "values to invent.";
 
     public interface Listener {
         /** A quiet activity line, e.g. "Looked at MainActivity". */
@@ -73,6 +84,14 @@ public class AgentLoop {
          * and expected to block until the user decides; false rejects.
          */
         boolean onApproval(AgentProposal proposal);
+
+        /**
+         * The agent asks the user to pick a colour in Sketchware's own
+         * picker. Called on the loop thread and expected to block until
+         * the user picks or closes it. Returns {"picked": "#AARRGGBB",
+         * optionally "name": "..."}, or null when no colour was picked.
+         */
+        JsonObject onPickColor(String question, String initialHex);
 
         /** The decision was acted on; the card can show the outcome. */
         void onApprovalResolved(AgentProposal proposal, JsonObject result);
@@ -189,6 +208,10 @@ public class AgentLoop {
                         dispatch(listener,
                                 () -> listener.onWorkingProjectChanged(bound));
                     }
+                } else if (AgentTools.isInteractive(call.name)) {
+                    String label = AgentTools.labelFor(call.name, call.arguments);
+                    dispatch(listener, () -> listener.onToolNote(label));
+                    result = askUser(call, listener);
                 } else {
                     String label = AgentTools.labelFor(call.name, call.arguments);
                     dispatch(listener, () -> listener.onToolNote(label));
@@ -222,6 +245,45 @@ public class AgentLoop {
                 messages.add(toolMessage);
             }
         }
+    }
+
+    /**
+     * Interactive tools: the turn pauses while the user acts in the
+     * app's own UI. Their action (or their closing the UI) is the tool
+     * result — a cancellation is information, not a failure.
+     */
+    private JsonObject askUser(AiChatService.ToolCallData call,
+                               Listener listener) {
+        JsonObject args = new JsonObject();
+        try {
+            args = com.google.gson.JsonParser.parseString(
+                    call.arguments == null ? "{}" : call.arguments)
+                    .getAsJsonObject();
+        } catch (Exception ignored) {
+            // An unparseable call still deserves the picker, unfilled.
+        }
+        String question = args.has("question")
+                ? args.get("question").getAsString() : "a colour";
+        String initial = args.has("initial")
+                ? args.get("initial").getAsString() : "";
+        JsonObject picked = listener.onPickColor(question, initial);
+        JsonObject result = new JsonObject();
+        if (picked == null) {
+            result.addProperty("cancelled", true);
+            result.addProperty("message",
+                    "The user closed the colour picker without picking. "
+                            + "Ask what they would like in words, or "
+                            + "continue without that colour change — do "
+                            + "not pick a colour for them instead.");
+            return result;
+        }
+        result.add("picked_colour", picked);
+        result.addProperty("message",
+                "The user picked this colour themselves in Sketchware's "
+                        + "colour picker. Use the hex exactly, and still "
+                        + "show any change on an approval card before "
+                        + "applying it.");
+        return result;
     }
 
     /**

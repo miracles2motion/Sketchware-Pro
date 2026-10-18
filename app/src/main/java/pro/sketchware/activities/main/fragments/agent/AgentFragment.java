@@ -65,6 +65,9 @@ public class AgentFragment extends qA {
     private volatile CountDownLatch approvalLatch;
     private volatile boolean approvalDecision;
     private ChatMessage approvalCardMessage;
+    /** The colour pick the user is currently making, if any. */
+    private volatile CountDownLatch colorLatch;
+    private volatile com.google.gson.JsonObject pickedColor;
     /** Tokens that arrived but are not in the list yet. */
     /** Tokens that have arrived but are not on screen yet. */
     private final StringBuilder pendingReveal = new StringBuilder();
@@ -199,6 +202,7 @@ public class AgentFragment extends qA {
     @Override
     public void onDestroy() {
         releaseApproval(false);
+        releasePick();
         io.shutdownNow();
         agentExecutor.shutdownNow();
         super.onDestroy();
@@ -396,6 +400,12 @@ public class AgentFragment extends qA {
                     @Override
                     public boolean onApproval(AgentProposal proposal) {
                         return awaitApproval(proposal);
+                    }
+
+                    @Override
+                    public com.google.gson.JsonObject onPickColor(
+                            String question, String initialHex) {
+                        return awaitColorPick(question, initialHex);
                     }
 
                     @Override
@@ -675,6 +685,109 @@ public class AgentFragment extends qA {
             approvalLatch = null;
             latch.countDown();
         }
+    }
+
+    /**
+     * Opens Sketchware's own colour picker and blocks the loop thread
+     * until the user picks a colour or closes it. Returns the pick, or
+     * null when closed. Mirrors {@link #awaitApproval}: never leave the
+     * loop parked behind a dead dialog.
+     */
+    private com.google.gson.JsonObject awaitColorPick(String question,
+                                                      String initialHex) {
+        if (!isAdded() || getActivity() == null) {
+            return null;
+        }
+        // The model may offer a token name or descriptive words; only
+        // raw hex can seed the picker.
+        int initial = 0xff000000;
+        String hex = tokenHex(initialHex);
+        hex = hex.isEmpty() ? tokenHex(question) : hex;
+        if (!hex.isEmpty()) {
+            try {
+                initial = android.graphics.Color.parseColor(hex);
+            } catch (IllegalArgumentException ignored) {
+                // Stays black.
+            }
+        }
+        pickedColor = null;
+        CountDownLatch latch = new CountDownLatch(1);
+        colorLatch = latch;
+        showColorPicker(initial);
+        boolean answered;
+        try {
+            answered = latch.await(10, TimeUnit.MINUTES);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            answered = false;
+        }
+        colorLatch = null;
+        return answered ? pickedColor : null;
+    }
+
+    /**
+     * Shows Sketchware's picker over the chat, exactly how the editor's
+     * colour property row shows it.
+     */
+    private void showColorPicker(int initial) {
+        runOnUi(() -> {
+            android.app.Activity activity = getActivity();
+            View anchor = binding != null ? binding.getRoot() : null;
+            if (activity == null || anchor == null) {
+                deliverPick(null);
+                return;
+            }
+            try {
+                com.besome.sketch.lib.ui.ColorPickerDialog dialog =
+                        new com.besome.sketch.lib.ui.ColorPickerDialog(
+                                activity, initial, false, false);
+                dialog.a(new com.besome.sketch.lib.ui.ColorPickerDialog.b() {
+                    @Override
+                    public void a(int color) {
+                        deliverPick("#" + String.format("%08X", color));
+                    }
+
+                    @Override
+                    public void a(String name, int color) {
+                        deliverPick("#" + String.format("%08X", color));
+                    }
+                });
+                dialog.setOnDismissListener(d -> deliverPick(null));
+                dialog.showAtLocation(anchor,
+                        android.view.Gravity.CENTER, 0, 0);
+            } catch (Exception e) {
+                deliverPick(null);
+            }
+        });
+    }
+
+    /** Hands the user's pick (or closure) back to the blocked loop. */
+    private void deliverPick(String hex) {
+        if (hex != null && pickedColor == null) {
+            com.google.gson.JsonObject pick = new com.google.gson.JsonObject();
+            pick.addProperty("picked", hex);
+            pickedColor = pick;
+        }
+        CountDownLatch latch = colorLatch;
+        if (latch != null) {
+            colorLatch = null;
+            latch.countDown();
+        }
+    }
+
+    /** Releases a pending colour pick as "no pick". */
+    private void releasePick() {
+        deliverPick(null);
+    }
+
+    /** Extracts a #RRGGBB/#AARRGGBB hex from model text, or "". */
+    private static String tokenHex(String text) {
+        if (text == null) {
+            return "";
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("#[0-9a-fA-F]{6,8}\\b").matcher(text);
+        return matcher.find() ? matcher.group() : "";
     }
 
     /** A quiet activity line, slipped in above the streaming bubble. */
@@ -1249,4 +1362,5 @@ public class AgentFragment extends qA {
             callback.onChanged(s == null ? "" : s.toString());
         }
     }
+}
 }
