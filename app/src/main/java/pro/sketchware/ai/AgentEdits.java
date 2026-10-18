@@ -132,6 +132,15 @@ public final class AgentEdits {
         }
         List<String> lines = new ArrayList<>();
         JsonArray frozenOps = new JsonArray();
+        // Container-first standard: building into an EMPTY screen starts
+        // with a real main layout the user can select and restyle in the
+        // editor (the editor's own root is fixed and untouchable), and
+        // everything else is built inside it. The container is inserted
+        // and frozen like any other op, so the approval card shows it
+        // and execution replays it exactly. Screens that already have
+        // widgets are never restructured.
+        boolean buildingFromEmpty = work.isEmpty() && !frozen;
+        String mainContainerId = null;
 
         for (JsonElement element : ops) {
             if (!element.isJsonObject()) {
@@ -140,9 +149,48 @@ public final class AgentEdits {
             }
             JsonObject op = element.getAsJsonObject().deepCopy();
             String kind = normalizeKind(op);
+            boolean preHandled = false;
+            boolean frozenAdded = false;
+            if (buildingFromEmpty && "add_widget".equals(kind)) {
+                String parentField = stringOf(op, "parent");
+                boolean toRoot = parentField.isEmpty()
+                        || ROOT_PARENT.equalsIgnoreCase(parentField);
+                Integer addedType = typeByName(stringOf(op, "type"));
+                if (toRoot && addedType != null
+                        && addedType != ViewBean.VIEW_TYPE_WIDGET_FAB) {
+                    boolean scroll = addedType
+                                    == ViewBean.VIEW_TYPE_LAYOUT_VSCROLLVIEW
+                            || addedType
+                                    == ViewBean.VIEW_TYPE_LAYOUT_HSCROLLVIEW;
+                    if (mainContainerId == null && scroll) {
+                        // A scrolling page: the ScrollView can hold only
+                        // one child, so the main layout goes inside it.
+                        applyAdd(scId, op, work, byId, lines, frozen,
+                                rootParentType);
+                        frozenOps.add(op);
+                        frozenAdded = true;
+                        preHandled = true;
+                        mainContainerId = synthesizeMainLayout(scId,
+                                work.get(work.size() - 1).id, work, byId,
+                                lines, frozenOps, rootParentType);
+                    } else if (mainContainerId == null
+                            && !isContainer(addedType)) {
+                        mainContainerId = synthesizeMainLayout(scId, null,
+                                work, byId, lines, frozenOps,
+                                rootParentType);
+                        op.addProperty("parent", mainContainerId);
+                    } else if (mainContainerId != null) {
+                        op.addProperty("parent", mainContainerId);
+                    }
+                }
+            }
             switch (kind) {
-                case "add_widget" -> applyAdd(scId, op, work, byId, lines,
-                        frozen, rootParentType);
+                case "add_widget" -> {
+                    if (!preHandled) {
+                        applyAdd(scId, op, work, byId, lines, frozen,
+                                rootParentType);
+                    }
+                }
                 case "set_text" -> {
                     ViewBean bean = requireWidget(op, byId);
                     String text = stringOf(op, "text");
@@ -696,7 +744,23 @@ public final class AgentEdits {
                                 + "remove_widget, "
                                 + "move_widget.");
             }
-            frozenOps.add(op);
+            if (buildingFromEmpty && "add_widget".equals(kind)
+                    && mainContainerId == null && !work.isEmpty()) {
+                // The model opened with a container of its own: it
+                // becomes the screen's home, no second one is added.
+                ViewBean first = work.get(work.size() - 1);
+                if (ROOT_PARENT.equals(first.parent)
+                        && isContainer(first.type)
+                        && first.type
+                                != ViewBean.VIEW_TYPE_LAYOUT_VSCROLLVIEW
+                        && first.type
+                                != ViewBean.VIEW_TYPE_LAYOUT_HSCROLLVIEW) {
+                    mainContainerId = first.id;
+                }
+            }
+            if (!frozenAdded) {
+                frozenOps.add(op);
+            }
         }
 
         for (ViewBean bean : work) {
@@ -718,6 +782,45 @@ public final class AgentEdits {
             }
         }
         return new Outcome(work, lines, frozenOps);
+    }
+
+    /**
+     * The main layout an empty screen is built into: a real vertical
+     * LinearLayout filling the screen, which the user can select, pad
+     * and restyle in the editor — unlike the editor's fixed, untouchable
+     * root. Inserted and frozen like any other op (with the width
+     * stretch as a second frozen op), so the approval card shows it and
+     * execution replays it exactly. When {@code scrollParentId} is set,
+     * the layout is the ScrollView's single child.
+     *
+     * @return the new layout's id
+     */
+    private static String synthesizeMainLayout(String scId,
+            String scrollParentId, ArrayList<ViewBean> work,
+            Map<String, ViewBean> byId, List<String> lines,
+            JsonArray frozenOps, int rootParentType)
+            throws AgentTools.ToolException {
+        lines.add(scrollParentId == null
+                ? "First, the main layout to hold the screen"
+                : "Put the main layout inside " + scrollParentId
+                        + " to hold the screen");
+        JsonObject add = new JsonObject();
+        add.addProperty("op", "add_widget");
+        add.addProperty("type", "LinearLayout");
+        if (scrollParentId != null) {
+            add.addProperty("parent", scrollParentId);
+        }
+        applyAdd(scId, add, work, byId, lines, false, rootParentType);
+        ViewBean container = work.get(work.size() - 1);
+        container.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+        frozenOps.add(add);
+        JsonObject stretch = new JsonObject();
+        stretch.addProperty("op", "set_size");
+        stretch.addProperty("id", container.id);
+        stretch.addProperty("width", "match_parent");
+        frozenOps.add(stretch);
+        lines.add("Stretch " + container.id + " across the whole screen");
+        return container.id;
     }
 
     private static void applyAdd(String scId, JsonObject op,

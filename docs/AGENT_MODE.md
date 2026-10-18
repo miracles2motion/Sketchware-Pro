@@ -526,6 +526,24 @@ Device test findings (SportyNivida / Sporty Bet):
   count. Slice-4 groundwork pinned down: an activity's blocks live in
   `eC.b(javaName)` as a map keyed `targetId_eventName`, one event's
   blocks in `eC.a(javaName, key)`, events in `eC.g(javaName)`.
+- **Slice 3 device-verified (2026-10-18, build `ff0044b`):** all six
+  golden tests passed on a fresh project — create project, add screen,
+  edit screen opening cleanly in the real editor and building, root
+  background + sizing, reject leaving the project untouched, approved
+  delete. One finding from the user's own screenshots: the asked-for
+  "vertical layout" never materialized — widgets sat loose on the
+  editor's root, which the visual editor renders fixed and
+  untouchable (`ViewPane` marks it fixed; `ViewEditor` swallows
+  touches on it), so the user can never select, pad or restyle the
+  screen as a whole. Adopted standard (user's call, code-verified):
+  building into an EMPTY screen first adds a real main layout
+  (vertical LinearLayout, match_parent × match_parent; inside a
+  ScrollView when the model opens with one), and every later
+  top-level add is redirected into it. Synthesized and frozen like
+  app-allocated ids, so the approval card shows it and execution
+  replays it exactly. Screens with existing widgets are never
+  restructured. Approval cards also gained a dim + three-dot working
+  state while an approved change applies (`014eace`).
 - `delete_activity` added (deletes always ask): removal persists
   through ManageViewActivity's own save sequence — both file lists
   written back, then `eC.a(hC)` reconciliation drops the deleted

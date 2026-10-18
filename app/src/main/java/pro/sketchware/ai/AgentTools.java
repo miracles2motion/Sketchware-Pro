@@ -550,7 +550,14 @@ public final class AgentTools {
         @Override
         public String description() {
             return "Proposes edits to one screen of the working project as "
-                    + "a list of small operations. Operations run in order "
+                    + "a list of small operations. When a screen is empty, "
+                    + "the app first adds the screen's main layout (a "
+                    + "full-screen vertical LinearLayout) automatically "
+                    + "and puts everything you add inside it — that is the "
+                    + "standard structure; to make a scrolling page, add a "
+                    + "ScrollView first and the main layout goes inside "
+                    + "it; to use a different main container, add it first "
+                    + "yourself. Operations run in order "
                     + "and each is checked against the screen as the "
                     + "earlier ones leave it. Ops: add_widget "
                     + "{type,parent?,id?,text?,background?} (types: "
