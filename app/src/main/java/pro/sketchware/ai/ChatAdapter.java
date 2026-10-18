@@ -74,13 +74,13 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
 
     @NonNull
     /** Renders model answers (bold, lists, code) instead of raw symbols. */
-    private Markwon markwon;
+    private static Markwon sharedMarkwon;
 
-    private Markwon markwon(View view) {
-        if (markwon == null) {
-            markwon = Markwon.create(view.getContext());
+    private static Markwon markwon(View view) {
+        if (sharedMarkwon == null) {
+            sharedMarkwon = Markwon.create(view.getContext());
         }
-        return markwon;
+        return sharedMarkwon;
     }
 
     @Override
