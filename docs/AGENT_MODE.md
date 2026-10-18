@@ -750,3 +750,18 @@ Device test findings (SportyNivida / Sporty Bet):
   a just-succeeded create and treats a follow-up E_NAME_TAKEN as
   the earlier success (tool message says the same). The
   model/key switch transcript lines were already in place.
+- Placement smartness (2026-10-18, from device finding: a WebView
+  added at the screen's top level after the match_parent main
+  layout was stored correctly but parked off-screen):
+  (a) Default parent: on a screen that already has widgets, an
+  `add_widget` without a parent now lands in the screen's main
+  container (first top-level match×match layout; a ScrollView
+  resolves to its inner layout) instead of the top level; the
+  parent is frozen into the op at proposal.
+  (b) `visibilityWarnings`: a deterministic app-side check on
+  every simulated edit flags widgets stranded after a
+  match_parent sibling in a bounded LinearLayout (root included),
+  exempting ScrollView subtrees; warnings appear on the approval
+  card and in the tool result so the model fixes placement.
+  (c) `get_screen` now renders the screen as an indented tree in
+  stored order instead of a flat list with parent tags.

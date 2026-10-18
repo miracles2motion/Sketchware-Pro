@@ -524,10 +524,11 @@ public final class AgentTools {
 
         @Override
         public String description() {
-            return "Reads one screen of the working project as a condensed "
-                    + "widget list: id, type, visible text, background colour, "
-                    + "and parent container, plus the screen's events and "
-                    + "how many blocks each already has.";
+            return "Reads one screen of the working project as an indented "
+                    + "widget tree (nesting = containment, in on-screen "
+                    + "order): id, type, visible text, background colour, "
+                    + "and sizes, plus the screen's events and how many "
+                    + "blocks each already has.";
         }
 
         @Override
@@ -628,8 +629,15 @@ public final class AgentTools {
                     + "ProgressBar, Spinner, ListView, GridView, "
                     + "RecyclerView, SearchView, WebView, VideoView, "
                     + "CalendarView, DatePicker, TimePicker, AnalogClock, "
-                    + "DigitalClock and more; parent defaults to the root "
-                    + "layout; omit id to let the app name it), set_text "
+                    + "DigitalClock and more; parent defaults to the "
+                    + "screen's main container — the full-screen layout "
+                    + "everything else lives in — when the screen has "
+                    + "one, so new widgets land where they are visible; "
+                    + "pass parent \"root\" only to deliberately place a "
+                    + "widget at the screen's top level, and expect a "
+                    + "placement warning if a widget would end up "
+                    + "off-screen; omit id to let the app name it), "
+                    + "set_text "
                     + "{id,text}, set_hint {id,hint} (text inputs only), "
                     + "set_background {id,color}, set_text_color {id,color}, "
                     + "set_text_size {id,size}, set_size {id,width?,height?} "
@@ -733,6 +741,9 @@ public final class AgentTools {
                 body.append("\n…and ")
                         .append(outcome.lines.size() - shown)
                         .append(" more changes");
+            }
+            for (String warning : outcome.warnings) {
+                body.append("\n⚠ ").append(warning);
             }
             return new AgentProposal(name(), clean, located.scId,
                     "Edit " + SketchwareProjects.activityName(located.activity)
@@ -899,9 +910,23 @@ public final class AgentTools {
             result.addProperty("edited_activity",
                     SketchwareProjects.screenName(located.activity));
             result.addProperty("changes", outcome.lines.size());
+            if (!outcome.warnings.isEmpty()) {
+                JsonArray warnings = new JsonArray();
+                for (String warning : outcome.warnings) {
+                    warnings.add(warning);
+                }
+                result.add("warnings", warnings);
+            }
             result.addProperty("verified",
                     SketchwareProjects.screenName(located.activity)
-                            + " now has " + readBack.size() + " widgets.");
+                            + " now has " + readBack.size() + " widgets."
+                            + (outcome.warnings.isEmpty() ? ""
+                                    : " Placement warnings: "
+                                            + outcome.warnings.size()
+                                            + " — see \"warnings\"; fix "
+                                            + "them with a follow-up edit "
+                                            + "instead of leaving a widget "
+                                            + "off-screen."));
             return result;
         }
 

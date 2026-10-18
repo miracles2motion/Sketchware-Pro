@@ -56,6 +56,8 @@ public final class AgentEdits {
     public static final class Outcome {
         public final ArrayList<ViewBean> beans;
         public final List<String> lines;
+        /** Plain-words placement problems in the resulting screen. */
+        public final ArrayList<String> warnings = new ArrayList<>();
         /** The ops with app-allocated ids frozen in. */
         public final JsonArray frozenOps;
 
@@ -187,6 +189,19 @@ public final class AgentEdits {
             switch (kind) {
                 case "add_widget" -> {
                     if (!preHandled) {
+                        if (!buildingFromEmpty && !frozen
+                                && stringOf(op, "parent").isEmpty()) {
+                            // A screen that already has a main layout
+                            // keeps new widgets inside it: adding at
+                            // the top level parks them after the
+                            // full-screen layout, off the screen.
+                            // Frozen replays keep the parent frozen
+                            // into the op at proposal time.
+                            String home = mainContainerOf(work);
+                            if (home != null) {
+                                op.addProperty("parent", home);
+                            }
+                        }
                         applyAdd(scId, op, work, byId, lines, frozen,
                                 rootParentType);
                     }
@@ -781,7 +796,145 @@ public final class AgentEdits {
                         bean.id + " would be left without a parent.");
             }
         }
-        return new Outcome(work, lines, frozenOps);
+        Outcome outcome = new Outcome(work, lines, frozenOps);
+        outcome.warnings.addAll(visibilityWarnings(work));
+        return outcome;
+    }
+
+    /**
+     * The screen's main container: where a new widget belongs when
+     * the model does not name a parent. The first top-level layout
+     * that fills the screen wins; a screen whose only top-level
+     * widget is one layout uses that. Anything else (several loose
+     * top-level widgets, no layout) has no obvious home and keeps
+     * the top level — existing screens are never restructured.
+     */
+    private static String mainContainerOf(ArrayList<ViewBean> work) {
+        ViewBean firstTopContainer = null;
+        int topCount = 0;
+        for (ViewBean bean : work) {
+            if (!ROOT_PARENT.equals(bean.parent)) {
+                continue;
+            }
+            topCount++;
+            if (!isContainer(bean.type)) {
+                continue;
+            }
+            if (bean.type == ViewBean.VIEW_TYPE_LAYOUT_VSCROLLVIEW
+                    || bean.type == ViewBean.VIEW_TYPE_LAYOUT_HSCROLLVIEW) {
+                // A ScrollView holds exactly one child and it is
+                // already placed: widgets belong inside that child,
+                // never beside it. No child yet, no home to offer.
+                String inner = singleContainerChild(work, bean.id);
+                if (inner != null) {
+                    return inner;
+                }
+                continue;
+            }
+            if (firstTopContainer == null) {
+                firstTopContainer = bean;
+            }
+            if (bean.layout != null
+                    && bean.layout.width
+                            == LayoutBean.LAYOUT_MATCH_PARENT
+                    && bean.layout.height
+                            == LayoutBean.LAYOUT_MATCH_PARENT) {
+                return bean.id;
+            }
+        }
+        return topCount == 1 && firstTopContainer != null
+                ? firstTopContainer.id : null;
+    }
+
+    /** The id of a container's single container child, if it has one. */
+    private static String singleContainerChild(ArrayList<ViewBean> work,
+                                               String parentId) {
+        String found = null;
+        for (ViewBean bean : work) {
+            if (parentId.equals(bean.parent)) {
+                if (found != null || !isContainer(bean.type)) {
+                    return null;
+                }
+                found = bean.id;
+            }
+        }
+        return found;
+    }
+
+    /**
+     * Deterministic placement check on a resulting screen: in a
+     * bounded vertical LinearLayout (the screen root included), a
+     * match_parent-height child leaves no room for anything after
+     * it, and the same holds sideways in a horizontal one. Widgets
+     * parked that way exist but can never be seen — the generated
+     * app has no scrolling there to reveal them. ScrollView
+     * subtrees are exempt: their content is meant to overflow.
+     * Only the outermost stranded widget of a subtree is reported.
+     */
+    public static List<String> visibilityWarnings(
+            ArrayList<ViewBean> beans) {
+        Map<String, ArrayList<ViewBean>> children = new HashMap<>();
+        Map<String, ViewBean> byId = new HashMap<>();
+        for (ViewBean bean : beans) {
+            byId.put(bean.id, bean);
+            String parent = bean.parent == null || bean.parent.isEmpty()
+                    ? ROOT_PARENT : bean.parent;
+            children.computeIfAbsent(parent, k -> new ArrayList<>())
+                    .add(bean);
+        }
+        ArrayList<String> warnings = new ArrayList<>();
+        warnChildren(ROOT_PARENT, null, false, children, byId, warnings);
+        return warnings;
+    }
+
+    private static void warnChildren(String parentId, ViewBean parent,
+                                     boolean scrollable,
+                                     Map<String, ArrayList<ViewBean>> children,
+                                     Map<String, ViewBean> byId,
+                                     List<String> warnings) {
+        ArrayList<ViewBean> kids = children.get(parentId);
+        if (kids == null) {
+            return;
+        }
+        boolean linear = parent == null
+                || parent.type == ViewBean.VIEW_TYPE_LAYOUT_LINEAR;
+        boolean vertical = parent == null || parent.layout == null
+                || parent.layout.orientation
+                        != LayoutBean.ORIENTATION_HORIZONTAL;
+        boolean bounded = true;
+        if (parent != null && parent.layout != null) {
+            int extent = vertical ? parent.layout.height
+                    : parent.layout.width;
+            bounded = extent == LayoutBean.LAYOUT_MATCH_PARENT
+                    || extent > 0;
+        }
+        boolean seenFull = false;
+        String fullId = null;
+        for (ViewBean kid : kids) {
+            boolean kidScrollable = scrollable
+                    || kid.type == ViewBean.VIEW_TYPE_LAYOUT_VSCROLLVIEW
+                    || kid.type == ViewBean.VIEW_TYPE_LAYOUT_HSCROLLVIEW;
+            if (linear && bounded && seenFull && !scrollable) {
+                warnings.add(kid.id + " would not be visible: it comes "
+                        + "after " + fullId + ", which takes the full "
+                        + (vertical ? "height" : "width")
+                        + " of the layout, so no space is left for it. "
+                        + "Move " + kid.id + " into " + fullId
+                        + ", or shrink " + fullId + " to leave room.");
+                continue;
+            }
+            if (linear && kid.layout != null) {
+                int extent = vertical ? kid.layout.height
+                        : kid.layout.width;
+                if (extent == LayoutBean.LAYOUT_MATCH_PARENT
+                        && !seenFull) {
+                    seenFull = true;
+                    fullId = kid.id;
+                }
+            }
+            warnChildren(kid.id, kid, kidScrollable, children, byId,
+                    warnings);
+        }
     }
 
     /**

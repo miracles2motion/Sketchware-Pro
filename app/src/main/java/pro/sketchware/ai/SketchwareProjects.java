@@ -429,24 +429,69 @@ public final class SketchwareProjects {
     }
 
     /**
-     * One condensed line per widget — the only shape of a screen the model
-     * ever sees. Capped, so a huge screen summarizes instead of flooding.
+     * The screen as an indented tree — the only shape of a screen the
+     * model ever sees, in stored (on-screen) order, so where a widget
+     * sits and what space it claims is visible at a glance. Capped,
+     * so a huge screen summarizes instead of flooding.
      */
     public static List<String> screenLines(String scId, ProjectFileBean activity,
                                            int cap) {
         ArrayList<ViewBean> beans = screenBeans(scId, activity);
-        List<String> lines = new ArrayList<>();
-        int shown = Math.min(beans.size(), cap);
-        for (int i = 0; i < shown; i++) {
-            lines.add(describe(beans.get(i)));
+        java.util.Map<String, ArrayList<ViewBean>> children =
+                new java.util.HashMap<>();
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (ViewBean bean : beans) {
+            ids.add(bean.id);
         }
-        if (beans.size() > shown) {
-            lines.add("… and " + (beans.size() - shown) + " more widgets");
+        ArrayList<ViewBean> roots = new ArrayList<>();
+        for (ViewBean bean : beans) {
+            String parent = bean.parent;
+            if (parent == null || parent.isEmpty()
+                    || "root".equals(parent) || !ids.contains(parent)) {
+                roots.add(bean);
+            } else {
+                children.computeIfAbsent(parent, k -> new ArrayList<>())
+                        .add(bean);
+            }
+        }
+        List<String> lines = new ArrayList<>();
+        int[] shown = {0};
+        for (ViewBean root : roots) {
+            appendTree(root, 0, children, lines, shown, cap);
+            if (shown[0] >= cap) {
+                break;
+            }
+        }
+        if (shown[0] < beans.size()) {
+            lines.add("… and " + (beans.size() - shown[0])
+                    + " more widgets");
         }
         return lines;
     }
 
+    private static void appendTree(ViewBean bean, int depth,
+                                   java.util.Map<String,
+                                           ArrayList<ViewBean>> children,
+                                   List<String> lines, int[] shown,
+                                   int cap) {
+        if (shown[0] >= cap) {
+            return;
+        }
+        lines.add("  ".repeat(depth) + describe(bean, false));
+        shown[0]++;
+        ArrayList<ViewBean> kids = children.get(bean.id);
+        if (kids != null) {
+            for (ViewBean kid : kids) {
+                appendTree(kid, depth + 1, children, lines, shown, cap);
+            }
+        }
+    }
+
     private static String describe(ViewBean bean) {
+        return describe(bean, true);
+    }
+
+    private static String describe(ViewBean bean, boolean withParent) {
         StringBuilder line = new StringBuilder();
         line.append(bean.id).append(" · ").append(typeName(bean.type));
         if (bean.text != null && bean.text.text != null
@@ -482,7 +527,7 @@ public final class SketchwareProjects {
                 line.append(" · horizontal");
             }
         }
-        if (bean.parent != null && !bean.parent.isEmpty()) {
+        if (withParent && bean.parent != null && !bean.parent.isEmpty()) {
             line.append(" · in ").append(bean.parent);
         }
         return line.toString();
