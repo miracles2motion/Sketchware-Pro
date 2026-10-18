@@ -104,7 +104,7 @@ public final class AgentEdits {
                         "Every operation must be an object.");
             }
             JsonObject op = element.getAsJsonObject().deepCopy();
-            String kind = stringOf(op, "op");
+            String kind = normalizeKind(op);
             if ("add_widget".equals(kind)) {
                 prepareRoot(op, work, byId, lines, frozenOps, frozen);
             }
@@ -194,10 +194,13 @@ public final class AgentEdits {
                     lines.add("Move " + bean.id + " into " + parentId);
                 }
                 default -> throw new AgentTools.ToolException("E_BAD_OP",
-                        "Unknown operation \"" + kind + "\". Use add_widget, "
-                                + "set_text, set_hint, set_background, "
-                                + "set_text_color, set_text_size, "
-                                + "remove_widget or move_widget.");
+                        "Unknown operation \"" + kind + "\". Every "
+                                + "operation is an object with an \"op\" "
+                                + "field, e.g. {\"op\":\"add_widget\","
+                                + "\"type\":\"Button\",\"text\":\"Save\"}. "
+                                + "Valid ops: add_widget, set_text, set_hint, "
+                                + "set_background, set_text_color, "
+                                + "set_text_size, remove_widget, move_widget.");
             }
             frozenOps.add(op);
         }
@@ -344,6 +347,51 @@ public final class AgentEdits {
                 + colorNote);
     }
 
+    /**
+     * Models do not always hit the exact envelope. Where the intent is
+     * unambiguous — an aliased op name, an action/operation key, a bare
+     * widget description — the app normalizes instead of failing.
+     */
+    private static String normalizeKind(JsonObject op) {
+        String kind = stringOf(op, "op");
+        if (kind.isEmpty()) {
+            kind = stringOf(op, "operation");
+        }
+        if (kind.isEmpty()) {
+            kind = stringOf(op, "action");
+        }
+        if (kind.isEmpty() && op.has("type")) {
+            op.addProperty("op", "add_widget");
+            return "add_widget";
+        }
+        String key = kind.toLowerCase(Locale.ROOT)
+                .replace("_", "").replace(" ", "");
+        String canonical = switch (key) {
+            case "addwidget", "add", "createwidget", "addview",
+                    "insertwidget", "newwidget" -> "add_widget";
+            case "settext", "changetext", "updatetext" -> "set_text";
+            case "sethint" -> "set_hint";
+            case "setbackground", "setbackgroundcolor",
+                    "setbackgroundcolour" -> "set_background";
+            case "settextcolor", "settextcolour" -> "set_text_color";
+            case "settextsize" -> "set_text_size";
+            case "removewidget", "deletewidget", "remove", "delete" ->
+                    "remove_widget";
+            case "movewidget", "move", "reparent" -> "move_widget";
+            default -> kind;
+        };
+        if (!canonical.equals(kind)) {
+            op.addProperty("op", canonical);
+        }
+        return canonical;
+    }
+
+    /** The target widget of an op: "id", or the common "widget" alias. */
+    private static String widgetIdOf(JsonObject op) {
+        String id = stringOf(op, "id");
+        return id.isEmpty() ? stringOf(op, "widget") : id;
+    }
+
     // -- vocabulary --------------------------------------------------------
 
     private static final Map<String, Integer> TYPE_BY_NAME = new HashMap<>();
@@ -463,7 +511,7 @@ public final class AgentEdits {
     private static ViewBean requireWidget(JsonObject op,
                                           Map<String, ViewBean> byId)
             throws AgentTools.ToolException {
-        String id = stringOf(op, "id");
+        String id = widgetIdOf(op);
         ViewBean bean = byId.get(id);
         if (bean == null) {
             throw new AgentTools.ToolException("E_NO_WIDGET",

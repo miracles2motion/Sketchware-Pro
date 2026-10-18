@@ -466,7 +466,10 @@ public final class AgentTools {
                     + "set_text_size {id,size}, remove_widget {id} (removes "
                     + "what is inside it too), move_widget {id,parent}. "
                     + "Colours are #RRGGBB or the project tokens @primary, "
-                    + "@primary_dark, @accent. At most "
+                    + "@primary_dark, @accent. Example: [{\"op\":"
+                    + "\"add_widget\",\"type\":\"Button\",\"text\":\"Save\"},"
+                    + "{\"op\":\"set_background\",\"id\":\"button1\","
+                    + "\"color\":\"@primary\"}]. At most "
                     + AgentEdits.MAX_OPS + " operations per call. The user "
                     + "must approve before anything changes.";
         }
