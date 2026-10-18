@@ -298,10 +298,37 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
 
     static class ApprovalHolder extends Holder {
         private final AgentChatItemApprovalBinding binding;
+        private final List<ObjectAnimator> dotAnimations = new ArrayList<>();
 
         ApprovalHolder(@NonNull AgentChatItemApprovalBinding binding) {
             super(binding.getRoot());
             this.binding = binding;
+        }
+
+        /** The same three-dot pulse as the chat's typing indicator. */
+        void startDots() {
+            stopDots();
+            View[] dots = {binding.approvalDot1, binding.approvalDot2,
+                    binding.approvalDot3};
+            for (int i = 0; i < dots.length; i++) {
+                ObjectAnimator animator = ObjectAnimator.ofFloat(
+                        dots[i], View.ALPHA, 0.25f, 1f, 0.25f);
+                animator.setDuration(900L);
+                animator.setStartDelay(i * 160L);
+                animator.setRepeatCount(ValueAnimator.INFINITE);
+                animator.start();
+                dotAnimations.add(animator);
+            }
+        }
+
+        void stopDots() {
+            for (ObjectAnimator animator : dotAnimations) {
+                animator.cancel();
+            }
+            dotAnimations.clear();
+            binding.approvalDot1.setAlpha(1f);
+            binding.approvalDot2.setAlpha(1f);
+            binding.approvalDot3.setAlpha(1f);
         }
 
         @Override
@@ -320,9 +347,30 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                 bind(message);
             });
             boolean pending = ChatMessage.APPROVAL_PENDING.equals(message.approvalState);
+            boolean working = ChatMessage.APPROVAL_WORKING.equals(message.approvalState);
             binding.approvalButtons.setVisibility(pending ? View.VISIBLE : View.GONE);
-            binding.approvalState.setVisibility(pending ? View.GONE : View.VISIBLE);
-            binding.approvalState.setText(stateText(context, message));
+            binding.approvalStateRow.setVisibility(pending ? View.GONE : View.VISIBLE);
+            // While the approved change is being applied, the card dims
+            // (the readable form of a blur) and the three dots pulse —
+            // the same signal as the chat's typing indicator — until the
+            // final outcome replaces them.
+            float contentAlpha = working ? 0.45f : 1f;
+            binding.approvalTitle.setAlpha(contentAlpha);
+            binding.approvalBody.setAlpha(contentAlpha);
+            binding.approvalDetailsToggle.setAlpha(contentAlpha);
+            binding.approvalDetails.setAlpha(contentAlpha);
+            int dotsVisibility = working ? View.VISIBLE : View.GONE;
+            binding.approvalDot1.setVisibility(dotsVisibility);
+            binding.approvalDot2.setVisibility(dotsVisibility);
+            binding.approvalDot3.setVisibility(dotsVisibility);
+            binding.approvalState.setText(working
+                    ? context.getString(R.string.agent_approval_working)
+                    : stateText(context, message));
+            if (working) {
+                startDots();
+            } else {
+                stopDots();
+            }
             if (pending && owner != null) {
                 binding.approvalApprove.setOnClickListener(v -> {
                     if (owner.approvalListener != null) {
@@ -363,6 +411,9 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
     public void onViewRecycled(@NonNull Holder holder) {
         if (holder instanceof AssistantHolder assistant) {
             assistant.stopDots();
+        }
+        if (holder instanceof ApprovalHolder approval) {
+            approval.stopDots();
         }
         super.onViewRecycled(holder);
     }

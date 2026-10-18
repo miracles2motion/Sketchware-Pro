@@ -86,16 +86,45 @@
                     app:backgroundTint="@color/agent_reject_red" />
             </LinearLayout>
 
-            <TextView
-                android:id="@+id/approval_state"
+            <LinearLayout
+                android:id="@+id/approval_state_row"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
-                android:textAppearance="?attr/textAppearanceBodySmall"
-                android:textColor="?attr/colorOnSurfaceVariant"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
                 android:visibility="gone"
-                tools:text="Done"
-                tools:visibility="visible" />
+                tools:visibility="visible">
+
+                <View
+                    android:id="@+id/approval_dot_1"
+                    android:layout_width="7dp"
+                    android:layout_height="7dp"
+                    android:background="@drawable/agent_typing_dot" />
+
+                <View
+                    android:id="@+id/approval_dot_2"
+                    android:layout_width="7dp"
+                    android:layout_height="7dp"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/agent_typing_dot" />
+
+                <View
+                    android:id="@+id/approval_dot_3"
+                    android:layout_width="7dp"
+                    android:layout_height="7dp"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/agent_typing_dot" />
+
+                <TextView
+                    android:id="@+id/approval_state"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    tools:text="Working…" />
+            </LinearLayout>
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 </LinearLayout>
