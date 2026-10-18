@@ -746,13 +746,13 @@ public final class AgentLogic {
                 String name = stringOf(object, mapKey);
                 Integer kind = variables.get(name);
                 if (kind == null || kind != 3) {
-                    throw badValue(what, "\\"" + name + "\\" is not "
+                    throw badValue(what, "\"" + name + "\" is not "
                             + "a map variable on this screen");
                 }
                 String key = stringOf(object, "key");
                 if (key.isEmpty()) {
                     throw badValue(what, "reading a map needs its "
-                            + "\\"key\\"");
+                            + "\"key\"");
                 }
                 if ("map_get".equals(mapKey)) {
                     if (slot != 's') {
@@ -1627,9 +1627,9 @@ public final class AgentLogic {
                             throw new AgentTools.ToolException(
                                     "E_BAD_BLOCK",
                                     "List “" + list + "” holds "
-                                            + "numbers, so \\"value\\" "
+                                            + "numbers, so \"value\" "
                                             + "must be a number (got "
-                                            + "\\"" + value + "\\").");
+                                            + "\"" + value + "\").");
                         }
                         stmt.params.add(value);
                         stmt.sentence = "Add " + value + " to list “"
@@ -1686,7 +1686,7 @@ public final class AgentLogic {
                 String key = stringOf(op, "key");
                 if (key.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
-                            "put_in_map needs a \\"key\\".");
+                            "put_in_map needs a \"key\".");
                 }
                 stmt.opCode = "mapPut";
                 stmt.type = " ";
