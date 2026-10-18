@@ -248,10 +248,14 @@ public final class AgentLogic {
         plan.lines.addAll(builder.lines);
         nextId = builder.nextId;
         // Resolve variable-value reporters: each "@var:" placeholder
-        // in a statement's parameters becomes an "@id" reference to a
+        // in a bean's parameters becomes an "@id" reference to a
         // getVar bean (spec = the variable name, the shape the editor
         // stores) appended after the statement beans, unchained.
-        for (BlockBean bean : builder.allStatements) {
+        // Every created bean is scanned, not just statements: a
+        // variable inside a comparison lives in the comparison's own
+        // reporter bean, and an unresolved "@var:" written to disk
+        // makes the logic editor crash parsing it as a block id.
+        for (BlockBean bean : builder.created) {
             for (int i = 0; i < bean.parameters.size(); i++) {
                 String param = bean.parameters.get(i);
                 if (!param.startsWith("@var:")) {
@@ -271,6 +275,16 @@ public final class AgentLogic {
                 plan.fresh.add(reporter);
                 bean.parameters.set(i, "@" + nextId);
                 nextId++;
+            }
+        }
+        // No placeholder may reach disk unresolved.
+        for (BlockBean bean : plan.fresh) {
+            for (String param : bean.parameters) {
+                if (param != null && param.startsWith("@var:")) {
+                    throw new AgentTools.ToolException("E_INTERNAL",
+                            "A variable reference did not resolve; "
+                                    + "nothing was changed.");
+                }
             }
         }
         // Chain the fresh beans among themselves; the applier joins

@@ -824,3 +824,15 @@ Device test findings (SportyNivida / Sporty Bet):
   (E_REBUILD) - one-for-one replacement stays allowed. Guidance
   and tool docs: never remove+re-add to reorder. Size values
   tolerate fill_parent and "120dp"/decimals.
+  (E_REBUILD) - one-for-one replacement stays allowed. Guidance
+  and tool docs: never remove+re-add to reorder. Size values
+  tolerate fill_parent and "120dp"/decimals.
+- CRASH FIX (2026-10-18, device: editor crashed opening a button
+  handler with a comparison): variables inside reporter beans
+  (comparisons, calculations) kept their "@var:" placeholder -
+  the resolution pass only scanned statement beans. Written to
+  disk verbatim, the editor crashes parsing it as a block id.
+  Pass now scans every created bean, and a guard refuses the
+  proposal if any "@var:" survives. Handlers already saved with
+  the placeholder still crash the editor until the bad block is
+  removed (edit_event_block can, it never parses param refs).
