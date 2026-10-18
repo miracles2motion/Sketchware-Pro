@@ -526,6 +526,12 @@ Device test findings (SportyNivida / Sporty Bet):
   count. Slice-4 groundwork pinned down: an activity's blocks live in
   `eC.b(javaName)` as a map keyed `targetId_eventName`, one event's
   blocks in `eC.a(javaName, key)`, events in `eC.g(javaName)`.
+- `delete_activity` added (deletes always ask): removal persists
+  through ManageViewActivity's own save sequence — both file lists
+  written back, then `eC.a(hC)` reconciliation drops the deleted
+  screen's widgets/events/blocks; an activity's drawer file is
+  removed with it, as the screen manager does. The main screen is
+  refused (it is the app's starting screen).
 - One-time project backup (slice 2) precedes the first edit too.
   Approval details warn when the screen might be open in the editor.
 - Still open from the risk register: a hard editor-open lock (the

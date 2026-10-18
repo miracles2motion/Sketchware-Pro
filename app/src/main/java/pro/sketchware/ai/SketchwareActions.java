@@ -159,6 +159,57 @@ public final class SketchwareActions {
     }
 
     /**
+     * Deletes one activity, persisting through the same call sequence
+     * ManageViewActivity's save uses after the screen manager removes a
+     * screen: both file lists are written back and the data manager
+     * reconciles its stores against them ({@code eC.a(hC)}), which is
+     * what drops the deleted screen's widgets, events and blocks. An
+     * activity with a drawer takes its drawer file with it, as the
+     * screen manager's delete does. A one-time backup is taken first.
+     */
+    public static void deleteActivity(String scId, String fileName)
+            throws Exception {
+        ArrayList<ProjectFileBean> activities = jC.b(scId).b();
+        if (activities == null) {
+            activities = new ArrayList<>();
+        }
+        ArrayList<ProjectFileBean> customViews = jC.b(scId).c();
+        if (customViews == null) {
+            customViews = new ArrayList<>();
+        }
+        ProjectFileBean target = null;
+        for (ProjectFileBean activity : activities) {
+            if (activity.fileType
+                            == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY
+                    && activity.fileName.equalsIgnoreCase(fileName)) {
+                target = activity;
+                break;
+            }
+        }
+        if (target == null) {
+            throw new ActionException("That screen no longer exists.");
+        }
+        backupProjectOnce(scId);
+        activities.remove(target);
+        if (target.hasActivityOption(
+                ProjectFileBean.OPTION_ACTIVITY_DRAWER)) {
+            String drawerName = ProjectFileBean.getDrawerName(fileName);
+            customViews.removeIf(file ->
+                    file.fileName.equalsIgnoreCase(drawerName));
+        }
+        jC.b(scId).a(activities);
+        jC.b(scId).b(customViews);
+        jC.b(scId).l();
+        jC.b(scId).j();
+        jC.a(scId).a(jC.b(scId));
+        commitProject(scId);
+        if (SketchwareProjects.findActivity(scId, fileName) != null) {
+            throw new ActionException("The screen was deleted but can "
+                    + "still be read back.");
+        }
+    }
+
+    /**
      * Commits a project the way the app's own save-on-close routine
      * does. The data managers keep working copies; writes through them
      * without this commit leave the project flagged as "previous data
