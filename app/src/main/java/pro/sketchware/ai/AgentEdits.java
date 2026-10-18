@@ -276,6 +276,147 @@ public final class AgentEdits {
                     bean.layout.weight = weight;
                     lines.add("Set " + bean.id + " weight to " + weight);
                 }
+                case "set_image" -> {
+                    // The property editor's image field is image.resName.
+                    ViewBean bean = requireWidget(op, byId);
+                    if (bean.type != ViewBean.VIEW_TYPE_WIDGET_IMAGEVIEW
+                            && bean.type
+                                    != ViewBeans.VIEW_TYPE_WIDGET_CIRCLEIMAGEVIEW) {
+                        throw new AgentTools.ToolException("E_WRONG_WIDGET",
+                                "Only an ImageView has an image: " + bean.id
+                                        + " is a " + typeName(bean.type)
+                                        + ".");
+                    }
+                    String image = stringOf(op, "image");
+                    if (!ID_PATTERN.matcher(image).matches()) {
+                        throw new AgentTools.ToolException("E_BAD_VALUE",
+                                "An image name uses letters, numbers and "
+                                        + "underscores, like my_photo.");
+                    }
+                    bean.image.resName = image;
+                    lines.add("Set " + bean.id + " image to " + image);
+                }
+                case "set_scale_type" -> {
+                    ViewBean bean = requireWidget(op, byId);
+                    if (bean.type != ViewBean.VIEW_TYPE_WIDGET_IMAGEVIEW
+                            && bean.type
+                                    != ViewBeans.VIEW_TYPE_WIDGET_CIRCLEIMAGEVIEW) {
+                        throw new AgentTools.ToolException("E_WRONG_WIDGET",
+                                "Only an ImageView has a scale type: "
+                                        + bean.id + " is a "
+                                        + typeName(bean.type) + ".");
+                    }
+                    String value = stringOf(op, "scale_type").trim()
+                            .toUpperCase(Locale.ROOT).replace(' ', '_');
+                    String scaleType = switch (value) {
+                        case "CENTER", "CENTER_CROP", "CENTER_INSIDE",
+                                "FIT_CENTER", "FIT_START", "FIT_END",
+                                "FIT_XY" -> value;
+                        default -> throw new AgentTools.ToolException(
+                                "E_BAD_VALUE",
+                                "Scale type is one of: center, center_crop, "
+                                        + "center_inside, fit_center, "
+                                        + "fit_start, fit_end, fit_xy.");
+                    };
+                    bean.image.scaleType = scaleType;
+                    lines.add("Set " + bean.id + " scale type to "
+                            + scaleType.toLowerCase(Locale.ROOT));
+                }
+                case "set_background_image" -> {
+                    // layout.backgroundResource, the property editor's
+                    // background-image field.
+                    ViewBean bean = requireWidget(op, byId);
+                    String image = stringOf(op, "image");
+                    if (!ID_PATTERN.matcher(image).matches()) {
+                        throw new AgentTools.ToolException("E_BAD_VALUE",
+                                "An image name uses letters, numbers and "
+                                        + "underscores, like my_photo.");
+                    }
+                    bean.layout.backgroundResource = image;
+                    lines.add("Set " + bean.id + " background image to "
+                            + image);
+                }
+                case "set_checked" -> {
+                    ViewBean bean = requireWidget(op, byId);
+                    if (bean.type != ViewBean.VIEW_TYPE_WIDGET_CHECKBOX
+                            && bean.type != ViewBean.VIEW_TYPE_WIDGET_SWITCH
+                            && bean.type
+                                    != ViewBeans.VIEW_TYPE_WIDGET_RADIOBUTTON) {
+                        throw new AgentTools.ToolException("E_WRONG_WIDGET",
+                                "Only a CheckBox, Switch or RadioButton can "
+                                        + "be checked: " + bean.id + " is a "
+                                        + typeName(bean.type) + ".");
+                    }
+                    boolean checked = boolOf(op, "checked");
+                    bean.checked = checked ? 1 : 0;
+                    lines.add((checked ? "Check " : "Uncheck ") + bean.id);
+                }
+                case "set_enabled" -> {
+                    ViewBean bean = requireWidget(op, byId);
+                    boolean enabled = boolOf(op, "enabled");
+                    bean.enabled = enabled ? 1 : 0;
+                    lines.add((enabled ? "Enable " : "Disable ") + bean.id);
+                }
+                case "set_text_style" -> {
+                    ViewBean bean = requireWidget(op, byId);
+                    String value = stringOf(op, "style").trim()
+                            .toLowerCase(Locale.ROOT).replace(' ', '_');
+                    int textType = switch (value) {
+                        case "normal" -> com.besome.sketch.beans.TextBean
+                                .TEXT_TYPE_NORMAL;
+                        case "bold" -> com.besome.sketch.beans.TextBean
+                                .TEXT_TYPE_BOLD;
+                        case "italic" -> com.besome.sketch.beans.TextBean
+                                .TEXT_TYPE_ITALIC;
+                        case "bold_italic" -> com.besome.sketch.beans.TextBean
+                                .TEXT_TYPE_BOLDITALIC;
+                        default -> throw new AgentTools.ToolException(
+                                "E_BAD_VALUE",
+                                "Text style is normal, bold, italic or "
+                                        + "bold_italic.");
+                    };
+                    bean.text.textType = textType;
+                    lines.add("Make " + bean.id + " text " + value);
+                }
+                case "set_input_type" -> {
+                    ViewBean bean = requireWidget(op, byId);
+                    if (bean.type != ViewBean.VIEW_TYPE_WIDGET_EDITTEXT
+                            && bean.type
+                                    != ViewBeans.VIEW_TYPE_WIDGET_AUTOCOMPLETETEXTVIEW
+                            && bean.type
+                                    != ViewBeans.VIEW_TYPE_WIDGET_MULTIAUTOCOMPLETETEXTVIEW) {
+                        throw new AgentTools.ToolException("E_WRONG_WIDGET",
+                                "Only a text input has an input type: "
+                                        + bean.id + " is a "
+                                        + typeName(bean.type) + ".");
+                    }
+                    String value = stringOf(op, "input_type").trim()
+                            .toLowerCase(Locale.ROOT).replace(' ', '_');
+                    int inputType = switch (value) {
+                        case "text" -> com.besome.sketch.beans.TextBean
+                                .INPUT_TYPE_TEXT;
+                        case "number" -> 2; // TYPE_CLASS_NUMBER
+                        case "phone" -> com.besome.sketch.beans.TextBean
+                                .INPUT_TYPE_PHONE;
+                        case "password" -> com.besome.sketch.beans.TextBean
+                                .INPUT_TYPE_PASSWORD;
+                        case "number_decimal" -> com.besome.sketch.beans
+                                .TextBean.INPUT_TYPE_NUMBER_DECIMAL;
+                        case "number_signed" -> com.besome.sketch.beans
+                                .TextBean.INPUT_TYPE_NUMBER_SIGNED;
+                        case "number_signed_decimal" -> com.besome.sketch
+                                .beans.TextBean
+                                .INPUT_TYPE_NUMBER_SIGNED_DECIMAL;
+                        default -> throw new AgentTools.ToolException(
+                                "E_BAD_VALUE",
+                                "Input type is one of: text, number, phone, "
+                                        + "password, number_decimal, "
+                                        + "number_signed, "
+                                        + "number_signed_decimal.");
+                    };
+                    bean.text.inputType = inputType;
+                    lines.add("Set " + bean.id + " input type to " + value);
+                }
                 case "remove_widget" -> {
                     ViewBean bean = requireWidget(op, byId);
                     Set<String> removed = subtreeIds(bean.id, work);
@@ -338,7 +479,11 @@ public final class AgentEdits {
                                 + "set_background, set_text_color, "
                                 + "set_text_size, set_size, set_orientation, "
                                 + "set_padding, set_margin, set_gravity, "
-                                + "set_weight, remove_widget, move_widget.");
+                                + "set_weight, set_image, set_scale_type, "
+                                + "set_background_image, set_checked, "
+                                + "set_enabled, set_text_style, "
+                                + "set_input_type, remove_widget, "
+                                + "move_widget.");
             }
             frozenOps.add(op);
         }
@@ -497,6 +642,14 @@ public final class AgentEdits {
             case "setmargin", "margin" -> "set_margin";
             case "setgravity", "gravity", "setlayoutgravity" -> "set_gravity";
             case "setweight", "weight" -> "set_weight";
+            case "setimage", "image" -> "set_image";
+            case "setscaletype", "scaletype" -> "set_scale_type";
+            case "setbackgroundimage", "setbackgroundresource",
+                    "backgroundimage" -> "set_background_image";
+            case "setchecked", "checked" -> "set_checked";
+            case "setenabled", "enabled" -> "set_enabled";
+            case "settextstyle", "textstyle", "setbold" -> "set_text_style";
+            case "setinputtype", "inputtype" -> "set_input_type";
             case "setbackground", "setbackgroundcolor",
                     "setbackgroundcolour" -> "set_background";
             case "settextcolor", "settextcolour" -> "set_text_color";
@@ -745,6 +898,29 @@ public final class AgentEdits {
         }
         return box[0] + "/" + box[1] + "/" + box[2] + "/" + box[3]
                 + "dp (left/top/right/bottom)";
+    }
+
+    /** Booleans written three ways by models: true, "true", or 1. */
+    private static boolean boolOf(JsonObject op, String key) {
+        JsonElement element = op.get(key);
+        if (element != null && element.isJsonPrimitive()) {
+            if (element.getAsJsonPrimitive().isBoolean()) {
+                return element.getAsBoolean();
+            }
+            if (element.getAsJsonPrimitive().isNumber()) {
+                return element.getAsInt() != 0;
+            }
+            String word = element.getAsString().trim()
+                    .toLowerCase(Locale.ROOT);
+            if (word.equals("true") || word.equals("yes")) {
+                return true;
+            }
+            if (word.equals("false") || word.equals("no")) {
+                return false;
+            }
+        }
+        throw new AgentTools.ToolException("E_BAD_VALUE",
+                "\"" + key + "\" must be true or false.");
     }
 
     /** Android gravity names to {@link LayoutBean} constants. */
