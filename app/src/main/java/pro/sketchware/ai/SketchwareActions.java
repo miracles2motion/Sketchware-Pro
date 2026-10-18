@@ -210,6 +210,53 @@ public final class SketchwareActions {
     }
 
     /**
+     * Changes one activity's toolbar/fullscreen options and orientation,
+     * persisting through the same file-manager save sequence as screen
+     * creation. Drawer and FAB bits are never touched here — adding or
+     * removing those has file side effects this call does not perform.
+     */
+    public static void editActivityOptions(String scId, String fileName,
+                                           int options, int orientation)
+            throws Exception {
+        ArrayList<ProjectFileBean> activities = jC.b(scId).b();
+        if (activities == null) {
+            activities = new ArrayList<>();
+        }
+        ArrayList<ProjectFileBean> customViews = jC.b(scId).c();
+        if (customViews == null) {
+            customViews = new ArrayList<>();
+        }
+        ProjectFileBean target = null;
+        for (ProjectFileBean activity : activities) {
+            if (activity.fileType
+                            == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY
+                    && activity.fileName.equalsIgnoreCase(fileName)) {
+                target = activity;
+                break;
+            }
+        }
+        if (target == null) {
+            throw new ActionException("That screen no longer exists.");
+        }
+        backupProjectOnce(scId);
+        target.options = options;
+        target.orientation = orientation;
+        jC.b(scId).a(activities);
+        jC.b(scId).b(customViews);
+        jC.b(scId).l();
+        jC.b(scId).j();
+        jC.a(scId).a(jC.b(scId));
+        commitProject(scId);
+        ProjectFileBean readBack =
+                SketchwareProjects.findActivity(scId, fileName);
+        if (readBack == null || readBack.options != options
+                || readBack.orientation != orientation) {
+            throw new ActionException("The change was saved but cannot "
+                    + "be read back as made.");
+        }
+    }
+
+    /**
      * Commits a project the way the app's own save-on-close routine
      * does. The data managers keep working copies; writes through them
      * without this commit leave the project flagged as "previous data

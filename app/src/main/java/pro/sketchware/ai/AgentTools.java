@@ -118,6 +118,7 @@ public final class AgentTools {
         register(new CreateProject());
         register(new CreateActivity());
         register(new DeleteActivity());
+        register(new EditActivity());
         register(new EditScreen());
     }
 
