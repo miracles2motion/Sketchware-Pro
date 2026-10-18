@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+import a.a.a.eC;
 import com.besome.sketch.beans.ProjectFileBean;
 
 /**
@@ -573,10 +574,44 @@ public final class AgentTools {
             JsonArray ops = proposal.args.getAsJsonArray("ops");
             AgentEdits.Outcome outcome = AgentEdits.simulate(
                     located.scId, current, ops, true, located.rootParentType);
+            // The pre-edit screen, snapshotted before anything native is
+            // touched: the editor's own delete path mutates the live bean
+            // list, so the live list alone is not a rollback copy.
+            ArrayList<com.besome.sketch.beans.ViewBean> previous =
+                    AgentEdits.deepCopy(current);
+            java.util.Map<String, com.besome.sketch.beans.ViewBean>
+                    currentById = new java.util.HashMap<>();
+            for (com.besome.sketch.beans.ViewBean bean : current) {
+                currentById.put(bean.id, bean);
+            }
+            java.util.Set<String> outcomeIds = new java.util.HashSet<>();
+            for (com.besome.sketch.beans.ViewBean bean : outcome.beans) {
+                outcomeIds.add(bean.id);
+            }
             try {
                 SketchwareActions.backupProjectOnce(located.scId);
+                // Removed widgets go through the editor's own delete,
+                // which also removes their events and block references;
+                // the outcome list below then replaces what remains.
+                for (com.besome.sketch.beans.ViewBean bean : current) {
+                    if (!outcomeIds.contains(bean.id)) {
+                        SketchwareActions.deleteWidgetLikeEditor(
+                                located.scId, located.activity, bean);
+                    }
+                }
                 SketchwareActions.saveScreen(located.scId, located.activity,
                         outcome.beans);
+                // A Button the editor adds always gets its empty onClick
+                // event registered; mirror that for added Buttons.
+                for (com.besome.sketch.beans.ViewBean bean : outcome.beans) {
+                    if (!currentById.containsKey(bean.id)
+                            && bean.type
+                                    == com.besome.sketch.beans.ViewBean
+                                            .VIEW_TYPE_WIDGET_BUTTON) {
+                        SketchwareActions.registerButtonClickEvent(
+                                located.scId, located.activity, bean);
+                    }
+                }
                 SketchwareActions.commitProject(located.scId);
             } catch (Exception e) {
                 // The data manager holds the screen in memory as well as on
@@ -585,7 +620,7 @@ public final class AgentTools {
                 // in this same process) would see an edit that never saved.
                 try {
                     SketchwareActions.saveScreen(located.scId,
-                            located.activity, current);
+                            located.activity, previous);
                 } catch (Exception ignored) {
                     // Best effort: the save failure is the error to report.
                 }
@@ -595,8 +630,10 @@ public final class AgentTools {
             }
             ArrayList<com.besome.sketch.beans.ViewBean> readBack =
                     SketchwareProjects.screenBeans(located.scId, located.activity);
+            // screenBeans presents the editor's normalized order, so the
+            // approved outcome is compared in that same order.
             if (!AgentEdits.canonical(readBack)
-                    .equals(AgentEdits.canonical(outcome.beans))) {
+                    .equals(AgentEdits.canonical(eC.a(outcome.beans)))) {
                 throw new ToolException("E_VERIFY_FAILED",
                         "The saved screen does not match the approved edit, "
                                 + "so treat the edit as not applied.");

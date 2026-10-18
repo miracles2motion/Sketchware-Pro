@@ -487,6 +487,22 @@ Device test findings (SportyNivida / Sporty Bet):
   pre-checked through `eC.a(...)`; a failed commit restores the
   previous screen in the in-memory store so later reads cannot claim
   an unsaved edit happened.
+- Full-path audit against Sketchware's own code (same day) found and
+  fixed: `create_activity` rewrote the file manager's custom-view
+  list from the wrong source (would drop a project's custom views) —
+  both native lists (`jC.b().b()` activities, `jC.b().c()` custom
+  views) are now carried through exactly as `ManageViewActivity`
+  saves them; new widgets now start from the editor palette's own
+  defaults (the `Icon*` beans: padding, stretched axes, starting
+  text/hint, `convert` class name); a removed widget now goes through
+  the editor's own delete (`eC.a(ProjectFileBean, ViewBean)`), which
+  also removes its events and scrubs block references; an added
+  Button gets the empty `onClick` event registration the editor
+  performs on drop (duplicate-guarded); `FloatingActionButton` is
+  rejected as a screen widget (it is the activity's separately-held
+  floating button, and the editor would render a stored one as an
+  unknown view); ScrollView parents accept only one direct child;
+  screen reads now present the editor's normalized order (`eC.a`).
 - One-time project backup (slice 2) precedes the first edit too.
   Approval details warn when the screen might be open in the editor.
 - Still open from the risk register: a hard editor-open lock (the

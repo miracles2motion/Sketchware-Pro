@@ -19,6 +19,7 @@ import a.a.a.lC;
 import a.a.a.nB;
 import a.a.a.oB;
 import a.a.a.wq;
+import com.besome.sketch.beans.EventBean;
 import com.besome.sketch.beans.ProjectFileBean;
 import com.besome.sketch.beans.ViewBean;
 import mod.hey.studios.project.ProjectSettings;
@@ -122,11 +123,23 @@ public final class SketchwareActions {
      */
     public static void createActivity(String scId, String fileName)
             throws Exception {
-        ArrayList<ProjectFileBean> activities = new ArrayList<>();
-        ArrayList<ProjectFileBean> otherFiles = new ArrayList<>();
-        splitFiles(scId, activities, otherFiles);
+        // The file manager keeps two lists, and ManageViewActivity's save
+        // writes both back exactly as loaded: activities (b()) and custom
+        // views (c()). Both are carried through untouched here — feeding
+        // the custom-view list from the activity list (as an earlier
+        // version did) would silently drop a project's custom views.
+        ArrayList<ProjectFileBean> activities = jC.b(scId).b();
+        if (activities == null) {
+            activities = new ArrayList<>();
+        }
+        ArrayList<ProjectFileBean> customViews = jC.b(scId).c();
+        if (customViews == null) {
+            customViews = new ArrayList<>();
+        }
         for (ProjectFileBean activity : activities) {
-            if (activity.fileName.equalsIgnoreCase(fileName)) {
+            if (activity.fileType
+                            == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY
+                    && activity.fileName.equalsIgnoreCase(fileName)) {
                 throw new ActionException("That screen already exists.");
             }
         }
@@ -134,7 +147,7 @@ public final class SketchwareActions {
         activities.add(new ProjectFileBean(
                 ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY, fileName));
         jC.b(scId).a(activities);
-        jC.b(scId).b(otherFiles);
+        jC.b(scId).b(customViews);
         jC.b(scId).l();
         jC.b(scId).j();
         jC.a(scId).a(jC.b(scId));
@@ -186,20 +199,46 @@ public final class SketchwareActions {
         store.c.put(activity.getXmlName(), beans);
     }
 
-    private static void splitFiles(String scId,
-                                   ArrayList<ProjectFileBean> activities,
-                                   ArrayList<ProjectFileBean> otherFiles) {
-        ArrayList<ProjectFileBean> all = jC.b(scId).b();
-        if (all == null) {
+    /**
+     * Gives a newly added Button the empty onClick event the editor itself
+     * registers the moment a Button is dropped or preset-added
+     * ({@code ViewEditor}'s drop path, {@code ManageViewActivity}'s preset
+     * path). Without it the button exists but has no event entry in the
+     * screen's logic. Registration is guarded: the manager's own call
+     * always appends, so an existing identical event is left alone.
+     */
+    public static void registerButtonClickEvent(String scId,
+                                                ProjectFileBean activity,
+                                                ViewBean bean) {
+        if (activity.fileType != ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
             return;
         }
-        for (ProjectFileBean file : all) {
-            if (file.fileType == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
-                activities.add(file);
-            } else {
-                otherFiles.add(file);
+        eC store = jC.a(scId);
+        ArrayList<EventBean> events = store.g(activity.getJavaName());
+        if (events != null) {
+            for (EventBean event : events) {
+                if (event.eventType == EventBean.EVENT_TYPE_VIEW
+                        && bean.id.equals(event.targetId)
+                        && "onClick".equals(event.eventName)) {
+                    return;
+                }
             }
         }
+        store.a(activity.getJavaName(), EventBean.EVENT_TYPE_VIEW,
+                bean.type, bean.id, "onClick");
+    }
+
+    /**
+     * Removes one widget the way the editor's delete does
+     * ({@code ViewEditor.deleteWidget} calls this manager method for the
+     * widget and everything inside it): besides dropping the bean, it
+     * removes the widget's events and scrubs block references to it, so
+     * no orphan logic is left pointing at a widget that no longer exists.
+     */
+    public static void deleteWidgetLikeEditor(String scId,
+                                              ProjectFileBean activity,
+                                              ViewBean bean) {
+        jC.a(scId).a(activity, bean);
     }
 
     /**

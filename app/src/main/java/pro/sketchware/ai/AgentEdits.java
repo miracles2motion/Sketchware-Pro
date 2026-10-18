@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 import a.a.a.wq;
+import com.besome.sketch.beans.LayoutBean;
 import com.besome.sketch.beans.ViewBean;
 
 /**
@@ -121,6 +122,11 @@ public final class AgentEdits {
                     bean.parentType = rootParentType;
                 }
             }
+            if (bean.convert == null) {
+                // The XML generator dereferences convert directly; the
+                // empty string is its "use the widget class" form.
+                bean.convert = "";
+            }
             byId.put(bean.id, bean);
         }
         List<String> lines = new ArrayList<>();
@@ -209,6 +215,17 @@ public final class AgentEdits {
                                         + "widgets.");
                     }
                     if (!toScreen
+                            && (parent.type
+                                    == ViewBean.VIEW_TYPE_LAYOUT_HSCROLLVIEW
+                                    || parent.type
+                                    == ViewBean.VIEW_TYPE_LAYOUT_VSCROLLVIEW)
+                            && hasChild(work, parent.id, bean.id)) {
+                        throw new AgentTools.ToolException("E_BAD_PARENT",
+                                "A ScrollView can hold only one widget "
+                                        + "directly; add a layout inside it "
+                                        + "first.");
+                    }
+                    if (!toScreen
                             && subtreeIds(bean.id, work).contains(parentId)) {
                         throw new AgentTools.ToolException("E_CYCLE",
                                 "A widget cannot be moved inside itself or "
@@ -266,6 +283,15 @@ public final class AgentEdits {
             throw new AgentTools.ToolException("E_BAD_TYPE",
                     "Unknown widget type \"" + typeName + "\".");
         }
+        if (type == ViewBean.VIEW_TYPE_WIDGET_FAB) {
+            // The editor never stores a FAB as a screen widget: it is the
+            // activity's floating button, held separately (eC's fab map,
+            // ViewPane.addFab). Storing one in the widget list would make
+            // the editor render it as an unknown view.
+            throw new AgentTools.ToolException("E_BAD_TYPE",
+                    "FloatingActionButton is the screen's floating button, "
+                            + "not a widget that can be added this way.");
+        }
         String parentId = stringOf(op, "parent");
         boolean onScreen = parentId.isEmpty()
                 || ROOT_PARENT.equalsIgnoreCase(parentId);
@@ -283,6 +309,15 @@ public final class AgentEdits {
                 throw new AgentTools.ToolException("E_BAD_PARENT",
                         typeName(parent.type) + " cannot hold other widgets; "
                                 + "add to a layout instead.");
+            }
+            if ((parent.type == ViewBean.VIEW_TYPE_LAYOUT_HSCROLLVIEW
+                    || parent.type == ViewBean.VIEW_TYPE_LAYOUT_VSCROLLVIEW)
+                    && hasChild(work, parent.id, null)) {
+                // Android ScrollViews hold exactly one child; the generated
+                // app would crash with more. A layout goes inside first.
+                throw new AgentTools.ToolException("E_BAD_PARENT",
+                        "A ScrollView can hold only one widget directly; "
+                                + "add a layout inside it first.");
             }
         }
 
@@ -316,6 +351,7 @@ public final class AgentEdits {
         // The palette beans the editor drops carry the class name here
         // (IconButton/IconLinear*/ViewBeanParser all set it).
         bean.convert = typeName(type);
+        applyPaletteDefaults(bean, type);
         bean.parent = onScreen ? ROOT_PARENT : parent.id;
         bean.parentType = onScreen ? rootParentType : parent.type;
         bean.index = nextIndex(work, bean.parent, null);
@@ -522,6 +558,87 @@ public final class AgentEdits {
             }
         }
         return ViewBean.VIEW_TYPE_LAYOUT_LINEAR;
+    }
+
+    /**
+     * The starting values the editor's own palette gives a new widget
+     * (the {@code Icon*` classes in the editor's view palette): 8dp
+     * padding on most widgets, match-parent on the axes the palette
+     * stretches, and the widget's name as its starting text/hint. An
+     * operation's explicit text is applied after this, so it wins.
+     */
+    private static void applyPaletteDefaults(ViewBean bean, int type) {
+        switch (type) {
+            case ViewBean.VIEW_TYPE_LAYOUT_LINEAR -> {
+                // The palette's vertical LinearLayout (the horizontal one
+                // differs only in orientation and the stretched axis).
+                bean.layout.orientation = LayoutBean.ORIENTATION_VERTICAL;
+                bean.layout.height = LayoutBean.LAYOUT_MATCH_PARENT;
+                pad(bean);
+            }
+            case ViewBean.VIEW_TYPE_LAYOUT_RELATIVE,
+                    ViewBean.VIEW_TYPE_LAYOUT_HSCROLLVIEW -> {
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                pad(bean);
+            }
+            case ViewBean.VIEW_TYPE_LAYOUT_VSCROLLVIEW -> {
+                bean.layout.height = LayoutBean.LAYOUT_MATCH_PARENT;
+                pad(bean);
+            }
+            case ViewBean.VIEW_TYPE_WIDGET_WEBVIEW -> {
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                bean.layout.height = LayoutBean.LAYOUT_MATCH_PARENT;
+            }
+            case ViewBean.VIEW_TYPE_WIDGET_PROGRESSBAR,
+                    ViewBean.VIEW_TYPE_WIDGET_LISTVIEW,
+                    ViewBean.VIEW_TYPE_WIDGET_SEEKBAR -> {
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                pad(bean);
+                bean.text.text = typeName(type);
+            }
+            case ViewBean.VIEW_TYPE_WIDGET_SPINNER -> {
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                pad(bean);
+            }
+            case ViewBean.VIEW_TYPE_WIDGET_CALENDARVIEW -> {
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                bean.layout.height = LayoutBean.LAYOUT_MATCH_PARENT;
+                pad(bean);
+            }
+            case ViewBean.VIEW_TYPE_WIDGET_BUTTON,
+                    ViewBean.VIEW_TYPE_WIDGET_TEXTVIEW,
+                    ViewBean.VIEW_TYPE_WIDGET_CHECKBOX,
+                    ViewBean.VIEW_TYPE_WIDGET_SWITCH -> {
+                pad(bean);
+                bean.text.text = typeName(type);
+            }
+            case ViewBean.VIEW_TYPE_WIDGET_EDITTEXT -> {
+                pad(bean);
+                bean.text.hint = typeName(type);
+            }
+            default -> {
+                // ImageView and anything else start from the plain bean,
+                // exactly as their palette icons do.
+            }
+        }
+    }
+
+    private static void pad(ViewBean bean) {
+        bean.layout.paddingLeft = 8;
+        bean.layout.paddingTop = 8;
+        bean.layout.paddingRight = 8;
+        bean.layout.paddingBottom = 8;
+    }
+
+    private static boolean hasChild(List<ViewBean> beans, String parentId,
+                                    String excludeId) {
+        for (ViewBean bean : beans) {
+            if (bean != null && parentId.equals(bean.parent)
+                    && !bean.id.equals(excludeId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The append position among the widgets sharing one parent. */

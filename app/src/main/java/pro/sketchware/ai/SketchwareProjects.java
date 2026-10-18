@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 
+import a.a.a.eC;
 import a.a.a.jC;
 import a.a.a.lC;
 import com.besome.sketch.beans.ProjectFileBean;
@@ -177,11 +178,26 @@ public final class SketchwareProjects {
         return ViewBean.VIEW_TYPE_LAYOUT_LINEAR;
     }
 
-    /** The beans of one screen, exactly as the editor loads them. */
+    /**
+     * The beans of one screen, as the editor presents them: the data
+     * manager's stored list run through Sketchware's own view normalizer
+     * ({@code eC.a(...)} — parents before children, siblings in index
+     * order), which is what {@code ViewEditorFragment} hands the editor.
+     * Data the normalizer cannot handle (a hand-made screen with a null
+     * parent, say) falls back to the stored order rather than vanishing.
+     */
     public static ArrayList<ViewBean> screenBeans(String scId, ProjectFileBean activity) {
         try {
             ArrayList<ViewBean> beans = jC.a(scId).d(activity.getXmlName());
-            return beans == null ? new ArrayList<>() : beans;
+            if (beans == null) {
+                return new ArrayList<>();
+            }
+            try {
+                ArrayList<ViewBean> ordered = eC.a(beans);
+                return ordered == null ? beans : ordered;
+            } catch (Exception ignored) {
+                return beans;
+            }
         } catch (Exception ignored) {
             return new ArrayList<>();
         }
