@@ -253,9 +253,23 @@ public final class SketchwareProjects {
             return lines;
         }
         try {
+            a.a.a.eC store = jC.a(scId);
             for (com.besome.sketch.beans.EventBean event
-                    : jC.a(scId).g(activity.getJavaName())) {
-                lines.add(event.targetId + " " + event.eventName);
+                    : store.g(activity.getJavaName())) {
+                String line = event.targetId + " " + event.eventName;
+                try {
+                    java.util.ArrayList<com.besome.sketch.beans.BlockBean>
+                            blocks = store.a(activity.getJavaName(),
+                                    event.targetId + "_"
+                                            + event.eventName);
+                    if (blocks != null && !blocks.isEmpty()) {
+                        line += " (" + blocks.size() + " block"
+                                + (blocks.size() == 1 ? "" : "s") + ")";
+                    }
+                } catch (Exception ignored) {
+                    // The bare event line still tells the model enough.
+                }
+                lines.add(line);
                 if (lines.size() >= 60) {
                     break;
                 }

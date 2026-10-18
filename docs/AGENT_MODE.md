@@ -616,3 +616,22 @@ Device test findings (SportyNivida / Sporty Bet):
   showed the card — fixed by instructing straight-to-card after a
   pick. Slices 1–3, container-first and the colour work are now all
   device-verified; next is slice 4, `set_event_handler`.
+- Slice 4 (`set_event_handler`) built 2026-10-18, pending CI +
+  device verification. Ground truth was extracted from the app's
+  own JAR classes (`lq`/`xB`/`Rs` in the LFS payloads, disassembled
+  string-switches): an event's blocks are a flat list keyed
+  `targetId_eventName`, first bean is the head, links are integer
+  ids, and `Fx` generates from the head. New block shapes come from
+  the runtime tables themselves — `lq.a` (parameter slots),
+  `xB.b().a` (canonical spec), `kq.a` (palette colour), `oq`
+  (valid events) — never hand-copied literals. The tool appends a
+  short statement chain (toast, set_text, set_visibility,
+  set_enabled, finish) after the event's existing tail; the event
+  is registered through the same manager call a Button drop uses
+  when missing; approval, backup, commit and rollback mirror
+  `edit_screen`; the proposal dry-runs the app's own `Fx`
+  generator over the combined list before anything is saved, and
+  the apply step verifies by read-back chain walk. Reporter
+  (value) blocks, control flow and intent navigation stay out of
+  this slice — they need the component-creation path, still
+  unmapped.

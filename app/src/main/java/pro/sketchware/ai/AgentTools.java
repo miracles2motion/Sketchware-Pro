@@ -132,6 +132,7 @@ public final class AgentTools {
         register(new DeleteActivity());
         register(new EditActivity());
         register(new EditScreen());
+        register(new SetEventHandler());
     }
 
     private static void register(Tool tool) {
@@ -486,7 +487,8 @@ public final class AgentTools {
         public String description() {
             return "Reads one screen of the working project as a condensed "
                     + "widget list: id, type, visible text, background colour, "
-                    + "and parent container.";
+                    + "and parent container, plus the screen's events and "
+                    + "how many blocks each already has.";
         }
 
         @Override
@@ -930,6 +932,171 @@ public final class AgentTools {
                 this.beans = beans;
                 this.rootParentType = rootParentType;
             }
+        }
+    }
+
+    /** set_event_handler: make a widget (or the screen) do something. */
+    private static final class SetEventHandler implements Tool {
+        @Override
+        public String name() {
+            return "set_event_handler";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes behaviour for one event of one screen: when "
+                    + "a widget is tapped (or another of its events "
+                    + "fires), or when the screen itself runs an "
+                    + "activity event like onCreate. The new blocks are "
+                    + "APPENDED after whatever the event already does — "
+                    + "check get_screen first, which lists each event "
+                    + "and how many blocks it already has. Blocks (1 to "
+                    + AgentLogic.MAX_BLOCKS + "): toast {message} "
+                    + "(show a short message), set_text {target,text} "
+                    + "(change a text widget's text), set_visibility "
+                    + "{target,visible} or {target,state} (visible, "
+                    + "gone, invisible), set_enabled {target,enabled}, "
+                    + "finish {} (close the screen). Example: "
+                    + "{\"activity\":\"MainActivity\",\"target\":"
+                    + "\"button1\",\"event\":\"onClick\",\"blocks\":[{"
+                    + "\"block\":\"toast\",\"message\":\"Saved\"},{\"block\":"
+                    + "\"set_text\",\"target\":\"textview1\",\"text\":"
+                    + "\"Done\"}]}. Use target \"activity\" with an "
+                    + "activity event (onCreate, onResume, ...) for "
+                    + "things that happen when the screen starts. The "
+                    + "user must approve before anything changes.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("activity", stringSchema(
+                    "The screen, e.g. MainActivity"));
+            properties.add("target", stringSchema(
+                    "The widget id from get_screen, or \"activity\" "
+                            + "for the screen's own events"));
+            properties.add("event", stringSchema(
+                    "The event, e.g. onClick for a tap, onCreate for "
+                            + "when an activity-targeted screen starts"));
+            JsonObject blocksSchema = new JsonObject();
+            blocksSchema.addProperty("type", "array");
+            blocksSchema.addProperty("description",
+                    "The blocks to append, in order");
+            JsonObject item = new JsonObject();
+            item.addProperty("type", "object");
+            blocksSchema.add("items", item);
+            properties.add("blocks", blocksSchema);
+            return AgentTools.parameters(properties,
+                    "activity", "target", "event", "blocks");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to wire " + stringArg(args, "activity");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String asked = stringArg(args, "activity");
+            ProjectFileBean activity =
+                    SketchwareProjects.findActivity(scId, asked);
+            if (activity == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "There is no activity named \"" + asked
+                                + "\" in the working project.");
+            }
+            JsonArray blocks = args.has("blocks")
+                    && args.get("blocks").isJsonArray()
+                    ? args.getAsJsonArray("blocks") : null;
+            AgentLogic.Plan plan = AgentLogic.plan(session.context, scId,
+                    activity, stringArg(args, "target"),
+                    stringArg(args, "event"), blocks);
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("activity", activity.fileName);
+            clean.addProperty("target", plan.targetId);
+            clean.addProperty("event", plan.eventName);
+            clean.addProperty("activity_event", plan.activityEvent);
+            clean.addProperty("existing", plan.existingCount);
+            clean.add("blocks", blocks);
+
+            StringBuilder body = new StringBuilder(plan.header);
+            for (String line : plan.lines) {
+                body.append("\n• ").append(line);
+            }
+            if (plan.existingCount > 0) {
+                body.append("\n(Runs after the ")
+                        .append(plan.existingCount)
+                        .append(" block")
+                        .append(plan.existingCount == 1 ? "" : "s")
+                        .append(" this event already has.)");
+            } else if (!plan.eventExists) {
+                body.append("\n(This creates the ")
+                        .append(plan.eventName).append(" event.)");
+            }
+            return new AgentProposal(name(), clean, scId,
+                    "Wire " + SketchwareProjects.activityName(activity)
+                            + " in " + project.name,
+                    body.toString(),
+                    "If this screen's logic is open in the editor, "
+                            + "close it before approving — the editor "
+                            + "would overwrite the change when it saves. "
+                            + "Exact blocks:\n"
+                            + new com.google.gson.GsonBuilder()
+                                    .setPrettyPrinting().create()
+                                    .toJson(blocks));
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            if (!scId.equals(session.workingProjectId)) {
+                throw new ToolException("E_PROJECT_CHANGED",
+                        "The working project changed since this handler "
+                                + "was proposed, so it was not applied.");
+            }
+            ProjectFileBean activity = SketchwareProjects.findActivity(
+                    scId, stringArg(proposal.args, "activity"));
+            if (activity == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "That activity no longer exists.");
+            }
+            // Rebuild the plan from the frozen arguments; the plan
+            // re-reads the event, so any drift since the card was
+            // shown is caught either as a changed-block count or as
+            // a fresh generation proof.
+            JsonArray blocks = proposal.args.has("blocks")
+                    && proposal.args.get("blocks").isJsonArray()
+                    ? proposal.args.getAsJsonArray("blocks") : null;
+            AgentLogic.Plan plan = AgentLogic.plan(session.context, scId,
+                    activity, stringArg(proposal.args, "target"),
+                    stringArg(proposal.args, "event"), blocks);
+            if (plan.existingCount
+                    != intArg(proposal.args, "existing")) {
+                throw new ToolException("E_LOGIC_CHANGED",
+                        "This event's blocks changed since the handler "
+                                + "was proposed, so it was not applied. "
+                                + "Look at the screen again and propose "
+                                + "a fresh one.");
+            }
+            return AgentLogic.apply(session.context, plan);
+        }
+    }
+
+    private static int intArg(JsonObject args, String key) {
+        try {
+            return args.get(key).getAsInt();
+        } catch (Exception e) {
+            return -1;
         }
     }
 
