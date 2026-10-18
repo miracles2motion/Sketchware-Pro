@@ -904,7 +904,8 @@ public final class AgentEdits {
      * {@code "match_parent"} or {@code -1}, {@code "wrap_content"} or
      * {@code -2}, otherwise a dp count from 0 to 2000.
      */
-    private static int sizeOf(JsonObject op, String key) {
+    private static int sizeOf(JsonObject op, String key)
+            throws AgentTools.ToolException {
         JsonElement element = op.get(key);
         if (element != null && element.isJsonPrimitive()
                 && element.getAsJsonPrimitive().isString()) {
@@ -945,7 +946,8 @@ public final class AgentEdits {
      * {@code left/top/right/bottom} fields override. Values are dp.
      */
     private static int[] boxOf(
-            JsonObject op, int left, int top, int right, int bottom) {
+            JsonObject op, int left, int top, int right, int bottom)
+            throws AgentTools.ToolException {
         if (op.has("dp")) {
             int all = boxSide(op, "dp");
             left = top = right = bottom = all;
@@ -965,7 +967,8 @@ public final class AgentEdits {
         return new int[]{left, top, right, bottom};
     }
 
-    private static int boxSide(JsonObject op, String key) {
+    private static int boxSide(JsonObject op, String key)
+            throws AgentTools.ToolException {
         int value = intOf(op, key, -1);
         if (value < 0 || value > 500) {
             throw new AgentTools.ToolException("E_BAD_SIZE",
@@ -984,7 +987,8 @@ public final class AgentEdits {
     }
 
     /** Booleans written three ways by models: true, "true", or 1. */
-    private static boolean boolOf(JsonObject op, String key) {
+    private static boolean boolOf(JsonObject op, String key)
+            throws AgentTools.ToolException {
         JsonElement element = op.get(key);
         if (element != null && element.isJsonPrimitive()) {
             if (element.getAsJsonPrimitive().isBoolean()) {
@@ -1007,7 +1011,8 @@ public final class AgentEdits {
     }
 
     /** Android gravity names to {@link LayoutBean} constants. */
-    private static int gravityOf(JsonObject op) {
+    private static int gravityOf(JsonObject op)
+            throws AgentTools.ToolException {
         String word = stringOf(op, "gravity").trim()
                 .toLowerCase(Locale.ROOT).replace(' ', '_');
         return switch (word) {
