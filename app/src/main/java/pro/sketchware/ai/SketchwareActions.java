@@ -285,6 +285,11 @@ public final class SketchwareActions {
         backupProjectOnce(scId);
         target.options = options;
         target.orientation = orientation;
+        if ((options & ProjectFileBean.OPTION_ACTIVITY_FAB) != 0) {
+            // The screen manager enables the design library the moment
+            // a floating button is switched on (Fw's option save).
+            jC.c(scId).c().useYn = "Y";
+        }
         jC.b(scId).a(activities);
         jC.b(scId).b(customViews);
         jC.b(scId).l();

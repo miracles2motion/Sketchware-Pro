@@ -1075,6 +1075,13 @@ public final class AgentTools {
             fullscreen.addProperty("description",
                     "Fullscreen (true) or normal (false)");
             properties.add("fullscreen", fullscreen);
+            JsonObject floatingButton = new JsonObject();
+            floatingButton.addProperty("type", "boolean");
+            floatingButton.addProperty("description",
+                    "Show the floating action button (true) or hide it "
+                            + "(false). Its icon is set with edit_screen's "
+                            + "set_fab.");
+            properties.add("floating_button", floatingButton);
             JsonObject orientation = new JsonObject();
             orientation.addProperty("type", "string");
             orientation.addProperty("description",
@@ -1125,6 +1132,15 @@ public final class AgentTools {
                 lines.add("Make " + SketchwareProjects.activityName(target)
                         + (full ? " fullscreen" : " not fullscreen"));
             }
+            if (args.has("floating_button")) {
+                boolean show = args.get("floating_button").getAsBoolean();
+                options = show
+                        ? options | ProjectFileBean.OPTION_ACTIVITY_FAB
+                        : options & ~ProjectFileBean.OPTION_ACTIVITY_FAB;
+                lines.add((show ? "Show " : "Hide ")
+                        + SketchwareProjects.activityName(target)
+                        + "'s floating button");
+            }
             if (args.has("orientation")) {
                 String word = stringArg(args, "orientation")
                         .toLowerCase(Locale.ROOT);
@@ -1140,8 +1156,8 @@ public final class AgentTools {
             }
             if (lines.isEmpty()) {
                 throw new ToolException("E_BAD_OP",
-                        "Nothing to change: pass toolbar, fullscreen "
-                                + "and/or orientation.");
+                        "Nothing to change: pass toolbar, fullscreen, "
+                                + "floating_button and/or orientation.");
             }
             SketchwareProjects.ProjectInfo project =
                     SketchwareProjects.project(scId);
