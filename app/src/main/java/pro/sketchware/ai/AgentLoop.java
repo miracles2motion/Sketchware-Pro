@@ -46,7 +46,17 @@ public class AgentLoop {
                     + "tools tell you is invisible to the user — answer in "
                     + "plain words and never show raw tool output, ids, or "
                     + "JSON. If a tool reports that no working project is "
-                    + "chosen, relay its guidance to the user.";
+                    + "chosen, relay its guidance to the user. When the user "
+                    + "leaves a choice open or says they don't know the "
+                    + "options (\"show me\", \"I don't know many…\", \"not "
+                    + "sure\"), never silently pick a taste choice for them "
+                    + "and never hide it inside an approval card: offer "
+                    + "three to five named options in plain words (for "
+                    + "colours, friendly names with their hex), say which "
+                    + "you'd suggest in one short line, and end your turn "
+                    + "so they can pick. Only trivial cosmetics needed to "
+                    + "finish a build you've already been asked for "
+                    + "(spacing, placeholder text) may be chosen quietly.";
 
     public interface Listener {
         /** A quiet activity line, e.g. "Looked at MainActivity". */
