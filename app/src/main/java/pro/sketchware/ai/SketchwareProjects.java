@@ -222,6 +222,31 @@ public final class SketchwareProjects {
         return summary;
     }
 
+    /**
+     * The project's resource names, through the resource manager's own
+     * listings (the same calls the logic editor's pickers use:
+     * {@code kC.m()} images, {@code kC.p()} sounds, {@code kC.k()} fonts).
+     */
+    public static Resources resources(String scId) {
+        Resources resources = new Resources();
+        try {
+            a.a.a.kC store = jC.d(scId);
+            resources.images.addAll(store.m());
+            resources.sounds.addAll(store.p());
+            resources.fonts.addAll(store.k());
+        } catch (Exception ignored) {
+            // Unreadable resources read as "none".
+        }
+        return resources;
+    }
+
+    /** A project's image, sound and font names. */
+    public static final class Resources {
+        public final List<String> images = new ArrayList<>();
+        public final List<String> sounds = new ArrayList<>();
+        public final List<String> fonts = new ArrayList<>();
+    }
+
     /** One activity's declared logic-side names. */
     public static final class LogicSummary {
         public final List<String> components = new ArrayList<>();

@@ -113,6 +113,7 @@ public final class AgentTools {
     static {
         register(new ProjectSummary());
         register(new ListActivities());
+        register(new ListResources());
         register(new GetScreen());
         register(new CreateProject());
         register(new CreateActivity());
@@ -413,6 +414,44 @@ public final class AgentTools {
             JsonObject result = new JsonObject();
             result.add("activities", activities);
             result.add("custom_views", customViews);
+            return result;
+        }
+    }
+
+    /** list_resources: the project's image, sound and font names. */
+    private static final class ListResources implements Tool {
+        @Override
+        public String name() {
+            return "list_resources";
+        }
+
+        @Override
+        public String description() {
+            return "Lists the working project's resources by name: "
+                    + "images (for set_image and set_background_image), "
+                    + "sounds, and fonts.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            return AgentTools.parameters(new JsonObject());
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Listed the project's resources";
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            SketchwareProjects.Resources resources =
+                    SketchwareProjects.resources(scId);
+            JsonObject result = new JsonObject();
+            result.add("images", namesJson(resources.images));
+            result.add("sounds", namesJson(resources.sounds));
+            result.add("fonts", namesJson(resources.fonts));
             return result;
         }
     }
