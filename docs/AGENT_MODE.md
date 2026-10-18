@@ -462,15 +462,31 @@ Device test findings (SportyNivida / Sporty Bet):
   set_background, set_text_color, set_text_size, remove_widget,
   move_widget; max 12) are simulated on a copy of the screen and
   validated against the evolving tree (parent must exist or be added
-  earlier in the same call; containers only; no cycles; exactly one
-  root). Widget ids are app-allocated (the app's own prefix+counter
-  naming) unless the model supplies a valid free one. Colours accept
-  #RRGGBB/#AARRGGBB and the project tokens @primary/@primary_dark/
-  @accent, resolved from the project's own theme colours at write.
+  earlier in the same call; containers only; no cycles). Widget ids are
+  app-allocated (the app's own prefix+counter naming) unless the model
+  supplies a valid free one. Colours accept #RRGGBB/#AARRGGBB and the
+  project tokens @primary/@primary_dark/@accent, resolved from the
+  project's own theme colours at write.
 - Proposals freeze allocated ids and a SHA-256 screen revision;
   execution refuses with E_SCREEN_CHANGED if the screen moved since.
-  Save goes through the editor's own `cC.c(sc_id).b(xml, beans)`,
-  then the screen is read back and compared to the approved sim.
+  Save replaces the screen in the project data manager's live view map
+  (`jC.a(sc_id).c.put(xml, beans)`, the app's own whole-screen replace
+  path), runs the app's save-on-close commit, then reads the screen
+  back and compares it to the approved sim.
+- Device failure root-caused 2026-10-18 from Sketchware's own code:
+  the screen root is virtual (owned by `InjectRootLayoutManager`,
+  default vertical LinearLayout) and is NOT a stored bean. Stored
+  top-level widgets carry the literal parent `"root"` — the palette
+  drop path (`ViewPane.updateViewBeanProperties`), `ViewBeanParser`,
+  and preset beans all write exactly that, and Sketchware's view
+  normalizer (`eC.a`, also invoked by its serializer) dereferences
+  `bean.parent.equals("root")`. The agent's earlier invented root bean
+  with `parent = null` therefore crashed saving and editor load with
+  an NPE. Fix: widgets are added/moved with parent `"root"` and the
+  real root type as `parentType`; no stored root is planted; saves are
+  pre-checked through `eC.a(...)`; a failed commit restores the
+  previous screen in the in-memory store so later reads cannot claim
+  an unsaved edit happened.
 - One-time project backup (slice 2) precedes the first edit too.
   Approval details warn when the screen might be open in the editor.
 - Still open from the risk register: a hard editor-open lock (the

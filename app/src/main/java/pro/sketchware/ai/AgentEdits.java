@@ -32,6 +32,15 @@ public final class AgentEdits {
     /** Hard cap on operations in one edit, per the risk register. */
     public static final int MAX_OPS = 12;
 
+    /**
+     * The screen itself is a virtual root in Sketchware's data model: it is
+     * not one of the stored {@link ViewBean}s. Widgets placed directly on a
+     * screen carry this literal parent id (see {@code ViewBeanParser} and
+     * the palette drop path in {@code ViewEditor}); Sketchware's own view
+     * normalizer dereferences it with {@code bean.parent.equals("root")}.
+     */
+    private static final String ROOT_PARENT = "root";
+
     private static final Pattern ID_PATTERN =
             Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,39}");
     private static final Pattern COLOR_PATTERN =
@@ -90,9 +99,28 @@ public final class AgentEdits {
     public static Outcome simulate(String scId, ArrayList<ViewBean> base,
                                    JsonArray ops, boolean frozen)
             throws AgentTools.ToolException {
+        return simulate(scId, base, ops, frozen,
+                inferRootParentType(base));
+    }
+
+    public static Outcome simulate(String scId, ArrayList<ViewBean> base,
+                                   JsonArray ops, boolean frozen,
+                                   int rootParentType)
+            throws AgentTools.ToolException {
         ArrayList<ViewBean> work = deepCopy(base);
         Map<String, ViewBean> byId = new HashMap<>();
         for (ViewBean bean : work) {
+            // Older or hand-made data can carry a null/empty parent for a
+            // top-level widget. Sketchware's stored form is the literal
+            // "root" parent; normalize the copy so the saved screen uses
+            // the same shape the editor itself writes.
+            if (bean.parent == null || bean.parent.isEmpty()
+                    || ROOT_PARENT.equalsIgnoreCase(bean.parent)) {
+                bean.parent = ROOT_PARENT;
+                if (bean.parentType < 0) {
+                    bean.parentType = rootParentType;
+                }
+            }
             byId.put(bean.id, bean);
         }
         List<String> lines = new ArrayList<>();
@@ -105,11 +133,9 @@ public final class AgentEdits {
             }
             JsonObject op = element.getAsJsonObject().deepCopy();
             String kind = normalizeKind(op);
-            if ("add_widget".equals(kind)) {
-                prepareRoot(op, work, byId, lines, frozenOps, frozen);
-            }
             switch (kind) {
-                case "add_widget" -> applyAdd(scId, op, work, byId, lines, frozen);
+                case "add_widget" -> applyAdd(scId, op, work, byId, lines,
+                        frozen, rootParentType);
                 case "set_text" -> {
                     ViewBean bean = requireWidget(op, byId);
                     String text = stringOf(op, "text");
@@ -169,29 +195,31 @@ public final class AgentEdits {
                 case "move_widget" -> {
                     ViewBean bean = requireWidget(op, byId);
                     String parentId = stringOf(op, "parent");
-                    if ("root".equalsIgnoreCase(parentId)) {
-                        ViewBean root = rootOf(work);
-                        parentId = root == null ? parentId : root.id;
-                    }
-                    ViewBean parent = byId.get(parentId);
-                    if (parent == null) {
+                    boolean toScreen = parentId.isEmpty()
+                            || ROOT_PARENT.equalsIgnoreCase(parentId);
+                    ViewBean parent = toScreen ? null : byId.get(parentId);
+                    if (!toScreen && parent == null) {
                         throw new AgentTools.ToolException("E_NO_PARENT",
                                 "There is no widget called " + parentId
                                         + " to move into.");
                     }
-                    if (!isContainer(parent.type)) {
+                    if (!toScreen && !isContainer(parent.type)) {
                         throw new AgentTools.ToolException("E_BAD_PARENT",
                                 typeName(parent.type) + " cannot hold other "
                                         + "widgets.");
                     }
-                    if (subtreeIds(bean.id, work).contains(parentId)) {
+                    if (!toScreen
+                            && subtreeIds(bean.id, work).contains(parentId)) {
                         throw new AgentTools.ToolException("E_CYCLE",
                                 "A widget cannot be moved inside itself or "
                                         + "its children.");
                     }
-                    bean.parent = parentId;
-                    bean.parentType = parent.type;
-                    lines.add("Move " + bean.id + " into " + parentId);
+                    bean.parent = toScreen ? ROOT_PARENT : parent.id;
+                    bean.parentType = toScreen ? rootParentType : parent.type;
+                    bean.index = nextIndex(work, bean.parent, bean.id);
+                    lines.add(toScreen
+                            ? "Move " + bean.id + " to the screen"
+                            : "Move " + bean.id + " into " + parent.id);
                 }
                 default -> throw new AgentTools.ToolException("E_BAD_OP",
                         "Unknown operation \"" + kind + "\". Every "
@@ -205,72 +233,32 @@ public final class AgentEdits {
             frozenOps.add(op);
         }
 
-        if (!work.isEmpty()) {
-            int roots = 0;
-            for (ViewBean bean : work) {
-                if (bean.parent == null || bean.parent.isEmpty()) {
-                    roots++;
-                }
-                if (bean.parent != null && !bean.parent.isEmpty()
-                        && !byId.containsKey(bean.parent)) {
-                    throw new AgentTools.ToolException("E_TREE",
-                            bean.id + " would be left without a parent.");
-                }
-            }
-            if (roots != 1) {
+        for (ViewBean bean : work) {
+            if (bean.id == null || bean.id.isEmpty()
+                    || ROOT_PARENT.equals(bean.id)) {
                 throw new AgentTools.ToolException("E_TREE",
-                        "A screen needs exactly one top-level layout; this "
-                                + "edit would leave " + roots + ".");
+                        "A widget is missing its id, or uses the reserved "
+                                + "screen id.");
+            }
+            if (bean.parent == null || bean.parent.isEmpty()) {
+                throw new AgentTools.ToolException("E_TREE",
+                        bean.id + " would be left without the screen "
+                                + "parent Sketchware expects.");
+            }
+            if (!ROOT_PARENT.equals(bean.parent)
+                    && !byId.containsKey(bean.parent)) {
+                throw new AgentTools.ToolException("E_TREE",
+                        bean.id + " would be left without a parent.");
             }
         }
         return new Outcome(work, lines, frozenOps);
     }
 
-    /**
-     * Screens always have one root layout; the editor simply shows it.
-     * A brand-new screen has none saved yet, so the first widget that
-     * needs one plants it — as its own approved line, frozen into the
-     * ops so execution replays exactly what was approved.
-     */
-    private static void prepareRoot(JsonObject op, ArrayList<ViewBean> work,
-                                    Map<String, ViewBean> byId,
-                                    List<String> lines,
-                                    JsonArray frozenOps, boolean frozen)
-            throws AgentTools.ToolException {
-        if (rootOf(work) != null) {
-            return;
-        }
-        String parentId = stringOf(op, "parent");
-        if (!parentId.isEmpty() && !"root".equalsIgnoreCase(parentId)) {
-            return;
-        }
-        String typeName = stringOf(op, "type");
-        Integer type = typeByName(typeName);
-        if (type != null && isContainer(type) && parentId.isEmpty()) {
-            return; // the widget itself becomes the root
-        }
-        if (frozen) {
-            // The proposal's first frozen op plants the root; when it is
-            // replayed this add sees it and plants nothing more.
-            return;
-        }
-        String rootId = allocateId(ViewBean.VIEW_TYPE_LAYOUT_LINEAR,
-                byId.keySet());
-        JsonObject rootOp = new JsonObject();
-        rootOp.addProperty("op", "add_widget");
-        rootOp.addProperty("type", "LinearLayout");
-        rootOp.addProperty("id", rootId);
-        frozenOps.add(rootOp);
-        ViewBean root = new ViewBean(rootId, ViewBean.VIEW_TYPE_LAYOUT_LINEAR);
-        work.add(root);
-        byId.put(rootId, root);
-        lines.add("Add LinearLayout as the screen's layout");
-    }
-
     private static void applyAdd(String scId, JsonObject op,
                                  ArrayList<ViewBean> work,
                                  Map<String, ViewBean> byId,
-                                 List<String> lines, boolean frozen)
+                                 List<String> lines, boolean frozen,
+                                 int rootParentType)
             throws AgentTools.ToolException {
         String typeName = stringOf(op, "type");
         Integer type = typeByName(typeName);
@@ -279,15 +267,10 @@ public final class AgentEdits {
                     "Unknown widget type \"" + typeName + "\".");
         }
         String parentId = stringOf(op, "parent");
+        boolean onScreen = parentId.isEmpty()
+                || ROOT_PARENT.equalsIgnoreCase(parentId);
         ViewBean parent = null;
-        if (parentId.isEmpty() || "root".equalsIgnoreCase(parentId)) {
-            parent = rootOf(work);
-            if (parent == null && !isContainer(type)) {
-                throw new AgentTools.ToolException("E_NEEDS_LAYOUT",
-                        "The screen is empty: add a layout (e.g. "
-                                + "LinearLayout) before adding widgets.");
-            }
-        } else {
+        if (!onScreen) {
             parent = byId.get(parentId);
             if (parent == null) {
                 throw new AgentTools.ToolException("E_NO_PARENT",
@@ -304,6 +287,11 @@ public final class AgentEdits {
         }
 
         String id = stringOf(op, "id");
+        if (ROOT_PARENT.equalsIgnoreCase(id)) {
+            throw new AgentTools.ToolException("E_BAD_ID",
+                    "\"root\" is Sketchware's reserved name for the screen "
+                            + "itself; choose another widget id.");
+        }
         if (frozen) {
             if (id.isEmpty() || byId.containsKey(id)) {
                 throw new AgentTools.ToolException("E_DUPLICATE_ID",
@@ -325,8 +313,12 @@ public final class AgentEdits {
         }
 
         ViewBean bean = new ViewBean(id, type);
-        bean.parent = parent == null ? null : parent.id;
-        bean.parentType = parent == null ? -1 : parent.type;
+        // The palette beans the editor drops carry the class name here
+        // (IconButton/IconLinear*/ViewBeanParser all set it).
+        bean.convert = typeName(type);
+        bean.parent = onScreen ? ROOT_PARENT : parent.id;
+        bean.parentType = onScreen ? rootParentType : parent.type;
+        bean.index = nextIndex(work, bean.parent, null);
         String text = stringOf(op, "text");
         if (!text.isEmpty()) {
             bean.text.text = text;
@@ -342,8 +334,7 @@ public final class AgentEdits {
         byId.put(id, bean);
         lines.add("Add " + typeName(type)
                 + (text.isEmpty() ? "" : " “" + shorten(text) + "”")
-                + (parent == null ? " as the screen layout"
-                        : " in " + parent.id)
+                + (onScreen ? " to the screen" : " in " + parent.id)
                 + colorNote);
     }
 
@@ -520,13 +511,33 @@ public final class AgentEdits {
         return bean;
     }
 
-    private static ViewBean rootOf(List<ViewBean> beans) {
-        for (ViewBean bean : beans) {
-            if (bean.parent == null || bean.parent.isEmpty()) {
-                return bean;
+    /** The screen root's widget type, when a screen already records it. */
+    private static int inferRootParentType(List<ViewBean> beans) {
+        if (beans != null) {
+            for (ViewBean bean : beans) {
+                if (bean != null && ROOT_PARENT.equals(bean.parent)
+                        && bean.parentType >= 0) {
+                    return bean.parentType;
+                }
             }
         }
-        return null;
+        return ViewBean.VIEW_TYPE_LAYOUT_LINEAR;
+    }
+
+    /** The append position among the widgets sharing one parent. */
+    private static int nextIndex(List<ViewBean> beans, String parentId,
+                                 String excludeId) {
+        int max = -1;
+        for (ViewBean bean : beans) {
+            if (bean == null || bean.id == null
+                    || bean.id.equals(excludeId)) {
+                continue;
+            }
+            if (parentId.equals(bean.parent)) {
+                max = Math.max(max, bean.index);
+            }
+        }
+        return max + 1;
     }
 
     /** The widget and everything inside it, transitively. */

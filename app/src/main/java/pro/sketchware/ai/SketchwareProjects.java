@@ -9,6 +9,7 @@ import a.a.a.jC;
 import a.a.a.lC;
 import com.besome.sketch.beans.ProjectFileBean;
 import com.besome.sketch.beans.ViewBean;
+import pro.sketchware.managers.inject.InjectRootLayoutManager;
 
 /**
  * The agent's read-only window into Sketchware's own data.
@@ -154,6 +155,26 @@ public final class SketchwareProjects {
             }
         }
         return null;
+    }
+
+    /**
+     * The widget type of a screen's own root layout. The root is not a
+     * stored view bean; {@link InjectRootLayoutManager} owns it (default:
+     * a vertical LinearLayout), and widgets placed directly on the screen
+     * record it as their {@code parentType} — the editor's drop path does
+     * exactly this in {@code ViewPane.updateViewBeanProperties}.
+     */
+    public static int rootParentType(String scId, ProjectFileBean activity) {
+        try {
+            ViewBean root = new InjectRootLayoutManager(scId)
+                    .toBean(activity.getXmlName());
+            if (root != null) {
+                return root.type;
+            }
+        } catch (Exception ignored) {
+            // Fall through to Sketchware's default root.
+        }
+        return ViewBean.VIEW_TYPE_LAYOUT_LINEAR;
     }
 
     /** The beans of one screen, exactly as the editor loads them. */

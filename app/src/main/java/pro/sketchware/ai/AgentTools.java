@@ -513,7 +513,8 @@ public final class AgentTools {
                                 + " operations per edit.");
             }
             AgentEdits.Outcome outcome = AgentEdits.simulate(
-                    located.scId, located.beans, ops, false);
+                    located.scId, located.beans, ops, false,
+                    located.rootParentType);
             SketchwareProjects.ProjectInfo project =
                     SketchwareProjects.project(located.scId);
             JsonObject clean = new JsonObject();
@@ -571,13 +572,23 @@ public final class AgentTools {
             }
             JsonArray ops = proposal.args.getAsJsonArray("ops");
             AgentEdits.Outcome outcome = AgentEdits.simulate(
-                    located.scId, current, ops, true);
+                    located.scId, current, ops, true, located.rootParentType);
             try {
                 SketchwareActions.backupProjectOnce(located.scId);
                 SketchwareActions.saveScreen(located.scId, located.activity,
                         outcome.beans);
                 SketchwareActions.commitProject(located.scId);
             } catch (Exception e) {
+                // The data manager holds the screen in memory as well as on
+                // disk. If the commit failed, put the previous screen back
+                // in memory too — otherwise later reads (and the editor,
+                // in this same process) would see an edit that never saved.
+                try {
+                    SketchwareActions.saveScreen(located.scId,
+                            located.activity, current);
+                } catch (Exception ignored) {
+                    // Best effort: the save failure is the error to report.
+                }
                 throw new ToolException("E_SAVE_FAILED",
                         "Saving the screen failed: "
                                 + String.valueOf(e.getMessage()));
@@ -613,19 +624,23 @@ public final class AgentTools {
                                 + "the working project.");
             }
             return new LocatedScreen(scId, activity,
-                    SketchwareProjects.screenBeans(scId, activity));
+                    SketchwareProjects.screenBeans(scId, activity),
+                    SketchwareProjects.rootParentType(scId, activity));
         }
 
         private static final class LocatedScreen {
             final String scId;
             final ProjectFileBean activity;
             final ArrayList<com.besome.sketch.beans.ViewBean> beans;
+            final int rootParentType;
 
             LocatedScreen(String scId, ProjectFileBean activity,
-                          ArrayList<com.besome.sketch.beans.ViewBean> beans) {
+                          ArrayList<com.besome.sketch.beans.ViewBean> beans,
+                          int rootParentType) {
                 this.scId = scId;
                 this.activity = activity;
                 this.beans = beans;
+                this.rootParentType = rootParentType;
             }
         }
     }

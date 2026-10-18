@@ -165,13 +165,22 @@ public final class SketchwareActions {
      * Replaces a screen's view beans the way the app itself does: the project
      * data manager's ({@code eC}) live view map IS the store, and screen reads
      * come from it — the app's own undo/redo replaces whole screens via
-     * {@code jC.a(sc_id).c.put(xmlName, beanspa)}. (The {@code cC} manager used
-     * here previously only records undo history; it never touches the store,
-     * which is why saved edits never appeared on re-read.) The change is
+     * {@code jC.a(sc_id).c.put(xmlName, beans)} ({@code ViewEditorFragment}'s
+     * {@code ACTION_TYPE_OVERRIDE} path). (The {@code cC} manager used here
+     * previously only records undo history; it never touches the store,
+     * which is why saved edits never appeared on re-read.)
+     *
+     * <p>Before anything is stored, the beans are run through Sketchware's
+     * own view normalizer — the same {@code eC.a(...)} the editor applies
+     * when it loads a screen and the serializer applies when it writes one.
+     * It dereferences {@code bean.parent.equals("root")} for every widget,
+     * so a screen the editor would choke on fails here, before the store
+     * is touched, instead of inside the editor later. The change is
      * flushed to disk by {@link #commitProject}.
      */
     public static void saveScreen(String scId, ProjectFileBean activity,
                                   ArrayList<ViewBean> beans) {
+        eC.a(beans);
         eC store = jC.a(scId);
         if (store == null) throw new IllegalStateException("project data is unavailable");
         store.c.put(activity.getXmlName(), beans);
