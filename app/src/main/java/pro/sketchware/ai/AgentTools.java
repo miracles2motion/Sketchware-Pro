@@ -133,7 +133,10 @@ public final class AgentTools {
         register(new EditActivity());
         register(new EditScreen());
         register(new SetEventHandler());
+        register(new GetEventLogic());
+        register(new EditEventBlock());
         register(new CreateVariable());
+        register(new EditProjectTheme());
         register(new BuildProject());
     }
 
@@ -328,6 +331,23 @@ public final class AgentTools {
             return "";
         }
         return args.get(key).getAsString().trim();
+    }
+
+    private static boolean booleanArg(JsonObject args, String key) {
+        try {
+            return args.has(key) && !args.get(key).isJsonNull()
+                    && args.get(key).getAsBoolean();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static JsonArray intArrayOfProperty(int[] values) {
+        JsonArray array = new JsonArray();
+        for (int value : values) {
+            array.add(value);
+        }
+        return array;
     }
 
     private static JsonObject stringSchema(String description) {
@@ -969,7 +989,11 @@ public final class AgentTools {
                     + "activity event like onCreate. The new blocks are "
                     + "APPENDED after whatever the event already does — "
                     + "check get_screen first, which lists each event "
-                    + "and how many blocks it already has. Blocks (1 to "
+                    + "and how many blocks it already has. Never append "
+                    + "a second copy of a block to replace the first: "
+                    + "to change or remove one that is already wired, "
+                    + "read it with get_event_logic and use "
+                    + "edit_event_block. Blocks (1 to "
                     + AgentLogic.MAX_BLOCKS + "): toast {message} "
                     + "(show a short message) or {from_variable} (show "
                     + "a string variable's value), set_text {target,"
@@ -977,7 +1001,17 @@ public final class AgentTools {
                     + "from_variable} (use a string variable's value), "
                     + "set_visibility {target,visible} or {target,state} "
                     + "(visible, gone, invisible), set_enabled {target,"
-                    + "enabled}, finish {} (close the screen), "
+                    + "enabled}, set_text_color {target,color} (a text "
+                    + "widget's text colour, #RRGGBB), set_hint {target,"
+                    + "text} (an EditText's hint), set_clickable {target,"
+                    + "clickable} (whether taps land), set_image_url "
+                    + "{target,url} (load an image from a URL into an "
+                    + "ImageView), set_progress {target,value} (a "
+                    + "SeekBar's progress), copy_to_clipboard {text}, "
+                    + "set_screen_title {text}, open_drawer {} and "
+                    + "close_drawer {} (the screen's navigation drawer), "
+                    + "load_url {target,url} (a WebView), finish {} "
+                    + "(close the screen), "
                     + "set_variable {variable,value} or {variable,"
                     + "from_variable} (assign), increase {variable} "
                     + "and decrease {variable} (add or subtract 1 from "
@@ -1215,7 +1249,11 @@ public final class AgentTools {
             }
             String problem = nameConflict(session, scId, activity, name);
             if (problem != null) {
-                throw new ToolException("E_NAME_TAKEN", problem);
+                throw new ToolException("E_NAME_TAKEN", problem
+                        + " If you created it earlier in this turn, "
+                        + "that create already succeeded — continue "
+                        + "with the rest of the task instead of "
+                        + "creating it again or asking about it.");
             }
             return new Checked(activity, name, typeCode,
                     SketchwareProjects.variableTypeName(typeCode));
@@ -1441,6 +1479,326 @@ public final class AgentTools {
                 // never touches project data anyway.
             }
             return AgentBuild.build(session.context, scId);
+        }
+    }
+
+    /** get_event_logic (read-only): an event's statements numbered. */
+    private static final class GetEventLogic implements Tool {
+        @Override
+        public String name() {
+            return "get_event_logic";
+        }
+
+        @Override
+        public String description() {
+            return "Reads what one event already does, statement by "
+                    + "statement, numbered the way edit_event_block "
+                    + "addresses them ([2] for the second statement, "
+                    + "[1,2] for the second statement inside a "
+                    + "container). Call this before changing or "
+                    + "removing a block — never guess positions. "
+                    + "get_screen already tells you which events exist "
+                    + "and how many blocks each has; this lists them.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("activity", stringSchema(
+                    "The screen, e.g. MainActivity"));
+            properties.add("target", stringSchema(
+                    "The widget id from get_screen, or \"activity\" "
+                            + "for the screen's own events"));
+            properties.add("event", stringSchema(
+                    "The event, e.g. onClick"));
+            return AgentTools.parameters(properties,
+                    "activity", "target", "event");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Looking at what " + stringArg(args, "event")
+                    + " does";
+        }
+
+        @Override
+        public boolean mutates() {
+            return false;
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            ProjectFileBean activity = SketchwareProjects.findActivity(
+                    scId, stringArg(args, "activity"));
+            if (activity == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "There is no activity named \""
+                                + stringArg(args, "activity")
+                                + "\" in the working project.");
+            }
+            AgentLogic.EditPlan probe = AgentLogic.describeEvent(
+                    scId, activity, stringArg(args, "target"),
+                    stringArg(args, "event"));
+            JsonObject result = new JsonObject();
+            result.addProperty("event", probe.header);
+            result.addProperty("blocks", probe.eventRendering);
+            result.addProperty("count", probe.existingCount);
+            return result;
+        }
+    }
+
+    /** edit_event_block: change or remove one stored statement. */
+    private static final class EditEventBlock implements Tool {
+        @Override
+        public String name() {
+            return "edit_event_block";
+        }
+
+        @Override
+        public String description() {
+            return "Changes or removes one statement that is already "
+                    + "wired into an event — the fix for pile-ups like "
+                    + "two set_text blocks saying the same thing. "
+                    + "Read the event with get_event_logic first, then "
+                    + "pass block_path (the statement's numbers, e.g. "
+                    + "[2], or [1,2] inside a container). To change a "
+                    + "value, pass replace_with {text|message|value|"
+                    + "number: the new value} — only values a block "
+                    + "holds directly can change (a toast's message, a "
+                    + "set-text's text, a variable's value or number). "
+                    + "To remove the statement, pass remove: true. The "
+                    + "event's first statement cannot be removed — "
+                    + "change its value instead. The user approves "
+                    + "first; if the event changed since the card, the "
+                    + "edit refuses rather than touching the wrong "
+                    + "block.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("activity", stringSchema(
+                    "The screen, e.g. MainActivity"));
+            properties.add("target", stringSchema(
+                    "The widget id, or \"activity\" for the screen's "
+                            + "own events"));
+            properties.add("event", stringSchema("The event name"));
+            JsonObject path = new JsonObject();
+            path.addProperty("type", "array");
+            path.addProperty("description",
+                    "1-based statement positions from get_event_logic");
+            properties.add("block_path", path);
+            properties.add("remove", new JsonObject());
+            JsonObject with = new JsonObject();
+            with.addProperty("type", "object");
+            with.addProperty("description",
+                    "{text|message|value|number: new value}");
+            properties.add("replace_with", with);
+            return AgentTools.parameters(properties,
+                    "activity", "target", "event", "block_path");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to change a block in "
+                    + stringArg(args, "event");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            ProjectFileBean activity = SketchwareProjects.findActivity(
+                    scId, stringArg(args, "activity"));
+            if (activity == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "There is no activity named \""
+                                + stringArg(args, "activity")
+                                + "\" in the working project.");
+            }
+            JsonObject edit = new JsonObject();
+            edit.add("block_path", args.has("block_path")
+                    ? args.get("block_path") : new JsonArray());
+            edit.add("remove", args.has("remove") ? args.get("remove")
+                    : new com.google.gson.JsonPrimitive(false));
+            if (args.has("replace_with")) {
+                edit.add("replace_with", args.get("replace_with"));
+            }
+            AgentLogic.EditPlan plan = AgentLogic.planEdit(
+                    session.context, scId, activity,
+                    stringArg(args, "target"),
+                    stringArg(args, "event"), edit);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("activity", activity.fileName);
+            // Freeze the target FORM, like set_event_handler: for
+            // activity events plan.targetId is the event name itself,
+            // which would re-read as a (nonexistent) widget id.
+            clean.addProperty("target", plan.activityEvent
+                    ? "activity" : plan.targetId);
+            clean.addProperty("event", plan.eventName);
+            clean.addProperty("activity_event", plan.activityEvent);
+            clean.addProperty("existing", plan.existingCount);
+            clean.add("block_path", intArrayOfProperty(plan.targetPath));
+            clean.addProperty("remove", plan.remove);
+            if (!plan.values.isEmpty()) {
+                JsonObject with = new JsonObject();
+                for (AgentLogic.EditableValue value : plan.values) {
+                    with.addProperty(value.kind, value.newValue);
+                }
+                clean.add("values", with);
+            }
+            StringBuilder body = new StringBuilder(plan.header).append("\n");
+            if (plan.remove) {
+                body.append("Remove the statement: ")
+                        .append(plan.blockDescription);
+            } else {
+                for (AgentLogic.EditableValue value : plan.values) {
+                    body.append("Change ").append(value.kind)
+                            .append(" from “")
+                            .append(value.currentValue)
+                            .append("” to “").append(value.newValue)
+                            .append("”.");
+                }
+            }
+            return new AgentProposal(name(), clean, scId,
+                    "Change " + SketchwareProjects.activityName(activity)
+                            + " logic",
+                    body.toString(),
+                    "Position " + pathLabel(plan.targetPath)
+                            + " (" + plan.blockOpCode + "), "
+                            + plan.existingCount + " stored blocks:\n"
+                            + plan.eventRendering);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            if (!scId.equals(session.workingProjectId)) {
+                throw new ToolException("E_PROJECT_CHANGED",
+                        "The working project changed since this edit "
+                                + "was proposed, so it was not applied.");
+            }
+            ProjectFileBean activity = SketchwareProjects.findActivity(
+                    scId, stringArg(proposal.args, "activity"));
+            if (activity == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "That activity no longer exists.");
+            }
+            JsonObject edit = new JsonObject();
+            edit.add("block_path", proposal.args.get("block_path"));
+            edit.add("remove", new com.google.gson.JsonPrimitive(
+                    booleanArg(proposal.args, "remove")));
+            if (proposal.args.has("values")) {
+                edit.add("replace_with", proposal.args.get("values"));
+            }
+            AgentLogic.EditPlan plan = AgentLogic.planEdit(
+                    session.context, scId, activity,
+                    booleanArg(proposal.args, "activity_event")
+                            ? "activity"
+                            : stringArg(proposal.args, "target"),
+                    stringArg(proposal.args, "event"), edit);
+            if (plan.existingCount
+                    != intArg(proposal.args, "existing")) {
+                throw new ToolException("E_LOGIC_CHANGED",
+                        "This event's blocks changed since the edit "
+                                + "was proposed, so it was not applied.");
+            }
+            return AgentLogic.applyEdit(session.context, plan);
+        }
+
+        private static String pathLabel(int[] path) {
+            StringBuilder label = new StringBuilder();
+            for (int i = 0; i < path.length; i++) {
+                if (i > 0) label.append(", ");
+                label.append(path[i]);
+            }
+            return label.toString();
+        }
+    }
+
+    /** edit_project_theme: theme colours through the registry. */
+    private static final class EditProjectTheme implements Tool {
+        @Override
+        public String name() {
+            return "edit_project_theme";
+        }
+
+        @Override
+        public String description() {
+            return "Changes the working project's theme colours "
+                    + "(color_primary, color_primary_dark, "
+                    + "color_accent, color_control_highlight, "
+                    + "color_control_normal) to exact hex values — "
+                    + "the same ones the project settings screen "
+                    + "writes and a build turns into the app's "
+                    + "colors.xml. Present the new colour clearly on "
+                    + "the approval card with its before value. Wide "
+                    + "taste choices belong to ask_color first; this "
+                    + "tool is for exact values. Only a colour can "
+                    + "change here — no fonts, sounds or layouts.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            JsonObject colours = new JsonObject();
+            colours.addProperty("type", "object");
+            colours.addProperty("description",
+                    "Theme keys to new #RRGGBB / #AARRGGBB values");
+            properties.add("colors", colours);
+            return AgentTools.parameters(properties, "colors");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to change the project colours";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject colours = args.has("colors")
+                    && args.get("colors").isJsonObject()
+                    ? args.getAsJsonObject("colors") : new JsonObject();
+            AgentLogic.ThemePlan plan = AgentLogic.planTheme(scId,
+                    colours);
+            JsonObject clean = new JsonObject();
+            clean.add("colors", colours);
+            return new AgentProposal(name(), clean, scId,
+                    "Change " + project.name + " colours",
+                    plan.sentence,
+                    "Theme values written: "
+                            + plan.after.keySet());
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            if (!scId.equals(session.workingProjectId)) {
+                throw new ToolException("E_PROJECT_CHANGED",
+                        "The working project changed since this was "
+                                + "proposed, so it was not run.");
+            }
+            AgentLogic.ThemePlan plan = AgentLogic.planTheme(scId,
+                    proposal.args.getAsJsonObject("colors"));
+            return AgentLogic.applyTheme(plan);
         }
     }
 

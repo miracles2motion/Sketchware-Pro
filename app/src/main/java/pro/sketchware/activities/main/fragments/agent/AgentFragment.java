@@ -197,6 +197,8 @@ public class AgentFragment extends qA {
                     .removeOnGlobalLayoutListener(layoutListener);
         }
         layoutListener = null;
+        closePendingCard(getString(
+                R.string.agent_approval_not_applied_failed));
         binding = null;
         super.onDestroyView();
     }
@@ -472,6 +474,8 @@ public class AgentFragment extends qA {
     }
 
     private void stopGeneration() {
+        closePendingCard(getString(
+                R.string.agent_approval_not_applied_stopped));
         releaseApproval(false);
         if (agentLoop != null) {
             agentLoop.cancel();
@@ -692,6 +696,27 @@ public class AgentFragment extends qA {
             }
         }
         adapter.notifyItemChanged(messages.indexOf(card));
+    }
+
+    /**
+     * Closes a card whose turn died around it — stopped, failed, or
+     * the view went away — so it never sits there looking tappable
+     * after its agent thread is gone.
+     */
+    private void closePendingCard(String outcome) {
+        ChatMessage card = approvalCardMessage;
+        if (card == null
+                || !(ChatMessage.APPROVAL_PENDING.equals(card.approvalState)
+                        || ChatMessage.APPROVAL_WORKING
+                                .equals(card.approvalState))) {
+            return;
+        }
+        card.approvalState = ChatMessage.APPROVAL_FAILED;
+        card.approvalOutcome = outcome;
+        approvalCardMessage = null;
+        if (adapter != null && messages != null) {
+            adapter.notifyItemChanged(messages.indexOf(card));
+        }
     }
 
     /**
@@ -918,6 +943,10 @@ public class AgentFragment extends qA {
         if (binding == null) {
             return;
         }
+        // The turn is dead: a card still waiting on it must say so,
+        // not sit pending with live-looking buttons.
+        closePendingCard(getString(
+                R.string.agent_approval_not_applied_failed));
         flushPendingTokens();
         // Every failure keeps its bubble, marked as failed: a subtle
         // tap-to-retry line appears under it instead of a dead end.

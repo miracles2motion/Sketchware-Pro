@@ -720,3 +720,33 @@ Device test findings (SportyNivida / Sporty Bet):
   (3) reporter values everywhere, (4) control-flow containers,
   (5) components (Intent first), (6) map/list families. Raw-source
   and hosted-backend families stay out by design.
+- Wave 1 + first statement pack (2026-10-18, CI-pending):
+  (a) Block editing: `get_event_logic` renders one event's stored
+  statements numbered (paths like [2], [1,2] inside containers);
+  `edit_event_block` changes a value in place (toast message,
+  set-text text, string/number/boolean variable values) or removes
+  a statement by re-linking nextBlock/subStack1/subStack2. The
+  event's first stored bean is never removable (Fx generates from
+  index 0). Both plan against a fresh read, refuse on count/path
+  drift (`E_LOGIC_CHANGED`), back up, save via `eC.a`, commit, and
+  verify by read-back; replace additionally proves the after-state
+  generates different code via an Fx dry-run.
+  (b) `edit_project_theme`: the five theme colours from
+  `MyProjectSettingActivity.themeColorKeys`, read/written through
+  `lC.b(scId)`; yq generates colors.xml from that registry at
+  build time, so read-back is the verification. Drift between
+  card and tap refuses (`E_THEME_CHANGED`), backup first.
+  (c) Statement pack added to `set_event_handler`: set_text_color,
+  set_hint (EditText), set_clickable, set_image_url (ImageView,
+  Glide emission), copy_to_clipboard, set_screen_title,
+  open_drawer/close_drawer, load_url (WebView), set_progress
+  (SeekBar). Every opCode, slot list, and Fx emission checked
+  against `lq`/`Fx`; `setBackgroundColor` and
+  showKeyboard/hideKeyboard were dropped — provably absent from
+  Fx, so they would generate nothing.
+  (d) Three device-glitch fixes: a pending/working approval card
+  is closed as FAILED with a plain outcome when its turn dies
+  (stop, error, view destroyed); guidance now forbids re-issuing
+  a just-succeeded create and treats a follow-up E_NAME_TAKEN as
+  the earlier success (tool message says the same). The
+  model/key switch transcript lines were already in place.

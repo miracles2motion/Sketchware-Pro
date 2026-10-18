@@ -1009,6 +1009,8 @@ ACTION_VIEW
     <string name="agent_approval_done">Done</string>
     <string name="agent_approval_rejected">Rejected</string>
     <string name="agent_approval_failed">Something went wrong</string>
+    <string name="agent_approval_not_applied_stopped">Not applied — you stopped that turn before deciding.</string>
+    <string name="agent_approval_not_applied_failed">Not applied — that turn ended before this could run.</string>
     <string name="agent_install">Install</string>
     <string name="agent_install_latest">Install latest build</string>
     <string name="agent_install_built">Built %1$s · %2$s</string>
