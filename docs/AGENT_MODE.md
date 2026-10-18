@@ -516,6 +516,16 @@ Device test findings (SportyNivida / Sporty Bet):
   knowledge pack now also exports `widgets.json` (all 48 types,
   container flag, and the event names the logic editor offers per
   class, from `a.a.a.oq`) beside `blocks.json`.
+- Custom views are first-class screens: `list_activities` and
+  `project_summary` report them, `get_screen`/`edit_screen` resolve
+  them through the same bean store (Button `onClick` registration is
+  skipped — custom views have no logic file).
+- `project_summary` now reports each activity's declared logic side,
+  read through the code generator's own accessors (`eC.e/k/j/i/g`):
+  component ids, variable names, list names, more-block names, event
+  count. Slice-4 groundwork pinned down: an activity's blocks live in
+  `eC.b(javaName)` as a map keyed `targetId_eventName`, one event's
+  blocks in `eC.a(javaName, key)`, events in `eC.g(javaName)`.
 - One-time project backup (slice 2) precedes the first edit too.
   Approval details warn when the screen might be open in the editor.
 - Still open from the risk register: a hard editor-open lock (the

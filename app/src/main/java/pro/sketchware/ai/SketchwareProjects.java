@@ -178,6 +178,59 @@ public final class SketchwareProjects {
         return views;
     }
 
+    /**
+     * What one activity already declares, read through the same data
+     * manager accessors the code generator uses ({@code eC.e/k/j/i/g}):
+     * component ids, variable names, list names, more-block names, and
+     * how many events it has. Activities only; anything unreadable reads
+     * as empty rather than failing the turn.
+     */
+    public static LogicSummary logicSummary(String scId,
+                                            ProjectFileBean activity) {
+        LogicSummary summary = new LogicSummary();
+        if (activity.fileType
+                != ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
+            return summary;
+        }
+        try {
+            a.a.a.eC store = jC.a(scId);
+            String javaName = activity.getJavaName();
+            for (com.besome.sketch.beans.ComponentBean component
+                    : store.e(javaName)) {
+                summary.components.add(component.componentId);
+            }
+            for (android.util.Pair<Integer, String> variable
+                    : store.k(javaName)) {
+                // 6 is a raw field declaration and 9 an import; neither
+                // is a variable name.
+                if (variable.first != 6 && variable.first != 9) {
+                    summary.variables.add(variable.second);
+                }
+            }
+            for (android.util.Pair<Integer, String> list
+                    : store.j(javaName)) {
+                summary.lists.add(list.second);
+            }
+            for (android.util.Pair<String, String> moreBlock
+                    : store.i(javaName)) {
+                summary.moreBlocks.add(moreBlock.first);
+            }
+            summary.events = store.g(javaName).size();
+        } catch (Exception ignored) {
+            // An unreadable logic side reads as "nothing declared".
+        }
+        return summary;
+    }
+
+    /** One activity's declared logic-side names. */
+    public static final class LogicSummary {
+        public final List<String> components = new ArrayList<>();
+        public final List<String> variables = new ArrayList<>();
+        public final List<String> lists = new ArrayList<>();
+        public final List<String> moreBlocks = new ArrayList<>();
+        public int events;
+    }
+
     /** Display name of any editable screen file. */
     public static String screenName(ProjectFileBean file) {
         return file.fileType == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY

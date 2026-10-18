@@ -270,6 +270,18 @@ public final class AgentTools {
         return workingProjectId;
     }
 
+    /** Names as a JSON array, capped so a huge project stays one read. */
+    private static JsonArray namesJson(List<String> names) {
+        JsonArray array = new JsonArray();
+        for (String name : names) {
+            if (array.size() >= 24) {
+                break;
+            }
+            array.add(name);
+        }
+        return array;
+    }
+
     private static String stringArg(JsonObject args, String key) {
         if (args == null || !args.has(key) || args.get(key).isJsonNull()) {
             return "";
@@ -340,6 +352,13 @@ public final class AgentTools {
                         SketchwareProjects.activityName(activity));
                 screen.addProperty("widgets",
                         SketchwareProjects.screenBeans(scId, activity).size());
+                SketchwareProjects.LogicSummary logic =
+                        SketchwareProjects.logicSummary(scId, activity);
+                screen.add("components", namesJson(logic.components));
+                screen.add("variables", namesJson(logic.variables));
+                screen.add("lists", namesJson(logic.lists));
+                screen.add("more_blocks", namesJson(logic.moreBlocks));
+                screen.addProperty("events", logic.events);
                 screens.add(screen);
             }
             result.add("screens", screens);
