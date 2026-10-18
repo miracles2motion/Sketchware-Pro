@@ -1432,8 +1432,12 @@ public final class AgentLogic {
         if (exact != null) {
             return exact;
         }
+        // Models copy the user's words ("linear 1") as readily as the
+        // real id ("linear1"): compare space-free, case aside.
+        String wanted = target.replaceAll("[\\s_]+", "");
         for (ViewBean bean : byId.values()) {
-            if (bean.id.equalsIgnoreCase(target.trim())) {
+            if (bean.id.replaceAll("[\\s_]+", "")
+                    .equalsIgnoreCase(wanted)) {
                 return bean;
             }
         }

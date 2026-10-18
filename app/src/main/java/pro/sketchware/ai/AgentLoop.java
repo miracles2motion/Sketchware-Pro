@@ -47,7 +47,13 @@ public class AgentLoop {
                     + "can't do that yet — never invent manual "
                     + "instructions or walkthrough steps to cover the "
                     + "gap, and offer the closest thing you can do. "
-                    + "retry it. When a tool confirms a change "
+                    + "retry it. When a widget is not visible because "
+                    + "of where it sits in a layout, fix the placement: "
+                    + "move it into the screen's main container, or "
+                    + "adjust sizes and weights — do not restructure "
+                    + "the screen (for example swapping its main "
+                    + "container for a ScrollView) unless the user asks "
+                    + "for scrolling. When a tool confirms a change "
                     + "succeeded, that change is DONE — never propose "
                     + "the same create or edit again in the same turn. "
                     + "If a create then reports the name is already "
@@ -254,13 +260,18 @@ public class AgentLoop {
                             ? sameFailure + 1 : 1;
                     lastFailedCall = signature;
                     if (sameFailure >= 2) {
+                        String reason = result.has("message")
+                                ? result.get("message").getAsString()
+                                : "";
+                        String stopText = "The agent stopped: the same step "
+                                + "failed twice (" + call.name + ")."
+                                + (reason.isEmpty() ? ""
+                                        : " Last problem: " + reason)
+                                + " Tell me how you'd like to proceed.";
                         dispatch(listener, () -> listener.onError(
                                 new AiChatService.AiError(
                                         AiChatService.ErrorKind.HTTP, 0,
-                                        "The agent stopped: the same step "
-                                                + "failed twice (" + call.name
-                                                + "). Tell me how you'd like "
-                                                + "to proceed.")));
+                                        stopText)));
                         return;
                     }
                 } else {

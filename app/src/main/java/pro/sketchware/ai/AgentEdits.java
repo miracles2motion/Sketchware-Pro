@@ -705,11 +705,13 @@ public final class AgentEdits {
                     String parentId = stringOf(op, "parent");
                     boolean toScreen = parentId.isEmpty()
                             || ROOT_PARENT.equalsIgnoreCase(parentId);
-                    ViewBean parent = toScreen ? null : byId.get(parentId);
+                    ViewBean parent = toScreen ? null
+                            : resolveWidget(byId, parentId);
                     if (!toScreen && parent == null) {
                         throw new AgentTools.ToolException("E_NO_PARENT",
                                 "There is no widget called " + parentId
-                                        + " to move into.");
+                                        + " to move into. Widgets here: "
+                                        + idList(byId) + ".");
                     }
                     if (!toScreen && !isContainer(parent.type)) {
                         throw new AgentTools.ToolException("E_BAD_PARENT",
@@ -1002,13 +1004,14 @@ public final class AgentEdits {
                 || ROOT_PARENT.equalsIgnoreCase(parentId);
         ViewBean parent = null;
         if (!onScreen) {
-            parent = byId.get(parentId);
+            parent = resolveWidget(byId, parentId);
             if (parent == null) {
                 throw new AgentTools.ToolException("E_NO_PARENT",
                         "There is no widget called " + parentId
                                 + ". A widget can only be added to a layout "
                                 + "that exists or was added earlier in this "
-                                + "same edit.");
+                                + "same edit. Widgets here: "
+                                + idList(byId) + ".");
             }
             if (!isContainer(parent.type)) {
                 throw new AgentTools.ToolException("E_BAD_PARENT",
@@ -1474,14 +1477,60 @@ public final class AgentEdits {
         };
     }
 
+    /**
+     * Finds a widget by the id the model wrote. Models copy the
+     * user's words ("linear 1") as readily as the real id
+     * ("linear1"), so after an exact miss, ids are compared with
+     * spaces and underscores removed, case aside. Sketchware ids
+     * never contain spaces, so this cannot confuse two real ids.
+     */
+    private static ViewBean resolveWidget(Map<String, ViewBean> byId,
+                                          String raw) {
+        if (raw == null) {
+            return null;
+        }
+        ViewBean bean = byId.get(raw.trim());
+        if (bean != null) {
+            return bean;
+        }
+        String wanted = raw.replaceAll("[\\s_]+", "")
+                .toLowerCase(Locale.ROOT);
+        for (Map.Entry<String, ViewBean> entry : byId.entrySet()) {
+            if (entry.getKey().replaceAll("[\\s_]+", "")
+                    .toLowerCase(Locale.ROOT).equals(wanted)) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    /** Widget ids on the screen, for error messages that teach. */
+    private static String idList(Map<String, ViewBean> byId) {
+        StringBuilder list = new StringBuilder();
+        int shown = 0;
+        for (String id : byId.keySet()) {
+            if (shown == 24) {
+                list.append(", …");
+                break;
+            }
+            if (list.length() > 0) {
+                list.append(", ");
+            }
+            list.append(id);
+            shown++;
+        }
+        return list.toString();
+    }
+
     private static ViewBean requireWidget(JsonObject op,
                                           Map<String, ViewBean> byId)
             throws AgentTools.ToolException {
         String id = widgetIdOf(op);
-        ViewBean bean = byId.get(id);
+        ViewBean bean = resolveWidget(byId, id);
         if (bean == null) {
             throw new AgentTools.ToolException("E_NO_WIDGET",
-                    "There is no widget called " + id + " on this screen.");
+                    "There is no widget called " + id + " on this screen. "
+                            + "Widgets here: " + idList(byId) + ".");
         }
         return bean;
     }

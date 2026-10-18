@@ -776,3 +776,14 @@ Device test findings (SportyNivida / Sporty Bet):
   Caps: 8 per list, 3 containers deep, 24 statements total.
   Remaining waves: view/component reporters (e.g. text-of),
   components (Intent first), map/list variables.
+- Weak-model resilience (2026-10-18, from device screenshot:
+  edit_screen "failed twice" on moving webview1 into "linear 1"):
+  (a) Widget/parent lookup in edit_screen and wiring now tolerates
+  the user's spacing/case ("linear 1" resolves to linear1); ids
+  never contain spaces so this cannot confuse real ids.
+  (b) E_NO_WIDGET/E_NO_PARENT now list the screen's actual ids, so
+  a wrong guess is correctable in one retry instead of two.
+  (c) The loop's same-failure stop message now includes the actual
+  last problem, so the user sees why it stopped.
+  (d) Guidance: fix placement (move into the main container, or
+  sizes/weights) instead of restructuring screens unprompted.
