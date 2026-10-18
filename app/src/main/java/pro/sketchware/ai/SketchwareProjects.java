@@ -158,6 +158,52 @@ public final class SketchwareProjects {
         return null;
     }
 
+    /** The custom views of a project (reusable layouts, no logic). */
+    public static List<ProjectFileBean> customViews(String scId) {
+        List<ProjectFileBean> views = new ArrayList<>();
+        try {
+            ArrayList<ProjectFileBean> files = jC.b(scId).c();
+            if (files != null) {
+                for (ProjectFileBean file : files) {
+                    if (file.fileType
+                            == ProjectFileBean.PROJECT_FILE_TYPE_CUSTOM_VIEW) {
+                        views.add(file);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // Reads as "no custom views" rather than failing the turn.
+        }
+        views.sort((a, b) -> a.fileName.compareToIgnoreCase(b.fileName));
+        return views;
+    }
+
+    /** Display name of any editable screen file. */
+    public static String screenName(ProjectFileBean file) {
+        return file.fileType == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY
+                ? activityName(file) : file.fileName;
+    }
+
+    /**
+     * Finds any screen the view editor can open — an activity or a custom
+     * view — by the name a user or model would use. Activities win ties.
+     */
+    public static ProjectFileBean findScreen(String scId, String asked) {
+        ProjectFileBean activity = findActivity(scId, asked);
+        if (activity != null || asked == null) {
+            return activity;
+        }
+        String wanted = asked.trim().toLowerCase(Locale.ROOT);
+        for (ProjectFileBean view : customViews(scId)) {
+            if (view.fileName.toLowerCase(Locale.ROOT).equals(wanted)
+                    || view.getXmlName().toLowerCase(Locale.ROOT)
+                            .equals(wanted)) {
+                return view;
+            }
+        }
+        return null;
+    }
+
     /**
      * The widget type of a screen's own root layout. The root is not a
      * stored view bean; {@link InjectRootLayoutManager} owns it (default:

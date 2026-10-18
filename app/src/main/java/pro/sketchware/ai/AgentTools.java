@@ -343,6 +343,15 @@ public final class AgentTools {
                 screens.add(screen);
             }
             result.add("screens", screens);
+            JsonArray customViews = new JsonArray();
+            for (ProjectFileBean view : SketchwareProjects.customViews(scId)) {
+                JsonObject customView = new JsonObject();
+                customView.addProperty("name", view.fileName);
+                customView.addProperty("widgets",
+                        SketchwareProjects.screenBeans(scId, view).size());
+                customViews.add(customView);
+            }
+            result.add("custom_views", customViews);
             return result;
         }
     }
@@ -377,8 +386,13 @@ public final class AgentTools {
             for (ProjectFileBean activity : SketchwareProjects.activities(scId)) {
                 activities.add(SketchwareProjects.activityName(activity));
             }
+            JsonArray customViews = new JsonArray();
+            for (ProjectFileBean view : SketchwareProjects.customViews(scId)) {
+                customViews.add(view.fileName);
+            }
             JsonObject result = new JsonObject();
             result.add("activities", activities);
+            result.add("custom_views", customViews);
             return result;
         }
     }
@@ -418,7 +432,7 @@ public final class AgentTools {
             String scId = requiredProject(session.workingProjectId);
             String asked = stringArg(args, "activity");
             ProjectFileBean activity =
-                    SketchwareProjects.findActivity(scId, asked);
+                    SketchwareProjects.findScreen(scId, asked);
             if (activity == null) {
                 List<ProjectFileBean> available =
                         SketchwareProjects.activities(scId);
@@ -429,13 +443,25 @@ public final class AgentTools {
                     }
                     names.append(SketchwareProjects.activityName(candidate));
                 }
+                for (ProjectFileBean candidate
+                        : SketchwareProjects.customViews(scId)) {
+                    if (names.length() > 0) {
+                        names.append(", ");
+                    }
+                    names.append(candidate.fileName)
+                            .append(" (custom view)");
+                }
                 throw new ToolException("E_ACTIVITY_NOT_FOUND",
                         "There is no screen named \"" + asked + "\". "
                                 + "Available screens: " + names);
             }
             JsonObject result = new JsonObject();
             result.addProperty("activity",
-                    SketchwareProjects.activityName(activity));
+                    SketchwareProjects.screenName(activity));
+            result.addProperty("kind",
+                    activity.fileType
+                            == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY
+                            ? "activity" : "custom_view");
             JsonArray widgets = new JsonArray();
             for (String line : SketchwareProjects.screenLines(scId, activity, 120)) {
                 widgets.add(line);
@@ -617,6 +643,10 @@ public final class AgentTools {
                         outcome.beans);
                 // A Button the editor adds always gets its empty onClick
                 // event registered; mirror that for added Buttons.
+                // Custom views have no logic file, so no event is
+                // registered for them.
+                if (located.activity.fileType
+                        == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY)
                 for (com.besome.sketch.beans.ViewBean bean : outcome.beans) {
                     if (!currentById.containsKey(bean.id)
                             && bean.type
@@ -654,10 +684,10 @@ public final class AgentTools {
             }
             JsonObject result = new JsonObject();
             result.addProperty("edited_activity",
-                    SketchwareProjects.activityName(located.activity));
+                    SketchwareProjects.screenName(located.activity));
             result.addProperty("changes", outcome.lines.size());
             result.addProperty("verified",
-                    SketchwareProjects.activityName(located.activity)
+                    SketchwareProjects.screenName(located.activity)
                             + " now has " + readBack.size() + " widgets.");
             return result;
         }
@@ -668,7 +698,7 @@ public final class AgentTools {
             String scId = requiredProject(session.workingProjectId);
             String asked = stringArg(args, "activity");
             ProjectFileBean activity =
-                    SketchwareProjects.findActivity(scId, asked);
+                    SketchwareProjects.findScreen(scId, asked);
             if (activity == null) {
                 throw new ToolException("E_ACTIVITY_NOT_FOUND",
                         "There is no screen named \"" + asked + "\" in "
