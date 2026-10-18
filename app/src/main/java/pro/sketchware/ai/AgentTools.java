@@ -573,6 +573,7 @@ public final class AgentTools {
                 SketchwareActions.backupProjectOnce(located.scId);
                 SketchwareActions.saveScreen(located.scId, located.activity,
                         outcome.beans);
+                SketchwareActions.commitProject(located.scId);
             } catch (Exception e) {
                 throw new ToolException("E_SAVE_FAILED",
                         "Saving the screen failed: "

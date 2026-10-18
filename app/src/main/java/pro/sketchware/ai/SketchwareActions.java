@@ -138,10 +138,27 @@ public final class SketchwareActions {
         jC.b(scId).l();
         jC.b(scId).j();
         jC.a(scId).a(jC.b(scId));
+        commitProject(scId);
         if (SketchwareProjects.findActivity(scId, fileName) == null) {
             throw new ActionException("The screen was added but cannot "
                     + "be read back.");
         }
+    }
+
+    /**
+     * Commits a project the way the app's own save-on-close routine
+     * does. The data managers keep working copies; writes through them
+     * without this commit leave the project flagged as "previous data
+     * was not saved", and Sketchware offers to restore on next open.
+     * Every agent mutation must end with this.
+     */
+    public static void commitProject(String scId) {
+        jC.d(scId).a();
+        jC.b(scId).m();
+        jC.a(scId).j();
+        jC.d(scId).x();
+        jC.c(scId).l();
+        jC.d(scId).h();
     }
 
     /** Saves a whole screen through the same call the view editor uses. */
