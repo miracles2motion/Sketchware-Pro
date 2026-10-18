@@ -391,7 +391,7 @@ public final class AgentLogic {
                         "At most " + MAX_TOTAL + " blocks per handler, "
                                 + "nested ones included.");
             }
-            String kind = stringOf(op, "block").toLowerCase();
+            String kind = blockKindOf(op);
             switch (kind) {
                 case "if", "if_else" -> {
                     boolean withElse = "if_else".equals(kind);
@@ -1203,12 +1203,49 @@ public final class AgentLogic {
 
     // -- translation --------------------------------------------------------
 
+    /**
+     * The block kind a model meant: "block" canonically, but models
+     * mix in edit_screen's "op", or echo stored opCodes (doToast,
+     * setText, ifElse) after reading an event back. All resolve to
+     * the statement vocabulary instead of failing as unknown "".
+     */
+    private static String blockKindOf(JsonObject op) {
+        String kind = stringOf(op, "block");
+        if (kind.isEmpty()) {
+            kind = stringOf(op, "op");
+        }
+        if (kind.isEmpty()) {
+            kind = stringOf(op, "kind");
+        }
+        if (kind.isEmpty()) {
+            kind = stringOf(op, "opCode");
+        }
+        if (kind.isEmpty()) {
+            kind = stringOf(op, "opcode");
+        }
+        String key = kind.toLowerCase(Locale.ROOT)
+                .replace("_", "").replace(" ", "");
+        return switch (key) {
+            case "dotoast", "toastmessage", "showtoast" -> "toast";
+            case "settext" -> "set_text";
+            case "setvisible", "setvisibility" -> "set_visibility";
+            case "setenabled", "setenable" -> "set_enabled";
+            case "setvariable", "setvarint", "setvarstring",
+                    "setvarboolean" -> "set_variable";
+            case "increaseint" -> "increase";
+            case "decreaseint" -> "decrease";
+            case "finishactivity" -> "finish";
+            case "ifelse" -> "if_else";
+            default -> kind.toLowerCase(Locale.ROOT);
+        };
+    }
+
     private static Stmt translate(Context context, JsonObject op,
                                   Map<String, ViewBean> byId,
                                   Map<String, Integer> variables,
                                   Map<String, Integer> lists)
             throws AgentTools.ToolException {
-        String kind = stringOf(op, "block").toLowerCase();
+        String kind = blockKindOf(op);
         Stmt stmt = new Stmt();
         switch (kind) {
             case "toast" -> {
@@ -1750,7 +1787,10 @@ public final class AgentLogic {
                 stmt.expectCode = name + " = new HashMap";
             }
             default -> throw new AgentTools.ToolException("E_BAD_BLOCK",
-                    "Unknown block \"" + kind + "\". Blocks are: toast, "
+                    (kind.isEmpty()
+                            ? "A block arrived with no \"block\" name. "
+                            : "Unknown block \"" + kind + "\". ")
+                            + "Blocks are: toast, "
                             + "set_text, set_visibility, set_enabled, "
                             + "finish, set_variable, increase, decrease, "
                             + "add_to_list, clear_list, show_list, "

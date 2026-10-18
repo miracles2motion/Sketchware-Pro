@@ -1020,7 +1020,7 @@ public final class AgentEdits {
                         + "after " + fullId + ", which takes the full "
                         + (vertical ? "height" : "width")
                         + " of the layout, so no space is left for it. "
-                        + "Move " + kid.id + " into " + fullId
+                        + "Move " + kid.id + " before " + fullId
                         + ", or shrink " + fullId + " to leave room.");
                 continue;
             }

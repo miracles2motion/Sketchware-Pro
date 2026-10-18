@@ -836,3 +836,14 @@ Device test findings (SportyNivida / Sporty Bet):
   proposal if any "@var:" survives. Handlers already saved with
   the placeholder still crash the editor until the bad block is
   removed (edit_event_block can, it never parses param refs).
+- Batch from comprehensive device test (2026-10-18): set_event_
+  handler failed with Unknown block "" whenever the event already
+  had blocks (models echo "op"/stored opCodes after reading an
+  event). blockKindOf() now accepts block/op/kind/opCode and maps
+  stored opCodes (doToast, setText, ifElse, setVarInt...) to the
+  statement vocabulary in both buildStatement and translate.
+  Visibility warning no longer advises moving a widget INTO the
+  full-height sibling ("into webview1"); it says move before it.
+  Passed on device in the same run: open_screen + initializeLogic
+  toast, list declare/add/show on SecondActivity, theme via
+  picker, move-before reorder.
