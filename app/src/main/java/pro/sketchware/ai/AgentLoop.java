@@ -259,7 +259,13 @@ public class AgentLoop {
                 boolean failed = result.has("error")
                         && !"E_REJECTED".equals(result.get("error").getAsString());
                 if (failed) {
-                    String signature = call.name + "|" + result.get("error").getAsString();
+                    // A different payload is a different attempt:
+                    // only the same call failing the same way twice
+                    // in a row stops the turn.
+                    String signature = call.name + "|"
+                            + result.get("error").getAsString() + "|"
+                            + (call.arguments == null ? 0
+                                    : call.arguments.hashCode());
                     sameFailure = signature.equals(lastFailedCall)
                             ? sameFailure + 1 : 1;
                     lastFailedCall = signature;

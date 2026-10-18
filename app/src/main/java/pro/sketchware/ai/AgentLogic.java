@@ -287,6 +287,15 @@ public final class AgentLogic {
                 }
             }
         }
+        // The editor-load gate: nothing we add may be a shape the
+        // logic editor's loader would crash on.
+        ArrayList<String> loadProblems = editorLoadProblems(plan.fresh);
+        if (!loadProblems.isEmpty()) {
+            throw new AgentTools.ToolException("E_INTERNAL",
+                    "The new blocks would not open in the editor ("
+                            + loadProblems.get(0) + "); nothing was "
+                            + "changed.");
+        }
         // Chain the fresh beans among themselves; the applier joins
         // them to the existing chain's tail.
         HashMap<String, BlockBean> freshById = new HashMap<>();
@@ -1203,6 +1212,28 @@ public final class AgentLogic {
                 registeredHere = true;
             }
             ArrayList<BlockBean> combined = joined(current, plan.fresh);
+            java.util.Set<String> freshIds = new java.util.HashSet<>();
+            for (BlockBean bean : plan.fresh) {
+                freshIds.add(bean.id);
+            }
+            String olderProblem = null;
+            for (String problem : editorLoadProblems(combined)) {
+                boolean ours = false;
+                for (String freshId : freshIds) {
+                    if (problem.startsWith("block " + freshId + " ")) {
+                        ours = true;
+                        break;
+                    }
+                }
+                if (ours) {
+                    throw new IllegalStateException(
+                            "The new blocks would not open in the "
+                                    + "editor (" + problem + ")");
+                }
+                if (olderProblem == null) {
+                    olderProblem = problem;
+                }
+            }
             store.a(javaName, key, combined);
             SketchwareActions.commitProject(plan.scId);
 
@@ -1239,6 +1270,14 @@ public final class AgentLogic {
                             + readBack.size() + " block"
                             + (readBack.size() == 1 ? "" : "s")
                             + " (read back and checked).");
+            if (olderProblem != null) {
+                result.addProperty("warning",
+                        "This event already holds an older problem "
+                                + "that will not open in the editor ("
+                                + olderProblem + "). Removing that "
+                                + "block with edit_event_block clears "
+                                + "it.");
+            }
             return result;
         } catch (Exception e) {
             // Restore the blocks as they were; an event registered by
@@ -1874,8 +1913,10 @@ public final class AgentLogic {
             }
             default -> throw new AgentTools.ToolException("E_BAD_BLOCK",
                     (kind.isEmpty()
-                            ? "A block arrived with no \"block\" name. "
-                            : "Unknown block \"" + kind + "\". ")
+                            ? "A block arrived with no \"block\" name: "
+                                    + abbrev(op.toString()) + " "
+                            : "Unknown block \"" + kind + "\": "
+                                    + abbrev(op.toString()) + " ")
                             + "Blocks are: toast, "
                             + "set_text, set_visibility, set_enabled, "
                             + "finish, set_variable, increase, decrease, "
@@ -2286,6 +2327,14 @@ public final class AgentLogic {
         return "0x" + hex;
     }
 
+    /** A JSON fragment shortened for an error message. */
+    private static String abbrev(String json) {
+        if (json == null) {
+            return "";
+        }
+        return json.length() <= 300 ? json : json.substring(0, 300) + "…";
+    }
+
     private static String stringOf(JsonObject object, String key) {
         if (object == null || !object.has(key)
                 || object.get(key).isJsonNull()) {
@@ -2561,6 +2610,13 @@ public final class AgentLogic {
                             value.paramIdx, value.newValue);
                 }
             }
+            ArrayList<String> editProblems =
+                    editorLoadProblems(combined);
+            if (!editProblems.isEmpty()) {
+                throw new IllegalStateException(
+                        "The result would not open in the editor ("
+                                + editProblems.get(0) + ")");
+            }
             store.a(javaName, key, combined);
             SketchwareActions.commitProject(plan.scId);
 
@@ -2671,6 +2727,75 @@ public final class AgentLogic {
                 beans.remove(i);
             }
         }
+    }
+
+    /**
+     * What would break the logic editor's own loader
+     * ({@code LogicEditorActivity.loadEventBlocks}) in a stored
+     * block list: it runs {@code Integer.valueOf} on every bean id
+     * and every "@..." parameter, indexes one value holder per
+     * spec slot, and crashes on any mismatch. Returns one problem
+     * per offending bean ("block <id> (<opCode>): ..."), so a save
+     * can be refused — or an older problem named — before writing.
+     */
+    static ArrayList<String> editorLoadProblems(
+            List<BlockBean> beans) {
+        ArrayList<String> problems = new ArrayList<>();
+        java.util.Set<Integer> ids = new java.util.HashSet<>();
+        for (BlockBean bean : beans) {
+            if (bean != null && bean.id != null) {
+                ids.add(parseId(bean.id));
+            }
+        }
+        java.util.regex.Pattern slots = java.util.regex.Pattern
+                .compile("%\\w+(?:\\.\\w+)?|%\\w");
+        for (BlockBean bean : beans) {
+            if (bean == null) {
+                continue;
+            }
+            String who = "block " + bean.id + " (" + bean.opCode + ")";
+            if (parseId(bean.id) < 0) {
+                problems.add(who + ": its id is not a number");
+                continue;
+            }
+            java.util.regex.Matcher matcher =
+                    slots.matcher(bean.spec == null ? "" : bean.spec);
+            int slotCount = 0;
+            while (matcher.find()) {
+                slotCount++;
+            }
+            // getVar stores the variable name as its spec and holds
+            // no parameters; its shape is the editor's own.
+            if (!"getVar".equals(bean.opCode)
+                    && bean.parameters.size() != slotCount) {
+                problems.add(who + ": it holds "
+                        + bean.parameters.size() + " values but its "
+                        + "shape takes " + slotCount);
+                continue;
+            }
+            for (int i = 0; i < bean.parameters.size(); i++) {
+                String param = bean.parameters.get(i);
+                if (param != null && param.startsWith("@")) {
+                    int ref;
+                    try {
+                        ref = Integer.parseInt(param.substring(1));
+                    } catch (Exception e) {
+                        problems.add(who + ": value " + (i + 1)
+                                + " is \"" + param + "\", which the "
+                                + "editor cannot read as a block "
+                                + "reference");
+                        break;
+                    }
+                    if (!ids.contains(ref)) {
+                        problems.add(who + ": value " + (i + 1)
+                                + " points at block " + ref + ", which "
+                                + "is not in this event");
+                        break;
+                    }
+                }
+            }
+        }
+        return problems;
     }
 
     /** Event resolution shared by wiring and edits (target + event). */

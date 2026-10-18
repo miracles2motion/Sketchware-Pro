@@ -1116,9 +1116,35 @@ public final class AgentTools {
             JsonObject blocksSchema = new JsonObject();
             blocksSchema.addProperty("type", "array");
             blocksSchema.addProperty("description",
-                    "The blocks to append, in order");
+                    "The blocks to append, in order. Every block, "
+                            + "including blocks nested inside "
+                            + "then/else/blocks lists, is an object "
+                            + "with a \"block\" name from the enum.");
             JsonObject item = new JsonObject();
             item.addProperty("type", "object");
+            JsonObject itemProps = new JsonObject();
+            JsonObject blockProp = new JsonObject();
+            blockProp.addProperty("type", "string");
+            JsonArray kinds = new JsonArray();
+            for (String kind : new String[]{
+                    "toast", "set_text", "set_visibility", "set_enabled",
+                    "set_text_color", "set_hint", "set_clickable",
+                    "set_image_url", "set_progress", "copy_to_clipboard",
+                    "set_screen_title", "open_drawer", "close_drawer",
+                    "open_screen", "load_url", "finish", "set_variable",
+                    "increase", "decrease", "add_to_list", "clear_list",
+                    "show_list", "put_in_map", "clear_map", "new_map",
+                    "if", "if_else", "repeat", "forever", "break"}) {
+                kinds.add(kind);
+            }
+            blockProp.add("enum", kinds);
+            blockProp.addProperty("description",
+                    "What this block does (required)");
+            itemProps.add("block", blockProp);
+            item.add("properties", itemProps);
+            JsonArray required = new JsonArray();
+            required.add("block");
+            item.add("required", required);
             blocksSchema.add("items", item);
             properties.add("blocks", blocksSchema);
             return AgentTools.parameters(properties,

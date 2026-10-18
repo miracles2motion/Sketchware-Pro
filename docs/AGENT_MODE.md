@@ -859,3 +859,16 @@ Device test findings (SportyNivida / Sporty Bet):
   beans (incl. "@var:" carriers) - the rescue path for the
   corrupted handler. (e) Guidance: never mirror a widget's
   value in a variable to compare it.
+- Schema + editor-load gate (2026-10-18, user-directed after
+  deep research into LogicEditorActivity/Fx): set_event_handler's
+  blocks parameter now has a real item schema (required "block",
+  enum of kinds). Unknown-block errors quote the received JSON
+  (abbrev 300) so the model self-corrects and failures are
+  visible, not guessed. editorLoadProblems() mirrors
+  loadEventBlocks: non-numeric ids, "@..." params that don't
+  parse/resolve, parameter count != spec slot count (Fx's own
+  regex; getVar exempt). Gate runs on fresh beans at proposal,
+  at wiring apply (fresh problems refuse; older ones surface as
+  a named warning), and on the full result of edit_event_block.
+  Same-failure loop signature now includes the payload hash, so
+  a different second attempt is not killed as a repeat.
