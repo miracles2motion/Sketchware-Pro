@@ -210,6 +210,50 @@ public final class SketchwareActions {
     }
 
     /**
+     * Adds one empty custom view, persisting through the same call
+     * sequence ManageViewActivity uses when a custom view is added:
+     * both file lists written back exactly as loaded, the new bean in
+     * the custom-view list. A one-time backup is taken first.
+     */
+    public static void createCustomView(String scId, String fileName)
+            throws Exception {
+        ArrayList<ProjectFileBean> activities = jC.b(scId).b();
+        if (activities == null) {
+            activities = new ArrayList<>();
+        }
+        ArrayList<ProjectFileBean> customViews = jC.b(scId).c();
+        if (customViews == null) {
+            customViews = new ArrayList<>();
+        }
+        for (ProjectFileBean view : customViews) {
+            if (view.fileName.equalsIgnoreCase(fileName)) {
+                throw new ActionException("That custom view already "
+                        + "exists.");
+            }
+        }
+        backupProjectOnce(scId);
+        customViews.add(new ProjectFileBean(
+                ProjectFileBean.PROJECT_FILE_TYPE_CUSTOM_VIEW, fileName));
+        jC.b(scId).a(activities);
+        jC.b(scId).b(customViews);
+        jC.b(scId).l();
+        jC.b(scId).j();
+        jC.a(scId).a(jC.b(scId));
+        commitProject(scId);
+        boolean found = false;
+        for (ProjectFileBean view : SketchwareProjects.customViews(scId)) {
+            if (view.fileName.equalsIgnoreCase(fileName)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            throw new ActionException("The custom view was added but "
+                    + "cannot be read back.");
+        }
+    }
+
+    /**
      * Changes one activity's toolbar/fullscreen options and orientation,
      * persisting through the same file-manager save sequence as screen
      * creation. Drawer and FAB bits are never touched here — adding or

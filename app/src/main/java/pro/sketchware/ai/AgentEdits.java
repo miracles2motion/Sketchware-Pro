@@ -378,6 +378,46 @@ public final class AgentEdits {
                     bean.text.textType = textType;
                     lines.add("Make " + bean.id + " text " + value);
                 }
+                case "set_list_item_view" -> {
+                    // bean.customView holds a custom view's file name;
+                    // the code generator builds the adapter from it.
+                    ViewBean bean = requireWidget(op, byId);
+                    if (bean.type != ViewBean.VIEW_TYPE_WIDGET_LISTVIEW
+                            && bean.type
+                                    != ViewBeans.VIEW_TYPE_WIDGET_GRIDVIEW
+                            && bean.type
+                                    != ViewBeans.VIEW_TYPE_WIDGET_RECYCLERVIEW
+                            && bean.type
+                                    != ViewBeans.VIEW_TYPE_LAYOUT_VIEWPAGER) {
+                        throw new AgentTools.ToolException("E_WRONG_WIDGET",
+                                "Only a ListView, GridView, RecyclerView or "
+                                        + "ViewPager uses an item layout: "
+                                        + bean.id + " is a "
+                                        + typeName(bean.type) + ".");
+                    }
+                    String customView = stringOf(op, "custom_view");
+                    if (customView.equals("none") || customView.isEmpty()) {
+                        bean.customView = "";
+                        lines.add("Clear " + bean.id + "'s item layout");
+                    } else {
+                        boolean exists = false;
+                        for (com.besome.sketch.beans.ProjectFileBean view
+                                : SketchwareProjects.customViews(scId)) {
+                            if (view.fileName.equals(customView)) {
+                                exists = true;
+                                break;
+                            }
+                        }
+                        if (!exists) {
+                            throw new AgentTools.ToolException("E_BAD_VALUE",
+                                    "The project has no custom view called "
+                                            + customView + ".");
+                        }
+                        bean.customView = customView;
+                        lines.add("Set " + bean.id + " item layout to "
+                                + customView);
+                    }
+                }
                 case "set_font" -> {
                     // text.textFont holds a project font name; the
                     // property editor only offers fonts the project has.
@@ -616,7 +656,8 @@ public final class AgentEdits {
                                 + "set_weight, set_image, set_scale_type, "
                                 + "set_background_image, set_checked, "
                                 + "set_enabled, set_text_style, "
-                                + "set_input_type, set_font, set_progress, "
+                                + "set_input_type, set_font, set_list_item_view, "
+                                + "set_progress, "
                                 + "set_indeterminate, set_alpha, "
                                 + "set_clickable, set_root, remove_widget, "
                                 + "move_widget.");
@@ -788,6 +829,8 @@ public final class AgentEdits {
             case "setinputtype", "inputtype" -> "set_input_type";
             case "setfont", "font" -> "set_font";
             case "setroot", "rootbackground", "setrootbackground" -> "set_root";
+            case "setlistitemview", "setitemlayout", "setcustomview",
+                    "listitemview" -> "set_list_item_view";
             case "setprogress", "progress" -> "set_progress";
             case "setindeterminate", "indeterminate" -> "set_indeterminate";
             case "setalpha", "alpha", "setopacity" -> "set_alpha";

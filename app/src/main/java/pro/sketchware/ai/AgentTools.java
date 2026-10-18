@@ -117,6 +117,7 @@ public final class AgentTools {
         register(new GetScreen());
         register(new CreateProject());
         register(new CreateActivity());
+        register(new CreateCustomView());
         register(new DeleteActivity());
         register(new EditActivity());
         register(new EditScreen());
@@ -579,7 +580,10 @@ public final class AgentTools {
                     + "italic, bold_italic), set_input_type {id,input_type} "
                     + "(text, number, phone, password, number_decimal), "
                     + "set_font {id,font} (a font from list_resources, or "
-                    + "default_font), "
+                    + "default_font), set_list_item_view {id,custom_view} "
+                    + "(a custom view name from list_activities, or \"none\" "
+                    + "to clear; for ListView, GridView, RecyclerView, "
+                    + "ViewPager), "
                     + "set_progress {id,progress?,max?} (ProgressBar/SeekBar), "
                     + "set_indeterminate {id,indeterminate}, set_alpha "
                     + "{id,alpha} (0 to 1), set_clickable {id,clickable}, "
@@ -1190,6 +1194,91 @@ public final class AgentTools {
                     + "working project, with its widgets, events and "
                     + "blocks. Deleting always needs the user's approval. "
                     + "The main screen cannot be deleted.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("activity", stringSchema(
+                    "The activity to delete, e.g. SettingsActivity"));
+            return AgentTools.parameters(properties, "activity");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to delete a screen";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String asked = stringArg(args, "activity");
+            ProjectFileBean target =
+                    SketchwareProjects.findActivity(scId, asked);
+            if (target == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "There is no screen named \"" + asked + "\" in "
+                                + "the working project.");
+            }
+            if ("main".equalsIgnoreCase(target.fileName)) {
+                throw new ToolException("E_MAIN_ACTIVITY",
+                        "The main screen is the app's starting screen and "
+                                + "cannot be deleted. Rename or rebuild it "
+                                + "instead.");
+            }
+            int widgets = SketchwareProjects
+                    .screenBeans(scId, target).size();
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("activity", target.fileName);
+            return new AgentProposal(name(), clean, scId,
+                    "Delete a screen from " + project.name,
+                    "Delete "
+                            + SketchwareProjects.activityName(target)
+                            + " and everything in it (" + widgets
+                            + (widgets == 1 ? " widget" : " widgets")
+                            + ", plus its events and blocks).",
+                    "This cannot be undone from here. A safety backup of "
+                            + "the project is made first, and the deletion "
+                            + "goes through Sketchware's own screen-manager "
+                            + "save, like deleting it by hand.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String fileName = stringArg(proposal.args, "activity");
+            if (SketchwareProjects.findActivity(scId, fileName) == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "That screen no longer exists, so nothing was "
+                                + "deleted.");
+            }
+            try {
+                SketchwareActions.deleteActivity(scId, fileName);
+                JsonObject result = new JsonObject();
+                result.addProperty("deleted_activity", fileName);
+                result.addProperty("verified",
+                        "The screen is gone from the project.");
+                return result;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_DELETE_FAILED",
+                        "Deleting the screen failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+}
+      + "The main screen cannot be deleted.";
         }
 
         @Override
