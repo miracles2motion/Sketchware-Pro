@@ -105,6 +105,9 @@ public final class AgentEdits {
             }
             JsonObject op = element.getAsJsonObject().deepCopy();
             String kind = stringOf(op, "op");
+            if ("add_widget".equals(kind)) {
+                prepareRoot(op, work, byId, lines, frozenOps, frozen);
+            }
             switch (kind) {
                 case "add_widget" -> applyAdd(scId, op, work, byId, lines, frozen);
                 case "set_text" -> {
@@ -166,6 +169,10 @@ public final class AgentEdits {
                 case "move_widget" -> {
                     ViewBean bean = requireWidget(op, byId);
                     String parentId = stringOf(op, "parent");
+                    if ("root".equalsIgnoreCase(parentId)) {
+                        ViewBean root = rootOf(work);
+                        parentId = root == null ? parentId : root.id;
+                    }
                     ViewBean parent = byId.get(parentId);
                     if (parent == null) {
                         throw new AgentTools.ToolException("E_NO_PARENT",
@@ -216,6 +223,47 @@ public final class AgentEdits {
         return new Outcome(work, lines, frozenOps);
     }
 
+    /**
+     * Screens always have one root layout; the editor simply shows it.
+     * A brand-new screen has none saved yet, so the first widget that
+     * needs one plants it — as its own approved line, frozen into the
+     * ops so execution replays exactly what was approved.
+     */
+    private static void prepareRoot(JsonObject op, ArrayList<ViewBean> work,
+                                    Map<String, ViewBean> byId,
+                                    List<String> lines,
+                                    JsonArray frozenOps, boolean frozen)
+            throws AgentTools.ToolException {
+        if (rootOf(work) != null) {
+            return;
+        }
+        String parentId = stringOf(op, "parent");
+        if (!parentId.isEmpty() && !"root".equalsIgnoreCase(parentId)) {
+            return;
+        }
+        String typeName = stringOf(op, "type");
+        Integer type = typeByName(typeName);
+        if (type != null && isContainer(type) && parentId.isEmpty()) {
+            return; // the widget itself becomes the root
+        }
+        if (frozen) {
+            // The proposal's first frozen op plants the root; when it is
+            // replayed this add sees it and plants nothing more.
+            return;
+        }
+        String rootId = allocateId(ViewBean.VIEW_TYPE_LAYOUT_LINEAR,
+                byId.keySet());
+        JsonObject rootOp = new JsonObject();
+        rootOp.addProperty("op", "add_widget");
+        rootOp.addProperty("type", "LinearLayout");
+        rootOp.addProperty("id", rootId);
+        frozenOps.add(rootOp);
+        ViewBean root = new ViewBean(rootId, ViewBean.VIEW_TYPE_LAYOUT_LINEAR);
+        work.add(root);
+        byId.put(rootId, root);
+        lines.add("Add LinearLayout as the screen's layout");
+    }
+
     private static void applyAdd(String scId, JsonObject op,
                                  ArrayList<ViewBean> work,
                                  Map<String, ViewBean> byId,
@@ -229,7 +277,7 @@ public final class AgentEdits {
         }
         String parentId = stringOf(op, "parent");
         ViewBean parent = null;
-        if (parentId.isEmpty()) {
+        if (parentId.isEmpty() || "root".equalsIgnoreCase(parentId)) {
             parent = rootOf(work);
             if (parent == null && !isContainer(type)) {
                 throw new AgentTools.ToolException("E_NEEDS_LAYOUT",

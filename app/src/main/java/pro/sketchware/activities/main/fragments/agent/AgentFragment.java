@@ -758,6 +758,11 @@ public class AgentFragment extends qA {
             case QUOTA:
                 return getString(R.string.agent_error_quota_now);
             default:
+                if (error.httpCode == 0 && !error.message.isEmpty()) {
+                    // Our own stop (loop cap, repeated failure): the
+                    // message already says everything, in plain words.
+                    return error.message;
+                }
                 if (error.httpCode >= 500) {
                     return getString(R.string.agent_error_server, error.httpCode);
                 }
