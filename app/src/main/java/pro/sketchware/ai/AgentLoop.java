@@ -527,6 +527,7 @@ public class AgentLoop {
                             ? result.get("message").getAsString() : "");
         } else {
             AgentJournal.mutationDone(journal, call.name, proposal.title);
+            AgentJournal.touchPlanCurrent(journal);
         }
         dispatch(listener, () -> listener.onApprovalResolved(proposal, result));
         return result;

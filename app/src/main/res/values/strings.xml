@@ -1034,6 +1034,7 @@ ACTION_VIEW
     <string name="agent_plan_title">Implementation plan</string>
     <string name="agent_plan_empty">No plan yet. For a new app or a big piece of work, agree the plan with the agent first and it will be saved here, step by step.</string>
     <string name="agent_plan_progress">%1$d of %2$d steps done</string>
+    <string name="agent_plan_step_line">Plan step %1$d of %2$d · %3$s</string>
     <string name="agent_project_locked_working">The agent is working — the project stays locked to this turn until it finishes.</string>
     <string name="agent_note_planning">Checking the project style and plan</string>
     <string name="agent_task_log_title">Task log</string>
@@ -1044,6 +1045,10 @@ ACTION_VIEW
     <string name="agent_task_dismiss">Hide this</string>
     <string name="agent_task_working">Working on “%1$s”…</string>
     <string name="agent_task_resume_message">Please continue the unfinished task. First re-check the project’s current state with your tools, then pick up at the next step — don’t redo anything already done.</string>
+    <string name="agent_action_export">Export conversation</string>
+    <string name="agent_export_share_title">Share the conversation export</string>
+    <string name="agent_export_saved">Export saved as %1$s — find it in .sketchware/ai/exports if sharing did not open.</string>
+    <string name="agent_export_failed">Could not make the export file.</string>
     <string name="agent_history_title">Conversations</string>
     <string name="agent_history_empty">No saved conversations yet. Each project keeps its own chat — pick a project and talk, and its conversation will be here to come back to.</string>
     <string name="agent_action_save">Save</string>

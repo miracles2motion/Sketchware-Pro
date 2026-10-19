@@ -33,6 +33,7 @@ import java.util.concurrent.Executors;
 import a.a.a.qA;
 import pro.sketchware.R;
 import pro.sketchware.ai.AgentChatLog;
+import pro.sketchware.ai.AgentExport;
 import pro.sketchware.ai.AgentJournal;
 import pro.sketchware.ai.AgentKnowledgePack;
 import pro.sketchware.ai.AgentLoop;
@@ -165,6 +166,7 @@ public class AgentFragment extends qA {
         // chat, each one a door back into that conversation. (What
         // was done in a project lives in its task log, in the box.)
         binding.historyButton.setOnClickListener(v -> showChatHistoryDialog());
+        binding.exportButton.setOnClickListener(v -> exportConversation());
         binding.styleButton.setOnClickListener(v -> showStyleBriefDialog());
         binding.planButton.setOnClickListener(v -> showPlanDialog());
         binding.taskLogButton.setOnClickListener(v -> showTaskLogDialog());
@@ -445,7 +447,10 @@ public class AgentFragment extends qA {
                     @Override
                     public void onApprovalResolved(AgentProposal proposal,
                                                    com.google.gson.JsonObject result) {
-                        runOnUi(() -> resolveApprovalCard(proposal, result));
+                        runOnUi(() -> {
+                            resolveApprovalCard(proposal, result);
+                            refreshStrip();
+                        });
                     }
 
                     @Override
@@ -667,11 +672,18 @@ public class AgentFragment extends qA {
         boolean resumable = false;
         if (!scId.isEmpty()) {
             if (generating) {
-                String title = AgentJournal.openTitle(scId);
-                if (title.isEmpty()) {
-                    title = lastUserText;
+                // While work lands, the strip follows the plan's
+                // step in hand; without a plan it names the task.
+                String planLine = currentPlanStepLine(scId);
+                if (!planLine.isEmpty()) {
+                    text = planLine;
+                } else {
+                    String title = AgentJournal.openTitle(scId);
+                    if (title.isEmpty()) {
+                        title = lastUserText;
+                    }
+                    text = getString(R.string.agent_task_working, title);
                 }
-                text = getString(R.string.agent_task_working, title);
             } else {
                 text = AgentJournal.stripText(scId);
                 resumable = !text.isEmpty();
@@ -685,6 +697,31 @@ public class AgentFragment extends qA {
             binding.taskStripResume.setVisibility(
                     resumable ? View.VISIBLE : View.GONE);
         }
+    }
+
+    /** "Plan step 3 of 7 · ..." for the step in hand, or "". */
+    private String currentPlanStepLine(String scId) {
+        com.google.gson.JsonObject plan = AgentJournal.plan(scId);
+        if (!plan.has("steps")) {
+            return "";
+        }
+        com.google.gson.JsonArray steps = plan.getAsJsonArray("steps");
+        for (int i = 0; i < steps.size(); i++) {
+            com.google.gson.JsonObject step =
+                    steps.get(i).getAsJsonObject();
+            String state = step.has("state")
+                    ? step.get("state").getAsString() : "";
+            if ("current".equals(state) || "stopped".equals(state)) {
+                return getString(R.string.agent_plan_step_line, i + 1,
+                        steps.size(),
+                        step.has("title")
+                                ? step.get("title").getAsString()
+                                : step.has("text")
+                                        ? step.get("text").getAsString()
+                                        : "");
+            }
+        }
+        return "";
     }
 
     /** Continues the paused task as a normal message in the chat. */
@@ -859,6 +896,59 @@ public class AgentFragment extends qA {
         });
     }
 
+    /**
+     * The export icon: one JSON with this project's whole story —
+     * the chat and its cards, the Style, the Plan and the Task log —
+     * written to .sketchware/ai/exports and offered to share, so the
+     * user can hand the conversation to someone helping them.
+     */
+    private void exportConversation() {
+        String scId = workingProjectOrToast();
+        if (scId.isEmpty()) {
+            return;
+        }
+        List<ChatMessage> snapshot = new ArrayList<>(messages);
+        String provider = providerConfig.activeProvider().name();
+        String model = providerConfig.activeSettings().model;
+        SketchwareProjects.ProjectInfo info =
+                SketchwareProjects.project(scId);
+        String projectName = info == null ? scId : info.name;
+        io.execute(() -> {
+            java.io.File file;
+            try {
+                file = AgentExport.write(
+                        AgentExport.build(scId, provider, model, snapshot),
+                        projectName);
+            } catch (Exception e) {
+                runOnUi(() -> Toast.makeText(getContext(),
+                        R.string.agent_export_failed,
+                        Toast.LENGTH_SHORT).show());
+                return;
+            }
+            runOnUi(() -> shareExport(file));
+        });
+    }
+
+    private void shareExport(java.io.File file) {
+        try {
+            android.net.Uri uri =
+                    androidx.core.content.FileProvider.getUriForFile(
+                            requireContext(),
+                            requireContext().getPackageName() + ".provider",
+                            file);
+            Intent intent = new Intent(Intent.ACTION_SEND);
+            intent.setType("application/json");
+            intent.putExtra(Intent.EXTRA_STREAM, uri);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(intent,
+                    getString(R.string.agent_export_share_title)));
+        } catch (RuntimeException e) {
+            Toast.makeText(getContext(),
+                    getString(R.string.agent_export_saved, file.getName()),
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
     /** The Plan button: the agreed build order and its progress. */
     private void showPlanDialog() {
         String scId = workingProjectOrToast();
@@ -866,31 +956,56 @@ public class AgentFragment extends qA {
             return;
         }
         com.google.gson.JsonObject plan = AgentJournal.plan(scId);
-        String steps = AgentJournal.planText(scId);
         String title = plan.has("title")
                 ? plan.get("title").getAsString() : "";
-        StringBuilder body = new StringBuilder();
-        if (steps.isEmpty()) {
-            body.append(getString(R.string.agent_plan_empty));
-        } else {
-            int done = 0;
-            int total = plan.getAsJsonArray("steps").size();
-            for (com.google.gson.JsonElement element
-                    : plan.getAsJsonArray("steps")) {
-                if (element.isJsonObject() && "done".equals(element
-                        .getAsJsonObject().get("state").getAsString())) {
-                    done++;
-                }
+        androidx.appcompat.app.AlertDialog dialog =
+                new MaterialAlertDialogBuilder(requireContext())
+                        .setTitle(title.isEmpty()
+                                ? getString(R.string.agent_plan_title)
+                                : title)
+                        .setMessage(planBodyText(scId))
+                        .setNegativeButton(R.string.agent_action_close, null)
+                        .create();
+        dialog.show();
+        if (generating) {
+            // While work is landing, the open Plan keeps itself
+            // current instead of freezing at the moment it opened.
+            android.widget.TextView bodyView =
+                    dialog.findViewById(android.R.id.message);
+            if (bodyView != null) {
+                Runnable[] refresh = new Runnable[1];
+                refresh[0] = () -> {
+                    if (!dialog.isShowing()) {
+                        return;
+                    }
+                    bodyView.setText(planBodyText(scId));
+                    if (generating) {
+                        bodyView.postDelayed(refresh[0], 1500);
+                    }
+                };
+                bodyView.postDelayed(refresh[0], 1500);
             }
-            body.append(getString(R.string.agent_plan_progress, done, total))
-                    .append("\n\n").append(steps);
         }
-        new MaterialAlertDialogBuilder(requireContext())
-                .setTitle(title.isEmpty()
-                        ? getString(R.string.agent_plan_title) : title)
-                .setMessage(body.toString())
-                .setNegativeButton(R.string.agent_action_close, null)
-                .show();
+    }
+
+    /** The Plan page body: progress line plus the marked steps. */
+    private String planBodyText(String scId) {
+        com.google.gson.JsonObject plan = AgentJournal.plan(scId);
+        String steps = AgentJournal.planText(scId);
+        if (steps.isEmpty()) {
+            return getString(R.string.agent_plan_empty);
+        }
+        int done = 0;
+        int total = plan.getAsJsonArray("steps").size();
+        for (com.google.gson.JsonElement element
+                : plan.getAsJsonArray("steps")) {
+            if (element.isJsonObject() && "done".equals(element
+                    .getAsJsonObject().get("state").getAsString())) {
+                done++;
+            }
+        }
+        return getString(R.string.agent_plan_progress, done, total)
+                + "\n\n" + steps;
     }
 
     /** The Task log button: the recorded work. */

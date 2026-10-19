@@ -407,6 +407,37 @@ public final class AgentJournal {
         save(fromScId, from);
     }
 
+    /**
+     * While work is landing, the plan's step in hand is kept honest:
+     * if no step is marked current (or paused), the first unfinished
+     * step becomes current. Called as changes land, so the Plan page
+     * and the strip reflect the work while it happens — completion
+     * still only ever comes from set_plan against recorded changes.
+     */
+    public static synchronized void touchPlanCurrent(String scId) {
+        if (scId == null || scId.isEmpty() || !hasPlan(scId)) {
+            return;
+        }
+        JsonObject root = load(scId);
+        JsonObject plan = root.getAsJsonObject("plan");
+        JsonArray steps = plan.getAsJsonArray("steps");
+        for (JsonElement element : steps) {
+            String state = text(element.getAsJsonObject(), "state");
+            if ("current".equals(state) || "stopped".equals(state)) {
+                return;
+            }
+        }
+        for (JsonElement element : steps) {
+            JsonObject step = element.getAsJsonObject();
+            if ("pending".equals(text(step, "state"))) {
+                step.addProperty("state", "current");
+                plan.addProperty("updatedAt", System.currentTimeMillis());
+                save(scId, root);
+                return;
+            }
+        }
+    }
+
     // ------------------------------------------------------------------
     // Drafts from a conversation that has no project yet
 

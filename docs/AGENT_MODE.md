@@ -1107,3 +1107,20 @@ Device test findings (SportyNivida / Sporty Bet):
   Text sizes, Buttons and cards, Spacing, Do, Avoid) in bold with
   breathing room instead of one flat paragraph; older one-paragraph
   styles show unchanged.
+
+## Wave 23 — conversation export
+
+- New export icon in the model bar: one JSON per project with the
+  whole conversation — chat messages, approval and build cards
+  with outcomes, the Style, the Plan and the Task log, plus the
+  provider and model names. API keys are never included. Written
+  to .sketchware/ai/exports and offered through the share sheet.
+
+## Wave 24 — the Plan moves while work lands
+
+- As changes land, the plan's step in hand is marked current
+  automatically; the strip above the composer follows it ("Plan
+  step 3 of 7 · ...") and refreshes on every resolved approval,
+  and an open Plan page re-reads itself while a turn runs.
+  Completion still only comes from set_plan updates checked
+  against recorded changes — live, but not self-awarded.
