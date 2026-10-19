@@ -37,7 +37,7 @@ public final class AgentJournal {
     private static final Gson GSON =
             new GsonBuilder().setPrettyPrinting().create();
     private static final int MAX_TASKS = 40;
-    private static final int MAX_STEPS = 80;
+    private static final int MAX_STEPS = 240;
     /** Turn titles waiting for their first change, per project. */
     private static final Map<String, String> pendingTitles =
             new HashMap<>();
@@ -69,15 +69,23 @@ public final class AgentJournal {
             JsonElement parsed = JsonParser.parseReader(reader);
             if (parsed != null && parsed.isJsonObject()) {
                 JsonObject stored = parsed.getAsJsonObject();
-                if (stored.has("styleBrief")) {
-                    root.addProperty("styleBrief",
-                            stored.get("styleBrief").getAsString());
+                // Keep every stored field (styleBriefAt, step
+                // fingerprints, anything a later version adds): building
+                // a fresh root and copying a fixed field list silently
+                // wiped fields on the next save — the style's saved
+                // date was lost exactly that way.
+                for (java.util.Map.Entry<String, JsonElement> entry
+                        : stored.entrySet()) {
+                    root.add(entry.getKey(), entry.getValue());
                 }
-                if (stored.has("tasks") && stored.get("tasks").isJsonArray()) {
-                    root.add("tasks", stored.get("tasks").getAsJsonArray());
+                if (!root.has("styleBrief")) {
+                    root.addProperty("styleBrief", "");
                 }
-                if (stored.has("plan") && stored.get("plan").isJsonObject()) {
-                    root.add("plan", stored.get("plan").getAsJsonObject());
+                if (!root.has("tasks") || !root.get("tasks").isJsonArray()) {
+                    root.add("tasks", new JsonArray());
+                }
+                if (!root.has("plan") || !root.get("plan").isJsonObject()) {
+                    root.add("plan", new JsonObject());
                 }
             }
         } catch (Exception ignored) {
@@ -111,6 +119,44 @@ public final class AgentJournal {
         JsonObject root = load(scId);
         openTask(scId, root);
         save(scId, root);
+        // A new turn on a project whose plan step sits paused counts
+        // as the work resuming: the paused step becomes the current
+        // one again, so the Plan never leaves a step marked paused
+        // while work is happening under it.
+        resumePlan(scId);
+    }
+
+    /**
+     * Wakes a paused plan step: what was stopped becomes the step in
+     * hand again. Called when work resumes — a plan step is only ever
+     * paused while nothing is happening, never after the user has
+     * asked for the work to continue.
+     */
+    public static synchronized void resumePlan(String scId) {
+        if (scId == null || scId.isEmpty() || !hasPlan(scId)) {
+            return;
+        }
+        JsonObject root = load(scId);
+        JsonObject plan = root.getAsJsonObject("plan");
+        JsonArray steps = plan.getAsJsonArray("steps");
+        for (JsonElement element : steps) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            JsonObject step = element.getAsJsonObject();
+            if ("stopped".equals(text(step, "state"))) {
+                step.addProperty("state", "current");
+                plan.addProperty("updatedAt", System.currentTimeMillis());
+                save(scId, root);
+                return;
+            }
+            if ("current".equals(text(step, "state"))) {
+                return;
+            }
+        }
+        // Nothing paused and nothing in hand: the next unfinished
+        // step becomes current, as it does while work is landing.
+        touchPlanCurrent(scId);
     }
 
     private static JsonObject openTask(String scId, JsonObject root) {
@@ -124,9 +170,8 @@ public final class AgentJournal {
         }
         JsonObject task = new JsonObject();
         task.addProperty("id", tasks.size() + 1);
-        String title = pendingTitles.getOrDefault(scId, "");
         task.addProperty("title",
-                title.isEmpty() ? "Work in progress" : truncate(title, 90));
+                meaningfulTitle(root, pendingTitles.getOrDefault(scId, "")));
         task.addProperty("startedAt", System.currentTimeMillis());
         task.addProperty("state", "open");
         task.addProperty("stopReason", "");
@@ -140,6 +185,12 @@ public final class AgentJournal {
 
     private static void recordStep(String scId, String tool, String label,
                                    String outcome, String detail) {
+        recordStep(scId, tool, label, outcome, detail, "");
+    }
+
+    private static void recordStep(String scId, String tool, String label,
+                                   String outcome, String detail,
+                                   String fingerprint) {
         if (scId == null || scId.isEmpty()) {
             return;
         }
@@ -153,6 +204,9 @@ public final class AgentJournal {
         step.addProperty("outcome", outcome);
         step.addProperty("detail", truncate(
                 detail == null ? "" : detail, 200));
+        if (fingerprint != null && !fingerprint.isEmpty()) {
+            step.addProperty("fp", fingerprint);
+        }
         step.addProperty("at", System.currentTimeMillis());
         steps.add(step);
         while (steps.size() > MAX_STEPS) {
@@ -161,10 +215,79 @@ public final class AgentJournal {
         save(scId, root);
     }
 
+    /**
+     * A task name worth reading: the user's own words; failing that
+     * (a canned "please continue" resume carries no subject) the
+     * plan's name; last of all a plain fallback.
+     */
+    private static String meaningfulTitle(JsonObject root, String title) {
+        String candidate = title == null ? "" : title.trim();
+        if (!candidate.isEmpty()
+                && !candidate.regionMatches(true, 0,
+                        "please continue the unfinished task", 0,
+                        "please continue the unfinished task".length())) {
+            return truncate(candidate, 90);
+        }
+        JsonObject plan = root.getAsJsonObject("plan");
+        if (plan != null && !text(plan, "title").isEmpty()) {
+            return truncate(text(plan, "title"), 90);
+        }
+        return candidate.isEmpty() ? "Work in progress"
+                : truncate(candidate, 90);
+    }
+
     /** A change the user approved and the app applied. */
     public static synchronized void mutationDone(String scId, String tool,
                                                  String label) {
         recordStep(scId, tool, label, "done", "");
+    }
+
+    /** A change the user approved and the app applied. */
+    public static synchronized void mutationDone(String scId, String tool,
+                                                 String label,
+                                                 String fingerprint) {
+        recordStep(scId, tool, label, "done", "", fingerprint);
+    }
+
+    /**
+     * True when this exact change (same tool, same arguments) has
+     * already landed in this project — the app-side memory that
+     * stops any model from proposing finished work all over again.
+     */
+    public static synchronized boolean hasDoneFingerprint(String scId,
+                                                          String fingerprint) {
+        if (scId == null || scId.isEmpty()
+                || fingerprint == null || fingerprint.isEmpty()) {
+            return false;
+        }
+        JsonObject root = load(scId);
+        for (JsonElement task : root.getAsJsonArray("tasks")) {
+            if (!task.isJsonObject()) {
+                continue;
+            }
+            for (JsonElement step
+                    : task.getAsJsonObject().getAsJsonArray("steps")) {
+                if (step.isJsonObject()
+                        && "done".equals(text(step.getAsJsonObject(),
+                                "outcome"))
+                        && fingerprint.equals(text(step.getAsJsonObject(),
+                                "fp"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A read-only check, recorded with the exact thing the agent
+     * looked at — so the Task log shows the inspecting as well as
+     * the changing, and nothing important vanishes when the small
+     * live activity text does.
+     */
+    public static synchronized void noteCheck(String scId, String tool,
+                                              String label) {
+        recordStep(scId, tool, label, "checked", "");
     }
 
     /** A change the user turned down on its approval card. */
@@ -172,6 +295,14 @@ public final class AgentJournal {
                                                      String tool,
                                                      String label) {
         recordStep(scId, tool, label, "rejected", "");
+    }
+
+    /** A turned-down change, with what the card actually proposed. */
+    public static synchronized void mutationRejected(String scId,
+                                                     String tool,
+                                                     String label,
+                                                     String detail) {
+        recordStep(scId, tool, label, "rejected", detail);
     }
 
     /** A change that could not be made (validation or apply failure). */
@@ -205,10 +336,23 @@ public final class AgentJournal {
         // conversation, not a task: it leaves no entry behind. (A
         // stopped one stays even with no steps — the request was
         // never answered, and the user may want to resume it.)
-        if (done && task.getAsJsonArray("steps").size() == 0) {
-            tasks.remove(tasks.size() - 1);
-            save(scId, root);
-            return;
+        // Read-only checks recorded along the way do not make it a
+        // task on their own either.
+        if (done) {
+            boolean anyChange = false;
+            for (JsonElement element : task.getAsJsonArray("steps")) {
+                if (element.isJsonObject()
+                        && !"checked".equals(
+                                text(element.getAsJsonObject(), "outcome"))) {
+                    anyChange = true;
+                    break;
+                }
+            }
+            if (!anyChange) {
+                tasks.remove(tasks.size() - 1);
+                save(scId, root);
+                return;
+            }
         }
         task.addProperty("state", done ? "done" : "stopped");
         task.addProperty("stopReason",
@@ -291,23 +435,79 @@ public final class AgentJournal {
      * recorded — a plan step is a milestone over real work, and the
      * app will not let it claim work that never landed.
      */
-    public static synchronized void setPlan(String scId, String title,
-                                            String stepsText, int doneSteps,
-                                            int currentStep) {
+    /**
+     * Saves the plan — under the contract the user settled: once a
+     * plan exists, its steps are the agreement. A later call can
+     * only append genuinely new steps (never edit, delete or
+     * reorder settled ones); the app enforces that here, whatever
+     * the model sends. Returns how many steps were appended (the
+     * full count for a first plan).
+     */
+    public static synchronized int setPlan(String scId, String title,
+                                           String stepsText, int doneSteps,
+                                           int currentStep) {
         if (scId == null || scId.isEmpty()) {
-            return;
+            return 0;
         }
-        JsonArray steps = new JsonArray();
+        ArrayList<String> incoming = new ArrayList<>();
         if (stepsText != null) {
             for (String line : stepsText.split("\\n")) {
                 String text = line.trim();
-                if (!text.isEmpty() && steps.size() < 24) {
-                    JsonObject step = new JsonObject();
-                    step.addProperty("text", truncate(text, 140));
-                    step.addProperty("state", "pending");
-                    steps.add(step);
+                if (!text.isEmpty() && incoming.size() < 24) {
+                    incoming.add(truncate(text, 140));
                 }
             }
+        }
+        JsonObject root = load(scId);
+        JsonObject existing = root.getAsJsonObject("plan");
+        if (existing != null && existing.has("steps")
+                && existing.getAsJsonArray("steps").size() > 0) {
+            JsonArray kept = existing.getAsJsonArray("steps");
+            java.util.Set<String> known = new java.util.HashSet<>();
+            for (JsonElement element : kept) {
+                if (element.isJsonObject()) {
+                    known.add(text(element.getAsJsonObject(), "text")
+                            .toLowerCase(java.util.Locale.ROOT));
+                }
+            }
+            int added = 0;
+            StringBuilder addedText = new StringBuilder();
+            for (String text : incoming) {
+                if (known.contains(text.toLowerCase(
+                        java.util.Locale.ROOT))) {
+                    continue;
+                }
+                JsonObject step = new JsonObject();
+                step.addProperty("text", text);
+                step.addProperty("state", "pending");
+                kept.add(step);
+                known.add(text.toLowerCase(java.util.Locale.ROOT));
+                added++;
+                if (addedText.length() > 0) {
+                    addedText.append("; ");
+                }
+                addedText.append(text);
+            }
+            if (text(existing, "title").isEmpty()
+                    && title != null && !title.trim().isEmpty()) {
+                existing.addProperty("title", truncate(title.trim(), 90));
+            }
+            existing.addProperty("updatedAt", System.currentTimeMillis());
+            save(scId, root);
+            if (added > 0) {
+                recordStep(scId, "set_plan",
+                        "Plan grew by " + added + " step"
+                                + (added == 1 ? "" : "s"),
+                        "checked", addedText.toString());
+            }
+            return added;
+        }
+        JsonArray steps = new JsonArray();
+        for (String text : incoming) {
+            JsonObject step = new JsonObject();
+            step.addProperty("text", text);
+            step.addProperty("state", "pending");
+            steps.add(step);
         }
         int done = Math.max(0, Math.min(doneSteps,
                 Math.min(steps.size(), doneStepCount(scId))));
@@ -323,9 +523,9 @@ public final class AgentJournal {
                 truncate(title == null ? "" : title.trim(), 90));
         plan.add("steps", steps);
         plan.addProperty("updatedAt", System.currentTimeMillis());
-        JsonObject root = load(scId);
         root.add("plan", plan);
         save(scId, root);
+        return steps.size();
     }
 
     /** The saved plan object (title, steps, updatedAt); never null. */
@@ -690,9 +890,18 @@ public final class AgentJournal {
                     continue;
                 }
                 JsonObject step = element.getAsJsonObject();
-                out.append("\n · ").append(text(step, "label"))
-                        .append(" [").append(text(step, "outcome"))
-                        .append("]");
+                String outcome = text(step, "outcome");
+                // What the agent looked at is part of the record too,
+                // but it reads as inspecting, not as work done.
+                String mark = "done".equals(outcome) ? "✓ "
+                        : "checked".equals(outcome) ? "· "
+                        : "rejected".equals(outcome) ? "✕ "
+                        : "failed".equals(outcome) ? "! " : "· ";
+                out.append("\n ").append(mark)
+                        .append(text(step, "label"));
+                if (!"checked".equals(outcome)) {
+                    out.append(" [").append(outcome).append("]");
+                }
                 String detail = text(step, "detail");
                 if (!detail.isEmpty()) {
                     out.append(" — ").append(detail);
@@ -716,6 +925,12 @@ public final class AgentJournal {
             int total = 0;
             for (JsonElement element : task.getAsJsonArray("steps")) {
                 if (element.isJsonObject()) {
+                    // Reading the project is not a step of the work:
+                    // progress counts the changes, not the looks.
+                    if ("checked".equals(text(element.getAsJsonObject(),
+                            "outcome"))) {
+                        continue;
+                    }
                     total++;
                     if ("done".equals(text(element.getAsJsonObject(),
                             "outcome"))) {

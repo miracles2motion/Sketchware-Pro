@@ -11,6 +11,9 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
+import com.besome.sketch.beans.ProjectFileBean;
+import com.besome.sketch.beans.ViewBean;
+
 /**
  * One JSON file holding everything about a project's conversation
  * with the agent: the chat itself (user and assistant messages,
@@ -73,6 +76,8 @@ public final class AgentExport {
                         ? journal.get("tasks").getAsJsonArray()
                         : new JsonArray());
 
+        root.add("project_state", projectSnapshot(scId));
+
         JsonArray chat = new JsonArray();
         for (ChatMessage message : messages) {
             JsonObject entry = new JsonObject();
@@ -114,6 +119,102 @@ public final class AgentExport {
         }
         root.add("chat", chat);
         return root;
+    }
+
+    /**
+     * The project as it stands now: every screen with its widgets,
+     * its variables and components, and what its events do. Without
+     * this, an export can show a whole conversation and still leave
+     * the reader unable to tell whether any of it is really in the
+     * project.
+     */
+    private static JsonObject projectSnapshot(String scId) {
+        JsonObject state = new JsonObject();
+        if (scId == null || scId.isEmpty()) {
+            return state;
+        }
+        JsonArray screens = new JsonArray();
+        try {
+            for (ProjectFileBean activity
+                    : SketchwareProjects.activities(scId)) {
+                JsonObject screen = new JsonObject();
+                screen.addProperty("activity",
+                        SketchwareProjects.activityName(activity));
+                SketchwareProjects.LogicSummary logic =
+                        SketchwareProjects.logicSummary(scId, activity);
+                // Variables are per screen in Sketchware: recording
+                // which screen declares which is what makes a
+                // "missing variable" failure diagnosable afterwards.
+                JsonObject variables = new JsonObject();
+                for (String name : logic.variables) {
+                    variables.addProperty(name,
+                            String.valueOf(logic.variableTypes.get(name)));
+                }
+                screen.add("variables", variables);
+                JsonObject lists = new JsonObject();
+                for (String name : logic.lists) {
+                    lists.addProperty(name,
+                            String.valueOf(logic.listTypes.get(name)));
+                }
+                screen.add("lists", lists);
+                JsonArray components = new JsonArray();
+                for (String name : logic.components) {
+                    components.add(name);
+                }
+                screen.add("components", components);
+                screen.addProperty("events", logic.events);
+                JsonArray widgets = new JsonArray();
+                for (ViewBean bean
+                        : SketchwareProjects.screenBeans(scId, activity)) {
+                    if (bean == null) {
+                        continue;
+                    }
+                    JsonObject widget = new JsonObject();
+                    widget.addProperty("id", bean.id);
+                    widget.addProperty("type",
+                            AgentEdits.typeName(bean.type));
+                    widget.addProperty("parent", bean.parent);
+                    if (bean.text != null) {
+                        if (bean.text.text != null
+                                && !bean.text.text.isEmpty()) {
+                            widget.addProperty("text", bean.text.text);
+                        }
+                        if (bean.text.hint != null
+                                && !bean.text.hint.isEmpty()) {
+                            widget.addProperty("hint", bean.text.hint);
+                        }
+                    }
+                    if (bean.layout != null) {
+                        widget.addProperty("width", bean.layout.width);
+                        widget.addProperty("height", bean.layout.height);
+                        widget.addProperty("weight", bean.layout.weight);
+                    }
+                    widgets.add(widget);
+                }
+                screen.add("widgets", widgets);
+                JsonArray events = new JsonArray();
+                for (String line
+                        : SketchwareProjects.eventLines(scId, activity)) {
+                    events.add(line);
+                }
+                screen.add("event_list", events);
+                screens.add(screen);
+            }
+        } catch (Exception ignored) {
+            // A snapshot is an aid; a damaged project still exports.
+        }
+        state.add("screens", screens);
+        JsonArray broken = new JsonArray();
+        try {
+            for (String finding
+                    : AgentLogic.danglingWidgetReferences(scId)) {
+                broken.add(finding);
+            }
+        } catch (Exception ignored) {
+            // Never let the check stop the export.
+        }
+        state.add("broken_references", broken);
+        return state;
     }
 
     /** Writes the export under the agent root and returns the file. */

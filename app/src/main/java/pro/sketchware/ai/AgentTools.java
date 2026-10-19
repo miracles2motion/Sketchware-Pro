@@ -3,10 +3,13 @@ package pro.sketchware.ai;
 import android.content.Context;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -220,6 +223,49 @@ public final class AgentTools {
     }
 
     /**
+     * The memory of a change: a stable fingerprint of the tool and its
+     * arguments (key order and whitespace ignored). The app records it
+     * when a change lands, so the same proposal later — from a retry,
+     * a resumed task, or an entirely different model — can be refused
+     * without even showing the user a card.
+     */
+    public static String fingerprint(String name, String argumentsJson) {
+        JsonObject args;
+        try {
+            args = parseArgs(argumentsJson);
+        } catch (Exception e) {
+            args = new JsonObject();
+        }
+        return String.valueOf(name).trim().toLowerCase(Locale.ROOT)
+                + "|" + canonical(args).toString().hashCode();
+    }
+
+    /** A JSON value with object keys in a fixed order, recursively. */
+    private static JsonElement canonical(JsonElement element) {
+        if (element == null || element.isJsonNull()) {
+            return JsonNull.INSTANCE;
+        }
+        if (element.isJsonPrimitive()) {
+            return element;
+        }
+        if (element.isJsonArray()) {
+            JsonArray array = new JsonArray();
+            for (JsonElement child : element.getAsJsonArray()) {
+                array.add(canonical(child));
+            }
+            return array;
+        }
+        JsonObject object = element.getAsJsonObject();
+        JsonObject sorted = new JsonObject();
+        ArrayList<String> keys = new ArrayList<>(object.keySet());
+        Collections.sort(keys);
+        for (String key : keys) {
+            sorted.add(key, canonical(object.get(key)));
+        }
+        return sorted;
+    }
+
+    /**
      * Asks a mutating tool to validate and describe a change. Nothing
      * executes here; the description is what the approval card shows.
      */
@@ -242,6 +288,18 @@ public final class AgentTools {
         } catch (Exception e) {
             return ProposalResult.failed(error("E_BAD_ARGS",
                     "The tool arguments were not valid JSON."));
+        }
+        // The app remembers what landed. A change that is already in
+        // the project never reaches an approval card again: it is
+        // reported back to the model as done, whatever model sent it.
+        if (session.workingProjectId != null
+                && !session.workingProjectId.isEmpty()
+                && AgentJournal.hasDoneFingerprint(session.workingProjectId,
+                        fingerprint(name, argumentsJson))) {
+            return ProposalResult.failed(error("E_ALREADY_DONE",
+                    "This exact change is already in the project — it "
+                            + "landed earlier in this work. Do not propose "
+                            + "it again; continue with the next step."));
         }
         try {
             return ProposalResult.of(tool.propose(session, args));
@@ -1688,7 +1746,9 @@ public final class AgentTools {
 
         @Override
         public String activityLabel(JsonObject args) {
-            return "Wants to wire " + stringArg(args, "activity");
+            return "Wants to wire " + stringArg(args, "target")
+                    + " " + stringArg(args, "event") + " on "
+                    + stringArg(args, "activity");
         }
 
         @Override
@@ -1834,7 +1894,8 @@ public final class AgentTools {
 
         @Override
         public String activityLabel(JsonObject args) {
-            return "Wants to add a variable";
+            return "Wants to add the variable "
+                    + stringArg(args, "name");
         }
 
         @Override
@@ -2124,7 +2185,13 @@ public final class AgentTools {
 
         @Override
         public String activityLabel(JsonObject args) {
-            return "Wants to add a component";
+            String component = stringArg(args, "name");
+            String type = stringArg(args, "type");
+            if (component.isEmpty()) {
+                return "Wants to add a " + type + " component";
+            }
+            return "Wants to add the " + component + " "
+                    + type + " component";
         }
 
         @Override
@@ -2474,7 +2541,33 @@ public final class AgentTools {
                 // A backup problem must not block a build; building
                 // never touches project data anyway.
             }
-            return AgentBuild.build(session.context, scId);
+            JsonObject result = AgentBuild.build(session.context, scId);
+            // Compiling is not proof the app runs: a block that names
+            // a widget its screen does not have compiles cleanly and
+            // then crashes on launch. The build report says so, in
+            // the same breath as the compile result.
+            List<String> broken =
+                    AgentLogic.danglingWidgetReferences(scId);
+            if (!broken.isEmpty()) {
+                StringBuilder text = new StringBuilder();
+                for (String finding : broken) {
+                    if (text.length() > 0) {
+                        text.append("\n");
+                    }
+                    text.append("• ").append(finding);
+                }
+                result.add("runtimeWarnings", namesJson(broken));
+                String previous = result.has("message")
+                        ? result.get("message").getAsString() : "";
+                result.addProperty("message",
+                        (previous.isEmpty() ? "" : previous + "\n\n")
+                                + "It compiled, but this project will "
+                                + "crash when it opens until these are "
+                                + "fixed — a block names a widget that is "
+                                + "not on its screen:\n" + text
+                                + "\nFix them, then build again.");
+            }
+            return result;
         }
     }
 
@@ -2514,8 +2607,25 @@ public final class AgentTools {
 
         @Override
         public String activityLabel(JsonObject args) {
-            return "Looking at what " + stringArg(args, "event")
-                    + " does";
+            // The live line must name the exact thing: five checks
+            // of five different handlers must never read as the same
+            // sentence repeated — that looks like a stuck app.
+            String activity = stringArg(args, "activity");
+            String target = stringArg(args, "target");
+            String event = stringArg(args, "event");
+            StringBuilder label = new StringBuilder("Checking ");
+            if (target.isEmpty() || "activity".equals(target)) {
+                label.append(activity.isEmpty() ? "the screen" : activity);
+            } else {
+                label.append(target);
+                if (!activity.isEmpty()) {
+                    label.append(" in ").append(activity);
+                }
+            }
+            if (!event.isEmpty()) {
+                label.append(" ").append(event);
+            }
+            return label.toString();
         }
 
         @Override
@@ -2600,6 +2710,7 @@ public final class AgentTools {
         @Override
         public String activityLabel(JsonObject args) {
             return "Wants to change a block in "
+                    + stringArg(args, "target") + " "
                     + stringArg(args, "event");
         }
 
@@ -2775,6 +2886,36 @@ public final class AgentTools {
                     ? args.getAsJsonObject("colors") : new JsonObject();
             AgentLogic.ThemePlan plan = AgentLogic.planTheme(scId,
                     colours);
+            // The app checks the project itself before the user is
+            // asked anything: colours that are already in place are
+            // not a change, and must not produce another card. A key
+            // the project has never stored counts as matching only a
+            // true default, so nothing can be "already set" that is
+            // not really there.
+            boolean alreadySet = !colours.entrySet().isEmpty();
+            for (java.util.Map.Entry<String, JsonElement> entry
+                    : colours.entrySet()) {
+                Integer after = plan.after.get(entry.getKey());
+                Integer before = AgentLogic.themeColour(scId,
+                        entry.getKey());
+                if (after == null) {
+                    alreadySet = false;
+                    break;
+                }
+                if (before == null ? after != 0
+                        : !before.equals(after)) {
+                    alreadySet = false;
+                    break;
+                }
+            }
+            if (alreadySet) {
+                throw new ToolException("E_ALREADY_SET",
+                        "Nothing to change: " + plan.sentence
+                                .replace('\n', ' ')
+                                + " — the project already uses exactly "
+                                + "those colours. Continue with the next "
+                                + "step instead of proposing this again.");
+            }
             JsonObject clean = new JsonObject();
             clean.add("colors", colours);
             return new AgentProposal(name(), clean, scId,
@@ -2958,7 +3099,17 @@ public final class AgentTools {
                     + "no plan is needed. No approval card — it changes "
                     + "nothing in the project itself. With no project "
                     + "chosen yet, the plan is held as a draft and "
-                    + "lands in the project this work creates.";
+                    + "lands in the project this work creates. "
+                    + "IMPORTANT: once saved, the plan is settled — a "
+                    + "contract with the user. Calling this again does "
+                    + "NOT rewrite it: settled steps keep their text, "
+                    + "order and progress, and only genuinely new "
+                    + "non-conflicting steps are appended (and logged). "
+                    + "After a stop or a retry, resume the existing plan "
+                    + "at its next unfinished step — never restate or "
+                    + "re-plan it. Change it only when the user "
+                    + "explicitly changes the scope, and then say "
+                    + "plainly what you are adding and why.";
         }
 
         @Override
@@ -3005,12 +3156,36 @@ public final class AgentTools {
                 return result;
             }
             String scId = requiredProject(session.workingProjectId);
-            AgentJournal.setPlan(scId, title, steps, done, current);
+            boolean hadPlan = AgentJournal.hasPlan(scId);
+            int saved = AgentJournal.setPlan(scId, title, steps, done,
+                    current);
             result.addProperty("saved", true);
+            if (hadPlan) {
+                result.addProperty("message",
+                        saved == 0
+                                ? "This project already has a settled "
+                                        + "plan, and every step you just "
+                                        + "sent is already in it. A settled "
+                                        + "plan is a contract: its steps "
+                                        + "cannot be rewritten — only new, "
+                                        + "non-conflicting steps can be "
+                                        + "appended. Continue with the next "
+                                        + "step of the existing plan."
+                                : saved + " new step"
+                                        + (saved == 1 ? " was" : "s were")
+                                        + " appended to the settled plan. "
+                                        + "Existing steps were left exactly "
+                                        + "as the user agreed them; their "
+                                        + "text, order and progress cannot "
+                                        + "be rewritten.");
+                return result;
+            }
             result.addProperty("message",
                     "Plan remembered for this project and shown under "
                             + "its Plan button. Work to it, and keep it "
-                            + "updated as milestones land.");
+                            + "updated as milestones land. Its steps are "
+                            + "now settled: later set_plan calls can only "
+                            + "append new steps, never rewrite these.");
             return result;
         }
     }
@@ -3090,7 +3265,9 @@ public final class AgentTools {
 
         @Override
         public String activityLabel(JsonObject args) {
-            return "Wants to create a project";
+            String name = stringArg(args, "name");
+            return name.isEmpty() ? "Wants to create a project"
+                    : "Wants to create \"" + name + "\"";
         }
 
         @Override
@@ -3176,7 +3353,9 @@ public final class AgentTools {
 
         @Override
         public String activityLabel(JsonObject args) {
-            return "Wants to add a screen";
+            String name = stringArg(args, "activity");
+            return name.isEmpty() ? "Wants to add a screen"
+                    : "Wants to add the screen " + name;
         }
 
         @Override
@@ -3398,7 +3577,8 @@ public final class AgentTools {
 
         @Override
         public String activityLabel(JsonObject args) {
-            return "Wants to change a screen's settings";
+            return "Wants to change the settings of "
+                    + stringArg(args, "activity");
         }
 
         @Override
@@ -3528,7 +3708,8 @@ public final class AgentTools {
 
         @Override
         public String activityLabel(JsonObject args) {
-            return "Wants to delete a screen";
+            return "Wants to delete the screen "
+                    + stringArg(args, "activity");
         }
 
         @Override

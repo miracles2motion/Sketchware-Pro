@@ -24,8 +24,18 @@ import java.util.concurrent.Executor;
  */
 public class AgentLoop {
 
-    /** Tool calls allowed for one user message. */
-    private static final int MAX_TOOL_CALLS = 20;
+    /**
+     * Tool calls allowed before the loop rolls into the next segment
+     * of the SAME task. This is not a task limit: when work is still
+     * in progress at the cap, the loop continues by itself with a
+     * fresh request carrying the task's memory, so a big build is not
+     * chopped into pieces the user has to re-request — and a resumed
+     * segment can never redo what already landed, because the app
+     * refuses duplicates by fingerprint.
+     */
+    private static final int MAX_TOOL_CALLS = 24;
+    /** How many segments one user message may run, at most. */
+    private static final int MAX_SEGMENTS = 6;
 
     private static final String AGENT_GUIDANCE =
             "\n\nYou are connected to the user's Sketchware Pro app and can "
@@ -116,6 +126,19 @@ public class AgentLoop {
             + "the user already turned down under a different name. The "
             + "log records what the app applied, not what you remember "
             + "saying, so trust your tool reads of the project over both. "
+            + "Before proposing any change, check the real project "
+            + "state with a tool: colours already set, a screen or "
+            + "variable or widget that already exists, are already "
+            + "done — the app refuses them and tells you so, and the "
+            + "user never sees a card for them. Variables and widgets "
+            + "belong to ONE screen: a variable or widget created on "
+            + "one activity does not exist on another, so create it on "
+            + "the screen whose logic uses it. After a stop, a retry "
+            + "or a model change, you resume the SAME task and the "
+            + "SAME plan — never restate the plan, never re-propose "
+            + "finished steps. The memory lives in the app, not in "
+            + "you: a different model picks up exactly where you left "
+            + "off by reading the same brief. "
             + "When the user agrees a style direction for the project "
             + "('for kids', 'dark and minimal', 'use our brand colour'), "
             + "save it with set_style_brief so it survives the chat, and "
@@ -272,6 +295,8 @@ public class AgentLoop {
         int calls = 0;
         String lastFailedCall = "";
         int sameFailure = 0;
+        final int[] segment = {1};
+        final boolean[] rollover = {false};
         while (!cancelled) {
             AiChatService.AgentReply reply;
             try {
@@ -309,14 +334,50 @@ public class AgentLoop {
                     return;
                 }
                 if (++calls > MAX_TOOL_CALLS) {
-                    closeTask(journalProject[0], false,
-                            "it reached the limit of " + MAX_TOOL_CALLS
-                                    + " steps for one message", taskClosed);
-                    dispatch(listener, () -> listener.onError(new AiChatService.AiError(
-                            AiChatService.ErrorKind.HTTP, 0,
-                            "The agent stopped after " + MAX_TOOL_CALLS
-                                    + " tool calls for one message.")));
-                    return;
+                    // Not a stop: the same task continues in another
+                    // segment, with its memory re-sent, so nothing is
+                    // re-proposed or lost at the seam. The calls this
+                    // reply still holds are answered as deferred
+                    // rather than dropped — a provider rejects a
+                    // reply whose tool calls get no answer.
+                    if (segment[0] < MAX_SEGMENTS) {
+                        rollover[0] = true;
+                    } else {
+                        closeTask(journalProject[0], false,
+                                "it reached the limit of " + MAX_TOOL_CALLS
+                                        + " steps for one message",
+                                taskClosed);
+                        dispatch(listener,
+                                () -> listener.onError(
+                                        new AiChatService.AiError(
+                                                AiChatService.ErrorKind.HTTP,
+                                                0,
+                                                "The agent stopped after "
+                                                        + MAX_TOOL_CALLS
+                                                        + " tool calls for "
+                                                        + "one message.")));
+                        return;
+                    }
+                }
+                if (rollover[0]) {
+                    // This part is full: the call is answered, not
+                    // run, and the task continues in the next part.
+                    JsonObject deferred = new JsonObject();
+                    deferred.addProperty("deferred", true);
+                    deferred.addProperty("message",
+                            "Not run yet — this part of the task is "
+                                    + "full. The work continues in the "
+                                    + "next part; call this again there "
+                                    + "if it is still needed. Already "
+                                    + "applied steps are skipped "
+                                    + "automatically.");
+                    JsonObject toolMessage = new JsonObject();
+                    toolMessage.addProperty("role", "tool");
+                    toolMessage.addProperty("tool_call_id", call.id);
+                    toolMessage.addProperty("content",
+                            deferred.toString());
+                    messages.add(toolMessage);
+                    continue;
                 }
                 AgentTools.Session session = new AgentTools.Session(
                         context, workingProjectId, allowModify);
@@ -362,6 +423,15 @@ public class AgentLoop {
                     String label = AgentTools.labelFor(call.name, call.arguments);
                     dispatch(listener, () -> listener.onToolNote(label));
                     result = AgentTools.dispatch(call.name, call.arguments, session);
+                    // The small live line disappears when the turn
+                    // ends, so what was looked at — with its exact
+                    // screen, widget and event — is written down.
+                    if (!"set_style_brief".equals(call.name)
+                            && !"set_plan".equals(call.name)
+                            && !"get_task_log".equals(call.name)) {
+                        AgentJournal.noteCheck(journalProject[0], call.name,
+                                label);
+                    }
                 }
                 boolean failed = result.has("error")
                         && !"E_REJECTED".equals(result.get("error").getAsString());
@@ -403,6 +473,20 @@ public class AgentLoop {
                 toolMessage.addProperty("tool_call_id", call.id);
                 toolMessage.addProperty("content", result.toString());
                 messages.add(toolMessage);
+            }
+            if (rollover[0]) {
+                // The seam between two parts of the same task: the
+                // memory is re-sent, the plan stays as it is, and
+                // what already landed cannot be proposed again.
+                segment[0]++;
+                calls = 0;
+                rollover[0] = false;
+                dispatch(listener, () -> listener.onToolNote(
+                        "Continuing part " + segment[0] + " of "
+                                + MAX_SEGMENTS
+                                + " — skipping what is already done"));
+                messages.add(continueMessage(workingProjectId,
+                        journalProject[0]));
             }
         }
         // The loop only falls through here when the turn was stopped.
@@ -493,6 +577,26 @@ public class AgentLoop {
                             : "");
             return proposed.error;
         }
+        if (proposed.error != null && "E_ALREADY_DONE".equals(
+                proposed.error.has("error")
+                        ? proposed.error.get("error").getAsString() : "")) {
+            // The change is already in the project. No card, no
+            // question, nothing repeated: the model is told to move
+            // on to the next step.
+            AgentJournal.noteCheck(journalProject, call.name,
+                    "Already in the project: " + proposalLabel(call));
+            return proposed.error;
+        }
+        if (proposed.error != null && "E_ALREADY_SET".equals(
+                proposed.error.has("error")
+                        ? proposed.error.get("error").getAsString() : "")) {
+            // Colours (or another setting) already hold these exact
+            // values: nothing to change, so nothing is asked of the
+            // user either.
+            AgentJournal.noteCheck(journalProject, call.name,
+                    "Already set: " + proposalLabel(call));
+            return proposed.error;
+        }
         AgentProposal proposal = proposed.proposal;
         // The change belongs to the project it targets (a created
         // project journals under itself from its first step).
@@ -501,7 +605,9 @@ public class AgentLoop {
                 ? journalProject : proposal.workingProjectId;
         boolean approved = listener.onApproval(proposal);
         if (!approved) {
-            AgentJournal.mutationRejected(journal, call.name, proposal.title);
+            AgentJournal.mutationRejected(journal, call.name,
+                    proposal.title,
+                    proposal.details == null ? "" : proposal.details);
             JsonObject rejected = new JsonObject();
             rejected.addProperty("error", "E_REJECTED");
             rejected.addProperty("message",
@@ -526,11 +632,100 @@ public class AgentLoop {
                     result.has("message")
                             ? result.get("message").getAsString() : "");
         } else {
-            AgentJournal.mutationDone(journal, call.name, proposal.title);
+            // The fingerprint is the app's memory of this exact
+            // change: a later proposal of it — from a retry, a resumed
+            // task, or a different model entirely — is refused before
+            // it can reach the user.
+            AgentJournal.mutationDone(journal, call.name, proposal.title,
+                    AgentTools.fingerprint(call.name, call.arguments));
             AgentJournal.touchPlanCurrent(journal);
+            // The change compiles and saves, and can still be broken:
+            // a block naming a widget its screen does not have builds
+            // fine and crashes on launch. The agent is told about it
+            // here, while it can still fix it.
+            List<String> broken =
+                    AgentLogic.danglingWidgetReferences(journal);
+            if (!broken.isEmpty()) {
+                result.add("runtimeWarnings", jsonList(broken));
+                StringBuilder text = new StringBuilder(
+                        "Applied — but this project now has "
+                                + broken.size()
+                                + " broken reference(s) that would make "
+                                + "the app crash when it opens:");
+                for (String finding : broken) {
+                    text.append("\n• ").append(finding);
+                }
+                result.addProperty("warning", text.toString());
+                AgentJournal.noteCheck(journal, call.name,
+                        "Broken reference found in " + proposal.title);
+            }
         }
         dispatch(listener, () -> listener.onApprovalResolved(proposal, result));
         return result;
+    }
+
+    /** A JSON array of plain strings, for tool results. */
+    private static JsonArray jsonList(List<String> values) {
+        JsonArray array = new JsonArray();
+        for (String value : values) {
+            array.add(value);
+        }
+        return array;
+    }
+
+    /** The plain label of a proposed call, for the log. */
+    private static String proposalLabel(AiChatService.ToolCallData call) {
+        try {
+            return AgentTools.labelFor(call.name, call.arguments);
+        } catch (Exception e) {
+            return String.valueOf(call.name);
+        }
+    }
+
+    /**
+     * The seam between two segments of the same task: the model is
+     * told to carry on, and handed the app's own memory again — the
+     * real state of the project and the work already landed — so a
+     * continuation can never restart it or redo finished steps.
+     */
+    private JsonObject continueMessage(String boundProject,
+                                       String journalProject) {
+        StringBuilder text = new StringBuilder(
+                "Continue the same task exactly where you stopped. Do not "
+                        + "start over, do not restate the plan, and do not "
+                        + "re-propose anything already applied — the app "
+                        + "rejects duplicates automatically and the task "
+                        + "log below is the truth.");
+        if (journalProject != null && !journalProject.isEmpty()) {
+            text.append("\n\n").append(
+                    AgentJournal.brief(journalProject).trim());
+            text.append("\n\n").append(snapshot(journalProject));
+        }
+        JsonObject message = new JsonObject();
+        message.addProperty("role", "user");
+        message.addProperty("content", text.toString());
+        return message;
+    }
+
+    /** The project as it is right now, in a few plain lines. */
+    private String snapshot(String scId) {
+        StringBuilder out = new StringBuilder("The project right now:");
+        try {
+            for (ProjectFileBean activity
+                    : SketchwareProjects.activities(scId)) {
+                out.append("\n· ")
+                        .append(SketchwareProjects.activityName(activity))
+                        .append(" (")
+                        .append(SketchwareProjects.screenBeans(scId,
+                                activity).size())
+                        .append(" widgets)");
+            }
+        } catch (Exception ignored) {
+            // The snapshot is an aid, never a requirement.
+        }
+        out.append("\nRe-check this with your tools before proposing "
+                + "anything.");
+        return out.toString();
     }
 
     private JsonObject systemMessage(String workingProjectId) {

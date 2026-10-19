@@ -48,14 +48,55 @@ public final class AgentChatLog {
         }
         JsonArray stored = new JsonArray();
         for (ChatMessage message : messages) {
+            // Approval and build cards are kept too: reopening a
+            // project must show the decisions that were made, and an
+            // export has to be able to prove them. A card with no
+            // headline (nothing was ever proposed) is still skipped.
+            boolean isCard = message.role == ChatMessage.Role.APPROVAL;
             if (message.role != ChatMessage.Role.USER
-                    && message.role != ChatMessage.Role.ASSISTANT) {
+                    && message.role != ChatMessage.Role.ASSISTANT
+                    && !isCard) {
                 continue;
             }
-            if (message.text == null || message.text.trim().isEmpty()) {
+            if (isCard && (message.approvalTitle == null
+                    || message.approvalTitle.trim().isEmpty())) {
+                continue;
+            }
+            if (!isCard
+                    && (message.text == null
+                            || message.text.trim().isEmpty())) {
                 continue;
             }
             JsonObject entry = new JsonObject();
+            if (isCard) {
+                entry.addProperty("role", "approval");
+                entry.addProperty("title", message.approvalTitle);
+                if (message.approvalBody != null
+                        && !message.approvalBody.isEmpty()) {
+                    entry.addProperty("body", message.approvalBody);
+                }
+                if (message.approvalDetails != null
+                        && !message.approvalDetails.isEmpty()) {
+                    entry.addProperty("details", message.approvalDetails);
+                }
+                entry.addProperty("approvalState",
+                        String.valueOf(message.approvalState));
+                if (message.approvalOutcome != null
+                        && !message.approvalOutcome.isEmpty()) {
+                    entry.addProperty("outcome",
+                            message.approvalOutcome);
+                }
+                if (message.buildApkPath != null
+                        && !message.buildApkPath.isEmpty()) {
+                    entry.addProperty("apk", message.buildApkPath);
+                }
+                entry.addProperty("timestamp", message.timestamp);
+                stored.add(entry);
+                while (stored.size() > MAX_MESSAGES) {
+                    stored.remove(0);
+                }
+                continue;
+            }
             entry.addProperty("role",
                     message.role == ChatMessage.Role.USER
                             ? "user" : "assistant");
@@ -100,13 +141,45 @@ public final class AgentChatLog {
                     continue;
                 }
                 JsonObject entry = element.getAsJsonObject();
+                String role = entry.has("role")
+                        ? entry.get("role").getAsString() : "";
+                if ("approval".equals(role)) {
+                    ChatMessage card =
+                            new ChatMessage(ChatMessage.Role.APPROVAL, "");
+                    card.approvalTitle = entry.has("title")
+                            ? entry.get("title").getAsString() : "";
+                    if (card.approvalTitle.trim().isEmpty()) {
+                        continue;
+                    }
+                    card.approvalBody = entry.has("body")
+                            ? entry.get("body").getAsString() : "";
+                    card.approvalDetails = entry.has("details")
+                            ? entry.get("details").getAsString() : "";
+                    card.approvalState = entry.has("approvalState")
+                            ? entry.get("approvalState").getAsString()
+                            : ChatMessage.APPROVAL_DONE;
+                    card.approvalOutcome = entry.has("outcome")
+                            ? entry.get("outcome").getAsString() : "";
+                    card.buildApkPath = entry.has("apk")
+                            ? entry.get("apk").getAsString() : "";
+                    if (entry.has("timestamp")) {
+                        try {
+                            card.timestamp =
+                                    entry.get("timestamp").getAsLong();
+                        } catch (Exception ignored) {
+                            // Falls back to the creation time.
+                        }
+                    }
+                    card.state = ChatMessage.State.COMPLETE;
+                    messages.add(card);
+                    continue;
+                }
                 String text = entry.has("text")
                         ? entry.get("text").getAsString() : "";
                 if (text.trim().isEmpty()) {
                     continue;
                 }
-                boolean user = entry.has("role")
-                        && "user".equals(entry.get("role").getAsString());
+                boolean user = "user".equals(role);
                 ChatMessage message = new ChatMessage(
                         user ? ChatMessage.Role.USER
                                 : ChatMessage.Role.ASSISTANT, text);

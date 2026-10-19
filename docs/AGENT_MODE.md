@@ -1137,3 +1137,66 @@ Device test findings (SportyNivida / Sporty Bet):
   normalizes any null resName it saves (healing screens broken by
   older builds on their next edit); ViewPane's two equals checks
   are null-safe so no malformed project can crash the editor here.
+
+## Wave 26 — memory that no model can lose, design that is enforced, and honesty about what breaks
+
+Everything below came from a real session the user exported and from
+projects they built and opened on their own phone.
+
+**1. No duplicate work, whoever is driving.** Every applied change
+stores a fingerprint (tool + its arguments, key order ignored) in the
+journal. A proposal of the same change later — after a retry, a
+resumed task, or a completely different model — is refused by the app
+before an approval card exists; the model is told it is already done.
+`edit_project_theme` checks the project's live colours first: colours
+that already match produce no card at all.
+
+**2. A settled Plan is a contract.** `set_plan` no longer rewrites an
+existing plan: settled steps keep their text, order and progress, and
+only genuinely new, non-conflicting steps can be appended (and that
+is logged). On resume a paused step wakes up as the step in hand
+(`resumePlan`), so a stopped plan step is never left lying.
+
+**3. Tasks continue instead of ending at a cap.** The cap is now a
+segment boundary, not a stop: at 24 calls the loop rolls into the
+next part of the same task (up to 6), answering the calls it cannot
+run as deferred so the provider contract stays intact, and re-sending
+the task's memory — journal brief plus a fresh snapshot of the
+project — at the seam. The user does not re-request anything.
+
+**4. The live activity line is a heartbeat, not chat.** One line,
+rewritten in place, naming the exact thing: "Checking btn_sign_in
+onClick in AuthActivity", not "Looking at what onClick does" five
+times. It disappears when the turn ends; what it described is written
+into the Task log as a check (screen, widget, event), which is
+permanent and searchable.
+
+**5. Design is applied, not only advised.** Newly added widgets are
+corrected deterministically before saving: inputs fill a form's
+width, a form's action button spans it and is at least 48dp tall, and
+no widget is left labelled "EditText". Values the agent set itself
+are never overwritten. A spinner now warns that it will stay on
+screen until logic hides it.
+
+**6. Logic that cannot be right is refused.** A true/false variable
+can no longer be set with an empty value — the app used to read that
+silently as false, which is how one flag ended up meaning both
+"running" and "paused". New: `AgentLogic.danglingWidgetReferences`
+reads every event of every screen and finds blocks naming a widget
+that is not on their own screen — the exact class of bug that
+compiles cleanly and then crashes on launch with a null view. It runs
+after every mutation (the agent is told, so it can fix it), in the
+build report, and in every export.
+
+**7. An export that can actually be used.** Approval and build cards
+now survive a restart (the chat log stores them), so exports contain
+them. Exports also carry the project's current state — screens,
+widgets with sizes and text, per-screen variables (variables are per
+screen, which is what makes a "missing variable" failure
+diagnosable), components, events — and the broken-reference report.
+Rejected proposals record what the card actually proposed, and the
+journal keeps every stored field, so the Style's saved date is no
+longer lost on re-save.
+
+**8. Real task titles.** A resume with no subject of its own
+("continue") takes the plan's name instead of "Work in progress".

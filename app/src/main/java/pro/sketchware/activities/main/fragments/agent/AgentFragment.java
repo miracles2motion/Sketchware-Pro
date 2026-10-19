@@ -101,6 +101,13 @@ public class AgentFragment extends qA {
     private String stripDismissedText = "";
     /** The project whose stored conversation is on screen, if any. */
     private String chatProjectId = "";
+    /**
+     * The one live "what the agent is doing" line, replaced in place
+     * as the turn moves on and removed once the turn is over. These
+     * lines are a heartbeat, not part of the conversation: they must
+     * not pile up in the chat or in an export.
+     */
+    private ChatMessage liveNote;
 
     @Nullable
     @Override
@@ -405,6 +412,7 @@ public class AgentFragment extends qA {
                     @Override
                     public void onAnswer(String text, String thinking) {
                         runOnUi(() -> {
+                            clearLiveNote();
                             generating = false;
                             if (streamingMessage != null) {
                                 streamingMessage.thinking = thinking;
@@ -425,6 +433,7 @@ public class AgentFragment extends qA {
                                 startStreamingTurn(history);
                                 return;
                             }
+                            clearLiveNote();
                             generating = false;
                             handleError(error);
                             updateActionButton();
@@ -435,6 +444,9 @@ public class AgentFragment extends qA {
 
                     @Override
                     public boolean onApproval(AgentProposal proposal) {
+                        // The card now says what is being proposed;
+                        // the heartbeat line has done its job.
+                        runOnUi(AgentFragment.this::clearLiveNote);
                         return awaitApproval(proposal);
                     }
 
@@ -1418,8 +1430,42 @@ public class AgentFragment extends qA {
         if (index < 0) {
             index = messages.size();
         }
-        messages.add(index, ChatMessage.error(line));
+        if (liveNote != null) {
+            int at = messages.indexOf(liveNote);
+            if (at >= 0) {
+                // The same line is rewritten, not repeated: five
+                // checks of five different handlers must read as five
+                // different lines, not one line five times.
+                liveNote.text = line;
+                adapter.notifyItemChanged(at);
+                return;
+            }
+            liveNote = null;
+        }
+        ChatMessage note = new ChatMessage(ChatMessage.Role.SYSTEM, line);
+        note.state = ChatMessage.State.COMPLETE;
+        liveNote = note;
+        messages.add(index, note);
         adapter.notifyItemInserted(index);
+        scrollToNewest();
+    }
+
+    /**
+     * Removes the live activity line. It is a heartbeat for the turn
+     * in progress, so it goes when the turn ends — the work it
+     * described is written in the Task log instead.
+     */
+    private void clearLiveNote() {
+        if (liveNote == null || binding == null) {
+            liveNote = null;
+            return;
+        }
+        int index = messages.indexOf(liveNote);
+        liveNote = null;
+        if (index >= 0) {
+            messages.remove(index);
+            adapter.notifyItemRemoved(index);
+        }
     }
 
     /** Posts to the UI thread when a view is still attached. */

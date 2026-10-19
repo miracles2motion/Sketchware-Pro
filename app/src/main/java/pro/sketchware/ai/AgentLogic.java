@@ -5347,6 +5347,24 @@ public final class AgentLogic {
                     stmt.sentence = "Set variable “" + name + "” to "
                             + value;
                 } else if (kind2 == 0) {
+                    // A true/false variable must say which. Silently
+                    // reading an empty value as false is how an agent
+                    // ends up setting the same flag "on" in a start
+                    // handler and "off" in a pause handler with the
+                    // very same empty socket — two opposite meanings
+                    // that cannot both be right.
+                    if (!op.has("value") || op.get("value").isJsonNull()
+                            || (op.get("value").isJsonPrimitive()
+                                    && op.get("value").getAsString()
+                                            .trim().isEmpty())) {
+                        throw new AgentTools.ToolException("E_BAD_BLOCK",
+                                "Variable \"" + name + "\" is a true/false "
+                                        + "variable, so \"value\" must be "
+                                        + "explicitly true or false — an "
+                                        + "empty value cannot mean one "
+                                        + "thing here and the opposite "
+                                        + "somewhere else.");
+                    }
                     boolean value = boolOf(op, "value", false);
                     stmt.params.add(String.valueOf(value));
                     stmt.sentence = "Set variable “" + name + "” to "
@@ -7605,6 +7623,113 @@ public final class AgentLogic {
         public int existingCount;
         public String blockDescription;
         public String eventRendering;
+    }
+
+    /**
+     * The check that catches "it builds, then dies the moment it
+     * opens": a block that names a widget which is not on its own
+     * screen. Sketchware compiles that happily — the generated code
+     * calls a view the layout never created, and the app crashes on
+     * launch with a null view. Every event of every screen is read
+     * the way the editor stores it and each widget reference is
+     * matched against the widgets that really exist there.
+     *
+     * <p>Pure: reads, changes nothing. Returns plain, one-per-line
+     * findings; empty when every reference resolves.
+     */
+    public static List<String> danglingWidgetReferences(String scId) {
+        ArrayList<String> findings = new ArrayList<>();
+        if (scId == null || scId.isEmpty()) {
+            return findings;
+        }
+        try {
+            for (ProjectFileBean activity
+                    : SketchwareProjects.activities(scId)) {
+                if (activity.fileType
+                        != ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
+                    continue;
+                }
+                String javaName = activity.getJavaName();
+                eC store = jC.a(scId);
+                java.util.Set<String> ids = new java.util.HashSet<>();
+                for (ViewBean bean
+                        : SketchwareProjects.screenBeans(scId, activity)) {
+                    if (bean != null && bean.id != null) {
+                        ids.add(bean.id);
+                    }
+                }
+                ArrayList<EventBean> events = store.g(javaName);
+                if (events == null) {
+                    continue;
+                }
+                for (EventBean event : events) {
+                    ArrayList<BlockBean> blocks = store.a(javaName,
+                            event.targetId + "_" + event.eventName);
+                    if (blocks == null) {
+                        continue;
+                    }
+                    for (BlockBean bean : blocks) {
+                        String referenced = widgetReferenceOf(bean);
+                        if (referenced == null || ids.contains(referenced)) {
+                            continue;
+                        }
+                        String finding =
+                                SketchwareProjects.activityName(activity)
+                                        + ": a block in "
+                                        + event.targetId + " "
+                                        + event.eventName
+                                        + " uses the widget \""
+                                        + referenced
+                                        + "\", which is not on that "
+                                        + "screen — the app would crash "
+                                        + "when it opens. Fix it: change "
+                                        + "the block to a widget that is "
+                                        + "there, or add the widget.";
+                        if (!findings.contains(finding)) {
+                            findings.add(finding);
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // A check must never stop the work it is checking.
+        }
+        return findings;
+    }
+
+    /**
+     * The widget id a block acts on, or null: the first parameter of
+     * a block whose first slot holds a view (the app's own slot table
+     * marks them {@code %v} and {@code %m.<kind>}). Parameters that
+     * point at another value block ({@code @id}) are not references.
+     */
+    private static String widgetReferenceOf(BlockBean bean) {
+        if (bean == null || bean.opCode == null
+                || bean.parameters == null
+                || bean.parameters.isEmpty()) {
+            return null;
+        }
+        String first = bean.parameters.get(0);
+        if (first == null || first.isEmpty() || first.startsWith("@")) {
+            return null;
+        }
+        ArrayList<String> slots;
+        try {
+            slots = lq.a(bean.opCode);
+        } catch (Throwable e) {
+            return null;
+        }
+        if (slots == null || slots.isEmpty()) {
+            return null;
+        }
+        String slot = slots.get(0);
+        if (slot == null) {
+            return null;
+        }
+        if (!("%v".equals(slot) || slot.startsWith("%m."))) {
+            return null;
+        }
+        return first;
     }
 
     /**

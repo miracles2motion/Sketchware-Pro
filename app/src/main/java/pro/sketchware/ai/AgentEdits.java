@@ -881,6 +881,13 @@ public final class AgentEdits {
             }
         }
 
+        // Design is made real here, not merely advised: the common
+        // layout mistakes an agent makes when it drops widgets are
+        // corrected on the copy before anything is saved, and the
+        // proposal lines say so — the user sees the same result on
+        // the card and gets it on screen.
+        applyDesignDefaults(work, byId, frozenOps, lines);
+
         for (ViewBean bean : work) {
             if (bean.id == null || bean.id.isEmpty()
                     || ROOT_PARENT.equals(bean.id)) {
@@ -910,6 +917,164 @@ public final class AgentEdits {
         outcome.warnings.addAll(visibilityWarnings(work));
         outcome.warnings.addAll(designWarnings(work));
         return outcome;
+    }
+
+    /**
+     * The design rules the agent was only advised about before, now
+     * applied to the widgets it just added: inputs fill a form, a
+     * form's action button spans it and is tall enough to tap, and
+     * no widget is left showing the palette's own placeholder
+     * ("EditText") where a real label belongs. Values the agent set
+     * explicitly in this same batch are never overwritten.
+     */
+    private static void applyDesignDefaults(ArrayList<ViewBean> work,
+                                            Map<String, ViewBean> byId,
+                                            JsonArray ops,
+                                            List<String> lines) {
+        java.util.Set<String> added = new java.util.HashSet<>();
+        java.util.Set<String> sized = new java.util.HashSet<>();
+        java.util.Set<String> labelled = new java.util.HashSet<>();
+        for (JsonElement element : ops) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            // The ops as they were replayed: only there do agent-named
+            // widgets carry the ids the app allocated for them.
+            JsonObject op = element.getAsJsonObject().deepCopy();
+            String kind = normalizeKind(op);
+            String id = widgetIdOf(op);
+            if (id.isEmpty()) {
+                continue;
+            }
+            if ("add_widget".equals(kind)) {
+                added.add(id);
+            } else if ("set_size".equals(kind) || "set_weight".equals(kind)
+                    || "set_padding".equals(kind)) {
+                sized.add(id);
+            } else if ("set_text".equals(kind) || "set_hint".equals(kind)) {
+                labelled.add(id);
+            }
+        }
+        if (added.isEmpty()) {
+            return;
+        }
+        for (String id : added) {
+            ViewBean bean = byId.get(id);
+            if (bean == null || bean.layout == null || bean.text == null) {
+                continue;
+            }
+            ViewBean parent = byId.get(bean.parent);
+            boolean parentLinear = parent == null
+                    || parent.type == ViewBean.VIEW_TYPE_LAYOUT_LINEAR;
+            boolean parentVertical = parent == null
+                    || (parent.type == ViewBean.VIEW_TYPE_LAYOUT_LINEAR
+                            && (parent.layout == null
+                                    || parent.layout.orientation
+                                            != LayoutBean
+                                                    .ORIENTATION_HORIZONTAL));
+            // A readable label: an input's hint or a button's text
+            // should say what it is for, not repeat its type name.
+            if (!labelled.contains(id)) {
+                String placeholder = typeName(bean.type);
+                if (bean.type == ViewBean.VIEW_TYPE_WIDGET_EDITTEXT) {
+                    String hint = bean.text.hint == null
+                            ? "" : bean.text.hint.trim();
+                    if (hint.isEmpty() || hint.equals(placeholder)) {
+                        String readable = readableLabel(id, placeholder);
+                        bean.text.hint = readable;
+                        lines.add("Labelled " + id + " “" + readable
+                                + "”");
+                    }
+                } else if (isTextCarrier(bean.type)) {
+                    String text = bean.text.text == null
+                            ? "" : bean.text.text.trim();
+                    if (text.isEmpty() || text.equals(placeholder)) {
+                        String readable = readableLabel(id, placeholder);
+                        bean.text.text = readable;
+                        lines.add("Labelled " + id + " “" + readable
+                                + "”");
+                    }
+                }
+            }
+            if (sized.contains(id) || !parentLinear || !parentVertical) {
+                continue;
+            }
+            // Inputs fill the form's width: a text box as narrow as
+            // its own hint looks unfinished and is hard to type in.
+            if (bean.type == ViewBean.VIEW_TYPE_WIDGET_EDITTEXT
+                    && bean.layout.width == LayoutBean.LAYOUT_WRAP_CONTENT
+                    && bean.layout.weight == 0) {
+                bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                lines.add("Made " + id + " fill the form's width");
+            }
+            boolean button = bean.type == ViewBean.VIEW_TYPE_WIDGET_BUTTON
+                    || bean.type
+                            == ViewBeans.VIEW_TYPE_WIDGET_MATERIALBUTTON;
+            // A form's action button spans it and is tall enough to
+            // tap — the single most common thing agents get wrong.
+            if (button && formContainer(work, bean.parent)) {
+                if (bean.layout.width != LayoutBean.LAYOUT_MATCH_PARENT) {
+                    bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
+                    lines.add("Made " + id
+                            + " span the form's width");
+                }
+                if (bean.layout.height >= 0
+                        && bean.layout.height < 48) {
+                    bean.layout.height = 48;
+                    lines.add("Made " + id + " 48dp tall so it is "
+                            + "easy to tap");
+                }
+            }
+        }
+    }
+
+    /** Widgets whose on-screen words are their label. */
+    private static boolean isTextCarrier(int type) {
+        return type == ViewBean.VIEW_TYPE_WIDGET_TEXTVIEW
+                || type == ViewBean.VIEW_TYPE_WIDGET_BUTTON
+                || type == ViewBean.VIEW_TYPE_WIDGET_CHECKBOX
+                || type == ViewBean.VIEW_TYPE_WIDGET_SWITCH
+                || type == ViewBeans.VIEW_TYPE_WIDGET_MATERIALBUTTON
+                || type == ViewBeans.VIEW_TYPE_WIDGET_RADIOBUTTON;
+    }
+
+    /** True when a layout holds a text input: a form. */
+    private static boolean formContainer(ArrayList<ViewBean> work,
+                                         String parentId) {
+        if (parentId == null || ROOT_PARENT.equals(parentId)) {
+            return false;
+        }
+        for (ViewBean bean : work) {
+            if (parentId.equals(bean.parent)
+                    && bean.type == ViewBean.VIEW_TYPE_WIDGET_EDITTEXT) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** "email_input" -> "Email input"; "button1" -> "Button 1". */
+    private static String readableLabel(String id, String fallback) {
+        if (id == null || id.trim().isEmpty()) {
+            return fallback;
+        }
+        StringBuilder out = new StringBuilder();
+        boolean capitalize = true;
+        for (char character : id.trim().toCharArray()) {
+            if (character == '_') {
+                out.append(' ');
+                capitalize = true;
+                continue;
+            }
+            if (character >= '0' && character <= '9' && out.length() == 0) {
+                capitalize = false;
+            }
+            out.append(capitalize
+                    ? Character.toUpperCase(character) : character);
+            capitalize = false;
+        }
+        String label = out.toString().trim();
+        return label.isEmpty() ? fallback : label;
     }
 
     /**
@@ -992,6 +1157,28 @@ public final class AgentEdits {
                         + "dp, which can overflow smaller screens. "
                         + "match_parent, wrap_content or weight "
                         + "usually fits better.");
+            }
+            if (bean.type == ViewBean.VIEW_TYPE_WIDGET_PROGRESSBAR) {
+                // There is no stored "hidden" property a spinner can
+                // start with: it shows until logic hides it. A
+                // spinner left visible is a spinner sitting on the
+                // screen for good.
+                warnings.add(bean.id + " is a spinner and will stay "
+                        + "visible on screen until something hides it. "
+                        + "Hide it in the screen's onCreate (set_visibility "
+                        + "gone) and show it only while it is loading — "
+                        + "unless it is meant to be on screen all the "
+                        + "time.");
+            }
+            if (bean.type == ViewBean.VIEW_TYPE_WIDGET_EDITTEXT
+                    && bean.text != null
+                    && (bean.text.hint == null
+                            || bean.text.hint.trim().isEmpty())
+                    && (bean.text.text == null
+                            || bean.text.text.trim().isEmpty())) {
+                warnings.add(bean.id + " has no hint, so users see an "
+                        + "empty box with no clue what to type. Give it "
+                        + "a hint like \"Email\".");
             }
         }
         return warnings;
