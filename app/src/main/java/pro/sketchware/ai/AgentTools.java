@@ -1025,7 +1025,13 @@ public final class AgentTools {
             return "Proposes behaviour for one event of one screen: when "
                     + "a widget is tapped (or another of its events "
                     + "fires), or when the screen itself runs an "
-                    + "activity event like onCreate. The new blocks are "
+                    + "activity event like onCreate. The target can "
+                    + "also be a component's id (for example "
+                    + "\"firebase1\") with one of that component's own "
+                    + "events — components report what happened "
+                    + "through their events, and the values an event "
+                    + "passes are read with {\"arg\":\"name\"}. The "
+                    + "new blocks are "
                     + "APPENDED after whatever the event already does — "
                     + "check get_screen first, which lists each event "
                     + "and how many blocks it already has. Never append "
@@ -1322,9 +1328,12 @@ public final class AgentTools {
                     + "Firebase Auth auth_create_user {text email, "
                     + "text2 password}, auth_sign_in, "
                     + "auth_sign_in_anon, auth_reset_password "
-                    + "{text email}, auth_sign_out (their result is "
-                    + "handled by the component's own event, which "
-                    + "the editor adds); Firebase Storage "
+                    + "{text email}, auth_sign_out (their result "
+                    + "arrives in the component's own event — wire "
+                    + "it with target = the component id, e.g. event "
+                    + "onSignInUserComplete, and read "
+                    + "{\"arg\":\"success\"} and "
+                    + "{\"arg\":\"errorMessage\"}); Firebase Storage "
                     + "storage_upload {text local path, text2 "
                     + "storage path}, storage_download {text url, "
                     + "text2 local path}, storage_delete {text url}; "
@@ -1375,7 +1384,44 @@ public final class AgentTools {
                     + "same handler), {\"fn\":\"list_scroll_state\","
                     + "\"mode\":\"SCROLL_STATE_IDLE\"} (also "
                     + "pager_scroll_state, recycler_scroll_state). "
-                    + "Typed map stores: map_put_number {variable, "
+                    + "Event values: inside a component or activity "
+                    + "event, {\"arg\":\"name\"} reads a value the "
+                    + "event itself passes — when a name is wrong, "
+                    + "the refusal lists what that event passes. "
+                    + "Firebase child events pass childKey (text) and "
+                    + "childValue (a set of values: read one with "
+                    + "{\"map_get\":{\"arg\":\"childValue\"},\"key\":"
+                    + "\"name\"}); onCancelled passes errorCode "
+                    + "(number) and errorMessage; the auth completion "
+                    + "events pass success (true/false) and "
+                    + "errorMessage; storage passes progressValue, "
+                    + "downloadUrl or totalByteCount; network "
+                    + "onResponse passes tag, response and "
+                    + "responseHeaders (a set of values); speech "
+                    + "passes result; Bluetooth passes tag and data; "
+                    + "doInBackground passes param, onProgressUpdate "
+                    + "passes value, onPostExecute passes result; "
+                    + "onDateSet passes year, month and day. To "
+                    + "show one in a toast or on a label, "
+                    + "set_variable it into a string variable "
+                    + "first, then toast {from_variable} or "
+                    + "set_text {from_variable}. "
+                    + "Component-event blocks: return_fragment "
+                    + "{screen} (the last block of a Fragment "
+                    + "Adapter's onFragmentAdded: which screen each "
+                    + "page shows), return_title {title} (last block "
+                    + "of onTabAdded), return_text {value} (last "
+                    + "block of an AsyncTask's doInBackground: the "
+                    + "result onPostExecute gets), asynctask_execute "
+                    + "{component, message} (start a background "
+                    + "task), asynctask_publish {value} (progress, "
+                    + "only inside doInBackground), datepicker_show "
+                    + "{} (shows the date picker; needs a "
+                    + "date_picker component whose onDateSet handler "
+                    + "takes the picked date), timepicker_show "
+                    + "{component} (its onTimeSet handler takes the "
+                    + "picked time). Typed map stores: "
+                    + "map_put_number {variable, "
                     + "key, value}, map_put_flag {variable, key, "
                     + "flag}, map_put_list {variable, key, list}, "
                     + "map_put_map {variable, key, from_variable}; "
@@ -1418,11 +1464,14 @@ public final class AgentTools {
             properties.add("activity", stringSchema(
                     "The screen, e.g. MainActivity"));
             properties.add("target", stringSchema(
-                    "The widget id from get_screen, or \"activity\" "
-                            + "for the screen's own events"));
+                    "The widget id from get_screen, a component's id "
+                            + "(e.g. firebase1) for that component's "
+                            + "events, or \"activity\" for the screen's "
+                            + "own events"));
             properties.add("event", stringSchema(
                     "The event, e.g. onClick for a tap, onCreate for "
-                            + "when an activity-targeted screen starts"));
+                            + "when an activity-targeted screen starts, "
+                            + "onChildAdded for a Firebase component"));
             JsonObject blocksSchema = new JsonObject();
             blocksSchema.addProperty("type", "array");
             blocksSchema.addProperty("description",
@@ -1574,7 +1623,10 @@ public final class AgentTools {
                     "bubble_stroke_color", "bubble_stroke_width",
                     "signin_color_scheme", "signin_size",
                     "banner_load_ad",
-                    "set_background_color_filter"}) {
+                    "set_background_color_filter", "return_fragment",
+                    "return_title", "return_text", "asynctask_execute",
+                    "asynctask_publish", "datepicker_show",
+                    "timepicker_show"}) {
                 kinds.add(kind);
             }
             blockProp.add("enum", kinds);
@@ -1995,11 +2047,17 @@ public final class AgentTools {
                     + "speech_to_text, bluetooth, location, "
                     + "rewarded_ad, progress_dialog, date_picker, "
                     + "time_picker, notification, fragment_adapter, "
-                    + "phone_auth, cloud_message, google_login. A "
+                    + "phone_auth, cloud_message, google_login, "
+                    + "asynctask. A "
                     + "component unlocks its own block family on that "
                     + "screen (a Timer unlocks timer_after/timer_every, "
                     + "a Dialog its title/message/button blocks, and "
-                    + "so on). Firebase and ad components also need "
+                    + "so on). Most components also have their own "
+                    + "events — wire them with set_event_handler using "
+                    + "the component's id as the target (an AsyncTask "
+                    + "does its work in its doInBackground event, a "
+                    + "Firebase DB reports changes in onChildAdded). "
+                    + "Firebase and ad components also need "
                     + "the project's Firebase/ad setup before a build "
                     + "can pass. The user must approve before "
                     + "anything is added.";
@@ -2079,6 +2137,7 @@ public final class AgentTools {
                         "Cloud Message"},
                 {"google_login", 31, "firebasegooglelogin",
                         "Google Login"},
+                {"asynctask", 36, "asynctask", "AsyncTask"},
         };
 
         /** Every name already taken on this screen, any namespace. */
@@ -2401,8 +2460,9 @@ public final class AgentTools {
             properties.add("activity", stringSchema(
                     "The screen, e.g. MainActivity"));
             properties.add("target", stringSchema(
-                    "The widget id from get_screen, or \"activity\" "
-                            + "for the screen's own events"));
+                    "The widget id from get_screen, a component's id "
+                            + "for that component's events, or "
+                            + "\"activity\" for the screen's own events"));
             properties.add("event", stringSchema(
                     "The event, e.g. onClick"));
             return AgentTools.parameters(properties,

@@ -920,3 +920,47 @@ Only after this stock set is exhausted do agent-defined custom blocks
   (Hx.addCallbackEvents -> Lx.getOnActivityResultCode); same EventBean
   registration, generated as switch cases. FilePicker's _filePath is an
   ArrayList<String>; Camera's is a plain String.
+
+## Wave 12 implementation (component events + event parameters)
+
+- set_event_handler now takes a component id as `target`: the event is
+  validated against oq.getComponentEventsForClass(new
+  ComponentBean(type).getClassInfo()) — the exact list Add Event shows —
+  and registered with store.a(javaName, EVENT_TYPE_COMPONENT,
+  componentType, targetId, eventName), AddEventActivity's own call.
+  eventRegistered/probeEvent handle the COMPONENT type, so appending,
+  reading (get_event_logic) and in-place edits work for component
+  handlers too. A widget id still wins if both namespaces collide.
+- {"arg": "name"} is a value expression anywhere a value fits: it
+  builds a getArg bean (spec = name, type = slot letter, Fx emits
+  "_" + name), checked against a per-event table (EVENT_ARG_TABLE in
+  AgentLogic) transcribed from the generators' `final` locals.
+  Map-typed values (childValue, deviceData, responseHeaders) are read
+  via {"map_get": {"arg": name}, "key": ...} / map_has — the arg bean
+  plugs into mapGet/mapContainKey's first slot exactly as the editor
+  plugs it. List-typed values (the picker's paths, speech's results)
+  stay unexposed: no agent slot can hold a list value yet.
+- Gated last-block kinds (Builder-level, Fx/BlocksHandler-verified):
+  return_fragment {screen} (onFragmentAdded; "return new %s();"),
+  return_title {title} (onTabAdded), return_text {value}
+  (doInBackground; "return (%s);"), asynctask_publish {value} (only
+  inside doInBackground). Plus asynctask_execute {component, message}
+  ("new %s().execute(%s);"), datepicker_show (no values; requires a
+  DatePickerDialog component, whose onDateSet handler receives
+  year/month/day), timepicker_show {component} (onTimeSet receives
+  hour/minute). create_component accepts type "asynctask" (36,
+  prefix asynctask).
+- specFor now consults BlocksHandler's own palette spec (cached) when
+  xB misses, before the lq synthesis — the stored spec is then the
+  text the editor itself stamps on the bean, for every Pro block.
+- toast/set_text refuse an expression object in their text field with
+  the two-step guidance (set_variable, then from_variable) instead of
+  silently storing empty text.
+- Coverage: 526 -> **533/584**. What remains (51): custom-view data
+  binding (ViewBean.customView + <id>_onBindCustomView + the 5
+  *SetCustomViewData statements), the MenuItem/SubMenu declared-name
+  pair, typed hashmap GETS (unsafe casts — excluded), and the
+  by-design raw-source/junk set. Component events whose values are
+  raw objects or lists (onUserEarnedReward's reward, onFilesPicked's
+  path list, onDataChanged's snapshot) register fine; their values
+  are simply not readable as {"arg"} yet.

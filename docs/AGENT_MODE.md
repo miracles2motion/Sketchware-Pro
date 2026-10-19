@@ -960,3 +960,26 @@ Device test findings (SportyNivida / Sporty Bet):
   date/time picker dialogs, AsyncTask, Firebase child events in
   their event form, custom-view list binding, listener containers.
 - Coverage: 526/584 stock blocks.
+
+## Wave 12 — component events and the values they pass
+
+- Events for components: set_event_handler's target may now be a
+  component id, validated against the editor's own event list and
+  registered exactly as the Add Event screen registers it, so a
+  Firebase DB, sign-in flow, network request, sensor, camera — every
+  component — can now say what happened. Appending, reading and
+  editing those handlers works the same as widget handlers.
+- Event values: {"arg": "childKey"} and friends read what an event
+  hands over (child keys/values, success flags, error messages,
+  progress, responses, picked dates), including pulling one value out
+  of a passed-in set with a map read. The names come from the
+  generators' own declared locals, per event.
+- New last-block and component blocks: return_fragment/return_title
+  for pager pages, return_text and progress publishing for AsyncTask
+  (now creatable via create_component type "asynctask", started with
+  asynctask_execute), and the date/time picker dialogs whose answers
+  arrive in onDateSet/onTimeSet handlers.
+- specFor now falls back to the Pro palette's own spec text, so
+  stored block shapes match what the editor itself stamps.
+- Coverage: 533/584 stock blocks. Remaining: custom-view list
+  binding, the MenuItem/SubMenu pair, and the by-design exclusions.

@@ -975,6 +975,13 @@ public final class AgentLogic {
         public String targetId;
         public String eventName;
         public boolean activityEvent;
+        /** True when the target is a component, not a widget. */
+        public boolean componentEvent;
+        /** The component's editor type code (component targets). */
+        public int componentType;
+        /** Values this event passes, name to editor slot letter. */
+        public final LinkedHashMap<String, Character> eventArgs =
+                new LinkedHashMap<>();
         public boolean eventExists;
         public int existingCount;
         /** Intent component apply() must create first, or null. */
@@ -989,6 +996,108 @@ public final class AgentLogic {
          * statement's parameters as "@id"; they sit in the same stored
          * list but never on the statement chain. */
         final ArrayList<BlockBean> extras = new ArrayList<>();
+    }
+
+    /**
+     * The values an event hands to its handler, name to editor slot
+     * letter ('d' number, 's' text, 'b' true/false, 'a' a whole map
+     * of values), read from the {@code final} locals the app's own
+     * generators declare (Lx.getEventCode, ManageEvent.f,
+     * EventsHandler.getEventCode, Lx.getOnActivityResultCode). A
+     * value becomes a "getArg" reporter bean whose spec is the name;
+     * Fx emits "_" + spec. Events that pass nothing usable (a raw
+     * object, a list) simply have no row here.
+     */
+    private static final String[][] EVENT_ARG_TABLE = {
+            {"onChildAdded", "childKey:s,childValue:a"},
+            {"onChildChanged", "childKey:s,childValue:a"},
+            {"onChildRemoved", "childKey:s,childValue:a"},
+            {"onCancelled", "errorCode:d,errorMessage:s"},
+            {"onSensorChanged", "x:d,y:d,z:d"},
+            {"onCreateUserComplete", "success:b,errorMessage:s"},
+            {"onSignInUserComplete", "success:b,errorMessage:s"},
+            {"onGoogleSignIn", "success:b,errorMessage:s"},
+            {"signInWithPhoneAuthComplete", "success:b,errorMessage:s"},
+            {"onUpdateProfileComplete", "success:b,errorMessage:s"},
+            {"onDeleteUserComplete", "success:b,errorMessage:s"},
+            {"onUpdateEmailComplete", "success:b,errorMessage:s"},
+            {"onUpdatePasswordComplete", "success:b,errorMessage:s"},
+            {"onEmailVerificationSent", "success:b,errorMessage:s"},
+            {"onResetPasswordEmailSent", "success:b"},
+            {"onCodeSent", "verificationId:s"},
+            {"onVerificationFailed", "exception:s"},
+            {"onUploadProgress", "progressValue:d"},
+            {"onDownloadProgress", "progressValue:d"},
+            {"onUploadSuccess", "downloadUrl:s"},
+            {"onDownloadSuccess", "totalByteCount:d"},
+            {"onFailure", "message:s"},
+            {"onResponse", "tag:s,response:s,responseHeaders:a"},
+            {"onErrorResponse", "tag:s,message:s"},
+            {"onSpeechResult", "result:s"},
+            {"onSpeechError", "errorMessage:s"},
+            {"onConnected", "tag:s,deviceData:a"},
+            {"onDataReceived", "tag:s,data:s"},
+            {"onDataSent", "tag:s,data:s"},
+            {"onConnectionError",
+                    "tag:s,connectionState:s,errorMessage:s"},
+            {"onConnectionStopped", "tag:s"},
+            {"onLocationChanged", "lat:d,lng:d,acc:d"},
+            {"onMarkerClicked", "id:s"},
+            {"onPictureTaken", "filePath:s"},
+            {"onFragmentAdded", "position:d"},
+            {"onTabAdded", "position:d"},
+            {"doInBackground", "param:s"},
+            {"onProgressUpdate", "value:d"},
+            {"onPostExecute", "result:s"},
+            {"onDateSet", "year:d,month:d,day:d"},
+            {"onTimeSet", "hour:d,minute:d"},
+            {"onActivityResult", "requestCode:d,resultCode:d"},
+            {"onOptionsItemSelected", "id:d,title:s"},
+            {"onTabLayoutNewTabAdded", "position:d"},
+            {"onBannerAdFailedToLoad", "errorCode:d,errorMessage:s"},
+            {"onInterstitialAdFailedToLoad",
+                    "errorCode:d,errorMessage:s"},
+            {"onRewardAdFailedToLoad", "errorCode:d,errorMessage:s"},
+            {"onAdFailedToShowFullScreenContent",
+                    "errorCode:d,errorMessage:s"},
+    };
+
+    /** The values {@code eventName} passes, in declaration order. */
+    private static LinkedHashMap<String, Character> eventArgsOf(
+            String eventName) {
+        LinkedHashMap<String, Character> args = new LinkedHashMap<>();
+        for (String[] row : EVENT_ARG_TABLE) {
+            if (row[0].equals(eventName)) {
+                for (String pair : row[1].split(",")) {
+                    int colon = pair.lastIndexOf(':');
+                    args.put(pair.substring(0, colon),
+                            pair.charAt(colon + 1));
+                }
+            }
+        }
+        return args;
+    }
+
+    /** Component id to editor type code for one activity. */
+    private static LinkedHashMap<String, Integer> componentsOf(
+            eC store, String javaName) {
+        LinkedHashMap<String, Integer> components =
+                new LinkedHashMap<>();
+        try {
+            ArrayList<ComponentBean> stored = store.e(javaName);
+            if (stored != null) {
+                for (ComponentBean component : stored) {
+                    if (component != null
+                            && component.componentId != null) {
+                        components.put(component.componentId,
+                                component.type);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // No components readable; component blocks will say so.
+        }
+        return components;
     }
 
     /**
@@ -1028,6 +1137,11 @@ public final class AgentLogic {
         // code), so variable blocks are checked before they run.
         LinkedHashMap<String, Integer> variables =
                 variablesOf(store, javaName);
+        // The components this activity already has (id to editor
+        // type code): a component id is a valid event target, and
+        // component blocks are checked against it.
+        LinkedHashMap<String, Integer> components =
+                componentsOf(store, javaName);
 
         if ("activity".equalsIgnoreCase(target)) {
             plan.activityEvent = true;
@@ -1055,31 +1169,57 @@ public final class AgentLogic {
                                     + "\"activity\" and event \"" + wanted
                                     + "\".");
                 }
-                throw new AgentTools.ToolException("E_NO_WIDGET",
-                        "There is no widget with id \"" + target
-                                + "\" on this screen. Use get_screen to "
-                                + "see the widget ids.");
+                Integer componentType = components.get(wanted);
+                if (componentType == null) {
+                    throw new AgentTools.ToolException("E_NO_WIDGET",
+                            "There is no widget or component with id \""
+                                    + target + "\" on this screen. Use "
+                                    + "get_screen to see the widget ids.");
+                }
+                // A component target: its events come from the same
+                // table the editor's Add Event screen lists, and it
+                // registers exactly the way AddEventActivity does.
+                plan.componentEvent = true;
+                plan.componentType = componentType;
+                plan.targetId = wanted;
+                String[] events = oq.getComponentEventsForClass(
+                        new ComponentBean(componentType).getClassInfo());
+                if (events == null || !Arrays.asList(events)
+                        .contains(plan.eventName)) {
+                    throw new AgentTools.ToolException("E_BAD_EVENT",
+                            wanted + " (" + ComponentBean
+                                    .getComponentName(null, componentType)
+                                    + ") has no \"" + plan.eventName
+                                    + "\" event. Its events are: "
+                                    + (events == null ? "none"
+                                            : String.join(", ", events))
+                                    + ".");
+                }
+                plan.header = "When " + wanted + " "
+                        + plan.eventName + ":";
+            } else {
+                plan.targetId = widget.id;
+                String[] events = oq.getEventsForClass(new ViewBean(
+                        widget.id, widget.type).buildClassInfo(widget.type));
+                if (events == null || !Arrays.asList(events)
+                        .contains(plan.eventName)) {
+                    throw new AgentTools.ToolException("E_BAD_EVENT",
+                            widget.id + " (" + AgentEdits.typeName(widget.type)
+                                    + ") has no \"" + plan.eventName
+                                    + "\" event. Its events are: "
+                                    + (events == null ? "none"
+                                            : String.join(", ", events))
+                                    + ".");
+                }
+                String widgetText = widget.text == null
+                        ? "" : widget.text.text;
+                String label = widgetText != null && !widgetText.isEmpty()
+                        ? " (“" + widgetText + "”)" : "";
+                plan.header = "When " + widget.id + label + " "
+                        + plan.eventName + ":";
             }
-            plan.targetId = widget.id;
-            String[] events = oq.getEventsForClass(new ViewBean(
-                    widget.id, widget.type).buildClassInfo(widget.type));
-            if (events == null || !Arrays.asList(events)
-                    .contains(plan.eventName)) {
-                throw new AgentTools.ToolException("E_BAD_EVENT",
-                        widget.id + " (" + AgentEdits.typeName(widget.type)
-                                + ") has no \"" + plan.eventName
-                                + "\" event. Its events are: "
-                                + (events == null ? "none"
-                                        : String.join(", ", events))
-                                + ".");
-            }
-            String widgetText = widget.text == null
-                    ? "" : widget.text.text;
-            String label = widgetText != null && !widgetText.isEmpty()
-                    ? " (“" + widgetText + "”)" : "";
-            plan.header = "When " + widget.id + label + " "
-                    + plan.eventName + ":";
         }
+        plan.eventArgs.putAll(eventArgsOf(plan.eventName));
 
         // The event this handler appends to, and what it already does.
         plan.eventExists = eventRegistered(store, javaName, plan);
@@ -1087,30 +1227,13 @@ public final class AgentLogic {
         plan.existingCount = existing.size();
         int nextId = nextFreeId(existing);
 
-        // The components this activity already has (id to editor
-        // type code), so Intent blocks are checked before they run.
-        LinkedHashMap<String, Integer> components =
-                new LinkedHashMap<>();
-        try {
-            ArrayList<ComponentBean> stored = store.e(javaName);
-            if (stored != null) {
-                for (ComponentBean component : stored) {
-                    if (component != null
-                            && component.componentId != null) {
-                        components.put(component.componentId,
-                                component.type);
-                    }
-                }
-            }
-        } catch (Exception ignored) {
-            // No components readable; Intent blocks will say so.
-        }
-
         Builder builder = new Builder(context, byId, variables, nextId);
         builder.lists = listsOf(store, javaName);
         builder.components = components;
         builder.scId = scId;
         builder.activityName = SketchwareProjects.activityName(activity);
+        builder.eventArgs.putAll(plan.eventArgs);
+        builder.currentEvent = plan.eventName;
         for (JsonElement element : blocks) {
             if (!element.isJsonObject()) {
                 throw new AgentTools.ToolException("E_BAD_BLOCK",
@@ -1283,6 +1406,11 @@ public final class AgentLogic {
                 new java.util.HashSet<>();
         /** Intent component apply() must create, once per plan. */
         String componentToCreate;
+        /** Values the current event passes, name to slot letter. */
+        final LinkedHashMap<String, Character> eventArgs =
+                new LinkedHashMap<>();
+        /** The event being built (gates return/publish blocks). */
+        String currentEvent = "";
 
         Builder(Context context, Map<String, ViewBean> byId,
                 Map<String, Integer> variables, int nextId) {
@@ -1350,6 +1478,16 @@ public final class AgentLogic {
                 throw new AgentTools.ToolException("E_BAD_BLOCK", what);
             }
             JsonObject object = element.getAsJsonObject();
+            if (object.has("arg")) {
+                String name = stringOf(object, "arg");
+                Character letter = eventArgs.get(name);
+                if (letter == null || letter == 'a'
+                        || letter == 'b') {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            what);
+                }
+                return letter.charValue();
+            }
             if (object.has("var")) {
                 String name = stringOf(object, "var");
                 requireVariable(variables, name);
@@ -1951,6 +2089,187 @@ public final class AgentLogic {
                             : "Stop the ") + targetName + " service");
                     return bean;
                 }
+                case "return_fragment" -> {
+                    // The last block of a Fragment Adapter's
+                    // onFragmentAdded handler: which screen class
+                    // each page shows (returnFragment, Fx-verified
+                    // "return new %s();").
+                    if (!"onFragmentAdded".equals(currentEvent)) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "return_fragment only works inside a "
+                                        + "Fragment Adapter component's "
+                                        + "onFragmentAdded handler — it "
+                                        + "decides which screen each "
+                                        + "page shows. Put it there, as "
+                                        + "the last block.");
+                    }
+                    String screen = stringOf(op, "screen");
+                    ProjectFileBean target =
+                            SketchwareProjects.findActivity(scId,
+                                    screen);
+                    if (target == null) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "There is no screen called " + screen
+                                        + " in this project to show as "
+                                        + "a page. Create it first, or "
+                                        + "check list_activities.");
+                    }
+                    String className =
+                            SketchwareProjects.activityName(target);
+                    BlockBean bean = newBean("returnFragment", "f");
+                    bean.parameters.add(className);
+                    allStatements.add(bean);
+                    addExpect("return new " + className + "()",
+                            "Show " + className + " as this page");
+                    lines.add(indent(depth) + "Show " + className
+                            + " as this page");
+                    return bean;
+                }
+                case "return_title" -> {
+                    // The last block of onTabAdded: the page's title
+                    // (returnTitle, "return %s;").
+                    if (!"onTabAdded".equals(currentEvent)) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "return_title only works inside a "
+                                        + "Fragment Adapter component's "
+                                        + "onTabAdded handler — it gives "
+                                        + "each page its title. Put it "
+                                        + "there, as the last block.");
+                    }
+                    BlockBean bean = newBean("returnTitle", "f");
+                    bean.parameters.add(expr(op.get("title"), 's',
+                            "return_title needs \"title\": the page "
+                                    + "title"));
+                    allStatements.add(bean);
+                    addExpect("return ",
+                            "Use " + describeExpr(op.get("title"))
+                                    + " as the page title");
+                    lines.add(indent(depth) + "Use "
+                            + describeExpr(op.get("title"))
+                            + " as the page title");
+                    return bean;
+                }
+                case "return_text" -> {
+                    // The last block of an AsyncTask's doInBackground:
+                    // the text handed to onPostExecute (returnString,
+                    // "return (%s);").
+                    if (!"doInBackground".equals(currentEvent)) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "return_text only works inside an "
+                                        + "AsyncTask component's "
+                                        + "doInBackground handler — it "
+                                        + "is the result onPostExecute "
+                                        + "receives. Put it there, as "
+                                        + "the last block.");
+                    }
+                    BlockBean bean = newBean("returnString", " ");
+                    bean.parameters.add(expr(op.get("value"), 's',
+                            "return_text needs \"value\": the result "
+                                    + "text"));
+                    allStatements.add(bean);
+                    addExpect("return (",
+                            "Finish with "
+                                    + describeExpr(op.get("value"))
+                                    + " as the result");
+                    lines.add(indent(depth) + "Finish with "
+                            + describeExpr(op.get("value"))
+                            + " as the result");
+                    return bean;
+                }
+                case "asynctask_execute" -> {
+                    // AsyncTaskExecute: "new %s().execute(%s);" — run
+                    // a background task with a message for it.
+                    String componentId = requireComponent(op, 36,
+                            "AsyncTask");
+                    BlockBean bean = newBean("AsyncTaskExecute", " ");
+                    bean.parameters.add(componentId);
+                    bean.parameters.add(expr(op.get("message"), 's',
+                            "asynctask_execute needs \"message\": the "
+                                    + "text the task receives"));
+                    allStatements.add(bean);
+                    addExpect("new " + componentId + "().execute(",
+                            "Run the " + componentId
+                                    + " background task");
+                    lines.add(indent(depth) + "Run the " + componentId
+                            + " background task with "
+                            + describeExpr(op.get("message")));
+                    return bean;
+                }
+                case "asynctask_publish" -> {
+                    // AsyncTaskPublishProgress: only callable from
+                    // inside the task's own doInBackground.
+                    if (!"doInBackground".equals(currentEvent)) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "asynctask_publish only works inside "
+                                        + "an AsyncTask component's "
+                                        + "doInBackground handler — it "
+                                        + "reports progress to "
+                                        + "onProgressUpdate.");
+                    }
+                    BlockBean bean =
+                            newBean("AsyncTaskPublishProgress", " ");
+                    bean.parameters.add(expr(op.get("value"), 'd',
+                            "asynctask_publish needs \"value\": the "
+                                    + "progress number"));
+                    allStatements.add(bean);
+                    addExpect("publishProgress((int)",
+                            "Report progress "
+                                    + describeExpr(op.get("value")));
+                    lines.add(indent(depth) + "Report progress "
+                            + describeExpr(op.get("value")));
+                    return bean;
+                }
+                case "datepicker_show" -> {
+                    // datePickerDialogShow takes no value; the picked
+                    // date arrives in the DatePickerDialog
+                    // component's onDateSet handler, whose listener
+                    // class is what this block shows.
+                    boolean hasPicker = false;
+                    for (Integer type : components.values()) {
+                        if (type == ComponentBean
+                                .COMPONENT_TYPE_DATE_PICKER_DIALOG) {
+                            hasPicker = true;
+                            break;
+                        }
+                    }
+                    if (!hasPicker) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "datepicker_show needs a DatePickerDialog "
+                                        + "component on this screen — "
+                                        + "add one with create_component "
+                                        + "(type date_picker) and give it "
+                                        + "an onDateSet handler for the "
+                                        + "picked date.");
+                    }
+                    BlockBean bean =
+                            newBean("datePickerDialogShow", " ");
+                    allStatements.add(bean);
+                    addExpect("DatePickerFragment",
+                            "Show the date picker");
+                    lines.add(indent(depth) + "Show the date picker");
+                    return bean;
+                }
+                case "timepicker_show" -> {
+                    String componentId = requireComponent(op,
+                            ComponentBean
+                                    .COMPONENT_TYPE_TIME_PICKER_DIALOG,
+                            "TimePickerDialog");
+                    BlockBean bean =
+                            newBean("timePickerDialogShow", " ");
+                    bean.parameters.add(componentId);
+                    allStatements.add(bean);
+                    addExpect(componentId + ".show()",
+                            "Show the " + componentId + " time picker");
+                    lines.add(indent(depth) + "Show the " + componentId
+                            + " time picker");
+                    return bean;
+                }
                 default -> {
                     return buildTranslated(op, depth);
                 }
@@ -2024,6 +2343,15 @@ public final class AgentLogic {
             return heads;
         }
 
+        /** " (this event passes: childKey, childValue)" or none. */
+        private String eventArgsHint() {
+            if (eventArgs.isEmpty()) {
+                return " (this event passes no values)";
+            }
+            return " (this event passes: "
+                    + String.join(", ", eventArgs.keySet()) + ")";
+        }
+
         /**
          * Turns one value expression into a stored parameter: a
          * literal inline, or "@id"/"@var:name" pointing at a reporter
@@ -2072,6 +2400,37 @@ public final class AgentLogic {
                 throw badValue(what, "unsupported value shape");
             }
             JsonObject object = element.getAsJsonObject();
+            if (object.has("arg")) {
+                // A value the event itself passes (a Firebase child
+                // key, a sensor reading, a success flag): stored as
+                // the editor's getArg reporter whose spec is the
+                // value's name — Fx generates "_" + name.
+                String name = stringOf(object, "arg");
+                Character letter = eventArgs.get(name);
+                if (letter == null) {
+                    throw badValue(what, "this event does not pass a "
+                            + "value called \"" + name + "\""
+                            + eventArgsHint());
+                }
+                if (letter == 'a') {
+                    throw badValue(what, "\"" + name + "\" is a whole "
+                            + "set of values, not a single one; read "
+                            + "one value out of it with {\"map_get\": "
+                            + "{\"arg\": \"" + name + "\"}, \"key\": "
+                            + "\"...\"}");
+                }
+                if (letter.charValue() != slot) {
+                    throw badValue(what, "the " + name + " value is "
+                            + (letter == 'd' ? "a number"
+                                    : letter == 'b' ? "true/false"
+                                            : "text")
+                            + " and does not fit here");
+                }
+                BlockBean bean = newBean("getArg",
+                        String.valueOf(letter.charValue()));
+                bean.spec = name;
+                return "@" + bean.id;
+            }
             if (object.has("var")) {
                 String name = stringOf(object, "var");
                 if (!variables.containsKey(name)
@@ -2195,11 +2554,31 @@ public final class AgentLogic {
                 }
                 String mapKey = object.has("map_get") ? "map_get"
                         : "map_has";
-                String name = stringOf(object, mapKey);
-                Integer kind = variables.get(name);
-                if (kind == null || kind != 3) {
-                    throw badValue(what, "\"" + name + "\" is not "
-                            + "a map variable on this screen");
+                // The map itself: a map variable named directly, or
+                // a set of values this event passed in (childValue
+                // and friends), which the editor plugs into the very
+                // same first slot.
+                String source;
+                JsonElement mapElement = object.get(mapKey);
+                if (mapElement != null && mapElement.isJsonObject()) {
+                    String argName = stringOf(
+                            mapElement.getAsJsonObject(), "arg");
+                    Character letter = eventArgs.get(argName);
+                    if (letter == null || letter != 'a') {
+                        throw badValue(what, "\"" + argName + "\" is "
+                                + "not a set of values this event "
+                                + "passes" + eventArgsHint());
+                    }
+                    BlockBean argBean = newBean("getArg", "a");
+                    argBean.spec = argName;
+                    source = "@" + argBean.id;
+                } else {
+                    source = stringOf(object, mapKey);
+                    Integer kind = variables.get(source);
+                    if (kind == null || kind != 3) {
+                        throw badValue(what, "\"" + source + "\" is "
+                                + "not a map variable on this screen");
+                    }
                 }
                 String key = stringOf(object, "key");
                 if (key.isEmpty()) {
@@ -2208,22 +2587,20 @@ public final class AgentLogic {
                 }
                 if ("map_get".equals(mapKey)) {
                     if (slot != 's') {
-                        throw badValue(what, "a value from map "
-                                + name + " is text and does not fit "
-                                + "here");
+                        throw badValue(what, "a value from a map is "
+                                + "text and does not fit here");
                     }
                     BlockBean bean = newBean("mapGet", "s");
-                    bean.parameters.add(name);
+                    bean.parameters.add(source);
                     bean.parameters.add(key);
                     return "@" + bean.id;
                 }
                 if (slot != 'b') {
-                    throw badValue(what, "whether map " + name
-                            + " has a key is true/false and does "
-                            + "not fit here");
+                    throw badValue(what, "whether a map has a key is "
+                            + "true/false and does not fit here");
                 }
                 BlockBean bean = newBean("mapContainKey", "b");
-                bean.parameters.add(name);
+                bean.parameters.add(source);
                 bean.parameters.add(key);
                 return "@" + bean.id;
             }
@@ -3589,6 +3966,16 @@ public final class AgentLogic {
             throw badValue(what, "unsupported value shape");
         }
 
+        /** A map_get/map_has source, named or event-passed. */
+        private String mapSourceText(JsonObject object, String key) {
+            JsonElement value = object.get(key);
+            if (value != null && value.isJsonObject()) {
+                return "the " + stringOf(value.getAsJsonObject(), "arg")
+                        + " values";
+            }
+            return stringOf(object, key);
+        }
+
         /** One value expression in plain words, for the card. */
         String describeExpr(JsonElement element) {
             if (element == null || element.isJsonNull()) {
@@ -3603,6 +3990,10 @@ public final class AgentLogic {
                 return "?";
             }
             JsonObject object = element.getAsJsonObject();
+            if (object.has("arg")) {
+                return "the " + stringOf(object, "arg")
+                        + " this event passes";
+            }
             if (object.has("fn")) {
                 String fn = stringOf(object, "fn")
                         .toLowerCase(Locale.ROOT);
@@ -3710,14 +4101,14 @@ public final class AgentLogic {
                         + describeExpr(object.get("value"));
             }
             if (object.has("map_get")) {
-                return "map " + stringOf(object, "map_get") + " at "
-                        + "\u201C" + stringOf(object, "key")
-                        + "\u201D";
+                return "map " + mapSourceText(object, "map_get")
+                        + " at “" + stringOf(object, "key")
+                        + "”";
             }
             if (object.has("map_has")) {
-                return "map " + stringOf(object, "map_has")
-                        + " has \u201C" + stringOf(object, "key")
-                        + "\u201D";
+                return "map " + mapSourceText(object, "map_has")
+                        + " has “" + stringOf(object, "key")
+                        + "”";
             }
             if (object.has("map_size")) {
                 return "the number of entries in map "
@@ -4097,6 +4488,12 @@ public final class AgentLogic {
                 if (plan.activityEvent) {
                     store.a(javaName, EventBean.EVENT_TYPE_ACTIVITY, 0,
                             plan.targetId, plan.eventName);
+                } else if (plan.componentEvent) {
+                    // The same call AddEventActivity makes when a
+                    // user adds a component event by hand.
+                    store.a(javaName, EventBean.EVENT_TYPE_COMPONENT,
+                            plan.componentType, plan.targetId,
+                            plan.eventName);
                 } else {
                     store.a(javaName, EventBean.EVENT_TYPE_VIEW,
                             targetTypeOf(plan), plan.targetId,
@@ -4329,6 +4726,17 @@ public final class AgentLogic {
                                     + fromVariable;
                     break;
                 }
+                if (op.has("message")
+                        && op.get("message").isJsonObject()) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "A toast message is plain text. To show a "
+                                    + "value — an event's "
+                                    + "{\"arg\":...}, a map entry, a "
+                                    + "widget's text — first put it in "
+                                    + "a string variable with "
+                                    + "set_variable, then toast "
+                                    + "{from_variable}.");
+                }
                 String message = stringOf(op, "message");
                 if (message.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
@@ -4368,6 +4776,16 @@ public final class AgentLogic {
                             + fromVariable + "”";
                     stmt.expectCode = widget.id + ".setText(" + fromVariable;
                     break;
+                }
+                if (op.has("text") && op.get("text").isJsonObject()) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "set_text takes plain text here. To show "
+                                    + "a value — an event's "
+                                    + "{\"arg\":...}, a map entry, a "
+                                    + "widget's text — first put it in "
+                                    + "a string variable with "
+                                    + "set_variable, then set_text "
+                                    + "{from_variable}.");
                 }
                 String text = stringOf(op, "text");
                 stmt.params.add(text);
@@ -6427,6 +6845,12 @@ public final class AgentLogic {
                         && plan.eventName.equals(event.eventName)) {
                     return true;
                 }
+            } else if (plan.componentEvent) {
+                if (event.eventType == EventBean.EVENT_TYPE_COMPONENT
+                        && plan.targetId.equals(event.targetId)
+                        && plan.eventName.equals(event.eventName)) {
+                    return true;
+                }
             } else if (event.eventType == EventBean.EVENT_TYPE_VIEW
                     && plan.targetId.equals(event.targetId)
                     && plan.eventName.equals(event.eventName)) {
@@ -6604,7 +7028,14 @@ public final class AgentLogic {
                 return spec;
             }
         } catch (Throwable ignored) {
-            // Fall through to the synthesis below.
+            // Fall through to the Pro palette below.
+        }
+        // The Pro palette's own spec text (BlocksHandler), the same
+        // one the editor stamps on a bean when a user drags the
+        // block in — right by construction for Pro-only blocks.
+        String pro = proSpec(opCode);
+        if (pro != null && !pro.isEmpty()) {
+            return pro;
         }
         // Slots from the app's table with the block's own words between
         // them; the generator only reads the slot tokens, and the
@@ -6633,6 +7064,28 @@ public final class AgentLogic {
             }
         }
         return spec.toString();
+    }
+
+    private static ArrayList<HashMap<String, Object>> proBlocksCache;
+
+    /** A Pro palette block's own spec, from BlocksHandler, or null. */
+    private static String proSpec(String opCode) {
+        try {
+            if (proBlocksCache == null) {
+                proBlocksCache = new ArrayList<>();
+                mod.hilal.saif.blocks.BlocksHandler
+                        .builtInBlocks(proBlocksCache);
+            }
+            for (HashMap<String, Object> block : proBlocksCache) {
+                if (block != null && opCode.equals(block.get("name"))) {
+                    Object spec = block.get("spec");
+                    return spec == null ? null : spec.toString();
+                }
+            }
+        } catch (Throwable ignored) {
+            // Fall through to the lq synthesis in specFor.
+        }
+        return null;
     }
 
     private static int nextFreeId(ArrayList<BlockBean> existing) {
@@ -7212,10 +7665,20 @@ public final class AgentLogic {
                                 + "\"activity\" and event \"" + wanted
                                 + "\".");
             }
-            throw new AgentTools.ToolException("E_NO_WIDGET",
-                    "There is no widget with id \"" + target
-                            + "\" on this screen. Use get_screen to see "
-                            + "the widget ids.");
+            Integer componentType = componentsOf(jC.a(scId),
+                    activity.getJavaName()).get(wanted);
+            if (componentType == null) {
+                throw new AgentTools.ToolException("E_NO_WIDGET",
+                        "There is no widget or component with id \""
+                                + target + "\" on this screen. Use "
+                                + "get_screen to see the widget ids.");
+            }
+            plan.componentEvent = true;
+            plan.componentType = componentType;
+            plan.targetId = wanted;
+            plan.header = "When " + wanted + " "
+                    + plan.eventName + ":";
+            return plan;
         }
         plan.targetId = widget.id;
         String text = widget.text == null ? "" : widget.text.text;

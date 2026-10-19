@@ -193,8 +193,8 @@
   "type": "b"
  },
  "AsyncTaskExecute": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "asynctask_execute",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "new %s().execute(%s);",
@@ -212,8 +212,8 @@
   "type": " "
  },
  "AsyncTaskPublishProgress": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "asynctask_publish",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "publishProgress((int)%s);",
@@ -2007,8 +2007,8 @@
   "type": " "
  },
  "datePickerDialogShow": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "datepicker_show",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "DialogFragment datePicker = new DatePickerFragment();\r\ndatePicker.show(getSupportFragmentManager(), datePicker);",
@@ -8320,8 +8320,8 @@
   "type": " "
  },
  "returnFragment": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "return_fragment",
+  "agent_known": true,
   "builtin": true,
   "category": "Events",
   "code": "return new %s();",
@@ -8405,8 +8405,8 @@
   "type": " "
  },
  "returnString": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "return_text",
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "return (%s);",
@@ -8422,8 +8422,8 @@
   "type": " "
  },
  "returnTitle": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "return_title",
+  "agent_known": true,
   "builtin": true,
   "category": "Events",
   "code": "return %s;",
@@ -11601,8 +11601,8 @@
   "type": " "
  },
  "timePickerDialogShow": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "timepicker_show",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%s.show();",
