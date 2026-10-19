@@ -32,6 +32,7 @@ import java.util.concurrent.Executors;
 
 import a.a.a.qA;
 import pro.sketchware.R;
+import pro.sketchware.ai.AgentJournal;
 import pro.sketchware.ai.AgentKnowledgePack;
 import pro.sketchware.ai.AgentLoop;
 import pro.sketchware.ai.AgentProposal;
