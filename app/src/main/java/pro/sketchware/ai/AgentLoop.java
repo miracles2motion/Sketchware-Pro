@@ -308,6 +308,20 @@ public class AgentLoop {
             }
         }
         AgentJournal.beginTurn(workingProjectId, lastUserText);
+        {
+            // What the turn started from: the user's own words and the
+            // project it was aimed at. The export has to be readable
+            // from the first line, with nothing assumed.
+            JsonObject asked = new JsonObject();
+            asked.addProperty("text", lastUserText);
+            asked.addProperty("project", workingProjectId);
+            asked.addProperty("model", model);
+            asked.addProperty("provider_base_url", baseUrl == null
+                    ? "" : baseUrl);
+            asked.addProperty("history_messages", history.size());
+            asked.addProperty("allow_modify", allowModify);
+            AgentJournal.record(workingProjectId, "user_message", asked);
+        }
         final long turnStartedAt = System.currentTimeMillis();
         final String[] journalProject = {workingProjectId};
         final boolean[] taskClosed = {false};
@@ -344,16 +358,65 @@ public class AgentLoop {
         final java.util.Set<String> insisted = new java.util.HashSet<>();
         while (!cancelled) {
             AiChatService.AgentReply reply;
+            long requestedAt = System.currentTimeMillis();
             try {
                 reply = service.agentTurnSync(baseUrl, apiKey, model, messages,
                         AgentTools.definitions());
             } catch (AiChatService.AgentRequestException e) {
+                // A provider failure is part of the story: the export
+                // has to show that the model was never reached (or
+                // answered with an error), not just that nothing moved.
+                JsonObject failed = new JsonObject();
+                failed.addProperty("model", model);
+                failed.addProperty("error_kind",
+                        String.valueOf(e.error.kind));
+                failed.addProperty("http_code", e.error.httpCode);
+                failed.addProperty("message",
+                        AgentJournal.cap(String.valueOf(e.error.message),
+                                1200));
+                failed.addProperty("took_ms",
+                        System.currentTimeMillis() - requestedAt);
+                failed.addProperty("messages_sent", messages.size());
+                AgentJournal.record(journalProject[0], "model_error",
+                        failed);
                 closeTask(journalProject[0], cancelled, stopReason(e.error),
                         taskClosed);
                 if (!cancelled) {
                     dispatch(listener, () -> listener.onError(e.error));
                 }
                 return;
+            }
+            {
+                // What the model said, before anything is done with
+                // it: the answer it wrote, the reasoning it kept
+                // separate, and every tool call it asked for with the
+                // arguments it chose. This is the line of the export
+                // that settles "did the model even try the right
+                // thing".
+                JsonObject said = new JsonObject();
+                said.addProperty("model", model);
+                said.addProperty("took_ms",
+                        System.currentTimeMillis() - requestedAt);
+                said.addProperty("messages_sent", messages.size());
+                said.addProperty("answer",
+                        AgentJournal.cap(reply.content, 4000));
+                if (reply.thinking != null && !reply.thinking.isEmpty()) {
+                    said.addProperty("thinking",
+                            AgentJournal.cap(reply.thinking, 4000));
+                }
+                JsonArray wanted = new JsonArray();
+                for (AiChatService.ToolCallData call : reply.toolCalls) {
+                    JsonObject one = new JsonObject();
+                    one.addProperty("id", call.id);
+                    one.addProperty("tool", call.name);
+                    one.addProperty("arguments",
+                            AgentJournal.cap(call.arguments, 4000));
+                    wanted.add(one);
+                }
+                if (wanted.size() > 0) {
+                    said.add("tool_calls", wanted);
+                }
+                AgentJournal.record(journalProject[0], "model_reply", said);
             }
             if (reply.toolCalls.isEmpty()) {
                 String answer = reply.content == null ? "" : reply.content.trim();
@@ -426,6 +489,7 @@ public class AgentLoop {
                 }
                 AgentTools.Session session = new AgentTools.Session(
                         context, workingProjectId, allowModify);
+                long callStartedAt = System.currentTimeMillis();
                 JsonObject result;
                 if (AgentTools.isMutation(call.name)) {
                     result = proposeAndExecute(call, session, listener,
@@ -477,6 +541,36 @@ public class AgentLoop {
                         AgentJournal.noteCheck(journalProject[0], call.name,
                                 label);
                     }
+                }
+                {
+                    // Every tool call, in order, with what was asked
+                    // and what came back. Arguments included, because
+                    // an empty component name or an invented block is
+                    // only visible here — the label never shows it.
+                    JsonObject entry = new JsonObject();
+                    entry.addProperty("tool", call.name);
+                    entry.addProperty("call_id", call.id);
+                    entry.addProperty("arguments",
+                            AgentJournal.cap(call.arguments, 4000));
+                    entry.addProperty("took_ms",
+                            System.currentTimeMillis() - callStartedAt);
+                    if (result.has("error")) {
+                        entry.addProperty("outcome", "error");
+                        entry.addProperty("error",
+                                result.get("error").getAsString());
+                        entry.addProperty("error_message",
+                                AgentJournal.cap(
+                                        result.has("message")
+                                                ? result.get("message")
+                                                        .getAsString()
+                                                : "", 1200));
+                    } else {
+                        entry.addProperty("outcome", "ok");
+                    }
+                    entry.addProperty("result",
+                            AgentJournal.cap(result.toString(), 4000));
+                    AgentJournal.record(journalProject[0], "tool_call",
+                            entry);
                 }
                 boolean failed = result.has("error")
                         && !"E_REJECTED".equals(result.get("error").getAsString());
@@ -545,6 +639,10 @@ public class AgentLoop {
             return;
         }
         closed[0] = true;
+        JsonObject ended = new JsonObject();
+        ended.addProperty("done", done);
+        ended.addProperty("reason", reason == null ? "" : reason);
+        AgentJournal.record(scId, "turn_end", ended);
         AgentJournal.endTurn(scId, done, reason);
     }
 
@@ -656,7 +754,33 @@ public class AgentLoop {
         String journal = proposal.workingProjectId == null
                 || proposal.workingProjectId.isEmpty()
                 ? journalProject : proposal.workingProjectId;
+        {
+            // The card the user was shown, exactly: what it claimed it
+            // would do, the details behind it, and the payload that
+            // would be applied. A rejection is only diagnosable if the
+            // record can show what was actually offered.
+            JsonObject card = new JsonObject();
+            card.addProperty("tool", call.name);
+            card.addProperty("arguments",
+                    AgentJournal.cap(call.arguments, 4000));
+            card.addProperty("title",
+                    proposal.title == null ? "" : proposal.title);
+            card.addProperty("body",
+                    proposal.body == null ? "" : proposal.body);
+            card.addProperty("details",
+                    proposal.details == null ? "" : proposal.details);
+            AgentJournal.record(journal, "card_shown", card);
+        }
         boolean approved = listener.onApproval(proposal);
+        {
+            JsonObject decision = new JsonObject();
+            decision.addProperty("tool", call.name);
+            decision.addProperty("title",
+                    proposal.title == null ? "" : proposal.title);
+            decision.addProperty("approved", approved);
+            AgentJournal.record(journal, approved ? "card_approved"
+                    : "card_rejected", decision);
+        }
         if (!approved) {
             AgentJournal.mutationRejected(journal, call.name,
                     proposal.title,
@@ -684,6 +808,15 @@ public class AgentLoop {
             AgentJournal.mutationFailed(journal, call.name, proposal.title,
                     result.has("message")
                             ? result.get("message").getAsString() : "");
+            JsonObject apply = new JsonObject();
+            apply.addProperty("tool", call.name);
+            apply.addProperty("outcome", "failed");
+            apply.addProperty("error", result.get("error").getAsString());
+            apply.addProperty("message", AgentJournal.cap(
+                    result.has("message")
+                            ? result.get("message").getAsString() : "",
+                    1200));
+            AgentJournal.record(journal, "apply_failed", apply);
         } else {
             // The fingerprint is the app's memory of this exact
             // change: a later proposal of it — from a retry, a resumed
@@ -692,6 +825,18 @@ public class AgentLoop {
             AgentJournal.mutationDone(journal, call.name, proposal.title,
                     AgentTools.fingerprint(call.name, call.arguments));
             AgentJournal.touchPlanCurrent(journal);
+            {
+                // The change as it landed, read back from the project
+                // — not as it was promised. This is the only place
+                // where "was it really created?" is answered.
+                JsonObject applied = new JsonObject();
+                applied.addProperty("tool", call.name);
+                applied.addProperty("title",
+                        proposal.title == null ? "" : proposal.title);
+                applied.addProperty("result",
+                        AgentJournal.cap(result.toString(), 4000));
+                AgentJournal.record(journal, "applied", applied);
+            }
             // The change compiles and saves, and can still be broken:
             // a block naming a widget its screen does not have builds
             // fine and crashes on launch. The agent is told about it
@@ -711,6 +856,10 @@ public class AgentLoop {
                 result.addProperty("warning", text.toString());
                 AgentJournal.noteCheck(journal, call.name,
                         "Broken reference found in " + proposal.title);
+                JsonObject dangling = new JsonObject();
+                dangling.add("references", jsonList(broken));
+                dangling.addProperty("after", call.name);
+                AgentJournal.record(journal, "broken_references", dangling);
             }
         }
         dispatch(listener, () -> listener.onApprovalResolved(proposal, result));
@@ -836,6 +985,16 @@ public class AgentLoop {
         JsonObject system = new JsonObject();
         system.addProperty("role", "system");
         system.addProperty("content", prompt.toString());
+        // Exactly what the model was told — the instructions, the
+        // guidance and the project snapshot it was briefed with. If the
+        // agent behaves strangely, this is where you see whether it was
+        // ever told the thing it missed.
+        JsonObject briefed = new JsonObject();
+        briefed.addProperty("length_chars", prompt.length());
+        briefed.addProperty("prompt",
+                AgentJournal.cap(prompt.toString(), 12000));
+        AgentJournal.record(workingProjectId == null ? ""
+                : workingProjectId, "system_prompt", briefed);
         return system;
     }
 

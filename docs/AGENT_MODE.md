@@ -1331,3 +1331,39 @@ cleared the list. Cards were being written and were being exported —
 they just were not on screen, so the history looked empty and an export
 from that state carried no cards. `showCurrentState()` now restores the
 working project's conversation, cards included.
+
+### Wave 29: the export becomes the whole record
+
+The export used to be a summary, and a summary cannot be debugged. A
+step reading "wanted to wire AddnoteActivity — failed" tells you
+nothing: not which component was named, not which block, not what the
+screen actually had. So the journal now keeps a **timeline**, and the
+export carries it whole.
+
+Appended by app code as things happen (never by the model), in order,
+per project, capped at 1200 entries:
+
+| kind | what it holds |
+|---|---|
+| `user_message` | what was asked, the project, the model, base URL |
+| `system_prompt` | **exactly** what the model was told (instructions, guidance, project snapshot) |
+| `model_reply` | its answer, its reasoning, and every tool call it chose with arguments |
+| `model_error` | provider failures: kind, HTTP code, message |
+| `tool_call` | every call: arguments, result, outcome, error code + message, duration |
+| `card_shown` | the proposal as the user saw it: title, body, details, payload |
+| `card_approved` / `card_rejected` | the decision |
+| `applied` | what landed, read back from the project |
+| `apply_failed` | what was refused, with the exact message |
+| `broken_references` | references that would crash on launch, as found |
+| `turn_end` | finished or stopped, and why |
+
+Derived sections so the file answers questions without reading every
+line: `log_stats` (per tool: attempts, ok, failed, applied; model calls
+and total time), `block_activity` (operations asked for, operations
+refused, and every failure with its arguments and error), `environment`
+(device, Android, app version, libraries switched on), and a
+`reading_guide` that tells the next reader where to look first.
+
+So: "did it save the note?" is now checkable — `save_pref` either
+appears in `operations_asked_for` and lands in `applied`, or it appears
+in `operations_refused` with the reason.

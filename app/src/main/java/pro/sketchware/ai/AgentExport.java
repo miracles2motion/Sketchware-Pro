@@ -2,6 +2,7 @@ package pro.sketchware.ai;
 
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import java.io.File;
@@ -78,6 +79,20 @@ public final class AgentExport {
 
         root.add("project_state", projectSnapshot(scId));
 
+        root.add("reading_guide", readingGuide());
+
+        // The timeline: everything that happened, in order — what the
+        // model was told, what it said, every tool call with its
+        // arguments and result, every card and decision, every block
+        // and every refusal. Everything else in this file is a summary
+        // of this.
+        JsonArray log = journal.has("log")
+                ? journal.get("log").getAsJsonArray() : new JsonArray();
+        root.add("log", log);
+        root.add("log_stats", logStats(log));
+        root.add("block_activity", blockActivity(log));
+        root.add("environment", environment(scId));
+
         JsonArray chat = new JsonArray();
         for (ChatMessage message : messages) {
             JsonObject entry = new JsonObject();
@@ -119,6 +134,234 @@ public final class AgentExport {
         }
         root.add("chat", chat);
         return root;
+    }
+
+    /**
+     * How to read the file. A log this size is only useful if the next
+     * person (or model) knows where to look first, so the file explains
+     * itself instead of leaving them to guess.
+     */
+    private static JsonObject readingGuide() {
+        JsonObject guide = new JsonObject();
+        guide.addProperty("chat",
+                "What was said: user and assistant messages, and every "
+                        + "approval or build card with its outcome.");
+        guide.addProperty("log",
+                "EVERYTHING, in the order it happened — read this to "
+                        + "diagnose. Start with log_stats, then read the "
+                        + "tool_call entries whose outcome is error.");
+        guide.addProperty("log.kinds",
+                "user_message (what was asked) · system_prompt (exactly "
+                        + "what the model was told) · model_reply (its "
+                        + "answer, its reasoning, the tool calls it chose "
+                        + "with their arguments) · tool_call (every call "
+                        + "with arguments, result and error) · card_shown "
+                        + "/ card_approved / card_rejected (each proposal "
+                        + "and the user's decision) · applied (what "
+                        + "landed, read back from the project) · "
+                        + "apply_failed · broken_references · model_error "
+                        + "(provider failures) · turn_end (done or stopped,"
+                        + " and why).");
+        guide.addProperty("log_stats",
+                "Counts per tool: attempts, ok, failed, applied. A tool "
+                        + "with many attempts and no applied is where the "
+                        + "conversation was stuck.");
+        guide.addProperty("block_activity",
+                "Which blocks the agent tried to use "
+                        + "(operations_asked_for), which were refused "
+                        + "(operations_refused), and every failure with "
+                        + "its error message and arguments.");
+        guide.addProperty("project_state",
+                "The project as it stands now: screens, widgets, "
+                        + "variables, components, events. Compare it with "
+                        + "what the agent claimed it made.");
+        guide.addProperty("tasks",
+                "The task log: step by step, with the outcome and the "
+                        + "exact refusal when a step failed.");
+        guide.addProperty("environment",
+                "Device, Android version, app version, and which "
+                        + "libraries this project has switched on.");
+        return guide;
+    }
+
+    /**
+     * What the timeline adds up to: how many of each kind of event,
+     * how every tool fared (attempted / ok / failed / rejected), and
+     * how long the model took. The numbers that say where a
+     * conversation went wrong without reading every line.
+     */
+    private static JsonObject logStats(JsonArray log) {
+        JsonObject kinds = new JsonObject();
+        JsonObject tools = new JsonObject();
+        long modelMs = 0;
+        int modelCalls = 0;
+        for (JsonElement element : log) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            JsonObject entry = element.getAsJsonObject();
+            String kind = entry.has("kind")
+                    ? entry.get("kind").getAsString() : "?";
+            kinds.addProperty(kind,
+                    (kinds.has(kind) ? kinds.get(kind).getAsInt() : 0) + 1);
+            if ("model_reply".equals(kind) && entry.has("took_ms")) {
+                modelMs += entry.get("took_ms").getAsLong();
+                modelCalls++;
+            }
+            if (!"tool_call".equals(kind) && !"applied".equals(kind)
+                    && !"apply_failed".equals(kind)) {
+                continue;
+            }
+            String tool = entry.has("tool")
+                    ? entry.get("tool").getAsString() : "?";
+            JsonObject stats = tools.has(tool)
+                    ? tools.getAsJsonObject(tool) : new JsonObject();
+            if (!tools.has(tool)) {
+                stats.addProperty("attempts", 0);
+                stats.addProperty("ok", 0);
+                stats.addProperty("failed", 0);
+                tools.add(tool, stats);
+            }
+            if ("tool_call".equals(kind)) {
+                stats.addProperty("attempts",
+                        stats.get("attempts").getAsInt() + 1);
+                if ("ok".equals(entry.has("outcome")
+                        ? entry.get("outcome").getAsString() : "")) {
+                    stats.addProperty("ok", stats.get("ok").getAsInt() + 1);
+                } else {
+                    stats.addProperty("failed",
+                            stats.get("failed").getAsInt() + 1);
+                }
+            } else if ("applied".equals(kind)) {
+                stats.addProperty("applied",
+                        (stats.has("applied")
+                                ? stats.get("applied").getAsInt() : 0) + 1);
+            }
+        }
+        JsonObject summary = new JsonObject();
+        summary.add("events", kinds);
+        summary.add("tools", tools);
+        summary.addProperty("model_calls", modelCalls);
+        summary.addProperty("model_total_ms", modelMs);
+        return summary;
+    }
+
+    /**
+     * Every block the agent tried to use, and what came of it. Read
+     * from the arguments the model sent and the results it got: which
+     * operations were asked for, how often, and how many of those
+     * attempts were refused. "The agent says it saved the note" is
+     * checkable here.
+     */
+    private static JsonObject blockActivity(JsonArray log) {
+        JsonObject asked = new JsonObject();
+        JsonObject refused = new JsonObject();
+        JsonArray failures = new JsonArray();
+        for (JsonElement element : log) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            JsonObject entry = element.getAsJsonObject();
+            if (!"tool_call".equals(entry.has("kind")
+                    ? entry.get("kind").getAsString() : "")) {
+                continue;
+            }
+            String tool = entry.has("tool")
+                    ? entry.get("tool").getAsString() : "";
+            if (!tool.contains("event") && !tool.contains("screen")
+                    && !tool.contains("block")) {
+                continue;
+            }
+            String arguments = entry.has("arguments")
+                    ? entry.get("arguments").getAsString() : "";
+            for (String name : opNames(arguments)) {
+                asked.addProperty(name,
+                        (asked.has(name) ? asked.get(name).getAsInt() : 0)
+                                + 1);
+            }
+            boolean failed = !"ok".equals(entry.has("outcome")
+                    ? entry.get("outcome").getAsString() : "");
+            if (failed) {
+                for (String name : opNames(arguments)) {
+                    refused.addProperty(name,
+                            (refused.has(name)
+                                    ? refused.get(name).getAsInt() : 0) + 1);
+                }
+                JsonObject failure = new JsonObject();
+                failure.addProperty("tool", tool);
+                failure.addProperty("error", entry.has("error")
+                        ? entry.get("error").getAsString() : "");
+                failure.addProperty("message", entry.has("error_message")
+                        ? entry.get("error_message").getAsString() : "");
+                failure.addProperty("arguments",
+                        arguments.length() > 600
+                                ? arguments.substring(0, 600) : arguments);
+                failures.add(failure);
+            }
+        }
+        JsonObject result = new JsonObject();
+        result.add("operations_asked_for", asked);
+        result.add("operations_refused", refused);
+        result.add("failures", failures);
+        return result;
+    }
+
+    /** The "op"/"block" names inside a tool-call argument string. */
+    private static java.util.List<String> opNames(String arguments) {
+        java.util.List<String> names = new java.util.ArrayList<>();
+        for (String key : new String[]{"\"op\"", "\"block\""}) {
+            int from = 0;
+            while (true) {
+                int at = arguments.indexOf(key, from);
+                if (at < 0) {
+                    break;
+                }
+                int colon = arguments.indexOf(':', at + key.length());
+                if (colon < 0) {
+                    break;
+                }
+                int start = arguments.indexOf('"', colon);
+                if (start < 0) {
+                    break;
+                }
+                int end = arguments.indexOf('"', start + 1);
+                if (end < 0) {
+                    break;
+                }
+                String name = arguments.substring(start + 1, end).trim();
+                if (!name.isEmpty()) {
+                    names.add(name);
+                }
+                from = end + 1;
+            }
+        }
+        return names;
+    }
+
+    /** What the app was running on, so a report can be reproduced. */
+    private static JsonObject environment(String scId) {
+        JsonObject env = new JsonObject();
+        env.addProperty("android", android.os.Build.VERSION.RELEASE);
+        env.addProperty("sdk", android.os.Build.VERSION.SDK_INT);
+        env.addProperty("device", android.os.Build.MANUFACTURER + " "
+                + android.os.Build.MODEL);
+        try {
+            android.content.Context app =
+                    pro.sketchware.SketchApplication.getContext();
+            if (app != null) {
+                String version = app.getPackageManager()
+                        .getPackageInfo(app.getPackageName(), 0).versionName;
+                env.addProperty("app_version",
+                        version == null ? "" : version);
+            }
+        } catch (Exception ignored) {
+            // The version is a nicety, never a requirement.
+        }
+        JsonObject setup = AgentSetup.libraries(scId);
+        if (setup.size() > 0) {
+            env.add("libraries", setup);
+        }
+        return env;
     }
 
     /**

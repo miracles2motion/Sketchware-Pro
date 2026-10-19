@@ -39,6 +39,8 @@ public final class AgentJournal {
             new GsonBuilder().setPrettyPrinting().create();
     private static final int MAX_TASKS = 40;
     private static final int MAX_STEPS = 240;
+    /** Timeline entries kept per project (the oldest fall off). */
+    private static final int MAX_LOG = 1200;
     /** Turn titles waiting for their first change, per project. */
     private static final Map<String, String> pendingTitles =
             new HashMap<>();
@@ -59,6 +61,7 @@ public final class AgentJournal {
         root.addProperty("styleBrief", "");
         root.add("tasks", new JsonArray());
         root.add("plan", new JsonObject());
+        root.add("log", new JsonArray());
         if (scId == null || scId.isEmpty()) {
             return root;
         }
@@ -87,6 +90,9 @@ public final class AgentJournal {
                 }
                 if (!root.has("plan") || !root.get("plan").isJsonObject()) {
                     root.add("plan", new JsonObject());
+                }
+                if (!root.has("log") || !root.get("log").isJsonArray()) {
+                    root.add("log", new JsonArray());
                 }
             }
         } catch (Exception ignored) {
@@ -214,6 +220,85 @@ public final class AgentJournal {
             steps.remove(0);
         }
         save(scId, root);
+    }
+
+    // ------------------------------------------------------------------
+    // The timeline: everything, in order, as it happened
+
+    /**
+     * Appends one event to the project's timeline.
+     *
+     * <p>This is the record the export is built on, and it exists
+     * because a summary cannot be debugged. A step that says "wanted to
+     * wire AddnoteActivity — failed" tells you nothing about WHY: not
+     * which component was named, not which block, not what the screen
+     * had. So the timeline carries the whole thing, in order: what the
+     * user asked, what the model was given, what the model said, every
+     * tool call with its arguments, every refusal with the exact
+     * message, every block that was built and every block that was
+     * refused, what the user approved or turned down, what read back
+     * afterwards, and every provider error.
+     *
+     * <p>Nothing here is written by the model — it is written by app
+     * code as things actually happen, so it is evidence, not a story.
+     */
+    public static synchronized void record(String scId, String kind,
+                                           JsonObject payload) {
+        if (scId == null || scId.isEmpty()) {
+            return;
+        }
+        JsonObject root = load(scId);
+        JsonElement existing = root.get("log");
+        JsonArray log = existing != null && existing.isJsonArray()
+                ? existing.getAsJsonArray() : new JsonArray();
+        JsonObject entry = new JsonObject();
+        entry.addProperty("kind", kind == null ? "" : kind);
+        entry.addProperty("at", System.currentTimeMillis());
+        entry.addProperty("at_text",
+                stamp(System.currentTimeMillis()));
+        if (payload != null) {
+            for (Map.Entry<String, JsonElement> field
+                    : payload.entrySet()) {
+                // A copy, so a caller reusing its payload object can
+                // never change a record that was already written.
+                entry.add(field.getKey(), field.getValue().deepCopy());
+            }
+        }
+        log.add(entry);
+        while (log.size() > MAX_LOG) {
+            log.remove(0);
+        }
+        if (!root.has("log")) {
+            root.add("log", log);
+        }
+        save(scId, root);
+    }
+
+    /** A timeline entry with one field. */
+    public static void record(String scId, String kind, String field,
+                              String value) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty(field, value == null ? "" : value);
+        record(scId, kind, payload);
+    }
+
+    /** "19 Oct, 8:14 pm" — a time a person can read. */
+    private static String stamp(long at) {
+        return new SimpleDateFormat("d MMM, h:mm a", Locale.US)
+                .format(new Date(at));
+    }
+
+    /** Shortens a value that could be enormous (a tool result). */
+    public static String cap(String text, int max) {
+        if (text == null) {
+            return "";
+        }
+        String flat = text.trim();
+        if (flat.length() <= max) {
+            return flat;
+        }
+        return flat.substring(0, max) + " …[cut "
+                + (flat.length() - max) + " chars]";
     }
 
     /**
