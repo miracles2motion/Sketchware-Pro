@@ -980,6 +980,27 @@ public class AgentLoop {
                 dangling.addProperty("after", call.name);
                 AgentJournal.record(journal, "broken_references", dangling);
             }
+            // Variables declared and never used: the agent invented
+            // four of them for a two-screen notes app and the user had
+            // to reject four more by hand. Say so while they are cheap
+            // to delete.
+            List<String> unused = AgentLogic.unusedVariables(journal);
+            if (!unused.isEmpty()) {
+                result.add("unusedVariables", jsonList(unused));
+                StringBuilder text = new StringBuilder();
+                if (result.has("warning")) {
+                    text.append(result.get("warning").getAsString());
+                } else {
+                    text.append("Applied.");
+                }
+                text.append("\n\nDeclared but unused — nothing reads or "
+                        + "writes these. Wire them up or remove them "
+                        + "with remove_variable:");
+                for (String finding : unused) {
+                    text.append("\n• ").append(finding);
+                }
+                result.addProperty("warning", text.toString());
+            }
         }
         dispatch(listener, () -> listener.onApprovalResolved(proposal, result));
         return result;

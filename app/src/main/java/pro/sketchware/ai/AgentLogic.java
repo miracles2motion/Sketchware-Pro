@@ -7856,12 +7856,31 @@ public final class AgentLogic {
                 }
                 String javaName = activity.getJavaName();
                 eC store = jC.a(scId);
+                // Everything a block may legitimately name on this
+                // screen. Only widget ids used to be counted here, so a
+                // block reading a VARIABLE (noteText) or driving a
+                // COMPONENT (file1) was reported as a missing widget —
+                // three loud warnings in the MagicalNotes run, none of
+                // them real. A warning that cries wolf teaches the user
+                // to ignore the ones that matter.
                 java.util.Set<String> ids = new java.util.HashSet<>();
                 for (ViewBean bean
                         : SketchwareProjects.screenBeans(scId, activity)) {
                     if (bean != null && bean.id != null) {
                         ids.add(bean.id);
                     }
+                }
+                try {
+                    SketchwareProjects.LogicSummary logic =
+                            SketchwareProjects.logicSummary(scId, activity);
+                    if (logic != null) {
+                        ids.addAll(logic.variables);
+                        ids.addAll(logic.lists);
+                        ids.addAll(logic.components);
+                    }
+                } catch (Throwable ignored) {
+                    // If the screen's names cannot be read, fall back to
+                    // the widget ids alone rather than skipping the check.
                 }
                 ArrayList<EventBean> events = store.g(javaName);
                 if (events == null) {
@@ -7935,6 +7954,115 @@ public final class AgentLogic {
             return null;
         }
         return first;
+    }
+
+    /**
+     * Variables that were declared and then never used by any block on
+     * that screen. The MagicalNotes run declared four of them
+     * (notesListText, savedNotesJson, currentNote, noteText) and only
+     * one was ever written to, never read — the user had to reject
+     * four more by hand. A variable nothing touches is clutter in the
+     * user's project, so it is reported, not ignored.
+     */
+    public static List<String> unusedVariables(String scId) {
+        ArrayList<String> findings = new ArrayList<>();
+        if (scId == null || scId.isEmpty()) {
+            return findings;
+        }
+        try {
+            for (ProjectFileBean activity
+                    : SketchwareProjects.activities(scId)) {
+                if (activity.fileType
+                        != ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
+                    continue;
+                }
+                String javaName = activity.getJavaName();
+                SketchwareProjects.LogicSummary logic =
+                        SketchwareProjects.logicSummary(scId, activity);
+                if (logic == null || logic.variables.isEmpty()) {
+                    continue;
+                }
+                java.util.Set<String> used = new java.util.HashSet<>();
+                eC store = jC.a(scId);
+                ArrayList<EventBean> events = store.g(javaName);
+                if (events != null) {
+                    for (EventBean event : events) {
+                        ArrayList<BlockBean> blocks = store.a(javaName,
+                                event.targetId + "_" + event.eventName);
+                        if (blocks == null) {
+                            continue;
+                        }
+                        for (BlockBean bean : blocks) {
+                            if (bean.parameters == null) {
+                                continue;
+                            }
+                            for (String parameter : bean.parameters) {
+                                if (parameter != null) {
+                                    used.add(parameter);
+                                }
+                            }
+                        }
+                    }
+                }
+                for (String name : logic.variables) {
+                    if (used.contains(name)) {
+                        continue;
+                    }
+                    findings.add(SketchwareProjects.activityName(activity)
+                            + ": the variable \"" + name + "\" was "
+                            + "declared but no block on that screen reads "
+                            + "or writes it — wire it up, or remove it "
+                            + "with remove_variable.");
+                }
+            }
+        } catch (Throwable ignored) {
+            // A check must never stop the work it is checking.
+        }
+        return findings;
+    }
+
+    /**
+     * Where a variable is still used on a screen, or null if nothing
+     * touches it. Removing a variable a block names would leave the
+     * app unable to build, so removal is refused while this is not
+     * null.
+     */
+    public static String variableUse(String scId, String javaName,
+                                     String name) {
+        if (scId == null || javaName == null || name == null
+                || name.isEmpty()) {
+            return null;
+        }
+        try {
+            eC store = jC.a(scId);
+            ArrayList<EventBean> events = store.g(javaName);
+            if (events == null) {
+                return null;
+            }
+            for (EventBean event : events) {
+                ArrayList<BlockBean> blocks = store.a(javaName,
+                        event.targetId + "_" + event.eventName);
+                if (blocks == null) {
+                    continue;
+                }
+                for (BlockBean bean : blocks) {
+                    if (bean.parameters == null) {
+                        continue;
+                    }
+                    for (String parameter : bean.parameters) {
+                        if (name.equals(parameter)) {
+                            return "a block in " + event.targetId + " "
+                                    + event.eventName + " names it";
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // Unknown means "not proven unused", which is the safe
+            // answer: refuse the removal.
+            return "a block on this screen may name it";
+        }
+        return null;
     }
 
     /**

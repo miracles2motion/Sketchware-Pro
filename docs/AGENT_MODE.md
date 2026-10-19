@@ -1558,3 +1558,39 @@ tell you a symbol is missing or a lambda has its parameters backwards.
    call** and copy the parameter order that already compiles.
 4. **CI is read, not assumed.** No commit is described as done until
    the run for its SHA says so.
+
+## Wave 32: variables nothing uses
+
+The MagicalNotes export (sc_id 608, `gemini-flash-lite-latest`) shows
+it exactly. Across two screens the agent tried to declare **eight**
+variables:
+
+| declared | used by any block? |
+|---|---|
+| `noteText` (NoteActivity) | written once (`set noteText to ""`), never read |
+| `currentNote` (NoteActivity) | never |
+| `notesListText` (MainActivity) | never |
+| `savedNotesJson` (MainActivity) | never |
+| `myNotesList`, `myNotes`, `savedText`, `notesList` | refused / failed |
+
+Four rejected by the user by hand, four declared, and not one of them
+ever read. The user's words: *"it kept on creating variables it's not
+going to use — how do[ I ]know? Yes I do."*
+
+Three changes:
+
+1. **`create_variable` now requires `used_by`** — name the event and
+   what it does with the value, or the call is refused
+   (`E_UNUSED_VARIABLE`). No answer, no variable. The justification is
+   shown on the approval card so it can be judged before approving.
+2. **`remove_variable`** deletes one, using the app's own deletion —
+   `LogicEditorActivity.m(String)` calls `jC.a(scId).p(javaName, name)`.
+   It refuses while any block still names the variable
+   (`E_VARIABLE_IN_USE`), because deleting one that a block names
+   leaves the app unbuildable.
+3. **An unused-variable audit** after every applied change, in the tool
+   result and in the export as `unused_variables`: "declared but never
+   read or written — wire it up or remove it."
+
+The principle: a variable is not a declaration of intent, it is
+clutter in the user's project until something reads it.

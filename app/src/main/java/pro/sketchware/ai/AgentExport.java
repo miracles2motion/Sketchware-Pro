@@ -462,6 +462,15 @@ public final class AgentExport {
             // Never let the check stop the export.
         }
         state.add("broken_references", broken);
+        JsonArray unused = new JsonArray();
+        try {
+            for (String finding : AgentLogic.unusedVariables(scId)) {
+                unused.add(finding);
+            }
+        } catch (Exception ignored) {
+            // Never let the check stop the export.
+        }
+        state.add("unused_variables", unused);
         return state;
     }
 

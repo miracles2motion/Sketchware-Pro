@@ -146,6 +146,7 @@ public final class AgentTools {
         register(new GetEventLogic());
         register(new EditEventBlock());
         register(new CreateVariable());
+        register(new RemoveVariable());
         register(new CreateComponent());
         register(new EditProjectTheme());
         register(new BuildProject());
@@ -2058,7 +2059,17 @@ public final class AgentTools {
             return "Proposes declaring one variable on one screen, "
                     + "the way Sketchware's own logic editor adds it. "
                     + "Types: boolean, number, string, map, "
-                    + "list_string, list_number, list_map. A new "
+                    + "list_string, list_number, list_map. You must say "
+                    + "what will use it, in \"used_by\" — the event and "
+                    + "what it does with the value, e.g. \"save_btn "
+                    + "onClick sets it from note_input and file1 saves "
+                    + "it\". If you cannot say what will use it, you do "
+                    + "not need the variable: do not declare it. "
+                    + "Declaring variables \"in case\" fills the "
+                    + "user's project with names nothing reads, and "
+                    + "they have to reject them by hand. Declare a "
+                    + "variable at the moment you have the blocks that "
+                    + "use it, not before. A new "
                     + "variable starts as false / "
                     + "0 / empty text; give it an initial value by "
                     + "wiring the screen's start event (onCreate or "
@@ -2078,8 +2089,13 @@ public final class AgentTools {
             properties.add("type", stringSchema(
                     "boolean, number, string, map, list_string, "
                             + "list_number or list_map"));
+            properties.add("used_by", stringSchema(
+                    "What will read or write this variable — name the "
+                            + "event and what it does, e.g. \"save_btn "
+                            + "onClick sets it from note_input\". No "
+                            + "answer, no variable."));
             return AgentTools.parameters(properties,
-                    "activity", "name", "type");
+                    "activity", "name", "type", "used_by");
         }
 
         @Override
@@ -2115,6 +2131,21 @@ public final class AgentTools {
                 throw new ToolException("E_NOT_ACTIVITY",
                         "Custom views have no variables to declare. "
                                 + "Pick an activity screen instead.");
+            }
+            // The gate. A variable with no stated use is how a
+            // two-screen notes app ended up with eight of them and a
+            // user rejecting half by hand.
+            String usedBy = stringArg(args, "used_by");
+            if (usedBy.length() < 8) {
+                throw new ToolException("E_UNUSED_VARIABLE",
+                        "Say what will use \"" + stringArg(args, "name")
+                                + "\" before declaring it — pass "
+                                + "\"used_by\" naming the event and what "
+                                + "it does with the value, e.g. \"save_btn "
+                                + "onClick sets it from note_input and "
+                                + "file1 saves it\". If nothing will use "
+                                + "it yet, do not declare it: come back "
+                                + "when you have the blocks that need it.");
             }
             String typeName = stringArg(args, "type");
             String lowered = typeName.trim().toLowerCase();
@@ -2243,6 +2274,7 @@ public final class AgentTools {
                     checked.activity().fileName);
             clean.addProperty("name", checked.name());
             clean.addProperty("type", checked.typeName());
+            clean.addProperty("used_by", stringArg(args, "used_by"));
             String startValue = checked.list() ? "empty"
                     : switch (checked.typeCode()) {
                         case 0 -> "false";
@@ -2257,7 +2289,9 @@ public final class AgentTools {
                             + " in " + project.name,
                     "New " + checked.typeName() + " variable: "
                             + checked.name() + " (starts as "
-                            + startValue + ")",
+                            + startValue + ")"
+                            + "\nTo be used by: "
+                            + stringArg(args, "used_by"),
                     "Declares the variable on the screen, the same "
                             + "entry Sketchware's logic editor adds. "
                             + "Nothing else on the screen changes. A "
@@ -2314,6 +2348,187 @@ public final class AgentTools {
                             + " variable named " + checked.name()
                             + " (read back and checked).");
             return result;
+        }
+    }
+
+
+    /**
+     * remove_variable: delete a variable the agent declared and never
+     * used. The removal call is the app's own — LogicEditorActivity's
+     * Remove-variable button calls jC.a(scId).p(javaName, name).
+     */
+    private static final class RemoveVariable implements Tool {
+
+        @Override
+        public String name() {
+            return "remove_variable";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes deleting one variable from one screen — "
+                    + "the same deletion Sketchware's own Remove "
+                    + "variable dialog performs. Use it to clean up a "
+                    + "variable you declared and then never used. A "
+                    + "variable that any block still reads or writes "
+                    + "cannot be removed: wire the blocks to something "
+                    + "else first, or remove those blocks. The user "
+                    + "must approve before anything is deleted.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("activity", stringSchema(
+                    "The screen, e.g. MainActivity"));
+            properties.add("name", stringSchema(
+                    "The variable to remove, e.g. notesListText"));
+            return AgentTools.parameters(properties,
+                    "activity", "name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to remove the variable "
+                    + stringArg(args, "name");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        private ProjectFileBean screen(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String asked = stringArg(args, "activity");
+            ProjectFileBean activity =
+                    SketchwareProjects.findActivity(scId, asked);
+            if (activity == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "There is no activity named \"" + asked
+                                + "\" in the working project.");
+            }
+            if (activity.fileType
+                    != ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
+                throw new ToolException("E_NOT_ACTIVITY",
+                        "Custom views have no variables. Pick an "
+                                + "activity screen instead.");
+            }
+            return activity;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            ProjectFileBean activity = screen(session, args);
+            String name = stringArg(args, "name");
+            String javaName = activity.getJavaName();
+            eC store = a.a.a.jC.a(scId);
+            boolean declared = false;
+            for (android.util.Pair<Integer, String> pair
+                    : safeVariables(store, javaName)) {
+                if (name.equals(pair.second)) {
+                    declared = true;
+                    break;
+                }
+            }
+            if (!declared) {
+                throw new ToolException("E_NO_VARIABLE",
+                        "\"" + name + "\" is not declared on "
+                                + SketchwareProjects.activityName(activity)
+                                + ", so there is nothing to remove. "
+                                + "Its variables are: "
+                                + variableNames(store, javaName) + ".");
+            }
+            String where = AgentLogic.variableUse(scId, javaName, name);
+            if (where != null) {
+                throw new ToolException("E_VARIABLE_IN_USE",
+                        "\"" + name + "\" is still used — " + where
+                                + ". Remove or change those blocks "
+                                + "first; deleting a variable they name "
+                                + "would leave the app unbuildable.");
+            }
+            JsonObject clean = new JsonObject();
+            clean.addProperty("activity", activity.fileName);
+            clean.addProperty("name", name);
+            return new AgentProposal(name(), clean, scId,
+                    "Remove a variable from "
+                            + SketchwareProjects.activityName(activity)
+                            + " in "
+                            + SketchwareProjects.project(scId).name,
+                    "Remove " + name
+                            + " — no block on that screen uses it",
+                    "Deletes the variable from the screen, the same "
+                            + "way Sketchware's Remove variable dialog "
+                            + "does. A safety backup of the project is "
+                            + "made first.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            if (!scId.equals(session.workingProjectId)) {
+                throw new ToolException("E_PROJECT_CHANGED",
+                        "The working project changed since this was "
+                                + "proposed, so nothing was removed.");
+            }
+            ProjectFileBean activity = screen(session, proposal.args);
+            String name = stringArg(proposal.args, "name");
+            String javaName = activity.getJavaName();
+            eC store = a.a.a.jC.a(scId);
+            try {
+                SketchwareActions.backupProjectOnce(scId);
+                // The app's own removal (LogicEditorActivity.m):
+                // jC.a(scId).p(M.getJavaName(), str)
+                store.p(javaName, name);
+                SketchwareActions.commitProject(scId);
+            } catch (Exception e) {
+                throw new ToolException("E_APPLY_FAILED",
+                        "Removing the variable failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+            for (android.util.Pair<Integer, String> pair
+                    : safeVariables(store, javaName)) {
+                if (name.equals(pair.second)) {
+                    throw new ToolException("E_APPLY_FAILED",
+                            "The variable was still there after the "
+                                    + "removal, so nothing was changed.");
+                }
+            }
+            JsonObject result = new JsonObject();
+            result.addProperty("removed", name);
+            result.addProperty("verified",
+                    SketchwareProjects.activityName(activity)
+                            + " no longer declares " + name
+                            + " (read back and checked).");
+            return result;
+        }
+
+        private static ArrayList<android.util.Pair<Integer, String>>
+                safeVariables(eC store, String javaName) {
+            try {
+                ArrayList<android.util.Pair<Integer, String>> stored =
+                        store.k(javaName);
+                return stored == null
+                        ? new ArrayList<>() : stored;
+            } catch (Exception e) {
+                return new ArrayList<>();
+            }
+        }
+
+        private static String variableNames(eC store, String javaName) {
+            StringBuilder out = new StringBuilder();
+            for (android.util.Pair<Integer, String> pair
+                    : safeVariables(store, javaName)) {
+                if (out.length() > 0) {
+                    out.append(", ");
+                }
+                out.append(pair.second);
+            }
+            return out.length() == 0 ? "none" : out.toString();
         }
     }
 
