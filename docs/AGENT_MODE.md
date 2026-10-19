@@ -1503,3 +1503,21 @@ values must contain no spaces, because the layout writer strips them
 three different lists. A thing missing from one says nothing about the
 others, and an agent that answers from a single list will keep telling
 the user something is impossible when it is not.
+
+`AgentEdits` carries that same table (`ATTRS_VIEW`, `ATTRS_TEXT_VIEW`,
+`ATTRS_CARD_VIEW`, `ATTRS_MATERIAL_BUTTON` …) and `allowedAttributes()`
+uses the editor's own class tests — `classInfo.a("TextView")` for
+"is or extends", `classInfo.b("CardView")` for exactly that class — so
+the agent and the property panel can never disagree.
+
+Because the lists differ per widget, `set_attributes` **rejects a name
+that does not belong to that widget**, and says what does:
+
+> `card1` is a `MaterialButton`, and it does not take
+> `app:cardCornerRadius`. That one belongs to a CardView. Custom
+> attributes for a `MaterialButton`: android:alpha, android:background,
+> … , app:cornerRadius, app:icon, … .
+
+The alternative — writing the attribute anyway — would put a line in
+the XML that fails at build time, which is worse than a refusal the
+model can act on.

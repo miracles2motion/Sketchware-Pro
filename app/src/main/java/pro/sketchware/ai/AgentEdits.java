@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import a.a.a.Gx;
 import a.a.a.wq;
 import com.besome.sketch.beans.LayoutBean;
 import com.besome.sketch.beans.ViewBean;
@@ -591,7 +592,7 @@ public final class AgentEdits {
                     // list of them is the editor's own
                     // (PropertyInputItem.populateAttributes).
                     ViewBean bean = requireWidget(op, byId);
-                    String attributes = customAttributes(op);
+                    String attributes = customAttributes(op, bean);
                     bean.inject = attributes;
                     lines.add("Set " + bean.id + " custom attributes: "
                             + attributes.replace("\n", ", "));
@@ -2361,12 +2362,126 @@ public final class AgentEdits {
         return ids;
     }
 
+    // Custom attributes are per widget. These are the editor's own lists
+    // (PropertyInputItem.populateAttributes), kept here so the agent and
+    // the property panel tell the model the same story.
+
+    private static final Set<String> ATTRS_VIEW = attrs(
+            "android:background", "android:backgroundTint", "android:alpha",
+            "android:visibility", "android:padding", "android:layout_margin",
+            "android:elevation", "android:rotation", "android:scaleX",
+            "android:scaleY", "android:translationX",
+            "android:translationY");
+
+    private static final Set<String> ATTRS_TEXT_VIEW = attrs(
+            "android:text", "android:textSize", "android:textColor",
+            "android:textStyle", "android:fontFamily", "android:typeface",
+            "android:lines", "android:maxLines", "android:singleLine",
+            "android:gravity", "android:ellipsize", "android:hint",
+            "android:textColorHint", "android:inputType",
+            "android:imeOptions", "android:drawableLeft",
+            "android:drawableTop", "android:drawableRight",
+            "android:drawableBottom", "android:drawablePadding",
+            "android:drawableTint");
+
+    private static final Set<String> ATTRS_IMAGE_VIEW = attrs(
+            "android:src", "android:scaleType", "android:tint",
+            "android:adjustViewBounds", "android:cropToPadding");
+
+    private static final Set<String> ATTRS_LINEAR_LAYOUT = attrs(
+            "android:orientation", "android:gravity", "android:weightSum",
+            "android:baselineAligned");
+
+    private static final Set<String> ATTRS_VIEW_GROUP = attrs(
+            "android:clipChildren", "android:clipToPadding",
+            "android:animateLayoutChanges");
+
+    private static final Set<String> ATTRS_PROGRESS_BAR = attrs(
+            "android:max", "android:progress", "android:indeterminate",
+            "android:indeterminateTint", "android:progressTint");
+
+    private static final Set<String> ATTRS_COMPOUND_BUTTON = attrs(
+            "android:checked", "android:button", "android:buttonTint");
+
+    private static final Set<String> ATTRS_CARD_VIEW = attrs(
+            "app:cardBackgroundColor", "app:cardCornerRadius",
+            "app:cardElevation", "app:cardMaxElevation",
+            "app:cardUseCompatPadding", "app:cardPreventCornerOverlap",
+            "app:contentPadding", "app:strokeColor", "app:strokeWidth");
+
+    private static final Set<String> ATTRS_MATERIAL_BUTTON = attrs(
+            "app:icon", "app:iconTint", "app:iconGravity", "app:iconPadding",
+            "app:strokeColor", "app:strokeWidth", "app:cornerRadius",
+            "app:rippleColor");
+
+    /** What a plain name means, when the model uses it on the wrong thing. */
+    private static final Map<String, String> ATTR_OWNERS =
+            new HashMap<>();
+
+    static {
+        ATTR_OWNERS.put("app:cardCornerRadius", "a CardView");
+        ATTR_OWNERS.put("app:cardElevation", "a CardView");
+        ATTR_OWNERS.put("app:contentPadding", "a CardView");
+        ATTR_OWNERS.put("app:cornerRadius", "a MaterialButton");
+        ATTR_OWNERS.put("app:rippleColor", "a MaterialButton");
+        ATTR_OWNERS.put("android:weightSum", "a LinearLayout");
+        ATTR_OWNERS.put("android:baselineAligned", "a LinearLayout");
+        ATTR_OWNERS.put("android:src", "an ImageView");
+        ATTR_OWNERS.put("android:scaleType", "an ImageView");
+        ATTR_OWNERS.put("android:checked", "a CompoundButton such as CheckBox or Switch");
+        ATTR_OWNERS.put("android:buttonTint", "a CompoundButton such as CheckBox or Switch");
+        ATTR_OWNERS.put("android:progress", "a ProgressBar or SeekBar");
+        ATTR_OWNERS.put("android:indeterminate", "a ProgressBar");
+    }
+
+    private static LinkedHashSet<String> attrs(String... names) {
+        LinkedHashSet<String> set = new LinkedHashSet<>();
+        Collections.addAll(set, names);
+        return set;
+    }
+
+    /**
+     * The custom attributes one widget accepts — the editor's own rule,
+     * using the same class tests it does ({@code a} = is or extends,
+     * {@code b} = exactly this class), so the two agree.
+     */
+    private static Set<String> allowedAttributes(ViewBean bean) {
+        LinkedHashSet<String> set = new LinkedHashSet<>(ATTRS_VIEW);
+        Gx classInfo = bean.getClassInfo();
+        if (classInfo.a("TextView")) {
+            set.addAll(ATTRS_TEXT_VIEW);
+        }
+        if (classInfo.a("ImageView")) {
+            set.addAll(ATTRS_IMAGE_VIEW);
+        }
+        if (classInfo.a("LinearLayout")) {
+            set.addAll(ATTRS_LINEAR_LAYOUT);
+        }
+        if (classInfo.a("ViewGroup")) {
+            set.addAll(ATTRS_VIEW_GROUP);
+        }
+        if (classInfo.a("ProgressBar")) {
+            set.addAll(ATTRS_PROGRESS_BAR);
+        }
+        if (classInfo.a("CompoundButton")) {
+            set.addAll(ATTRS_COMPOUND_BUTTON);
+        }
+        if (classInfo.b("CardView")) {
+            set.addAll(ATTRS_CARD_VIEW);
+        }
+        if (classInfo.b("MaterialButton")) {
+            set.addAll(ATTRS_MATERIAL_BUTTON);
+        }
+        return set;
+    }
+
     /**
      * The editor's Custom attributes (Inject) field, built from what
      * the model sent: either an object of attribute to value, or a raw
      * string of newline-separated attributes.
      */
-    private static String customAttributes(JsonObject op)
+    private static String customAttributes(JsonObject op,
+            ViewBean bean)
             throws AgentTools.ToolException {
         StringBuilder out = new StringBuilder();
         if (op.has("attributes") && op.get("attributes").isJsonObject()) {
@@ -2380,7 +2495,7 @@ public final class AgentEdits {
                 if (out.length() > 0) {
                     out.append("\n");
                 }
-                out.append(checkAttribute(field.getKey(), value));
+                out.append(checkAttribute(bean, field.getKey(), value));
             }
         } else {
             String raw = stringOf(op, "attributes");
@@ -2402,7 +2517,8 @@ public final class AgentEdits {
                 if (out.length() > 0) {
                     out.append("\n");
                 }
-                out.append(checkAttribute(trimmed.substring(0, eq).trim(),
+                out.append(checkAttribute(bean,
+                        trimmed.substring(0, eq).trim(),
                         trimmed.substring(eq + 1).trim()));
             }
         }
@@ -2421,8 +2537,8 @@ public final class AgentEdits {
      * itself (Ox: inject.replace(" ", "")), so a value with a space in
      * it would arrive wrong on screen — refuse it here instead.
      */
-    private static String checkAttribute(String name, String value)
-            throws AgentTools.ToolException {
+    private static String checkAttribute(ViewBean bean, String name,
+            String value) throws AgentTools.ToolException {
         String cleanName = name.trim();
         String cleanValue = value.trim().replace(" ", "")
                 .replace("\"", "");
@@ -2440,7 +2556,50 @@ public final class AgentEdits {
                             + "(e.g. 8dp, 4, #FF8A3D) — it is written "
                             + "straight into the widget's XML tag.");
         }
+        Set<String> allowed = allowedAttributes(bean);
+        if (!allowed.contains(cleanName)) {
+            StringBuilder message = new StringBuilder();
+            message.append(bean.id).append(" is a ")
+                    .append(classWord(bean)).append(", and it does not take ")
+                    .append(cleanName).append(". ");
+            String owner = ATTR_OWNERS.get(cleanName);
+            if (owner != null) {
+                message.append("That one belongs to ").append(owner)
+                        .append(". ");
+            }
+            message.append("Custom attributes for a ").append(classWord(bean))
+                    .append(": ").append(joinNames(allowed)).append(".");
+            throw new AgentTools.ToolException("E_BAD_VALUE",
+                    message.toString());
+        }
         return cleanName + "=\"" + cleanValue + "\"";
+    }
+
+    /** The widget's own class name, the way the editor words it. */
+    private static String classWord(ViewBean bean) {
+        String name = bean.getClassInfo().getClassName();
+        return name == null || name.isEmpty() ? typeName(bean.type) : name;
+    }
+
+    /** A readable, bounded list of attribute names. */
+    private static String joinNames(Set<String> names) {
+        List<String> sorted = new ArrayList<>(names);
+        Collections.sort(sorted);
+        StringBuilder out = new StringBuilder();
+        int shown = 0;
+        for (String name : sorted) {
+            if (shown >= 14) {
+                out.append(" and ").append(sorted.size() - shown)
+                        .append(" more");
+                break;
+            }
+            if (shown > 0) {
+                out.append(", ");
+            }
+            out.append(name);
+            shown++;
+        }
+        return out.toString();
     }
 
     private static String stringOf(JsonObject object, String key) {
