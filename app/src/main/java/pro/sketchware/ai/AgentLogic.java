@@ -860,6 +860,95 @@ public final class AgentLogic {
                 bean.parameters.add(key);
                 return "@" + bean.id;
             }
+            if (object.has("file_exists") || object.has("is_file")
+                    || object.has("is_folder") || object.has("read_file")
+                    || object.has("file_length")) {
+                // File reporters (File page): fileutilisexist,
+                // fileutilisfile, fileutilisdir, fileutilread and
+                // fileutillength — one path slot each, Fx-verified.
+                String key = object.has("file_exists") ? "file_exists"
+                        : object.has("is_file") ? "is_file"
+                        : object.has("is_folder") ? "is_folder"
+                        : object.has("read_file") ? "read_file"
+                        : "file_length";
+                char needed = "read_file".equals(key) ? 's'
+                        : "file_length".equals(key) ? 'd' : 'b';
+                if (slot != needed) {
+                    throw badValue(what, "that file value does not "
+                            + "fit here");
+                }
+                String opCode = switch (key) {
+                    case "file_exists" -> "fileutilisexist";
+                    case "is_file" -> "fileutilisfile";
+                    case "is_folder" -> "fileutilisdir";
+                    case "read_file" -> "fileutilread";
+                    default -> "fileutillength";
+                };
+                BlockBean bean = newBean(opCode,
+                        String.valueOf(needed));
+                bean.parameters.add(expr(object.get(key), 's', what));
+                return "@" + bean.id;
+            }
+            if (object.has("index_of") || object.has("map_size")
+                    || object.has("map_empty")
+                    || object.has("map_has_value")) {
+                if (object.has("index_of")) {
+                    String list = stringOf(object, "index_of");
+                    Integer listKind = lists.get(list);
+                    if (listKind == null || listKind == 3) {
+                        throw badValue(what, "there is no list of "
+                                + "text or numbers called " + list
+                                + " on this screen");
+                    }
+                    if (slot != 'd') {
+                        throw badValue(what, "the position in " + list
+                                + " is a number and does not fit here");
+                    }
+                    BlockBean bean = newBean(
+                            listKind == 2 ? "indexListStr"
+                                    : "indexListInt", "d");
+                    bean.parameters.add(expr(object.get("value"),
+                            listKind == 2 ? 's' : 'd', what));
+                    bean.parameters.add(list);
+                    return "@" + bean.id;
+                }
+                String name = stringOf(object,
+                        object.has("map_size") ? "map_size"
+                                : object.has("map_empty") ? "map_empty"
+                                : "map_has_value");
+                Integer kind = variables.get(name);
+                if (kind == null || kind != 3) {
+                    throw badValue(what, "“" + name + "” is not a map "
+                            + "variable on this screen");
+                }
+                if (object.has("map_size")) {
+                    if (slot != 'd') {
+                        throw badValue(what, "the size of map " + name
+                                + " is a number and does not fit here");
+                    }
+                    BlockBean bean = newBean("mapSize", "d");
+                    bean.parameters.add(name);
+                    return "@" + bean.id;
+                }
+                if (slot != 'b') {
+                    throw badValue(what, "that is true/false and does "
+                            + "not fit here");
+                }
+                if (object.has("map_empty")) {
+                    BlockBean bean = newBean("mapIsEmpty", "b");
+                    bean.parameters.add(name);
+                    return "@" + bean.id;
+                }
+                String value = stringOf(object, "value");
+                if (value.isEmpty()) {
+                    throw badValue(what, "map_has_value needs the "
+                            + "\"value\" text to look for");
+                }
+                BlockBean bean = newBean("mapContainValue", "b");
+                bean.parameters.add(name);
+                bean.parameters.add(value);
+                return "@" + bean.id;
+            }
             if (object.has("fn")) {
                 // Function reporters (Math/Operator pages): one
                 // shape, {"fn":"abs","a":...} — every opCode and
@@ -996,12 +1085,53 @@ public final class AgentLogic {
                                 'd', what));
                         return "@" + bean.id;
                     }
+                    case "starts_with", "ends_with" -> {
+                        if (slot != 'b') {
+                            throw badValue(what, "whether text starts "
+                                    + "or ends with text is true/false "
+                                    + "and does not fit here");
+                        }
+                        BlockBean bean = newBean(
+                                "starts_with".equals(fn)
+                                        ? "fileutilStartsWith"
+                                        : "fileutilEndsWith", "b");
+                        bean.parameters.add(expr(object.get("a"),
+                                's', what));
+                        bean.parameters.add(expr(object.get("b"),
+                                's', what));
+                        return "@" + bean.id;
+                    }
+                    case "last_segment" -> {
+                        if (slot != 's') {
+                            throw badValue(what, "the last part of a "
+                                    + "path is text and does not fit "
+                                    + "here");
+                        }
+                        BlockBean bean = newBean(
+                                "fileutilGetLastSegmentPath", "s");
+                        bean.parameters.add(expr(object.get("a"),
+                                's', what));
+                        return "@" + bean.id;
+                    }
+                    case "external_dir", "app_dir" -> {
+                        if (slot != 's') {
+                            throw badValue(what, "a folder path is "
+                                    + "text and does not fit here");
+                        }
+                        BlockBean bean = newBean(
+                                "external_dir".equals(fn)
+                                        ? "getExternalStorageDir"
+                                        : "getPackageDataDir", "s");
+                        return "@" + bean.id;
+                    }
                     default -> throw badValue(what, "unknown "
                             + "function \"" + fn + "\" (abs, ceil, "
                             + "floor, round, sqrt, pow, max, min, "
                             + "random, pi, len, concat, contains, "
                             + "upper, lower, trim, substring, "
-                            + "to_number, to_text)");
+                            + "to_number, to_text, starts_with, "
+                            + "ends_with, last_segment, external_dir, "
+                            + "app_dir)");
                 }
             }
             if (object.has("extra")) {
@@ -1234,6 +1364,16 @@ public final class AgentLogic {
                             + describeExpr(object.get("a")) + " to "
                             + describeExpr(object.get("b"));
                     case "pi" -> "pi";
+                    case "starts_with" -> describeExpr(object.get("a"))
+                            + " starts with "
+                            + describeExpr(object.get("b"));
+                    case "ends_with" -> describeExpr(object.get("a"))
+                            + " ends with "
+                            + describeExpr(object.get("b"));
+                    case "last_segment" -> "the last part of "
+                            + describeExpr(object.get("a"));
+                    case "external_dir" -> "the device storage folder";
+                    case "app_dir" -> "the app's private folder";
                     default -> fn + " of "
                             + describeExpr(object.get("a"))
                             + (object.has("b") ? " and "
@@ -1265,6 +1405,45 @@ public final class AgentLogic {
                 return "map " + stringOf(object, "map_has")
                         + " has \u201C" + stringOf(object, "key")
                         + "\u201D";
+            }
+            if (object.has("map_size")) {
+                return "the number of entries in map "
+                        + stringOf(object, "map_size");
+            }
+            if (object.has("map_empty")) {
+                return "map " + stringOf(object, "map_empty")
+                        + " is empty";
+            }
+            if (object.has("map_has_value")) {
+                return "map " + stringOf(object, "map_has_value")
+                        + " contains \u201C" + stringOf(object, "value")
+                        + "\u201D";
+            }
+            if (object.has("index_of")) {
+                return "the position of "
+                        + describeExpr(object.get("value")) + " in "
+                        + stringOf(object, "index_of");
+            }
+            if (object.has("file_exists")) {
+                return "the file at "
+                        + describeExpr(object.get("file_exists"))
+                        + " exists";
+            }
+            if (object.has("is_file")) {
+                return describeExpr(object.get("is_file"))
+                        + " is a file";
+            }
+            if (object.has("is_folder")) {
+                return describeExpr(object.get("is_folder"))
+                        + " is a folder";
+            }
+            if (object.has("read_file")) {
+                return "the content of the file at "
+                        + describeExpr(object.get("read_file"));
+            }
+            if (object.has("file_length")) {
+                return "the size of the file at "
+                        + describeExpr(object.get("file_length"));
             }
             if (object.has("text_of")) {
                 return "text of " + stringOf(object, "text_of");
@@ -1331,12 +1510,17 @@ public final class AgentLogic {
             JsonObject object = element.getAsJsonObject();
             if (object.has("checked") || object.has("enabled")
                     || object.has("map_has") || object.has("list_has")
-                    || object.has("bool")) {
+                    || object.has("bool") || object.has("file_exists")
+                    || object.has("is_file") || object.has("is_folder")
+                    || object.has("map_empty")
+                    || object.has("map_has_value")) {
                 return true;
             }
             if (object.has("fn")) {
-                return "contains".equals(stringOf(object, "fn")
-                        .toLowerCase(Locale.ROOT));
+                String fn = stringOf(object, "fn")
+                        .toLowerCase(Locale.ROOT);
+                return "contains".equals(fn) || "starts_with".equals(fn)
+                        || "ends_with".equals(fn);
             }
             if (object.has("var")) {
                 Integer kind = variables.get(stringOf(object, "var"));
@@ -1595,6 +1779,33 @@ public final class AgentLogic {
             case "decreaseint" -> "decrease";
             case "finishactivity" -> "finish";
             case "ifelse" -> "if_else";
+            case "writefile", "fileutilwrite" -> "write_file";
+            case "deletefile", "fileutildelete" -> "delete_file";
+            case "makedir", "makefolder", "fileutilmakedir" ->
+                    "make_folder";
+            case "copyfile", "fileutilcopy" -> "copy_file";
+            case "movefile", "fileutilmove" -> "move_file";
+            case "copyfolder", "copydir", "fileutilcopydir" ->
+                    "copy_folder";
+            case "renamefile" -> "rename_file";
+            case "listfiles", "fileutillistdir", "listdir" ->
+                    "list_files";
+            case "removefromlist", "deletelist", "removeat" ->
+                    "remove_from_list";
+            case "insertinlist" -> "insert_in_list";
+            case "setinlist", "setatpos" -> "set_in_list";
+            case "reverselist" -> "reverse_list";
+            case "shufflelist" -> "shuffle_list";
+            case "sortlist" -> "sort_list";
+            case "swapinlist" -> "swap_in_list";
+            case "removemapkey", "mapremovekey" -> "remove_map_key";
+            case "mapkeystolist", "mapgetallkeys" -> "map_keys_to_list";
+            case "getmapfromlist", "getmapinlist" -> "get_map_from_list";
+            case "addmaptolist" -> "add_map_to_list";
+            case "insertmaptolist" -> "insert_map_to_list";
+            case "addmapentry", "addlistmap" -> "add_map_entry";
+            case "insertmapentry", "insertlistmap" -> "insert_map_entry";
+            case "setmapentry", "setlistmap" -> "set_map_entry";
             default -> kind.toLowerCase(Locale.ROOT);
         };
     }
@@ -2145,6 +2356,357 @@ public final class AgentLogic {
                 stmt.sentence = "Start map “" + name + "” fresh";
                 stmt.expectCode = name + " = new HashMap";
             }
+            case "write_file" -> {
+                // The editor's fileutilwrite: content first, then
+                // the path (Fx emits FileUtil.writeFile(path, text)).
+                String text = stringOf(op, "text");
+                String fromVariable = stringOf(op, "from_variable");
+                stmt.opCode = "fileutilwrite";
+                stmt.type = " ";
+                if (!fromVariable.isEmpty()) {
+                    requireVariable(variables, fromVariable);
+                    requireVariableKind(variables, fromVariable, 2,
+                            "A file's content can only come from a "
+                                    + "string variable.");
+                    stmt.params.add("@var:" + fromVariable);
+                    text = "the value of “" + fromVariable + "”";
+                } else {
+                    if (text.isEmpty()) {
+                        text = stringOf(op, "value");
+                    }
+                    if (text.isEmpty()) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "write_file needs the \"text\" to "
+                                        + "write, or \"from_variable\" "
+                                        + "naming a string variable.");
+                    }
+                    stmt.params.add(text);
+                    text = "“" + text + "”";
+                }
+                PathArg path = pathParam(op, variables, "path");
+                stmt.params.add(path.stored);
+                stmt.sentence = "Write " + text + " to the file at "
+                        + path.shown;
+                stmt.expectCode = "FileUtil.writeFile(";
+            }
+            case "delete_file" -> {
+                stmt.opCode = "fileutildelete";
+                stmt.type = " ";
+                PathArg path = pathParam(op, variables, "path");
+                stmt.params.add(path.stored);
+                stmt.sentence = "Delete the file at " + path.shown;
+                stmt.expectCode = "FileUtil.deleteFile(";
+            }
+            case "make_folder" -> {
+                stmt.opCode = "fileutilmakedir";
+                stmt.type = " ";
+                PathArg path = pathParam(op, variables, "path");
+                stmt.params.add(path.stored);
+                stmt.sentence = "Create the folder at " + path.shown;
+                stmt.expectCode = "FileUtil.makeDir(";
+            }
+            case "copy_file", "move_file", "copy_folder",
+                    "rename_file" -> {
+                String from = stringOf(op, "from");
+                String to = stringOf(op, "to");
+                if (from.isEmpty() || to.isEmpty()) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            kind + " needs \"from\" and \"to\" paths.");
+                }
+                stmt.type = " ";
+                stmt.params.add(from);
+                stmt.params.add(to);
+                switch (kind) {
+                    case "copy_file" -> {
+                        stmt.opCode = "fileutilcopy";
+                        stmt.sentence = "Copy the file at “" + from
+                                + "” to “" + to + "”";
+                        stmt.expectCode = "FileUtil.copyFile(";
+                    }
+                    case "move_file" -> {
+                        stmt.opCode = "fileutilmove";
+                        stmt.sentence = "Move the file at “" + from
+                                + "” to “" + to + "”";
+                        stmt.expectCode = "FileUtil.moveFile(";
+                    }
+                    case "copy_folder" -> {
+                        stmt.opCode = "fileutilcopydir";
+                        stmt.sentence = "Copy the folder at “" + from
+                                + "” to “" + to + "”";
+                        stmt.expectCode = "FileUtil.copyDir(";
+                    }
+                    default -> {
+                        stmt.opCode = "renameFile";
+                        stmt.sentence = "Rename the file at “" + from
+                                + "” to “" + to + "”";
+                        stmt.expectCode = "renameTo(e5Cyk)";
+                    }
+                }
+            }
+            case "list_files" -> {
+                String list = stringOf(op, "list");
+                Integer listKind = lists.get(list);
+                if (listKind == null || listKind != 2) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "list_files fills a list of text with the "
+                                    + "names in a folder; “" + list
+                                    + "” is not one on this screen.");
+                }
+                stmt.opCode = "fileutillistdir";
+                stmt.type = " ";
+                PathArg path = pathParam(op, variables, "path");
+                stmt.params.add(path.stored);
+                stmt.params.add(list);
+                stmt.sentence = "List the files in the folder at "
+                        + path.shown + " into list “" + list + "”";
+                stmt.expectCode = "FileUtil.listDir(";
+            }
+            case "remove_from_list" -> {
+                String list = requireList(op, lists);
+                stmt.opCode = "deleteList";
+                stmt.type = " ";
+                String index = indexParam(op);
+                stmt.params.add(index);
+                stmt.params.add(list);
+                stmt.sentence = "Remove item " + index + " from list “"
+                        + list + "”";
+                stmt.expectCode = list + ".remove((int)(";
+            }
+            case "insert_in_list", "set_in_list" -> {
+                String list = requireList(op, lists);
+                Integer listKind = lists.get(list);
+                if (listKind == 3) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "“" + list + "” is a list of maps; use "
+                                    + "add_map_entry, insert_map_entry "
+                                    + "or set_map_entry for it.");
+                }
+                String index = indexParam(op);
+                boolean insert = "insert_in_list".equals(kind);
+                stmt.type = " ";
+                if (listKind == 2) {
+                    stmt.opCode = insert ? "insertListStr"
+                            : "setAtPosListstr";
+                    String text = listTextParam(op, variables, list);
+                    stmt.params.add(text);
+                    stmt.params.add(index);
+                } else {
+                    stmt.opCode = insert ? "insertListInt"
+                            : "setAtPosListnum";
+                    stmt.params.add(numberParam(op, list));
+                    stmt.params.add(index);
+                }
+                stmt.params.add(list);
+                stmt.sentence = (insert ? "Insert " : "Set ")
+                        + "item " + index + " of list “" + list + "”"
+                        + (insert ? " to a new value" : "");
+                stmt.expectCode = list + (insert ? ".add((int)("
+                        : ".set((int)");
+            }
+            case "reverse_list", "shuffle_list", "sort_list" -> {
+                String list = requireList(op, lists);
+                Integer listKind = lists.get(list);
+                stmt.type = " ";
+                stmt.params.add(list);
+                switch (kind) {
+                    case "reverse_list" -> {
+                        stmt.opCode = "reverseList";
+                        stmt.sentence = "Reverse the order of list “"
+                                + list + "”";
+                        stmt.expectCode = "Collections.reverse(" + list;
+                    }
+                    case "shuffle_list" -> {
+                        stmt.opCode = "shuffleList";
+                        stmt.sentence = "Shuffle list “" + list + "”";
+                        stmt.expectCode = "Collections.shuffle(" + list;
+                    }
+                    default -> {
+                        if (listKind == 3) {
+                            String key = stringOf(op, "key");
+                            if (key.isEmpty()) {
+                                throw new AgentTools.ToolException(
+                                        "E_BAD_BLOCK",
+                                        "Sorting a list of maps needs "
+                                                + "the \"key\" to sort "
+                                                + "by.");
+                            }
+                            stmt.opCode = "sortListmap";
+                            stmt.params.clear();
+                            stmt.params.add(list);
+                            stmt.params.add(key);
+                            stmt.params.add(String.valueOf(
+                                    boolOf(op, "numeric", false)));
+                            stmt.params.add(String.valueOf(
+                                    boolOf(op, "ascending", true)));
+                            stmt.sentence = "Sort list “" + list
+                                    + "” by “" + key + "”";
+                            stmt.expectCode = "SketchwareUtil.sortListMap(";
+                        } else if (listKind == 2) {
+                            stmt.opCode = "sortList";
+                            stmt.sentence = "Sort list “" + list + "”";
+                            stmt.expectCode = "Collections.sort(" + list;
+                        } else {
+                            stmt.opCode = "sortListnum";
+                            stmt.sentence = "Sort list “" + list + "”";
+                            stmt.expectCode = "Collections.sort(" + list;
+                        }
+                    }
+                }
+            }
+            case "swap_in_list" -> {
+                String list = requireList(op, lists);
+                stmt.opCode = "swapInList";
+                stmt.type = " ";
+                stmt.params.add(list);
+                stmt.params.add(indexParam(op));
+                String index2 = stringOf(op, "index2");
+                try {
+                    Double.parseDouble(index2);
+                } catch (Exception e) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "swap_in_list needs a numeric \"index2\".");
+                }
+                stmt.params.add(index2);
+                stmt.sentence = "Swap items " + stmt.params.get(1)
+                        + " and " + index2 + " in list “" + list + "”";
+                stmt.expectCode = "Collections.swap(" + list;
+            }
+            case "remove_map_key" -> {
+                String name = stringOf(op, "variable");
+                requireVariable(variables, name);
+                requireVariableKind(variables, name, 3,
+                        "remove_map_key needs a map variable.");
+                String key = stringOf(op, "key");
+                if (key.isEmpty()) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "remove_map_key needs a \"key\".");
+                }
+                stmt.opCode = "mapRemoveKey";
+                stmt.type = " ";
+                stmt.params.add(name);
+                stmt.params.add(key);
+                stmt.sentence = "Remove “" + key + "” from map “"
+                        + name + "”";
+                stmt.expectCode = name + ".remove(";
+            }
+            case "map_keys_to_list" -> {
+                String name = stringOf(op, "variable");
+                requireVariable(variables, name);
+                requireVariableKind(variables, name, 3,
+                        "map_keys_to_list needs a map variable.");
+                String list = stringOf(op, "list");
+                Integer listKind = lists.get(list);
+                if (listKind == null || listKind != 2) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "map_keys_to_list fills a list of text; “"
+                                    + list + "” is not one on this "
+                                    + "screen.");
+                }
+                stmt.opCode = "mapGetAllKeys";
+                stmt.type = " ";
+                stmt.params.add(name);
+                stmt.params.add(list);
+                stmt.sentence = "Put all the keys of map “" + name
+                        + "” into list “" + list + "”";
+                stmt.expectCode = "SketchwareUtil.getAllKeysFromMap(";
+            }
+            case "get_map_from_list" -> {
+                String list = requireList(op, lists);
+                if (lists.get(list) != 3) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "get_map_from_list needs a list of maps; “"
+                                    + list + "” is not one.");
+                }
+                String name = stringOf(op, "variable");
+                requireVariable(variables, name);
+                requireVariableKind(variables, name, 3,
+                        "get_map_from_list stores into a map variable.");
+                stmt.opCode = "getMapInList";
+                stmt.type = " ";
+                stmt.params.add(indexParam(op));
+                stmt.params.add(list);
+                stmt.params.add(name);
+                stmt.sentence = "Take the map at item "
+                        + stmt.params.get(0) + " of list “" + list
+                        + "” into map “" + name + "”";
+                stmt.expectCode = name + " = " + list + ".get((int)";
+            }
+            case "add_map_to_list", "insert_map_to_list" -> {
+                String list = requireList(op, lists);
+                if (lists.get(list) != 3) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            kind + " needs a list of maps; “" + list
+                                    + "” is not one.");
+                }
+                String name = stringOf(op, "variable");
+                requireVariable(variables, name);
+                requireVariableKind(variables, name, 3,
+                        kind + " needs a map variable to add.");
+                boolean insert = "insert_map_to_list".equals(kind);
+                stmt.opCode = insert ? "insertMapToList" : "addMapToList";
+                stmt.type = " ";
+                stmt.params.add(name);
+                if (insert) {
+                    stmt.params.add(indexParam(op));
+                }
+                stmt.params.add(list);
+                stmt.sentence = (insert ? "Insert" : "Add") + " map “"
+                        + name + "” " + (insert ? "into" : "to")
+                        + " list “" + list + "”";
+                stmt.expectCode = list + ".add(";
+            }
+            case "add_map_entry", "insert_map_entry",
+                    "set_map_entry" -> {
+                String list = requireList(op, lists);
+                if (lists.get(list) != 3) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            kind + " needs a list of maps; “" + list
+                                    + "” is not one.");
+                }
+                String key = stringOf(op, "key");
+                if (key.isEmpty()) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            kind + " needs a \"key\".");
+                }
+                String text = stringOf(op, "text");
+                if (text.isEmpty()) {
+                    text = stringOf(op, "value");
+                }
+                stmt.type = " ";
+                stmt.params.add(key);
+                stmt.params.add(text);
+                switch (kind) {
+                    case "add_map_entry" -> {
+                        stmt.opCode = "addListMap";
+                        stmt.params.add(list);
+                        stmt.sentence = "Add a map with “" + key
+                                + "” = “" + text + "” to list “"
+                                + list + "”";
+                    }
+                    case "insert_map_entry" -> {
+                        stmt.opCode = "insertListMap";
+                        stmt.params.add(indexParam(op));
+                        stmt.params.add(list);
+                        stmt.sentence = "Insert a map with “" + key
+                                + "” = “" + text + "” into list “"
+                                + list + "”";
+                    }
+                    default -> {
+                        stmt.opCode = "setListMap";
+                        stmt.params.add(indexParam(op));
+                        stmt.params.add(list);
+                        stmt.sentence = "In the map at item "
+                                + stmt.params.get(2) + " of list “"
+                                + list + "”, set “" + key + "” to “"
+                                + text + "”";
+                    }
+                }
+                stmt.expectCode = "_item.put(";
+                if ("setListMap".equals(stmt.opCode)) {
+                    stmt.expectCode = list + ".get((int)";
+                }
+            }
             default -> throw new AgentTools.ToolException("E_BAD_BLOCK",
                     (kind.isEmpty()
                             ? "A block arrived with no \"block\" name: "
@@ -2155,15 +2717,40 @@ public final class AgentLogic {
                             + "set_text, set_visibility, set_enabled, "
                             + "finish, set_variable, increase, decrease, "
                             + "add_to_list, clear_list, show_list, "
-                            + "put_in_map, clear_map, new_map.");
+                            + "put_in_map, clear_map, new_map, write_file, "
+                            + "delete_file, make_folder, copy_file, "
+                            + "move_file, copy_folder, rename_file, "
+                            + "list_files, remove_from_list, "
+                            + "insert_in_list, set_in_list, reverse_list, "
+                            + "shuffle_list, sort_list, swap_in_list, "
+                            + "remove_map_key, map_keys_to_list, "
+                            + "get_map_from_list, add_map_to_list, "
+                            + "insert_map_to_list, add_map_entry, "
+                            + "insert_map_entry, set_map_entry.");
         }
         // The app's own slot table is the shape authority: what the
         // editor would store for this block has exactly these slots.
+        // Pro-defined blocks are not in the stock table; for them the
+        // canonical spec text (the same xB lookup specFor uses, which
+        // is how the editor itself learns a Pro block's shape) gives
+        // the slots instead.
         ArrayList<String> slots;
         try {
             slots = lq.a(stmt.opCode);
         } catch (Exception e) {
             slots = null;
+        }
+        if (slots == null || slots.size() != stmt.params.size()) {
+            ArrayList<String> specSlots = new ArrayList<>();
+            java.util.regex.Matcher matcher = java.util.regex.Pattern
+                    .compile("%[a-zA-Z]+(?:\\.[a-zA-Z]+)*")
+                    .matcher(specFor(context, stmt.opCode));
+            while (matcher.find()) {
+                specSlots.add(matcher.group());
+            }
+            if (specSlots.size() == stmt.params.size()) {
+                slots = specSlots;
+            }
         }
         if (slots == null || slots.size() != stmt.params.size()) {
             throw new AgentTools.ToolException("E_INTERNAL",
@@ -2172,6 +2759,105 @@ public final class AgentLogic {
                             + "shape.");
         }
         return stmt;
+    }
+
+    /** A file path argument: literal text, or a string variable's. */
+    private static final class PathArg {
+        final String stored;
+        final String shown;
+
+        PathArg(String stored, String shown) {
+            this.stored = stored;
+            this.shown = shown;
+        }
+    }
+
+    private static PathArg pathParam(JsonObject op,
+                                     Map<String, Integer> variables,
+                                     String key)
+            throws AgentTools.ToolException {
+        String fromVariable = stringOf(op, key + "_from_variable");
+        if (!fromVariable.isEmpty()) {
+            requireVariable(variables, fromVariable);
+            requireVariableKind(variables, fromVariable, 2,
+                    "A path can only come from a string variable.");
+            return new PathArg("@var:" + fromVariable,
+                    "the path in “" + fromVariable + "”");
+        }
+        String path = stringOf(op, key);
+        if (path.isEmpty()) {
+            throw new AgentTools.ToolException("E_BAD_BLOCK",
+                    "This block needs a \"" + key + "\" (a file path "
+                            + "like /sdcard/notes.txt), or \""
+                            + key + "_from_variable\".");
+        }
+        return new PathArg(path, "“" + path + "”");
+    }
+
+    private static String requireList(JsonObject op,
+                                      Map<String, Integer> lists)
+            throws AgentTools.ToolException {
+        String list = stringOf(op, "list");
+        if (!lists.containsKey(list)) {
+            throw new AgentTools.ToolException("E_BAD_BLOCK",
+                    "There is no list called " + list + " on this "
+                            + "screen. Declare one with create_variable "
+                            + "(list_string, list_number or list_map).");
+        }
+        return list;
+    }
+
+    /** A numeric "index" argument, stored the way Fx casts it. */
+    private static String indexParam(JsonObject op)
+            throws AgentTools.ToolException {
+        String index = stringOf(op, "index");
+        try {
+            double value = Double.parseDouble(index);
+            if (value == Math.floor(value)
+                    && !Double.isInfinite(value)) {
+                return String.valueOf((long) value);
+            }
+            return index;
+        } catch (Exception e) {
+            throw new AgentTools.ToolException("E_BAD_BLOCK",
+                    "This block needs a numeric \"index\" (the item's "
+                            + "position in the list, starting at 0).");
+        }
+    }
+
+    /** A literal number for a list-of-numbers slot. */
+    private static String numberParam(JsonObject op, String list)
+            throws AgentTools.ToolException {
+        String value = stringOf(op, "value");
+        try {
+            Double.parseDouble(value);
+        } catch (Exception e) {
+            throw new AgentTools.ToolException("E_BAD_BLOCK",
+                    "List “" + list + "” holds numbers, so \"value\" "
+                            + "must be a number (got \"" + value
+                            + "\").");
+        }
+        return value;
+    }
+
+    /** Text for a list-of-text slot: literal or a string variable. */
+    private static String listTextParam(JsonObject op,
+                                        Map<String, Integer> variables,
+                                        String list)
+            throws AgentTools.ToolException {
+        String fromVariable = stringOf(op, "from_variable");
+        if (!fromVariable.isEmpty()) {
+            requireVariable(variables, fromVariable);
+            requireVariableKind(variables, fromVariable, 2,
+                    "Only a string variable's value can go into a "
+                            + "list of text.");
+            return "@var:" + fromVariable;
+        }
+        String text = stringOf(op, "text");
+        if (text.isEmpty()) {
+            text = stringOf(op, "value");
+        }
+        return text;
     }
 
     // -- stored-shape helpers ----------------------------------------------

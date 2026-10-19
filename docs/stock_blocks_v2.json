@@ -684,7 +684,7 @@
  },
  "addListMap": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "List",
   "emission": "app logic: { HashMap<String, Object> _item = new HashMap<>(); _item.put(%s, %s); ",
@@ -731,7 +731,7 @@
  },
  "addMapToList": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "List",
   "emission": "app logic: %s.add(%s);",
@@ -2061,7 +2061,7 @@
  },
  "deleteList": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "List",
   "emission": "app logic: %s.remove((int)(%s));",
@@ -2508,7 +2508,7 @@
  },
  "fileutilEndsWith": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "%s.endsWith(%s)",
@@ -2532,7 +2532,7 @@
  },
  "fileutilGetLastSegmentPath": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "Uri.parse(%s).getLastPathSegment()",
@@ -2558,7 +2558,7 @@
  },
  "fileutilStartsWith": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "%s.startsWith(%s)",
@@ -2582,7 +2582,7 @@
  },
  "fileutilcopy": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -2607,7 +2607,7 @@
  },
  "fileutilcopydir": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "File",
   "code": "FileUtil.copyDir(%1$s, %2$s);",
@@ -2625,7 +2625,7 @@
  },
  "fileutildelete": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -2648,7 +2648,7 @@
  },
  "fileutilisdir": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "FileUtil.isDirectory(%s)",
@@ -2671,7 +2671,7 @@
  },
  "fileutilisexist": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "FileUtil.isExistFile(%s)",
@@ -2694,7 +2694,7 @@
  },
  "fileutilisfile": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "FileUtil.isFile(%s)",
@@ -2717,7 +2717,7 @@
  },
  "fileutillength": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "FileUtil.getFileLength(%s)",
@@ -2740,7 +2740,7 @@
  },
  "fileutillistdir": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -2764,7 +2764,7 @@
  },
  "fileutilmakedir": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -2787,7 +2787,7 @@
  },
  "fileutilmove": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -2812,7 +2812,7 @@
  },
  "fileutilread": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "FileUtil.readFile(%s)",
@@ -2835,7 +2835,7 @@
  },
  "fileutilwrite": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -3544,7 +3544,7 @@
  },
  "getExternalStorageDir": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: FileUtil.getExternalStorageDir()",
@@ -3686,7 +3686,7 @@
  },
  "getMapInList": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "List",
   "emission": "app logic: %s = %s.get((int)%s);",
@@ -3710,7 +3710,7 @@
  },
  "getPackageDataDir": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: FileUtil.getPackageDataDir(getApplicationContext())",
@@ -4460,7 +4460,7 @@
  },
  "indexListInt": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "List",
   "emission": "%s.indexOf(%s)",
@@ -4483,7 +4483,7 @@
  },
  "indexListStr": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "List",
   "emission": "%s.indexOf(%s)",
@@ -4506,7 +4506,7 @@
  },
  "insertListInt": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "List",
   "emission": "app logic: %s.add((int)(%s), Double.valueOf(%s));",
@@ -4530,7 +4530,7 @@
  },
  "insertListMap": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "List",
   "emission": "app logic: { HashMap<String, Object> _item = new HashMap<>(); _item.put(%s, %s); ",
@@ -4555,7 +4555,7 @@
  },
  "insertListStr": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "List",
   "emission": "app logic: %s.add((int)(%s), %s);",
@@ -4579,7 +4579,7 @@
  },
  "insertMapToList": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "List",
   "emission": "app logic: %s.add((int)%s, %s);",
@@ -5446,7 +5446,7 @@
  },
  "mapContainValue": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Variable",
   "code": "%s.containsValue(%s)",
@@ -5509,7 +5509,7 @@
  },
  "mapGetAllKeys": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Variable",
   "emission": "app logic: SketchwareUtil.getAllKeysFromMap(%s, %s);",
@@ -5532,7 +5532,7 @@
  },
  "mapIsEmpty": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Variable",
   "emission": "%s.isEmpty()",
@@ -5578,7 +5578,7 @@
  },
  "mapRemoveKey": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Variable",
   "emission": "app logic: %s.remove(%s);",
@@ -5601,7 +5601,7 @@
  },
  "mapSize": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Variable",
   "emission": "%s.size()",
@@ -8039,7 +8039,7 @@
  },
  "renameFile": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "File",
   "code": "{\njava.io.File dYx4Y = new java.io.File(%1$s);\njava.io.File e5Cyk = new java.io.File(%2$s);\ndYx4Y.renameTo(e5Cyk);\n}",
@@ -8474,7 +8474,7 @@
  },
  "reverseList": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "List",
   "code": "Collections.reverse(%s);",
@@ -8718,7 +8718,7 @@
  },
  "setAtPosListnum": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "List",
   "code": "%3$s.set((int)%2$s, %1$s);",
@@ -8737,7 +8737,7 @@
  },
  "setAtPosListstr": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "List",
   "code": "%3$s.set((int)%2$s, %1$s);",
@@ -9565,7 +9565,7 @@
  },
  "setListMap": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "List",
   "emission": "app logic: %s.get((int)%s).put(%s, %s);",
@@ -10288,7 +10288,7 @@
  },
  "shuffleList": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "List",
   "code": "Collections.shuffle(%s);",
@@ -10370,7 +10370,7 @@
  },
  "sortList": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "List",
   "code": "Collections.sort(%s);",
@@ -10387,7 +10387,7 @@
  },
  "sortListmap": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "List",
   "code": "SketchwareUtil.sortListMap(%s, %s, %s, %s);",
@@ -10407,7 +10407,7 @@
  },
  "sortListnum": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "List",
   "code": "Collections.sort(%s);",
@@ -11185,7 +11185,7 @@
  },
  "swapInList": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "List",
   "code": "Collections.swap(%s, (int)(%s), (int)(%s));",

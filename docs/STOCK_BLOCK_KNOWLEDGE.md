@@ -8,7 +8,7 @@ Every stock block in Sketchware Pro, extracted 2026-10-19 from the app's own sou
 - Statements: 374 · number/text/boolean values: 168 · containers: 29 · end/stop: 6
 - Blocks with a generator case in `Fx`: 316; with spec/code in Pro block data: 279; with a known slot layout: 554
 - Blocks gated behind a component on the screen's component list: 109
-- Agent-known today (opCode emitted by `AgentLogic`/`AgentTools`): 79
+- Agent-known today (opCode emitted by `AgentLogic`/`AgentTools`): 121
 
 Params use the app's slot tokens: `%s` text, `%d` number, `%b` boolean, `%m.x` picker (widget/variable/component of kind x). Emission = the Java the app generates (truncated). ✔ = agent can already build it.
 
@@ -32,14 +32,14 @@ Params use the app's slot tokens: `%s` text, `%d` number, `%b` boolean, `%m.x` p
 | `increaseInt` | statement | %m.varInt | — | `%s++;` | ✔ have |
 | `mapClear` | statement | %m.varMap | — | `app logic: %s.clear();` | ✔ have |
 | `mapContainKey` | boolean value | %m.varMap %s | — | `%s.containsKey(%s)` | ✔ have |
-| `mapContainValue` | boolean value | %m.varMap %s | — | `%s.containsValue(%s)` |  |
+| `mapContainValue` | boolean value | %m.varMap %s | — | `%s.containsValue(%s)` | ✔ have |
 | `mapCreateNew` | statement | %m.varMap | — | `app logic: %s = new HashMap<>();` | ✔ have |
 | `mapGet` | text value | %m.varMap %s | — | `%s.get(%s).toString()` | ✔ have |
-| `mapGetAllKeys` | statement | %m.varMap %m.listStr | — | `app logic: SketchwareUtil.getAllKeysFromMap(%s, %s);` |  |
-| `mapIsEmpty` | boolean value | %m.varMap | — | `%s.isEmpty()` |  |
+| `mapGetAllKeys` | statement | %m.varMap %m.listStr | — | `app logic: SketchwareUtil.getAllKeysFromMap(%s, %s);` | ✔ have |
+| `mapIsEmpty` | boolean value | %m.varMap | — | `%s.isEmpty()` | ✔ have |
 | `mapPut` | statement | %m.varMap %s %s | — | `app logic: %s.put(%s, %s);` | ✔ have |
-| `mapRemoveKey` | statement | %m.varMap %s | — | `app logic: %s.remove(%s);` |  |
-| `mapSize` | number value | %m.varMap | — | `%s.size()` |  |
+| `mapRemoveKey` | statement | %m.varMap %s | — | `app logic: %s.remove(%s);` | ✔ have |
+| `mapSize` | number value | %m.varMap | — | `%s.size()` | ✔ have |
 | `setVarBoolean` | statement | %m.varBool %b | — | `%s = %s;` | ✔ have |
 | `setVarInt` | statement | %m.varInt %d | — | `%s = %s;` | ✔ have |
 | `setVarString` | statement | %m.varStr %s | — | `%s = %s;` | ✔ have |
@@ -49,38 +49,38 @@ Params use the app's slot tokens: `%s` text, `%d` number, `%b` boolean, `%m.x` p
 | Block | Kind | Params | Needs component | Generates (Java, truncated) | Agent |
 |---|---|---|---|---|---|
 | `addListInt` | statement | %d %m.listInt | — | `app logic: %s.add(Double.valueOf(%s));` | ✔ have |
-| `addListMap` | statement | %s %s %m.listMap | — | `app logic: { HashMap<String, Object> _item = new HashMap<>(); _item.put(%s, %s); ` |  |
+| `addListMap` | statement | %s %s %m.listMap | — | `app logic: { HashMap<String, Object> _item = new HashMap<>(); _item.put(%s, %s); ` | ✔ have |
 | `addListStr` | statement | %s %m.listStr | — | `app logic: %s.add(%s);` | ✔ have |
-| `addMapToList` | statement | %m.varMap %m.listMap | — | `app logic: %s.add(%s);` |  |
+| `addMapToList` | statement | %m.varMap %m.listMap | — | `app logic: %s.add(%s);` | ✔ have |
 | `clearList` | statement | %m.list | — | `app logic: %s.clear();` | ✔ have |
 | `containListInt` | boolean value | %m.listInt %d | — | `%s.contains(%s)` | ✔ have |
 | `containListMap` | boolean value | %m.listMap %d %s | — | `%s.get((int)%s).containsKey(%s)` |  |
 | `containListStr` | boolean value | %m.listStr %s | — | `%s.contains(%s)` | ✔ have |
-| `deleteList` | statement | %d %m.list | — | `app logic: %s.remove((int)(%s));` |  |
+| `deleteList` | statement | %d %m.list | — | `app logic: %s.remove((int)(%s));` | ✔ have |
 | `deleteMapFromListmap` | map value | %m.varMap %m.listMap | — | `%2$s.remove(%1$s);` |  |
 | `getAtListInt` | number value | %d %m.listInt | — | `%s.get((int)(%s)).doubleValue()` | ✔ have |
 | `getAtListMap` | text value | %d %s %m.listMap | — | `%s.get((int)%s).get(%s).toString()` |  |
 | `getAtListStr` | text value | %d %m.listStr | — | `%s.get((int)(%s))` | ✔ have |
 | `getMapAtPosListmap` | map value | %d %m.listMap | — | `%2$s.get((int)(%1$s))` |  |
-| `getMapInList` | statement | %d %m.listMap %m.varMap | — | `app logic: %s = %s.get((int)%s);` |  |
-| `indexListInt` | number value | %d %m.listInt | — | `%s.indexOf(%s)` |  |
-| `indexListStr` | number value | %s %m.listStr | — | `%s.indexOf(%s)` |  |
-| `insertListInt` | statement | %d %d %m.listInt | — | `app logic: %s.add((int)(%s), Double.valueOf(%s));` |  |
-| `insertListMap` | statement | %s %s %d %m.listMap | — | `app logic: { HashMap<String, Object> _item = new HashMap<>(); _item.put(%s, %s); ` |  |
-| `insertListStr` | statement | %s %d %m.listStr | — | `app logic: %s.add((int)(%s), %s);` |  |
-| `insertMapToList` | statement | %m.varMap %d %m.listMap | — | `app logic: %s.add((int)%s, %s);` |  |
+| `getMapInList` | statement | %d %m.listMap %m.varMap | — | `app logic: %s = %s.get((int)%s);` | ✔ have |
+| `indexListInt` | number value | %d %m.listInt | — | `%s.indexOf(%s)` | ✔ have |
+| `indexListStr` | number value | %s %m.listStr | — | `%s.indexOf(%s)` | ✔ have |
+| `insertListInt` | statement | %d %d %m.listInt | — | `app logic: %s.add((int)(%s), Double.valueOf(%s));` | ✔ have |
+| `insertListMap` | statement | %s %s %d %m.listMap | — | `app logic: { HashMap<String, Object> _item = new HashMap<>(); _item.put(%s, %s); ` | ✔ have |
+| `insertListStr` | statement | %s %d %m.listStr | — | `app logic: %s.add((int)(%s), %s);` | ✔ have |
+| `insertMapToList` | statement | %m.varMap %d %m.listMap | — | `app logic: %s.add((int)%s, %s);` | ✔ have |
 | `lengthList` | number value | %m.list | — | `%s.size()` | ✔ have |
 | `listAddAll` | statement | %m.listStr %m.list | — | `%1$s.addAll(%2$s);` |  |
-| `reverseList` | statement | %m.list | — | `Collections.reverse(%s);` |  |
-| `setAtPosListnum` | statement | %d %d %m.listInt | — | `%3$s.set((int)%2$s, %1$s);` |  |
-| `setAtPosListstr` | statement | %s %d %m.listStr | — | `%3$s.set((int)%2$s, %1$s);` |  |
-| `setListMap` | statement | %s %s %d %m.listMap | — | `app logic: %s.get((int)%s).put(%s, %s);` |  |
+| `reverseList` | statement | %m.list | — | `Collections.reverse(%s);` | ✔ have |
+| `setAtPosListnum` | statement | %d %d %m.listInt | — | `%3$s.set((int)%2$s, %1$s);` | ✔ have |
+| `setAtPosListstr` | statement | %s %d %m.listStr | — | `%3$s.set((int)%2$s, %1$s);` | ✔ have |
+| `setListMap` | statement | %s %s %d %m.listMap | — | `app logic: %s.get((int)%s).put(%s, %s);` | ✔ have |
 | `setMapAtPosListmap` | statement | %m.varMap %d %m.listMap | — | `%3$s.set((int)(%2$s), %1$s);` |  |
-| `shuffleList` | statement | %m.list | — | `Collections.shuffle(%s);` |  |
-| `sortList` | statement | %m.listStr | — | `Collections.sort(%s);` |  |
-| `sortListmap` | statement | %m.listMap %s %b %b | — | `SketchwareUtil.sortListMap(%s, %s, %s, %s);` |  |
-| `sortListnum` | statement | %m.listInt | — | `Collections.sort(%s);` |  |
-| `swapInList` | statement | %m.list %d %d | — | `Collections.swap(%s, (int)(%s), (int)(%s));` |  |
+| `shuffleList` | statement | %m.list | — | `Collections.shuffle(%s);` | ✔ have |
+| `sortList` | statement | %m.listStr | — | `Collections.sort(%s);` | ✔ have |
+| `sortListmap` | statement | %m.listMap %s %b %b | — | `SketchwareUtil.sortListMap(%s, %s, %s, %s);` | ✔ have |
+| `sortListnum` | statement | %m.listInt | — | `Collections.sort(%s);` | ✔ have |
+| `swapInList` | statement | %m.list %d %d | — | `Collections.swap(%s, (int)(%s), (int)(%s));` | ✔ have |
 
 ## Control (28)
 
@@ -204,27 +204,27 @@ Params use the app's slot tokens: `%s` text, `%d` number, `%b` boolean, `%m.x` p
 |---|---|---|---|---|---|
 | `copyAssetFile` | text value | %m.inputstream | — | `SketchwareUtil.copyFromInputStream(%s)` |  |
 | `cropBitmapFileFromCenter` | statement | %s %s %d %d | — | `app logic: ""` |  |
-| `fileutilEndsWith` | boolean value | %s %s | — | `%s.endsWith(%s)` |  |
-| `fileutilGetLastSegmentPath` | text value | %s | — | `Uri.parse(%s).getLastPathSegment()` |  |
-| `fileutilStartsWith` | boolean value | %s %s | — | `%s.startsWith(%s)` |  |
-| `fileutilcopy` | statement | %s %s | — | `app logic: ""` |  |
-| `fileutilcopydir` | statement | %s %s | — | `FileUtil.copyDir(%1$s, %2$s);` |  |
-| `fileutildelete` | statement | %s | — | `app logic: ""` |  |
-| `fileutilisdir` | boolean value | %s | — | `FileUtil.isDirectory(%s)` |  |
-| `fileutilisexist` | boolean value | %s | — | `FileUtil.isExistFile(%s)` |  |
-| `fileutilisfile` | boolean value | %s | — | `FileUtil.isFile(%s)` |  |
-| `fileutillength` | number value | %s | — | `FileUtil.getFileLength(%s)` |  |
-| `fileutillistdir` | statement | %s %m.listStr | — | `app logic: ""` |  |
-| `fileutilmakedir` | statement | %s | — | `app logic: ""` |  |
-| `fileutilmove` | statement | %s %s | — | `app logic: ""` |  |
-| `fileutilread` | text value | %s | — | `FileUtil.readFile(%s)` |  |
-| `fileutilwrite` | statement | %s %s | — | `app logic: ""` |  |
+| `fileutilEndsWith` | boolean value | %s %s | — | `%s.endsWith(%s)` | ✔ have |
+| `fileutilGetLastSegmentPath` | text value | %s | — | `Uri.parse(%s).getLastPathSegment()` | ✔ have |
+| `fileutilStartsWith` | boolean value | %s %s | — | `%s.startsWith(%s)` | ✔ have |
+| `fileutilcopy` | statement | %s %s | — | `app logic: ""` | ✔ have |
+| `fileutilcopydir` | statement | %s %s | — | `FileUtil.copyDir(%1$s, %2$s);` | ✔ have |
+| `fileutildelete` | statement | %s | — | `app logic: ""` | ✔ have |
+| `fileutilisdir` | boolean value | %s | — | `FileUtil.isDirectory(%s)` | ✔ have |
+| `fileutilisexist` | boolean value | %s | — | `FileUtil.isExistFile(%s)` | ✔ have |
+| `fileutilisfile` | boolean value | %s | — | `FileUtil.isFile(%s)` | ✔ have |
+| `fileutillength` | number value | %s | — | `FileUtil.getFileLength(%s)` | ✔ have |
+| `fileutillistdir` | statement | %s %m.listStr | — | `app logic: ""` | ✔ have |
+| `fileutilmakedir` | statement | %s | — | `app logic: ""` | ✔ have |
+| `fileutilmove` | statement | %s %s | — | `app logic: ""` | ✔ have |
+| `fileutilread` | text value | %s | — | `FileUtil.readFile(%s)` | ✔ have |
+| `fileutilwrite` | statement | %s %s | — | `app logic: ""` | ✔ have |
 | `getAssetFile` | statement | %m.inputstream %s | — | `java.io.InputStream %s = getAssets().open(%s);` |  |
-| `getExternalStorageDir` | text value | — | — | `app logic: FileUtil.getExternalStorageDir()` |  |
+| `getExternalStorageDir` | text value | — | — | `app logic: FileUtil.getExternalStorageDir()` | ✔ have |
 | `getJpegRotate` | number value | %s | — | `FileUtil.getJpegRotate(%s)` |  |
-| `getPackageDataDir` | text value | — | — | `app logic: FileUtil.getPackageDataDir(getApplicationContext())` |  |
+| `getPackageDataDir` | text value | — | — | `app logic: FileUtil.getPackageDataDir(getApplicationContext())` | ✔ have |
 | `getPublicDir` | text value | %m.directoryType | — | `FileUtil.getPublicDir(Environment.%s)` |  |
-| `renameFile` | statement | %s %s | — | `{ java.io.File dYx4Y = new java.io.File(%1$s); java.io.File e5Cyk = new java.io.File(%2$s)` |  |
+| `renameFile` | statement | %s %s | — | `{ java.io.File dYx4Y = new java.io.File(%1$s); java.io.File e5Cyk = new java.io.File(%2$s)` | ✔ have |
 | `resizeBitmapFileRetainRatio` | statement | %s %s %d | — | `app logic: ""` |  |
 | `resizeBitmapFileToCircle` | statement | %s %s | — | `app logic: ""` |  |
 | `resizeBitmapFileToSquare` | statement | %s %s %d | — | `app logic: ""` |  |
@@ -695,12 +695,12 @@ Params use the app's slot tokens: `%s` text, `%d` number, `%b` boolean, `%m.x` p
   `addCustomVariable`, `addInitializer`, `CommandBlockJava/XML` inject free Java —
   the same reason user-defined custom blocks come last, after the stock set is known.
 
-## Agent coverage today (79 of 584 opCodes referenced by the agent)
+## Agent coverage after wave 7 (121 of 584 opCodes referenced by the agent)
 
-Variable 10/26 · List 8/33 · Control 5/28 · Operator 24/49 · Math 9/24 ·
-File 0/33 · View 16/228 · Component 7/140 · Events 0/11 · More 0/7 ·
-Custom views 0/3 · Strings 0/2. **505 blocks remain to teach**, in dependency
-order: ungated statements → reporters → widget-gated View families →
-component creation + their gated families → File → Events/More-block helpers.
+Variable 15/26 · List 27/33 · Control 5/28 · Operator 24/49 · Math 9/24 ·
+File 18/33 · View 16/228 · Component 7/140 · Events 0/11 · More 0/7 ·
+Custom views 0/3 · Strings 0/2. **463 blocks remain to teach**, in dependency
+order: remaining reporters → widget-gated View families → component
+creation + their 124 gated blocks → Events/More-block helpers.
 Only after this stock set is exhausted do agent-defined custom blocks
 (global Block Manager registration) enter the picture, for what stock lacks.

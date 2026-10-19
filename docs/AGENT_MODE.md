@@ -905,3 +905,12 @@ Device test findings (SportyNivida / Sporty Bet):
   trim, stringSub (from/to), toNumber, toStringWithDecimal
   (to_text). fn return kinds feed the "=" text/boolean routing;
   card text reads "length of …", "… joined with …", etc.
+- 2026-10-19 wave 7 (stock teaching, from `docs/STOCK_BLOCK_KNOWLEDGE.md`):
+  File family (write/delete/make folder/copy/move/copy folder/rename/
+  list files + file_exists/is_file/is_folder/read_file/file_length/
+  external_dir/app_dir/last_segment/starts_with/ends_with reporters),
+  remaining List statements (remove/insert/set/reverse/shuffle/sort/
+  swap, list-of-maps add/insert/set/get entries), map remove-key/
+  keys-to-list/size/empty/has-value, index_of. Agent-known opCodes
+  79 → 121 of 584. translate() slot validation now falls back to the
+  xB spec tokens for Pro-defined blocks (editor's own shape source).

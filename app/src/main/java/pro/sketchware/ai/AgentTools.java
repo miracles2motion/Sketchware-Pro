@@ -1052,7 +1052,30 @@ public final class AgentTools {
                     + "clear_list {list}, show_list {target,list} "
                     + "(a ListView shows a list of text), "
                     + "put_in_map {variable,key,text|from_variable}, "
-                    + "clear_map {variable}, new_map {variable}, and "
+                    + "clear_map {variable}, new_map {variable}, "
+                    + "remove_map_key {variable,key}, map_keys_to_list "
+                    + "{variable,list} (all of a map's keys into a list "
+                    + "of text), remove_from_list {list,index}, "
+                    + "insert_in_list {list,index,text|value}, "
+                    + "set_in_list {list,index,text|value}, "
+                    + "reverse_list {list}, shuffle_list {list}, "
+                    + "sort_list {list} (a list of maps also takes "
+                    + "key, with numeric/ascending booleans), "
+                    + "swap_in_list {list,index,index2}, "
+                    + "get_map_from_list {list,index,variable} (a list "
+                    + "of maps into a map variable), add_map_to_list "
+                    + "{variable,list}, insert_map_to_list {variable,"
+                    + "list,index}, add_map_entry {list,key,text}, "
+                    + "insert_map_entry {list,index,key,text}, "
+                    + "set_map_entry {list,index,key,text} (these four "
+                    + "need a list of maps), write_file {text|"
+                    + "from_variable,path|path_from_variable} (write "
+                    + "text to a file, replacing it), delete_file "
+                    + "{path}, make_folder {path}, copy_file {from,to}, "
+                    + "move_file {from,to}, copy_folder {from,to}, "
+                    + "rename_file {from,to}, list_files {path,list} "
+                    + "(the names in a folder into a list of text), "
+                    + "and "
                     + "close_drawer {} (the screen's navigation drawer), "
                     + "open_screen {screen} (open another screen of "
                     + "the project; adds an Intent component if the "
@@ -1092,7 +1115,18 @@ public final class AgentTools {
                     + "functions {\"fn\":\"abs\",\"a\":...} (also ceil, "
                     + "floor, round, sqrt, pow, max, min, random, pi, "
                     + "len, concat, contains, upper, lower, trim, "
-                    + "substring with from/to, to_number, to_text); "
+                    + "substring with from/to, to_number, to_text, "
+                    + "starts_with, ends_with, last_segment (the last "
+                    + "part of a path), external_dir (the device "
+                    + "storage folder as text), app_dir (the app's "
+                    + "private folder)), {\"file_exists\":path}, "
+                    + "{\"is_file\":path}, {\"is_folder\":path}, "
+                    + "{\"read_file\":path} (a file's text content), "
+                    + "{\"file_length\":path} (a file's size), "
+                    + "{\"index_of\":\"items\",\"value\":...} (an item's "
+                    + "position in a list, as a number), "
+                    + "{\"map_size\":\"info\"}, {\"map_empty\":\"info\"}, "
+                    + "{\"map_has_value\":\"info\",\"value\":\"x\"}; "
                     + "= between texts "
                     + "compares their text. At most "
                     + "8 blocks per list and 24 blocks total per handler. "
@@ -1143,6 +1177,15 @@ public final class AgentTools {
                     "open_screen", "load_url", "finish", "set_variable",
                     "increase", "decrease", "add_to_list", "clear_list",
                     "show_list", "put_in_map", "clear_map", "new_map",
+                    "write_file", "delete_file", "make_folder",
+                    "copy_file", "move_file", "copy_folder",
+                    "rename_file", "list_files", "remove_from_list",
+                    "insert_in_list", "set_in_list", "reverse_list",
+                    "shuffle_list", "sort_list", "swap_in_list",
+                    "remove_map_key", "map_keys_to_list",
+                    "get_map_from_list", "add_map_to_list",
+                    "insert_map_to_list", "add_map_entry",
+                    "insert_map_entry", "set_map_entry",
                     "if", "if_else", "repeat", "forever", "break"}) {
                 kinds.add(kind);
             }
