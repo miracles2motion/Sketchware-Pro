@@ -1092,3 +1092,18 @@ Device test findings (SportyNivida / Sporty Bet):
   picker guarded), so context cannot cross projects mid-flight.
 - A quiet "Checking the project style and plan" stage line opens
   turns where either is still missing.
+
+## Wave 21 — app-side design warnings
+
+- Deterministic advisory layout checks over the resulting screen,
+  riding the existing proposal-warning channel: weight without a
+  0dp axis side, wrap-width text inputs, full-width ordinary
+  buttons, sub-40dp touch targets, sub-12sp text, fixed widths
+  over 360dp. Named widget + plain fix, at most six per card.
+
+## Wave 22 — Project style renders as a design sheet
+
+- The style page now sets its headed sections (Audience, Colours,
+  Text sizes, Buttons and cards, Spacing, Do, Avoid) in bold with
+  breathing room instead of one flat paragraph; older one-paragraph
+  styles show unchanged.

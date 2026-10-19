@@ -722,11 +722,58 @@ public class AgentFragment extends qA {
         new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.agent_style_brief_title)
                 .setMessage(brief.isEmpty()
-                        ? getString(R.string.agent_style_brief_empty) : brief)
+                        ? getString(R.string.agent_style_brief_empty)
+                        : styledStyleText(brief))
                 .setNegativeButton(R.string.agent_action_close, null)
                 .setPositiveButton(R.string.agent_style_brief_edit,
                         (dialog, which) -> showStyleBriefEditor(scId))
                 .show();
+    }
+
+    /**
+     * The style as a small design sheet: its headed sections (Audience,
+     * Colours, Text sizes, Buttons and cards, Spacing, Do, Avoid) stand
+     * out in bold with air between them. A style saved as one plain
+     * paragraph — everything older ones are — shows as it is.
+     */
+    private static CharSequence styledStyleText(String brief) {
+        String[] headings = {"Audience", "Mood", "Colours", "Colors",
+                "Text sizes", "Text", "Buttons and cards", "Buttons",
+                "Cards", "Spacing", "Layout", "Shapes", "Do", "Avoid"};
+        android.text.SpannableStringBuilder out =
+                new android.text.SpannableStringBuilder();
+        for (String line : brief.split("\\n")) {
+            String trimmed = line.trim();
+            String heading = null;
+            for (String candidate : headings) {
+                if (trimmed.regionMatches(true, 0, candidate, 0,
+                        candidate.length())
+                        && trimmed.length() > candidate.length()
+                        && (trimmed.charAt(candidate.length()) == ':'
+                                || trimmed.charAt(candidate.length()) == '-'
+                                || trimmed.charAt(candidate.length()) == '.')) {
+                    heading = candidate;
+                    break;
+                }
+            }
+            if (heading != null) {
+                if (out.length() > 0) {
+                    out.append("\n\n");
+                }
+                int start = out.length();
+                out.append(trimmed);
+                out.setSpan(new android.text.style.StyleSpan(
+                                android.graphics.Typeface.BOLD), start,
+                        start + heading.length(),
+                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            } else {
+                if (out.length() > 0) {
+                    out.append("\n");
+                }
+                out.append(trimmed);
+            }
+        }
+        return out;
     }
 
     private void showStyleBriefEditor(String scId) {
