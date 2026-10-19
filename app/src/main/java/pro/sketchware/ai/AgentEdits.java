@@ -901,7 +901,93 @@ public final class AgentEdits {
         }
         Outcome outcome = new Outcome(work, lines, frozenOps);
         outcome.warnings.addAll(visibilityWarnings(work));
+        outcome.warnings.addAll(designWarnings(work));
         return outcome;
+    }
+
+    /**
+     * Deterministic design checks on a resulting screen, advisory
+     * only (the proposal card shows them; nothing is refused): the
+     * sizing mistakes an agent makes when it places widgets without
+     * thinking about how a screen is laid out. Each warning names the
+     * widget and the plain fix. At most a handful are reported, so a
+     * card never drowns in them.
+     */
+    public static List<String> designWarnings(ArrayList<ViewBean> beans) {
+        Map<String, ViewBean> byId = new HashMap<>();
+        for (ViewBean bean : beans) {
+            byId.put(bean.id, bean);
+        }
+        ArrayList<String> warnings = new ArrayList<>();
+        for (ViewBean bean : beans) {
+            if (warnings.size() >= 6) {
+                break;
+            }
+            if (bean.layout == null) {
+                continue;
+            }
+            ViewBean parent = byId.get(bean.parent);
+            boolean parentLinear = parent == null
+                    || parent.type == ViewBean.VIEW_TYPE_LAYOUT_LINEAR;
+            boolean parentVertical = parent == null
+                    || parent.layout == null
+                    || parent.layout.orientation
+                            != LayoutBean.ORIENTATION_HORIZONTAL;
+            if (!parentLinear) {
+                continue;
+            }
+            int axisExtent = parentVertical
+                    ? bean.layout.height : bean.layout.width;
+            if (bean.layout.weight > 0 && axisExtent != 0) {
+                warnings.add(bean.id + " has weight " + bean.layout.weight
+                        + " but its " + (parentVertical ? "height" : "width")
+                        + " is not 0dp, so the weight cannot share space "
+                        + "properly. Set that side to 0dp and let the "
+                        + "weight divide the leftover space.");
+                continue;
+            }
+            if (bean.type == ViewBean.VIEW_TYPE_WIDGET_EDITTEXT
+                    && parentVertical
+                    && bean.layout.width == LayoutBean.LAYOUT_WRAP_CONTENT
+                    && bean.layout.weight == 0) {
+                warnings.add(bean.id + " is a text input only as wide as "
+                        + "its content. Inputs normally fill the form: "
+                        + "give it match_parent width, or weight 1 "
+                        + "beside a button.");
+            }
+            boolean button = bean.type == ViewBean.VIEW_TYPE_WIDGET_BUTTON
+                    || bean.type
+                            == ViewBeans.VIEW_TYPE_WIDGET_MATERIALBUTTON;
+            if (button && parentVertical
+                    && bean.layout.width == LayoutBean.LAYOUT_MATCH_PARENT) {
+                warnings.add(bean.id + " spans the full width. That "
+                        + "suits a primary action; for an ordinary "
+                        + "button, wrap_content keeps it honest.");
+            }
+            if (button && bean.layout.height > 0
+                    && bean.layout.height < 40) {
+                warnings.add(bean.id + " is only " + bean.layout.height
+                        + "dp tall — a small touch target. Buttons are "
+                        + "easier to tap at 48dp or taller.");
+            }
+            if ((bean.type == ViewBean.VIEW_TYPE_WIDGET_TEXTVIEW || button
+                    || bean.type == ViewBean.VIEW_TYPE_WIDGET_EDITTEXT)
+                    && bean.text != null && bean.text.textSize > 0
+                    && bean.text.textSize < 12) {
+                warnings.add(bean.id + " has text of "
+                        + bean.text.textSize
+                        + "sp, which is very small to read. Body text "
+                        + "is normally 14sp or more.");
+            }
+            if (bean.layout.width > 360) {
+                warnings.add(bean.id + " has a fixed width of "
+                        + bean.layout.width
+                        + "dp, which can overflow smaller screens. "
+                        + "match_parent, wrap_content or weight "
+                        + "usually fits better.");
+            }
+        }
+        return warnings;
     }
 
     /**
