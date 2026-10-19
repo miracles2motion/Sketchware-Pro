@@ -1363,7 +1363,8 @@ public class AgentFragment extends qA {
                         settings.models = models;
                         providerConfig.save(requireContext());
                         if (binding == null || models.isEmpty()) {
-                            appendMessage(ChatMessage.er                     getString(R.string.agent_error_no_models)));
+                            appendMessage(ChatMessage.error(
+                                    getString(R.string.agent_error_no_models)));
                             return;
                         }
                         String[] items = models.toArray(new String[0]);
@@ -1677,12 +1678,5 @@ public class AgentFragment extends qA {
         public void afterTextChanged(android.text.Editable s) {
             callback.onChanged(s == null ? "" : s.toString());
         }
-    }
-}
-;
-        }
-    }
-}
-      }
     }
 }
