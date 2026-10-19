@@ -934,3 +934,15 @@ Device test findings (SportyNivida / Sporty Bet):
   their reporters. Agent-known opCodes 228 → 328 of 584. Deliberately
   still out: custom-view data binding blocks (adapter mechanism),
   listener containers, FAB's widget-less blocks, bitmap-file ops.
+
+## Wave 10 — components (2026-10-19)
+
+- `create_component` now adds any of the 31 stock component types.
+- ~71 component statement blocks + Timer/Dialog-button containers +
+  22 component/auth/network reporters, all gated on the named
+  component existing on the screen with the right type (the same
+  gate the editor's palette applies). Coverage 328 → 424/584.
+- Deliberately not yet taught: listener-container blocks (Firebase
+  child events etc.), FirebaseAuth sign-in/storage actions, rewarded
+  ads, and a handful of blocks whose stored picker-value formats are
+  unverified — researched and recorded, not guessed.

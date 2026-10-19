@@ -706,3 +706,46 @@ types + their 124 gated blocks, Events/More helpers, and the bitmap-file
 and typed-map leftovers noted in the census.
 Only after this stock set is exhausted do agent-defined custom blocks
 (global Block Manager registration) enter the picture, for what stock lacks.
+
+## Wave 10 (components) — agent coverage 424/584
+
+- `create_component` generalized: all 31 stock component types (type
+  name → `ComponentBean` type int + editor id prefix, default name =
+  next free `<prefix>N`, same `store.a(javaName, type, name)` picker
+  call previously used for Intent). Firebase/ad types flagged in the
+  tool text as needing project setup before a build passes.
+- New `COMPONENT_ACTIONS` registry in `AgentLogic`, parallel to
+  `WIDGET_ACTIONS`: ~71 component statements across Intent,
+  SharedPreferences, Calendar, Vibrator, Timer, Dialog, MediaPlayer,
+  SoundPool, ObjectAnimator, Gyroscope, Firebase DB, InterstitialAd,
+  Camera, FilePicker, RequestNetwork, TextToSpeech, SpeechToText,
+  Bluetooth (enable only), LocationManager, ProgressDialog — plus a
+  component-less `crop_image`. First slot = component id validated
+  against `Builder.components` (id→type, already populated
+  generically in `plan()`); wrong type/missing component rejected
+  with plain-language errors. `translate()` now also receives the
+  components map and activity class name for `%m.activity` slots
+  (`progressdialogCreate`, `ad_load`/`ad_show`).
+- Builder containers: `timer_after` / `timer_every` (`timerAfter` /
+  `timerEvery`, type `c`) and `dialog_ok_button` /
+  `dialog_negative_button` / `dialog_neutral_button`
+  (`dialogOkButton` / `dialogCancelButton` / `dialogNeutralButton`,
+  type `c`), each with a `requireComponent` type check.
+- 18 component reporters in `expr()` (`pref_get`, `pref_has`,
+  `calendar_millis`, `calendar_text`, `calendar_diff`,
+  `mp_position_of`, `mp_duration_of`, `mp_playing`, `mp_looping`,
+  `anim_running`, `tts_speaking`, `bt_enabled`, `bt_on`, `ad_loaded`,
+  `fb_push_key`, `bt_uuid`, `load_sound`, `play_sound`) plus `fn`
+  reporters `auth_email`, `auth_uid`, `auth_logged_in`,
+  `is_connected`. All emissions Fx-verified before teaching.
+- Coverage: 328 → **424/584** (Component 7 → 103/140). 96 opCodes
+  added, script-verified against the census. Remaining in Component
+  (37, deferred with reasons recorded in wave research): listener
+  containers (`firebaseGetChildren`), FirebaseAuth sign-in/storage
+  actions (listener-field dependent), rewarded ads (project-config
+  dependent), `intentSetFlags` / `requestnetworkSetParams`
+  (picker-value formats unverified), Bluetooth connection ops
+  (listener-address semantics unresearched), picker dialogs
+  (`datePickerDialogShow`, `timePickerDialogShow`), misc singletons
+  (`sendBroadcast`, `startService`, `AsyncTask*`, status-bar colour
+  blocks with non-standard census names).

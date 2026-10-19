@@ -555,6 +555,254 @@ public final class AgentLogic {
                 "Add the item “{2}” to {t}"));
     }
 
+    /**
+     * One component-action block (wave 10), taught the same way:
+     * model kind, editor opCode, the required ComponentBean type
+     * (0 = the block takes no component), the argument slots after
+     * the component slot (WA codes, plus v = a map variable and
+     * A = this activity's class name), an expect fragment, and the
+     * sentence ({c} = the component).
+     */
+    private static final class CA {
+        final String opCode;
+        final int componentType;
+        final String args;
+        final String expect;
+        final String sentence;
+
+        CA(String opCode, int componentType, String args, String expect,
+           String sentence) {
+            this.opCode = opCode;
+            this.componentType = componentType;
+            this.args = args;
+            this.expect = expect;
+            this.sentence = sentence;
+        }
+    }
+
+    private static final Map<String, CA> COMPONENT_ACTIONS =
+            new HashMap<>();
+
+    static {
+        int intent = ComponentBean.COMPONENT_TYPE_INTENT;
+        int prefs = ComponentBean.COMPONENT_TYPE_SHAREDPREF;
+        int calendar = ComponentBean.COMPONENT_TYPE_CALENDAR;
+        int vibrator = ComponentBean.COMPONENT_TYPE_VIBRATOR;
+        int timer = ComponentBean.COMPONENT_TYPE_TIMERTASK;
+        int firebase = ComponentBean.COMPONENT_TYPE_FIREBASE;
+        int dialog = ComponentBean.COMPONENT_TYPE_DIALOG;
+        int media = ComponentBean.COMPONENT_TYPE_MEDIAPLAYER;
+        int pool = ComponentBean.COMPONENT_TYPE_SOUNDPOOL;
+        int animator = ComponentBean.COMPONENT_TYPE_OBJECTANIMATOR;
+        int gyro = ComponentBean.COMPONENT_TYPE_GYROSCOPE;
+        int ad = ComponentBean.COMPONENT_TYPE_INTERSTITIAL_AD;
+        int camera = ComponentBean.COMPONENT_TYPE_CAMERA;
+        int picker = ComponentBean.COMPONENT_TYPE_FILE_PICKER;
+        int network = ComponentBean.COMPONENT_TYPE_REQUEST_NETWORK;
+        int tts = ComponentBean.COMPONENT_TYPE_TEXT_TO_SPEECH;
+        int stt = ComponentBean.COMPONENT_TYPE_SPEECH_TO_TEXT;
+        int bluetooth = ComponentBean.COMPONENT_TYPE_BLUETOOTH_CONNECT;
+        int location = ComponentBean.COMPONENT_TYPE_LOCATION_MANAGER;
+        int progress = ComponentBean.COMPONENT_TYPE_PROGRESS_DIALOG;
+
+        COMPONENT_ACTIONS.put("set_intent_action", new CA(
+                "intentSetAction", intent, "s", ".setAction(",
+                "Set {c} action to “{1}”"));
+        COMPONENT_ACTIONS.put("set_intent_data", new CA("intentSetData",
+                intent, "s", ".setData(Uri.parse(",
+                "Set {c} data to “{1}”"));
+        COMPONENT_ACTIONS.put("set_intent_type", new CA("intentSetType",
+                intent, "s", ".setType(", "Set {c} type to “{1}”"));
+        COMPONENT_ACTIONS.put("put_extra", new CA("intentPutExtra",
+                intent, "ss", ".putExtra(",
+                "Put “{1}” = “{2}” into {c}"));
+        COMPONENT_ACTIONS.put("remove_extra", new CA("intentRemoveExtra",
+                intent, "s", ".removeExtra(",
+                "Remove “{1}” from {c}"));
+        COMPONENT_ACTIONS.put("launch_app", new CA("launchApp",
+                intent, "s", ".getLaunchIntentForPackage(",
+                "Point {c} at the app “{1}”"));
+        COMPONENT_ACTIONS.put("start_with_chooser", new CA(
+                "startActivityWithChooser", intent, "s",
+                "Intent.createChooser(", "Open {c} with a chooser "
+                + "titled “{1}”"));
+        COMPONENT_ACTIONS.put("save_pref", new CA("fileSetData",
+                prefs, "ss", ".edit().putString(",
+                "In {c}, save “{2}” under “{1}”"));
+        COMPONENT_ACTIONS.put("remove_pref", new CA("fileRemoveData",
+                prefs, "s", ".edit().remove(",
+                "In {c}, remove “{1}”"));
+        COMPONENT_ACTIONS.put("calendar_now", new CA("calendarGetNow",
+                calendar, "", " = Calendar.getInstance();",
+                "Set {c} to now"));
+        COMPONENT_ACTIONS.put("calendar_add", new CA("calendarAdd",
+                calendar, "md", ".add(Calendar.",
+                "Add {2} {1} to {c}"));
+        COMPONENT_ACTIONS.put("calendar_set", new CA("calendarSet",
+                calendar, "md", ".set(Calendar.",
+                "Set {c}'s {1} to {2}"));
+        COMPONENT_ACTIONS.put("calendar_set_time", new CA(
+                "calendarSetTime", calendar, "d", ".setTimeInMillis(",
+                "Set {c} to {1} milliseconds"));
+        COMPONENT_ACTIONS.put("vibrate", new CA("vibratorAction",
+                vibrator, "d", ".vibrate(", "Vibrate for {1} "
+                + "milliseconds"));
+        COMPONENT_ACTIONS.put("timer_cancel", new CA("timerCancel",
+                timer, "", ".cancel();", "Cancel {c}"));
+        COMPONENT_ACTIONS.put("dialog_title", new CA("dialogSetTitle",
+                dialog, "s", ".setTitle(", "Set {c} title to “{1}”"));
+        COMPONENT_ACTIONS.put("dialog_message", new CA("dialogSetMessage",
+                dialog, "s", ".setMessage(",
+                "Set {c} message to “{1}”"));
+        COMPONENT_ACTIONS.put("dialog_show", new CA("dialogShow",
+                dialog, "", ".create().show();", "Show {c}"));
+        COMPONENT_ACTIONS.put("mp_create", new CA("mediaplayerCreate",
+                media, "R", " = MediaPlayer.create(",
+                "Load the sound “{1}” into {c}"));
+        COMPONENT_ACTIONS.put("mp_start", new CA("mediaplayerStart",
+                media, "", ".start();", "Play {c}"));
+        COMPONENT_ACTIONS.put("mp_pause", new CA("mediaplayerPause",
+                media, "", ".pause();", "Pause {c}"));
+        COMPONENT_ACTIONS.put("mp_release", new CA("mediaplayerRelease",
+                media, "", ".release();", "Release {c}"));
+        COMPONENT_ACTIONS.put("mp_reset", new CA("mediaplayerReset",
+                media, "", ".reset();", "Reset {c}"));
+        COMPONENT_ACTIONS.put("mp_seek", new CA("mediaplayerSeek",
+                media, "d", ".seekTo(", "Move {c} to {1} "
+                + "milliseconds"));
+        COMPONENT_ACTIONS.put("mp_looping", new CA("mediaplayerSetLooping",
+                media, "b", ".setLooping(", "Set {c} looping to {1}"));
+        COMPONENT_ACTIONS.put("sp_create", new CA("soundpoolCreate",
+                pool, "d", " = new SoundPool(",
+                "Set up {c} for {1} sounds at once"));
+        COMPONENT_ACTIONS.put("sp_stop", new CA("soundpoolStreamStop",
+                pool, "d", ".stop((int)(", "Stop sound {1} in {c}"));
+        COMPONENT_ACTIONS.put("anim_start", new CA("objectanimatorStart",
+                animator, "", ".start();", "Start {c}"));
+        COMPONENT_ACTIONS.put("anim_cancel", new CA("objectanimatorCancel",
+                animator, "", ".cancel();", "Cancel {c}"));
+        COMPONENT_ACTIONS.put("anim_duration", new CA(
+                "objectanimatorSetDuration", animator, "d",
+                ".setDuration(", "Set {c} to run for {1} "
+                + "milliseconds"));
+        COMPONENT_ACTIONS.put("anim_repeat", new CA(
+                "objectanimatorSetRepeatCount", animator, "d",
+                ".setRepeatCount(", "Set {c} to repeat {1} times"));
+        COMPONENT_ACTIONS.put("anim_from_to", new CA(
+                "objectanimatorSetFromTo", animator, "dd",
+                ".setFloatValues(", "Set {c} values from {1} to {2}"));
+        COMPONENT_ACTIONS.put("anim_target", new CA(
+                "objectanimatorSetTarget", animator, "w", ".setTarget(",
+                "Set {c} to animate {1}"));
+        COMPONENT_ACTIONS.put("anim_property", new CA(
+                "objectanimatorSetProperty", animator, "s",
+                ".setPropertyName(", "Set {c} to animate the “{1}” "
+                + "property"));
+        COMPONENT_ACTIONS.put("gyro_start", new CA("gyroscopeStartListen",
+                gyro, "", ".registerListener(", "Start listening "
+                + "to {c}"));
+        COMPONENT_ACTIONS.put("gyro_stop", new CA("gyroscopeStopListen",
+                gyro, "", ".unregisterListener(", "Stop listening "
+                + "to {c}"));
+        COMPONENT_ACTIONS.put("fb_set", new CA("firebaseAdd",
+                firebase, "sv", ".child(",
+                "In {c} at “{1}”, save the map {2}"));
+        COMPONENT_ACTIONS.put("fb_delete", new CA("firebaseDelete",
+                firebase, "s", ".child(", "In {c}, delete “{1}”"));
+        COMPONENT_ACTIONS.put("fb_push", new CA("firebasePush",
+                firebase, "v", ".push().updateChildren(",
+                "Push the map {1} into {c}"));
+        COMPONENT_ACTIONS.put("fb_listen", new CA("firebaseStartListen",
+                firebase, "", ".addChildEventListener(",
+                "Start listening to {c}"));
+        COMPONENT_ACTIONS.put("fb_stop_listen", new CA(
+                "firebaseStopListen", firebase, "",
+                ".removeEventListener(", "Stop listening to {c}"));
+        COMPONENT_ACTIONS.put("ad_load", new CA("interstitialAdLoad",
+                ad, "A", "InterstitialAd.load(",
+                "Load an ad into {c}"));
+        COMPONENT_ACTIONS.put("ad_show", new CA("interstitialAdShow",
+                ad, "A", ".show(", "Show the ad in {c}"));
+        COMPONENT_ACTIONS.put("take_picture", new CA(
+                "camerastarttakepicture", camera, "",
+                "startActivityForResult(", "Take a picture with {c}"));
+        COMPONENT_ACTIONS.put("pick_file", new CA(
+                "filepickerstartpickfiles", picker, "",
+                "startActivityForResult(", "Pick a file with {c}"));
+        COMPONENT_ACTIONS.put("crop_image", new CA("imageCrop",
+                0, "sd", "SketchwareUtil.CropImage(",
+                "Crop the image at “{1}” to {2}"));
+        COMPONENT_ACTIONS.put("net_headers", new CA(
+                "requestnetworkSetHeaders", network, "v", ".setHeaders(",
+                "Set {c} headers from the map {1}"));
+        COMPONENT_ACTIONS.put("net_start", new CA(
+                "requestnetworkStartRequestNetwork", network, "mss",
+                ".startRequestNetwork(", "With {c}, send a {1} "
+                + "request to “{2}” tagged “{3}”"));
+        COMPONENT_ACTIONS.put("tts_speak", new CA("textToSpeechSpeak",
+                tts, "s", ".speak(", "Speak “{1}” with {c}"));
+        COMPONENT_ACTIONS.put("tts_pitch", new CA("textToSpeechSetPitch",
+                tts, "d", ".setPitch(", "Set {c} pitch to {1}"));
+        COMPONENT_ACTIONS.put("tts_rate", new CA("textToSpeechSetSpeechRate",
+                tts, "d", ".setSpeechRate(", "Set {c} speed to {1}"));
+        COMPONENT_ACTIONS.put("tts_stop", new CA("textToSpeechStop",
+                tts, "", ".stop();", "Stop {c} speaking"));
+        COMPONENT_ACTIONS.put("tts_shutdown", new CA("textToSpeechShutdown",
+                tts, "", ".shutdown();", "Shut down {c}"));
+        COMPONENT_ACTIONS.put("stt_start", new CA(
+                "speechToTextStartListening", stt, "",
+                ".startListening(_intent);", "Start listening "
+                + "with {c}"));
+        COMPONENT_ACTIONS.put("stt_stop", new CA(
+                "speechToTextStopListening", stt, "",
+                ".stopListening(", "Stop listening with {c}"));
+        COMPONENT_ACTIONS.put("stt_shutdown", new CA(
+                "speechToTextShutdown", stt, "", ".shutdown();",
+                "Shut down {c}"));
+        COMPONENT_ACTIONS.put("bt_enable", new CA(
+                "bluetoothConnectActivateBluetooth", bluetooth, "",
+                ".activateBluetooth();", "Turn on Bluetooth via {c}"));
+        COMPONENT_ACTIONS.put("loc_request", new CA(
+                "locationManagerRequestLocationUpdates", location,
+                "mdd", ".requestLocationUpdates(",
+                "Ask {c} for {1} updates every {2} ms / {3} m"));
+        COMPONENT_ACTIONS.put("loc_remove", new CA(
+                "locationManagerRemoveUpdates", location, "",
+                ".removeUpdates(_", "Stop location updates from {c}"));
+        COMPONENT_ACTIONS.put("progress_create", new CA(
+                "progressdialogCreate", progress, "A",
+                " = new ProgressDialog(", "Create {c}"));
+        COMPONENT_ACTIONS.put("progress_show", new CA(
+                "progressdialogShow", progress, "", ".show();",
+                "Show {c}"));
+        COMPONENT_ACTIONS.put("progress_dismiss", new CA(
+                "progressdialogDismiss", progress, "", ".dismiss();",
+                "Dismiss {c}"));
+        COMPONENT_ACTIONS.put("progress_message", new CA(
+                "progressdialogSetMessage", progress, "s",
+                ".setMessage(", "Set {c} message to “{1}”"));
+        COMPONENT_ACTIONS.put("progress_title", new CA(
+                "progressdialogSetTitle", progress, "s", ".setTitle(",
+                "Set {c} title to “{1}”"));
+        COMPONENT_ACTIONS.put("progress_value", new CA(
+                "progressdialogSetProgress", progress, "d",
+                ".setProgress(", "Set {c} progress to {1}"));
+        COMPONENT_ACTIONS.put("progress_max", new CA(
+                "progressdialogSetMax", progress, "d", ".setMax(",
+                "Set {c} maximum to {1}"));
+        COMPONENT_ACTIONS.put("progress_cancelable", new CA(
+                "progressdialogSetCancelable", progress, "b",
+                ".setCancelable(", "Set {c} cancelable to {1}"));
+        COMPONENT_ACTIONS.put("progress_outside", new CA(
+                "progressdialogSetCanceledOutside", progress, "b",
+                ".setCanceledOnTouchOutside(",
+                "Set {c} to cancel on outside tap: {1}"));
+        COMPONENT_ACTIONS.put("progress_style", new CA(
+                "progressdialogSetStyle", progress, "m",
+                ".setProgressStyle(ProgressDialog.",
+                "Set {c} style to {1}"));
+    }
+
     private AgentLogic() {
     }
 
@@ -710,6 +958,7 @@ public final class AgentLogic {
         builder.lists = listsOf(store, javaName);
         builder.components = components;
         builder.scId = scId;
+        builder.activityName = SketchwareProjects.activityName(activity);
         for (JsonElement element : blocks) {
             if (!element.isJsonObject()) {
                 throw new AgentTools.ToolException("E_BAD_BLOCK",
@@ -865,6 +1114,8 @@ public final class AgentLogic {
         Map<String, Integer> components = new LinkedHashMap<>();
         /** Project id, for resolving screens an Intent opens. */
         String scId;
+        /** This activity's class name, for %m.activity slots. */
+        String activityName;
         /** Intent component apply() must create, once per plan. */
         String componentToCreate;
 
@@ -887,6 +1138,28 @@ public final class AgentLogic {
             created.add(bean);
             nextId++;
             return bean;
+        }
+
+        /** A component argument of the required kind, by id. */
+        String requireComponent(JsonObject op, int type, String label)
+                throws AgentTools.ToolException {
+            String componentId = stringOf(op, "component");
+            Integer actual = components.get(componentId);
+            if (actual == null) {
+                throw new AgentTools.ToolException("E_BAD_BLOCK",
+                        "There is no component called " + componentId
+                                + " on this screen. Add it with "
+                                + "create_component first.");
+            }
+            if (actual != type) {
+                throw new AgentTools.ToolException("E_BAD_BLOCK",
+                        componentId + " is a "
+                                + ComponentBean.getComponentName(null,
+                                        actual)
+                                + " component, and this block needs a "
+                                + label + " component.");
+            }
+            return componentId;
         }
 
         /**
@@ -1073,6 +1346,85 @@ public final class AgentLogic {
                         bean.subStack2 = Integer.parseInt(
                                 caught.get(0).id);
                     }
+                    return bean;
+                }
+                case "timer_after", "timer_every" -> {
+                    // The Timer containers: the component's own
+                    // TimerTask field runs the sub-stack after a
+                    // delay (and every period, for timer_every).
+                    String componentId = requireComponent(op,
+                            ComponentBean.COMPONENT_TYPE_TIMERTASK,
+                            "Timer");
+                    boolean every = "timer_every".equals(kind);
+                    String delay = expr(op.get("delay"), 'd',
+                            "A timer needs a \"delay\" in "
+                                    + "milliseconds");
+                    BlockBean bean = newBean(
+                            every ? "timerEvery" : "timerAfter", "c");
+                    bean.parameters.add(componentId);
+                    bean.parameters.add(delay);
+                    String extra = "";
+                    if (every) {
+                        bean.parameters.add(expr(op.get("period"),
+                                'd', "timer_every also needs a "
+                                        + "\"period\" in milliseconds"));
+                        extra = ", then every "
+                                + describeExpr(op.get("period"))
+                                + " ms";
+                    }
+                    allStatements.add(bean);
+                    addExpect("runOnUiThread(new Runnable()",
+                            "After " + describeExpr(op.get("delay"))
+                                    + " ms" + extra + ", with "
+                                    + componentId);
+                    lines.add(indent(depth) + "After "
+                            + describeExpr(op.get("delay")) + " ms"
+                            + extra + ":");
+                    ArrayList<BlockBean> body = buildList(
+                            arrayOf(op, "blocks"), depth + 1, "blocks");
+                    bean.subStack1 = Integer.parseInt(body.get(0).id);
+                    return bean;
+                }
+                case "dialog_ok_button", "dialog_negative_button",
+                        "dialog_neutral_button" -> {
+                    // The Dialog button containers: tapping the
+                    // button runs the sub-stack (dialogOkButton /
+                    // dialogCancelButton / dialogNeutralButton).
+                    String componentId = requireComponent(op,
+                            ComponentBean.COMPONENT_TYPE_DIALOG,
+                            "Dialog");
+                    String text = stringOf(op, "text");
+                    if (text.isEmpty()) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "A dialog button needs its \"text\".");
+                    }
+                    String kindName = kind;
+                    String opCode = "dialog_ok_button".equals(kindName)
+                            ? "dialogOkButton"
+                            : "dialog_negative_button".equals(kindName)
+                            ? "dialogCancelButton" : "dialogNeutralButton";
+                    String which = "dialog_ok_button".equals(kindName)
+                            ? "OK" : "dialog_negative_button"
+                            .equals(kindName) ? "negative" : "middle";
+                    BlockBean bean = newBean(opCode, "c");
+                    bean.parameters.add(componentId);
+                    bean.parameters.add(text);
+                    allStatements.add(bean);
+                    addExpect("set" + ("dialog_ok_button"
+                                    .equals(kindName) ? "PositiveButton"
+                                    : "dialog_negative_button"
+                                            .equals(kindName)
+                                            ? "NegativeButton"
+                                            : "NeutralButton") + "(",
+                            "When " + componentId + "'s “" + text
+                                    + "” button is tapped");
+                    lines.add(indent(depth) + "When " + componentId
+                            + "'s “" + text + "” (" + which
+                            + ") button is tapped:");
+                    ArrayList<BlockBean> body = buildList(
+                            arrayOf(op, "blocks"), depth + 1, "blocks");
+                    bean.subStack1 = Integer.parseInt(body.get(0).id);
                     return bean;
                 }
                 case "switch" -> {
@@ -1297,7 +1649,8 @@ public final class AgentLogic {
         /** One statement from the literal/picker vocabulary. */
         private BlockBean buildTranslated(JsonObject op, int depth)
                 throws AgentTools.ToolException {
-            Stmt stmt = translate(context, op, byId, variables, lists);
+            Stmt stmt = translate(context, op, byId, variables, lists,
+                    components, activityName);
             stmts.add(stmt);
             BlockBean bean = newBean(stmt.opCode, stmt.type);
             bean.parameters.addAll(stmt.params);
@@ -1550,6 +1903,204 @@ public final class AgentLogic {
                 BlockBean bean = newBean("mapContainKey", "b");
                 bean.parameters.add(name);
                 bean.parameters.add(key);
+                return "@" + bean.id;
+            }
+            if (object.has("pref_get") || object.has("pref_has")
+                    || object.has("calendar_millis")
+                    || object.has("calendar_text")
+                    || object.has("calendar_diff")
+                    || object.has("mp_position_of")
+                    || object.has("mp_duration_of")
+                    || object.has("mp_playing")
+                    || object.has("mp_looping")
+                    || object.has("anim_running")
+                    || object.has("tts_speaking")
+                    || object.has("bt_enabled") || object.has("bt_on")
+                    || object.has("ad_loaded")
+                    || object.has("fb_push_key")
+                    || object.has("bt_uuid")
+                    || object.has("load_sound")
+                    || object.has("play_sound")) {
+                // Component reporters (wave 10): the component id
+                // is the first slot, validated against the screen's
+                // component list and type, exactly as the palette
+                // gates these blocks.
+                String key = null;
+                for (String candidate : new String[]{"pref_get",
+                        "pref_has", "calendar_millis", "calendar_text",
+                        "calendar_diff", "mp_position_of",
+                        "mp_duration_of", "mp_playing", "mp_looping",
+                        "anim_running", "tts_speaking", "bt_enabled",
+                        "bt_on", "ad_loaded", "fb_push_key", "bt_uuid",
+                        "load_sound", "play_sound"}) {
+                    if (object.has(candidate)) {
+                        key = candidate;
+                        break;
+                    }
+                }
+                int type;
+                char needed;
+                String opCode;
+                switch (key) {
+                    case "pref_get" -> {
+                        type = ComponentBean.COMPONENT_TYPE_SHAREDPREF;
+                        needed = 's';
+                        opCode = "fileGetData";
+                    }
+                    case "pref_has" -> {
+                        type = ComponentBean.COMPONENT_TYPE_SHAREDPREF;
+                        needed = 'b';
+                        opCode = "fileContainsData";
+                    }
+                    case "calendar_millis" -> {
+                        type = ComponentBean.COMPONENT_TYPE_CALENDAR;
+                        needed = 'd';
+                        opCode = "calendarGetTime";
+                    }
+                    case "calendar_text" -> {
+                        type = ComponentBean.COMPONENT_TYPE_CALENDAR;
+                        needed = 's';
+                        opCode = "calendarFormat";
+                    }
+                    case "calendar_diff" -> {
+                        type = ComponentBean.COMPONENT_TYPE_CALENDAR;
+                        needed = 'd';
+                        opCode = "calendarDiff";
+                    }
+                    case "mp_position_of" -> {
+                        type = ComponentBean.COMPONENT_TYPE_MEDIAPLAYER;
+                        needed = 'd';
+                        opCode = "mediaplayerGetCurrent";
+                    }
+                    case "mp_duration_of" -> {
+                        type = ComponentBean.COMPONENT_TYPE_MEDIAPLAYER;
+                        needed = 'd';
+                        opCode = "mediaplayerGetDuration";
+                    }
+                    case "mp_playing" -> {
+                        type = ComponentBean.COMPONENT_TYPE_MEDIAPLAYER;
+                        needed = 'b';
+                        opCode = "mediaplayerIsPlaying";
+                    }
+                    case "mp_looping" -> {
+                        type = ComponentBean.COMPONENT_TYPE_MEDIAPLAYER;
+                        needed = 'b';
+                        opCode = "mediaplayerIsLooping";
+                    }
+                    case "anim_running" -> {
+                        type = ComponentBean
+                                .COMPONENT_TYPE_OBJECTANIMATOR;
+                        needed = 'b';
+                        opCode = "objectanimatorIsRunning";
+                    }
+                    case "tts_speaking" -> {
+                        type = ComponentBean
+                                .COMPONENT_TYPE_TEXT_TO_SPEECH;
+                        needed = 'b';
+                        opCode = "textToSpeechIsSpeaking";
+                    }
+                    case "bt_enabled" -> {
+                        type = ComponentBean
+                                .COMPONENT_TYPE_BLUETOOTH_CONNECT;
+                        needed = 'b';
+                        opCode = "bluetoothConnectIsBluetoothEnabled";
+                    }
+                    case "bt_on" -> {
+                        type = ComponentBean
+                                .COMPONENT_TYPE_BLUETOOTH_CONNECT;
+                        needed = 'b';
+                        opCode = "bluetoothConnectIsBluetoothActivated";
+                    }
+                    case "ad_loaded" -> {
+                        type = ComponentBean
+                                .COMPONENT_TYPE_INTERSTITIAL_AD;
+                        needed = 'b';
+                        opCode = "interstitialAdIsLoaded";
+                    }
+                    case "fb_push_key" -> {
+                        type = ComponentBean.COMPONENT_TYPE_FIREBASE;
+                        needed = 's';
+                        opCode = "firebaseGetPushKey";
+                    }
+                    case "bt_uuid" -> {
+                        type = ComponentBean
+                                .COMPONENT_TYPE_BLUETOOTH_CONNECT;
+                        needed = 's';
+                        opCode = "bluetoothConnectGetRandomUuid";
+                    }
+                    case "load_sound" -> {
+                        type = ComponentBean.COMPONENT_TYPE_SOUNDPOOL;
+                        needed = 'd';
+                        opCode = "soundpoolLoad";
+                    }
+                    default -> {
+                        type = ComponentBean.COMPONENT_TYPE_SOUNDPOOL;
+                        needed = 'd';
+                        opCode = "soundpoolStreamPlay";
+                    }
+                }
+                if (slot != needed) {
+                    throw badValue(what, "that component value does "
+                            + "not fit here");
+                }
+                String componentId = stringOf(object, key);
+                Integer actual = components.get(componentId);
+                if (actual == null || actual != type) {
+                    throw badValue(what, "there is no "
+                            + ComponentBean.getComponentName(null, type)
+                            + " component called " + componentId
+                            + " on this screen");
+                }
+                BlockBean bean = newBean(opCode,
+                        String.valueOf(needed));
+                bean.parameters.add(componentId);
+                switch (key) {
+                    case "pref_get", "pref_has" -> {
+                        String prefKey = stringOf(object, "key");
+                        if (prefKey.isEmpty()) {
+                            throw badValue(what, "this needs the "
+                                    + "\"key\" to read");
+                        }
+                        bean.parameters.add(prefKey);
+                    }
+                    case "calendar_text" -> {
+                        String format = stringOf(object, "format");
+                        if (format.isEmpty()) {
+                            throw badValue(what, "this needs a "
+                                    + "\"format\" like yyyy-MM-dd");
+                        }
+                        bean.parameters.add(format);
+                    }
+                    case "calendar_diff" -> {
+                        String other = stringOf(object, "other");
+                        Integer otherType = components.get(other);
+                        if (otherType == null || otherType
+                                != ComponentBean
+                                        .COMPONENT_TYPE_CALENDAR) {
+                            throw badValue(what, "\"other\" must "
+                                    + "name another Calendar "
+                                    + "component");
+                        }
+                        bean.parameters.add(other);
+                    }
+                    case "load_sound" -> {
+                        String sound = stringOf(object, "sound");
+                        if (!sound.matches("(?i)[a-z0-9_]+")) {
+                            throw badValue(what, "this needs "
+                                    + "\"sound\": a raw sound name");
+                        }
+                        bean.parameters.add(
+                                sound.toLowerCase(Locale.ROOT));
+                    }
+                    case "play_sound" -> {
+                        bean.parameters.add(expr(object.get("a"),
+                                'd', what));
+                        bean.parameters.add(expr(object.get("b"),
+                                'd', what));
+                    }
+                    default -> {
+                    }
+                }
                 return "@" + bean.id;
             }
             if (object.has("json_of_map") || object.has("json_of_list")) {
@@ -1822,6 +2373,29 @@ public final class AgentLogic {
                                 slot, what));
                         bean.parameters.add(expr(object.get("b"),
                                 slot, what));
+                        return "@" + bean.id;
+                    }
+                    case "auth_email", "auth_uid", "auth_logged_in",
+                            "is_connected" -> {
+                        // Slot-less reporters: the signed-in user's
+                        // email/uid, whether anyone is signed in
+                        // (FirebaseAuth), and network state.
+                        char needed = "auth_logged_in".equals(fn)
+                                || "is_connected".equals(fn) ? 'b' : 's';
+                        if (slot != needed) {
+                            throw badValue(what, "that value does "
+                                    + "not fit here");
+                        }
+                        BlockBean bean = newBean(
+                                switch (fn) {
+                                    case "auth_email" ->
+                                            "firebaseauthGetCurrentUser";
+                                    case "auth_uid" ->
+                                            "firebaseauthGetUid";
+                                    case "auth_logged_in" ->
+                                            "firebaseauthIsLoggedIn";
+                                    default -> "isConnected";
+                                }, String.valueOf(needed));
                         return "@" + bean.id;
                     }
                     case "drawer_open" -> {
@@ -2454,6 +3028,10 @@ public final class AgentLogic {
                             + ", otherwise "
                             + describeExpr(object.get("b"));
                     case "drawer_open" -> "the drawer is open";
+                    case "auth_email" -> "the signed-in user's email";
+                    case "auth_uid" -> "the signed-in user's ID";
+                    case "auth_logged_in" -> "someone is signed in";
+                    case "is_connected" -> "the device is online";
                     case "display_width" -> "the screen width";
                     case "display_height" -> "the screen height";
                     case "e" -> "e (2.718…)";
@@ -2506,6 +3084,40 @@ public final class AgentLogic {
                 return "the position of "
                         + describeExpr(object.get("value")) + " in "
                         + stringOf(object, "index_of");
+            }
+            for (String key : new String[]{"pref_get", "pref_has",
+                    "calendar_millis", "calendar_text", "calendar_diff",
+                    "mp_position_of", "mp_duration_of", "mp_playing",
+                    "mp_looping", "anim_running", "tts_speaking",
+                    "bt_enabled", "bt_on", "ad_loaded", "fb_push_key",
+                    "bt_uuid", "load_sound", "play_sound"}) {
+                if (object.has(key)) {
+                    String label = switch (key) {
+                        case "pref_get" -> "the saved text at “"
+                                + stringOf(object, "key") + "” in ";
+                        case "pref_has" -> "has the key “"
+                                + stringOf(object, "key") + "”: ";
+                        case "calendar_millis" -> "the time of ";
+                        case "calendar_text" -> "the date of ";
+                        case "calendar_diff" -> "the difference "
+                                + "between ";
+                        case "mp_position_of" -> "the position of ";
+                        case "mp_duration_of" -> "the duration of ";
+                        case "mp_playing" -> "is playing: ";
+                        case "mp_looping" -> "is looping: ";
+                        case "anim_running" -> "is running: ";
+                        case "tts_speaking" -> "is speaking: ";
+                        case "bt_enabled" -> "Bluetooth is on (";
+                        case "bt_on" -> "Bluetooth is activated (";
+                        case "ad_loaded" -> "has an ad loaded: ";
+                        case "fb_push_key" -> "a new push key in ";
+                        case "bt_uuid" -> "a random ID from ";
+                        case "load_sound" -> "the sound ID loaded "
+                                + "into ";
+                        default -> "playing a sound in ";
+                    };
+                    return label + stringOf(object, key);
+                }
             }
             if (object.has("json_of_map")) {
                 return "map " + stringOf(object, "json_of_map")
@@ -2647,6 +3259,13 @@ public final class AgentLogic {
                     || object.has("is_file") || object.has("is_folder")
                     || object.has("map_empty")
                     || object.has("map_has_value")
+                    || object.has("pref_has")
+                    || object.has("mp_playing")
+                    || object.has("mp_looping")
+                    || object.has("anim_running")
+                    || object.has("tts_speaking")
+                    || object.has("bt_enabled") || object.has("bt_on")
+                    || object.has("ad_loaded")
                     || object.has("video_playing")
                     || object.has("can_go_back")
                     || object.has("can_go_forward")) {
@@ -2658,7 +3277,9 @@ public final class AgentLogic {
                 return "contains".equals(fn) || "starts_with".equals(fn)
                         || "ends_with".equals(fn) || "matches".equals(fn)
                         || "is_empty".equals(fn)
-                        || "drawer_open".equals(fn);
+                        || "drawer_open".equals(fn)
+                        || "auth_logged_in".equals(fn)
+                        || "is_connected".equals(fn);
             }
             if (object.has("var")) {
                 Integer kind = variables.get(stringOf(object, "var"));
@@ -2959,7 +3580,9 @@ public final class AgentLogic {
     private static Stmt translate(Context context, JsonObject op,
                                   Map<String, ViewBean> byId,
                                   Map<String, Integer> variables,
-                                  Map<String, Integer> lists)
+                                  Map<String, Integer> lists,
+                                  Map<String, Integer> components,
+                                  String activityName)
             throws AgentTools.ToolException {
         String kind = blockKindOf(op);
         Stmt stmt = new Stmt();
@@ -3900,8 +4523,14 @@ public final class AgentLogic {
             }
             default -> {
                 WA action = WIDGET_ACTIONS.get(kind);
+                CA componentAction = action == null
+                        ? COMPONENT_ACTIONS.get(kind) : null;
                 if (action != null) {
                     buildWidgetAction(op, byId, lists, action, stmt);
+                } else if (componentAction != null) {
+                    buildComponentAction(op, byId, variables, lists,
+                            components, activityName, componentAction,
+                            stmt);
                 } else {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
                     (kind.isEmpty()
@@ -4260,6 +4889,140 @@ public final class AgentLogic {
         }
         stmt.sentence = sentence;
         stmt.expectCode = widget.id + action.expect;
+    }
+
+    /**
+     * Builds one registry component action (see
+     * {@link #COMPONENT_ACTIONS}): the component first (validated
+     * against the screen's component list and its type), then the
+     * declared argument slots.
+     */
+    private static void buildComponentAction(JsonObject op,
+                                             Map<String, ViewBean> byId,
+                                             Map<String, Integer> variables,
+                                             Map<String, Integer> lists,
+                                             Map<String, Integer> components,
+                                             String activityName,
+                                             CA action, Stmt stmt)
+            throws AgentTools.ToolException {
+        stmt.opCode = action.opCode;
+        stmt.type = " ";
+        String componentId = "";
+        if (action.componentType != 0) {
+            componentId = stringOf(op, "component");
+            Integer type = components.get(componentId);
+            if (type == null) {
+                throw new AgentTools.ToolException("E_BAD_BLOCK",
+                        "There is no component called " + componentId
+                                + " on this screen. Add it with "
+                                + "create_component first.");
+            }
+            if (type != action.componentType) {
+                throw new AgentTools.ToolException("E_BAD_BLOCK",
+                        componentId + " is a "
+                                + ComponentBean.getComponentName(null,
+                                        type)
+                                + " component, and this block needs a "
+                                + ComponentBean.getComponentName(null,
+                                        action.componentType)
+                                + " component.");
+            }
+            stmt.params.add(componentId);
+        }
+        String sentence = action.sentence.replace("{c}", componentId);
+        int numberField = 0;
+        int textField = 0;
+        for (int i = 0; i < action.args.length(); i++) {
+            char arg = action.args.charAt(i);
+            String shown;
+            switch (arg) {
+                case 'd' -> {
+                    String[] fields = {"value", "value2", "value3"};
+                    String field = fields[Math.min(numberField++,
+                            fields.length - 1)];
+                    String value = stringOf(op, field);
+                    try {
+                        Double.parseDouble(value);
+                    } catch (Exception e) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "This block needs a numeric \"" + field
+                                        + "\".");
+                    }
+                    stmt.params.add(value);
+                    shown = value;
+                }
+                case 's' -> {
+                    String[] fields = {"text", "text2", "text3"};
+                    String field = fields[Math.min(textField++,
+                            fields.length - 1)];
+                    String text = stringOf(op, field);
+                    stmt.params.add(text);
+                    shown = text;
+                }
+                case 'b' -> {
+                    boolean flag = boolOf(op, "flag", true);
+                    stmt.params.add(String.valueOf(flag));
+                    shown = String.valueOf(flag);
+                }
+                case 'm' -> {
+                    String mode = stringOf(op, "mode")
+                            .toUpperCase(Locale.ROOT);
+                    if (!mode.matches("[A-Z0-9_]+")) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "This block needs \"mode\" as a "
+                                        + "constant name like GET, "
+                                        + "YEAR or GPS_PROVIDER.");
+                    }
+                    stmt.params.add(mode);
+                    shown = mode;
+                }
+                case 'v' -> {
+                    String name = stringOf(op, "variable");
+                    requireVariable(variables, name);
+                    requireVariableKind(variables, name, 3,
+                            "This block needs a map variable.");
+                    stmt.params.add(name);
+                    shown = name;
+                }
+                case 'R' -> {
+                    String sound = stringOf(op, "sound");
+                    if (!sound.matches("(?i)[a-z0-9_]+")) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "This block needs \"sound\": the name "
+                                        + "of a sound in the project's "
+                                        + "raw resources.");
+                    }
+                    stmt.params.add(sound.toLowerCase(Locale.ROOT));
+                    shown = sound;
+                }
+                case 'A' -> {
+                    stmt.params.add(activityName);
+                    shown = activityName;
+                }
+                case 'w' -> {
+                    String childId = stringOf(op, "target");
+                    ViewBean child = findWidget(byId, childId);
+                    if (child == null) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "There is no widget called " + childId
+                                        + " on this screen to animate.");
+                    }
+                    stmt.params.add(child.id);
+                    shown = child.id;
+                }
+                default -> throw new AgentTools.ToolException(
+                        "E_INTERNAL", "Bad component-action slot "
+                                + arg);
+            }
+            sentence = sentence.replace("{" + (i + 1) + "}", shown);
+        }
+        stmt.sentence = sentence;
+        stmt.expectCode = (action.componentType != 0 ? componentId
+                : "") + action.expect;
     }
 
     // -- stored-shape helpers ----------------------------------------------

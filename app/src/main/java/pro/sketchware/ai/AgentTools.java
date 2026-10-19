@@ -1230,7 +1230,67 @@ public final class AgentTools {
                     + "\"condition\":...,\"a\":...,\"b\":...} (a if b, "
                     + "otherwise... a value picked by a condition), "
                     + "and {\"fn\":\"drawer_open\"} (whether the "
-                    + "screen's drawer is open); "
+                    + "screen's drawer is open). Component blocks "
+                    + "act on a component added with create_component "
+                    + "(same screen) and name it in \"component\": "
+                    + "Intent (set_intent_action/data/type {text}, "
+                    + "put_extra {text,text2}, remove_extra {text}, "
+                    + "launch_app {text}, start_with_chooser {text}); "
+                    + "SharedPreferences (save_pref {text key, text2 "
+                    + "value}, remove_pref {text}); Calendar "
+                    + "(calendar_now, calendar_add/set {mode=YEAR|"
+                    + "MONTH|DAY_OF_MONTH|HOUR_OF_DAY|MINUTE|SECOND, "
+                    + "value}, calendar_set_time {value}); Vibrator "
+                    + "(vibrate {value}); Timer (timer_after "
+                    + "{delay,blocks}, timer_every {delay,period,"
+                    + "blocks}, timer_cancel); Dialog (dialog_title/"
+                    + "message {text}, dialog_show, dialog_ok_button "
+                    + "{text,blocks}, dialog_negative_button, "
+                    + "dialog_neutral_button); MediaPlayer (mp_create "
+                    + "{sound}, mp_start/pause/release/reset, mp_seek "
+                    + "{value}, mp_looping {flag}); SoundPool "
+                    + "(sp_create {value}, sp_stop {value}); "
+                    + "ObjectAnimator (anim_start/cancel, "
+                    + "anim_duration {value}, anim_repeat {value}, "
+                    + "anim_from_to {value,value2}, anim_target "
+                    + "{target}, anim_property {text}); Gyroscope "
+                    + "(gyro_start/stop); Firebase DB (fb_set {text "
+                    + "path, variable=map}, fb_delete {text}, "
+                    + "fb_push {variable=map}, fb_listen, "
+                    + "fb_stop_listen); InterstitialAd (ad_load, "
+                    + "ad_show); Camera (take_picture); FilePicker "
+                    + "(pick_file); RequestNetwork (net_headers "
+                    + "{variable=map}, net_start {mode=GET|POST|PUT|"
+                    + "DELETE, text=url, text2=tag}); TextToSpeech "
+                    + "(tts_speak {text}, tts_pitch/rate {value}, "
+                    + "tts_stop, tts_shutdown); SpeechToText "
+                    + "(stt_start/stop/shutdown); Bluetooth "
+                    + "(bt_enable); LocationManager (loc_request "
+                    + "{mode=GPS_PROVIDER|NETWORK_PROVIDER, value "
+                    + "min ms, value2 min metres}, loc_remove); "
+                    + "ProgressDialog (progress_create/show/dismiss, "
+                    + "progress_message/title {text}, progress_value/"
+                    + "max {value}, progress_cancelable/outside "
+                    + "{flag}, progress_style {mode=STYLE_SPINNER|"
+                    + "STYLE_HORIZONTAL}). Component values read "
+                    + "live: {\"pref_get\":\"file1\",\"key\":\"name\"}, "
+                    + "{\"pref_has\":...}, {\"calendar_millis\":"
+                    + "\"calendar1\"}, {\"calendar_text\":...,\"format\":\"yyyy-MM-dd\"}, "
+                    + "{\"calendar_diff\":...,\"other\":\"calendar2\"}, "
+                    + "{\"mp_position_of\":\"mediaplayer1\"}, "
+                    + "{\"mp_duration_of\":...}, {\"mp_playing\":...}, "
+                    + "{\"mp_looping\":...}, {\"anim_running\":"
+                    + "\"objectanimator1\"}, {\"tts_speaking\":\"texttospeech1\"}, "
+                    + "{\"bt_enabled\":\"bluetoothconnect1\"}, "
+                    + "{\"bt_on\":...}, {\"ad_loaded\":\"interstitialad1\"}, "
+                    + "{\"fb_push_key\":\"firebase1\"}, {\"bt_uuid\":...}, "
+                    + "{\"load_sound\":\"soundpool1\",\"sound\":\"click\"} "
+                    + "(loads a raw sound, gives its number), "
+                    + "{\"play_sound\":...,\"a\":sound number,\"b\":0} "
+                    + "(0 = play once, -1 = loop), and functions "
+                    + "{\"fn\":\"auth_email\"} (the signed-in user's "
+                    + "email), auth_uid, auth_logged_in, is_connected "
+                    + "(device online); "
                     + "= between texts "
                     + "compares their text. At most "
                     + "8 blocks per list and 24 blocks total per handler. "
@@ -1353,7 +1413,31 @@ public final class AgentTools {
                     "map_marker_visible", "map_marker_info",
                     "set_refreshing", "bottom_add_item",
                     "if", "if_else", "repeat", "forever", "break",
-                    "while", "try_catch", "switch", "continue"}) {
+                    "while", "try_catch", "switch", "continue",
+                    "set_intent_action", "set_intent_data",
+                    "set_intent_type", "put_extra", "remove_extra",
+                    "launch_app", "start_with_chooser", "save_pref",
+                    "remove_pref", "calendar_now", "calendar_add",
+                    "calendar_set", "calendar_set_time", "vibrate",
+                    "timer_cancel", "dialog_title", "dialog_message",
+                    "dialog_show", "mp_create", "mp_start", "mp_pause",
+                    "mp_release", "mp_reset", "mp_seek", "mp_looping",
+                    "sp_create", "sp_stop", "anim_start", "anim_cancel",
+                    "anim_duration", "anim_repeat", "anim_from_to",
+                    "anim_target", "anim_property", "gyro_start",
+                    "gyro_stop", "fb_set", "fb_delete", "fb_push",
+                    "fb_listen", "fb_stop_listen", "ad_load", "ad_show",
+                    "take_picture", "pick_file", "net_headers",
+                    "net_start", "tts_speak", "tts_pitch", "tts_rate",
+                    "tts_stop", "tts_shutdown", "stt_start", "stt_stop",
+                    "stt_shutdown", "bt_enable", "loc_request",
+                    "loc_remove", "progress_create", "progress_show",
+                    "progress_dismiss", "progress_message",
+                    "progress_title", "progress_value", "progress_max",
+                    "progress_cancelable", "progress_outside",
+                    "progress_style", "timer_after", "timer_every",
+                    "dialog_ok_button", "dialog_negative_button",
+                    "dialog_neutral_button"}) {
                 kinds.add(kind);
             }
             blockProp.add("enum", kinds);
@@ -1751,7 +1835,7 @@ public final class AgentTools {
     }
 
 
-    /** create_component: add an Intent component to one screen. */
+    /** create_component: add a component of any stock kind. */
     private static final class CreateComponent implements Tool {
         private static final Pattern NAME_PATTERN =
                 Pattern.compile("^[a-zA-Z][a-zA-Z0-9_]*$");
@@ -1763,17 +1847,25 @@ public final class AgentTools {
 
         @Override
         public String description() {
-            return "Proposes adding an Intent component to one "
-                    + "screen, the way Sketchware's own component "
-                    + "picker adds it. An Intent is what open_screen "
-                    + "uses to open another screen — open_screen "
-                    + "also adds one automatically when the screen "
-                    + "has none; use this when the user asks for the "
-                    + "component itself. Only Intent components can "
-                    + "be added this way yet; other kinds "
-                    + "(SharedPreferences, Dialog, SoundPool, ...) "
-                    + "cannot. The user must approve before anything "
-                    + "is added.";
+            return "Proposes adding a component to one screen, "
+                    + "the way Sketchware's own component picker "
+                    + "adds it. The \"type\" names the kind: intent, "
+                    + "shared_preferences, calendar, vibrator, timer, "
+                    + "firebase_db, dialog, media_player, sound_pool, "
+                    + "object_animator, gyroscope, firebase_auth, "
+                    + "interstitial_ad, firebase_storage, camera, "
+                    + "file_picker, request_network, text_to_speech, "
+                    + "speech_to_text, bluetooth, location, "
+                    + "rewarded_ad, progress_dialog, date_picker, "
+                    + "time_picker, notification, fragment_adapter, "
+                    + "phone_auth, cloud_message, google_login. A "
+                    + "component unlocks its own block family on that "
+                    + "screen (a Timer unlocks timer_after/timer_every, "
+                    + "a Dialog its title/message/button blocks, and "
+                    + "so on). Firebase and ad components also need "
+                    + "the project's Firebase/ad setup before a build "
+                    + "can pass. The user must approve before "
+                    + "anything is added.";
         }
 
         @Override
@@ -1781,9 +1873,14 @@ public final class AgentTools {
             JsonObject properties = new JsonObject();
             properties.add("activity", stringSchema(
                     "The screen, e.g. MainActivity"));
+            properties.add("type", stringSchema(
+                    "The component kind, e.g. timer, dialog, "
+                            + "media_player (optional; intent is "
+                            + "used when omitted)"));
             properties.add("name", stringSchema(
-                    "The component's name, e.g. intent1 (optional; "
-                            + "the next free intent name is used)"));
+                    "The component's name, e.g. timer1 (optional; "
+                            + "the next free name for its kind is "
+                            + "used)"));
             return AgentTools.parameters(properties, "activity");
         }
 
@@ -1797,8 +1894,55 @@ public final class AgentTools {
             return true;
         }
 
-        private record Checked(ProjectFileBean activity, String name) {
+        private record Checked(ProjectFileBean activity, String name,
+                               int type, String label) {
         }
+
+        /** Model type name, ComponentBean type, id prefix, label. */
+        private static final Object[][] TYPES = {
+                {"intent", 1, "intent", "Intent"},
+                {"shared_preferences", 2, "file", "SharedPreferences"},
+                {"calendar", 3, "calendar", "Calendar"},
+                {"vibrator", 4, "vibrator", "Vibrator"},
+                {"timer", 5, "timer", "Timer"},
+                {"firebase_db", 6, "firebase", "Firebase DB"},
+                {"dialog", 7, "dialog", "Dialog"},
+                {"media_player", 8, "mediaplayer", "MediaPlayer"},
+                {"sound_pool", 9, "soundpool", "SoundPool"},
+                {"object_animator", 10, "objectanimator",
+                        "ObjectAnimator"},
+                {"gyroscope", 11, "gyroscope", "Gyroscope"},
+                {"firebase_auth", 12, "firebaseauth", "Firebase Auth"},
+                {"interstitial_ad", 13, "interstitialad",
+                        "Interstitial Ad"},
+                {"firebase_storage", 14, "firebasestorage",
+                        "Firebase Storage"},
+                {"camera", 15, "camera", "Camera"},
+                {"file_picker", 16, "filepicker", "FilePicker"},
+                {"request_network", 17, "requestnetwork",
+                        "RequestNetwork"},
+                {"text_to_speech", 18, "texttospeech", "TextToSpeech"},
+                {"speech_to_text", 19, "speechtotext", "SpeechToText"},
+                {"bluetooth", 20, "bluetoothconnect",
+                        "BluetoothConnect"},
+                {"location", 21, "locationmanager", "LocationManager"},
+                {"rewarded_ad", 22, "rewardedvideoad",
+                        "Rewarded Video Ad"},
+                {"progress_dialog", 23, "progressdialog",
+                        "ProgressDialog"},
+                {"date_picker", 24, "datepickerdialog",
+                        "DatePickerDialog"},
+                {"time_picker", 25, "timepickerdialog",
+                        "TimePickerDialog"},
+                {"notification", 26, "notification", "Notification"},
+                {"fragment_adapter", 27, "fragmentadapter",
+                        "FragmentAdapter"},
+                {"phone_auth", 28, "firebasephoneauth", "Phone Auth"},
+                {"cloud_message", 30, "firebasecloudmessage",
+                        "Cloud Message"},
+                {"google_login", 31, "firebasegooglelogin",
+                        "Google Login"},
+        };
 
         /** Every name already taken on this screen, any namespace. */
         private java.util.Set<String> takenNames(String scId,
@@ -1861,13 +2005,44 @@ public final class AgentTools {
             String javaName = activity.getJavaName();
             java.util.Set<String> taken =
                     takenNames(scId, javaName, activity);
+            String typeName = stringArg(args, "type");
+            if (typeName.isEmpty()) {
+                typeName = "intent";
+            }
+            Object[] typeRow = null;
+            for (Object[] row : TYPES) {
+                if (row[0].equals(typeName)) {
+                    typeRow = row;
+                    break;
+                }
+            }
+            if (typeRow == null) {
+                throw new ToolException("E_BAD_TYPE",
+                        "Unknown component type \"" + typeName
+                                + "\". Use one of: intent, "
+                                + "shared_preferences, calendar, "
+                                + "vibrator, timer, firebase_db, "
+                                + "dialog, media_player, sound_pool, "
+                                + "object_animator, gyroscope, "
+                                + "firebase_auth, interstitial_ad, "
+                                + "firebase_storage, camera, "
+                                + "file_picker, request_network, "
+                                + "text_to_speech, speech_to_text, "
+                                + "bluetooth, location, rewarded_ad, "
+                                + "progress_dialog, date_picker, "
+                                + "time_picker, notification, "
+                                + "fragment_adapter, phone_auth, "
+                                + "cloud_message, google_login.");
+            }
+            int componentType = (Integer) typeRow[1];
+            String prefix = (String) typeRow[2];
             String name = stringArg(args, "name");
             if (name.isEmpty()) {
                 int n = 1;
-                while (taken.contains("intent" + n)) {
+                while (taken.contains(prefix + n)) {
                     n++;
                 }
-                name = "intent" + n;
+                name = prefix + n;
             }
             if (!NAME_PATTERN.matcher(name).matches()
                     || name.length() > 100) {
@@ -1891,7 +2066,8 @@ public final class AgentTools {
                                 + "screen. Pick another name, or use "
                                 + "the one that is there.");
             }
-            return new Checked(activity, name);
+            return new Checked(activity, name, componentType,
+                    (String) typeRow[3]);
         }
 
         @Override
@@ -1905,12 +2081,14 @@ public final class AgentTools {
             clean.addProperty("activity",
                     checked.activity().fileName);
             clean.addProperty("name", checked.name());
+            clean.addProperty("type", stringArg(args, "type"));
             return new AgentProposal(name(), clean, scId,
                     "Add a component to "
                             + SketchwareProjects.activityName(
                                     checked.activity())
                             + " in " + project.name,
-                    "New Intent component: " + checked.name(),
+                    "New " + checked.label() + " component: "
+                            + checked.name(),
                     "Adds the component to the screen, the same "
                             + "entry Sketchware's component picker "
                             + "adds. Nothing else on the screen "
@@ -1934,10 +2112,7 @@ public final class AgentTools {
             try {
                 SketchwareActions.backupProjectOnce(scId);
                 // The component picker's own add call.
-                store.a(javaName,
-                        com.besome.sketch.beans.ComponentBean
-                                .COMPONENT_TYPE_INTENT,
-                        checked.name());
+                store.a(javaName, checked.type(), checked.name());
                 SketchwareActions.commitProject(scId);
             } catch (Exception e) {
                 throw new ToolException("E_APPLY_FAILED",
@@ -1952,10 +2127,7 @@ public final class AgentTools {
                     for (com.besome.sketch.beans.ComponentBean component
                             : components) {
                         if (checked.name().equals(component.componentId)
-                                && component.type
-                                        == com.besome.sketch.beans
-                                                .ComponentBean
-                                                .COMPONENT_TYPE_INTENT) {
+                                && component.type == checked.type()) {
                             found = true;
                             break;
                         }
@@ -1971,10 +2143,11 @@ public final class AgentTools {
             }
             JsonObject result = new JsonObject();
             result.addProperty("added", checked.name());
-            result.addProperty("kind", "Intent");
+            result.addProperty("kind", checked.label());
             result.addProperty("verified",
                     SketchwareProjects.activityName(checked.activity())
-                            + " now has an Intent component named "
+                            + " now has a " + checked.label()
+                            + " component named "
                             + checked.name()
                             + " (read back and checked).");
             return result;
