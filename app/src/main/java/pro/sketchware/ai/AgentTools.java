@@ -723,7 +723,12 @@ public final class AgentTools {
                     + "widget tree (nesting = containment, in on-screen "
                     + "order): id, type, visible text, background colour, "
                     + "and sizes, plus the screen's events and how many "
-                    + "blocks each already has.";
+                    + "blocks each already has, and — for an activity — "
+                    + "the NAMES it declares: its components, its "
+                    + "variables (with kind), its lists (with kind) and "
+                    + "its more-blocks. Read this before writing logic: "
+                    + "those names are the only ones that exist, and a "
+                    + "name you invent or leave empty will be refused.";
         }
 
         @Override
@@ -789,6 +794,40 @@ public final class AgentTools {
                 events.add(line);
             }
             result.add("events", events);
+            // What the screen declares — components, variables, lists.
+            // Without this, writing logic is guesswork: a model has to
+            // remember the ids it created turns ago, and when it
+            // forgets it sends an empty name (which is exactly what the
+            // KidsNotes conversation did, six times running).
+            SketchwareProjects.LogicSummary summary =
+                    SketchwareProjects.logicSummary(scId, activity);
+            if (activity.fileType
+                    == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
+                JsonArray components = new JsonArray();
+                for (String id : summary.components) {
+                    components.add(id);
+                }
+                result.add("components", components);
+                JsonArray variables = new JsonArray();
+                for (String name : summary.variables) {
+                    variables.add(name + " ("
+                            + summary.variableTypes.get(name) + ")");
+                }
+                result.add("variables", variables);
+                JsonArray lists = new JsonArray();
+                for (String name : summary.lists) {
+                    lists.add(name + " ("
+                            + summary.listTypes.get(name) + ")");
+                }
+                result.add("lists", lists);
+                if (!summary.moreBlocks.isEmpty()) {
+                    JsonArray moreBlocks = new JsonArray();
+                    for (String name : summary.moreBlocks) {
+                        moreBlocks.add(name);
+                    }
+                    result.add("more_blocks", moreBlocks);
+                }
+            }
             return result;
         }
     }
@@ -2603,9 +2642,41 @@ public final class AgentTools {
                         "The component was written but did not read "
                                 + "back from the screen's logic.");
             }
+            // A second component of the same kind is rarely what was
+            // meant: a model that cannot see the one it already made
+            // keeps adding more — a screen in one conversation ended up
+            // with four shared-preference components and used none.
+            String already = "";
+            try {
+                ArrayList<com.besome.sketch.beans.ComponentBean>
+                        components = store.e(javaName);
+                if (components != null) {
+                    for (com.besome.sketch.beans.ComponentBean component
+                            : components) {
+                        if (component.type == checked.type()
+                                && !checked.name().equals(
+                                        component.componentId)) {
+                            already = String.valueOf(
+                                    component.componentId);
+                            break;
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+                // A hint that cannot be checked is simply not given.
+            }
             JsonObject result = new JsonObject();
             result.addProperty("added", checked.name());
             result.addProperty("kind", checked.label());
+            if (!already.isEmpty()) {
+                result.addProperty("note",
+                        "This screen already had a "
+                                + checked.label() + " component: "
+                                + already + ". Use that one — two of the "
+                                + "same kind means two separate stores, "
+                                + "and data saved in one is not in the "
+                                + "other.");
+            }
             result.addProperty("verified",
                     SketchwareProjects.activityName(checked.activity())
                             + " now has a " + checked.label()

@@ -1516,10 +1516,25 @@ public final class AgentLogic {
             String componentId = stringOf(op, "component");
             Integer actual = components.get(componentId);
             if (actual == null) {
+                // An empty name is the common case: the model knows it
+                // wants a component but not which one. Naming the ones
+                // that exist turns a dead end into a correction.
                 throw new AgentTools.ToolException("E_BAD_BLOCK",
-                        "There is no component called " + componentId
-                                + " on this screen. Add it with "
-                                + "create_component first.");
+                        componentId.isEmpty()
+                                ? "This block needs a component and none "
+                                        + "was named. "
+                                        + describe("This screen has: ",
+                                                "It has no components yet "
+                                                        + "— add one with "
+                                                        + "create_component.",
+                                                components.keySet())
+                                : "There is no component called "
+                                        + componentId + " on this screen. "
+                                        + describe("This screen has: ",
+                                                "It has no components yet "
+                                                        + "— add one with "
+                                                        + "create_component.",
+                                                components.keySet()));
             }
             if (actual != type) {
                 throw new AgentTools.ToolException("E_BAD_BLOCK",
@@ -6657,12 +6672,50 @@ public final class AgentLogic {
             throws AgentTools.ToolException {
         String list = stringOf(op, "list");
         if (!lists.containsKey(list)) {
+            // Same correction as requireComponent: an unnamed list is a
+            // model that forgot what it declared, so the answer names
+            // the lists this screen actually has.
             throw new AgentTools.ToolException("E_BAD_BLOCK",
-                    "There is no list called " + list + " on this "
-                            + "screen. Declare one with create_variable "
-                            + "(list_string, list_number or list_map).");
+                    (list.isEmpty()
+                            ? "This block needs a list and none was named. "
+                            : "There is no list called " + list
+                                    + " on this screen. ")
+                            + describe("This screen has: ",
+                                    "It declares no lists yet — declare "
+                                            + "one with create_variable "
+                                            + "(list_string, list_number "
+                                            + "or list_map).",
+                                    lists.keySet()));
         }
         return list;
+    }
+
+    /**
+     * Turns a set of names into the sentence that ends a refusal: what
+     * is there, or plainly that there is nothing. A check that refuses
+     * without saying what would have worked just gets retried.
+     */
+    private static String describe(String prefix, String empty,
+                                   java.util.Collection<String> names) {
+        if (names == null || names.isEmpty()) {
+            return empty;
+        }
+        StringBuilder text = new StringBuilder(prefix);
+        int shown = 0;
+        for (String name : names) {
+            if (name == null || name.isEmpty()) {
+                continue;
+            }
+            if (shown > 0) {
+                text.append(", ");
+            }
+            text.append(name);
+            if (++shown == 12) {
+                text.append(" …");
+                break;
+            }
+        }
+        return text.append(".").toString();
     }
 
     /** A numeric literal argument field, validated before storing. */
@@ -6934,6 +6987,59 @@ public final class AgentLogic {
         stmt.expectCode = widget.id + action.expect;
     }
 
+    /**
+     * The value of a text slot in a component action: a quoted literal,
+     * or {@code {"var":"draft"}} to store what a variable holds.
+     *
+     * <p>This is what made "save what the user typed" impossible: the
+     * slot took a literal only, so {@code save_pref} could store a
+     * fixed word but never an entered note — which is why a model asked
+     * to persist data ended up showing a toast and finishing the
+     * screen instead. The variable is written as the same
+     * {@code "@var:"} placeholder the getVar pass already resolves, so
+     * no new block shape is introduced.
+     *
+     * <p>Only text variables are accepted. A number in a text slot
+     * would generate {@code putString("key", (int) n)}, which does not
+     * compile, and the model can convert with
+     * {@code {"fn":"to_text","a":{"var":"n"}}}.
+     */
+    private static String textSlotValue(JsonObject op, String field,
+                                        Map<String, Integer> variables,
+                                        String opCode)
+            throws AgentTools.ToolException {
+        if (!op.has(field) || !op.get(field).isJsonObject()) {
+            return stringOf(op, field);
+        }
+        JsonObject value = op.get(field).getAsJsonObject();
+        String name = stringOf(value, "var");
+        if (name.isEmpty()) {
+            throw new AgentTools.ToolException("E_BAD_BLOCK",
+                    "\"" + field + "\" must be a quoted text, or "
+                            + "{\"var\":\"name\"} to use the value a "
+                            + "variable holds.");
+        }
+        Integer kind = variables.get(name);
+        if (kind == null) {
+            throw new AgentTools.ToolException("E_BAD_BLOCK",
+                    "There is no variable called \"" + name
+                            + "\" on this screen, so " + opCode
+                            + " has nothing to store. "
+                            + "Declare it with create_variable, or give "
+                            + "\"" + field + "\" a quoted text instead.");
+        }
+        if (kind != 2) {
+            throw new AgentTools.ToolException("E_BAD_BLOCK",
+                    "\"" + name + "\" is a "
+                            + SketchwareProjects.variableTypeName(kind)
+                            + " variable, and this slot stores text. "
+                            + "Turn it into text with "
+                            + "{\"fn\":\"to_text\",\"a\":{\"var\":\""
+                            + name + "\"}}.");
+        }
+        return "@var:" + name;
+    }
+
     /** Fails when a registry entry restricts a mode slot's values. */
     private static void checkMode(CA action, String mode)
             throws AgentTools.ToolException {
@@ -6971,10 +7077,17 @@ public final class AgentLogic {
             componentId = stringOf(op, "component");
             Integer type = components.get(componentId);
             if (type == null) {
+                String correction = describe("This screen has: ",
+                        "It has no components yet — add one with "
+                                + "create_component.",
+                        components.keySet());
                 throw new AgentTools.ToolException("E_BAD_BLOCK",
-                        "There is no component called " + componentId
-                                + " on this screen. Add it with "
-                                + "create_component first.");
+                        (componentId.isEmpty()
+                                ? "This block acts on a component and "
+                                        + "none was named. "
+                                : "There is no component called "
+                                        + componentId + " on this screen. ")
+                                + correction);
             }
             if (type != action.componentType) {
                 throw new AgentTools.ToolException("E_BAD_BLOCK",
@@ -7016,9 +7129,11 @@ public final class AgentLogic {
                     String[] fields = {"text", "text2", "text3"};
                     String field = fields[Math.min(textField++,
                             fields.length - 1)];
-                    String text = stringOf(op, field);
+                    String text = textSlotValue(op, field, variables,
+                            action.opCode);
                     stmt.params.add(text);
-                    shown = text;
+                    shown = text.startsWith("@var:")
+                            ? text.substring("@var:".length()) : text;
                 }
                 case 'b' -> {
                     boolean flag = boolOf(op, "flag", true);

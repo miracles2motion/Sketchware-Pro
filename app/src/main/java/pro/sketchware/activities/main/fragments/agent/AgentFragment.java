@@ -1967,10 +1967,39 @@ public class AgentFragment extends qA {
                     getString(R.string.agent_provider_empty_title)));
             messages.add(new ChatMessage(ChatMessage.Role.SYSTEM,
                     getString(R.string.agent_provider_empty_body)));
+        } else {
+            restoreWorkingConversation();
         }
         adapter.notifyDataSetChanged();
         updateProviderUi();
         updateActionButton();
+    }
+
+    /**
+     * Brings back the conversation of the project that was being worked
+     * on when the app was last closed.
+     *
+     * <p>The working project outlives the process, so its chat has to
+     * come back with it — approval cards and build cards included.
+     * Until it did, a restart showed an empty chat until the project
+     * was picked again by hand, and anything exported from that state
+     * carried no cards at all, which made a conversation look like it
+     * never proposed or changed anything.
+     */
+    private void restoreWorkingConversation() {
+        String working = providerConfig.workingProjectId();
+        if (working == null || working.isEmpty()) {
+            return;
+        }
+        chatProjectId = working;
+        List<ChatMessage> saved = AgentChatLog.load(working);
+        if (saved.isEmpty()) {
+            return;
+        }
+        messages.addAll(saved);
+        if (binding != null) {
+            binding.chatList.scrollToPosition(messages.size() - 1);
+        }
     }
 
     private void updateProviderUi() {

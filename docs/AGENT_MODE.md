@@ -1281,3 +1281,53 @@ does, and — because the app stores drawers in the same file list as
 custom views — the drawer layout is now visible to the agent's screen
 reads, so `edit_screen` can fill it with menu items. It remains a
 layout without logic, like a custom view.
+
+### Wave 28: grounding — the agent could see a screen's widgets, not its names
+
+A conversation (KidsNotes, sc_id 612) ran the same failure six times:
+`"There is no component called  on this screen"` — an EMPTY name. The
+model wanted a shared-preferences component and could not name one, so
+it invented a blank, was refused, and tried again.
+
+Three causes, all ours:
+
+1. **`get_screen` never listed what a screen declares.** It returned the
+   widget tree and the events, but not the components, variables or
+   lists — so writing logic meant remembering ids from turns earlier.
+   It now returns `components`, `variables` (with kind), `lists` (with
+   kind) and `more_blocks`.
+
+2. **A wrong name was a dead end.** "There is no component called X"
+   did not say what *was* there. Every refusal of a component or list
+   now names the ones the screen actually has (`describe(...)`), so one
+   failed call teaches instead of looping.
+
+3. **`save_pref` could not save a value — only a literal.** Text slots
+   in component actions ran through `stringOf`, so
+   `{"text2": {"var": "draft"}}` silently became an empty string. That
+   is why "save what the user typed" ended in a toast and a finish: the
+   block to do it did not exist. Text slots now accept
+   `{"var": "name"}`, written as the `@var:` placeholder the existing
+   getVar pass already resolves (no new block shape), refused for
+   non-text variables because `putString("k", (int) n)` would not
+   compile — convert with `{"fn":"to_text",...}`.
+
+Then the recipe itself, in the prompt: one shared-preferences
+component, `save_pref` to store, `pref_get` inside `set_variable` on
+`initializeLogic` to read back, `pref_has` to test, `split_into_list`
+to turn saved text back into a list — and "if it cannot be expressed
+with the blocks you have, say so plainly; never fake it with a toast
+and a finish."
+
+A fourth, smaller fix: adding a second component of a kind the screen
+already has now answers with a note naming the existing one — that
+conversation's screen collected several shared-preference components
+and used none.
+
+**The chat screen lost its history on every restart.** The saved
+conversation was only restored when a project was picked by hand
+(`chooseProject`); a cold start called `showCurrentState()`, which
+cleared the list. Cards were being written and were being exported —
+they just were not on screen, so the history looked empty and an export
+from that state carried no cards. `showCurrentState()` now restores the
+working project's conversation, cards included.
