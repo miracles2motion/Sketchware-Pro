@@ -57,6 +57,7 @@ public final class AgentJournal {
         JsonObject root = new JsonObject();
         root.addProperty("styleBrief", "");
         root.add("tasks", new JsonArray());
+        root.add("plan", new JsonObject());
         if (scId == null || scId.isEmpty()) {
             return root;
         }
@@ -74,6 +75,9 @@ public final class AgentJournal {
                 }
                 if (stored.has("tasks") && stored.get("tasks").isJsonArray()) {
                     root.add("tasks", stored.get("tasks").getAsJsonArray());
+                }
+                if (stored.has("plan") && stored.get("plan").isJsonObject()) {
+                    root.add("plan", stored.get("plan").getAsJsonObject());
                 }
             }
         } catch (Exception ignored) {
@@ -210,6 +214,20 @@ public final class AgentJournal {
         task.addProperty("stopReason",
                 done ? "" : (stopReason == null ? "" : stopReason));
         task.addProperty("endedAt", System.currentTimeMillis());
+        if (!done) {
+            // A stopped turn leaves the plan's current step honestly
+            // paused, so the Plan page and the next brief agree.
+            JsonObject plan = root.getAsJsonObject("plan");
+            if (plan != null && plan.has("steps")) {
+                for (JsonElement element : plan.getAsJsonArray("steps")) {
+                    if (element.isJsonObject() && "current".equals(
+                            text(element.getAsJsonObject(), "state"))) {
+                        element.getAsJsonObject()
+                                .addProperty("state", "stopped");
+                    }
+                }
+            }
+        }
         save(scId, root);
     }
 
@@ -260,6 +278,177 @@ public final class AgentJournal {
         from.addProperty("styleBrief", "");
         from.addProperty("styleBriefAt", 0);
         save(fromScId, from);
+    }
+
+    // ------------------------------------------------------------------
+    // Implementation plan
+
+    /**
+     * Saves the agreed implementation plan: a title and ordered steps,
+     * the first {@code doneSteps} of them finished and step
+     * {@code currentStep} (0-based) the one in hand. Done steps can
+     * never run ahead of the changes the journal has actually
+     * recorded — a plan step is a milestone over real work, and the
+     * app will not let it claim work that never landed.
+     */
+    public static synchronized void setPlan(String scId, String title,
+                                            String stepsText, int doneSteps,
+                                            int currentStep) {
+        if (scId == null || scId.isEmpty()) {
+            return;
+        }
+        JsonArray steps = new JsonArray();
+        if (stepsText != null) {
+            for (String line : stepsText.split("\\n")) {
+                String text = line.trim();
+                if (!text.isEmpty() && steps.size() < 24) {
+                    JsonObject step = new JsonObject();
+                    step.addProperty("text", truncate(text, 140));
+                    step.addProperty("state", "pending");
+                    steps.add(step);
+                }
+            }
+        }
+        int done = Math.max(0, Math.min(doneSteps,
+                Math.min(steps.size(), doneStepCount(scId))));
+        for (int i = 0; i < done; i++) {
+            steps.get(i).getAsJsonObject().addProperty("state", "done");
+        }
+        if (currentStep >= done && currentStep < steps.size()) {
+            steps.get(currentStep).getAsJsonObject()
+                    .addProperty("state", "current");
+        }
+        JsonObject plan = new JsonObject();
+        plan.addProperty("title",
+                truncate(title == null ? "" : title.trim(), 90));
+        plan.add("steps", steps);
+        plan.addProperty("updatedAt", System.currentTimeMillis());
+        JsonObject root = load(scId);
+        root.add("plan", plan);
+        save(scId, root);
+    }
+
+    /** The saved plan object (title, steps, updatedAt); never null. */
+    public static synchronized JsonObject plan(String scId) {
+        JsonObject plan = load(scId).getAsJsonObject("plan");
+        return plan == null ? new JsonObject() : plan;
+    }
+
+    public static synchronized boolean hasPlan(String scId) {
+        JsonObject plan = plan(scId);
+        return plan.has("steps") && plan.getAsJsonArray("steps").size() > 0;
+    }
+
+    /** Total changes the journal has recorded as landed, all tasks. */
+    public static synchronized int doneStepCount(String scId) {
+        int count = 0;
+        for (JsonElement task : load(scId).getAsJsonArray("tasks")) {
+            if (!task.isJsonObject()) {
+                continue;
+            }
+            for (JsonElement step
+                    : task.getAsJsonObject().getAsJsonArray("steps")) {
+                if (step.isJsonObject() && "done".equals(
+                        text(step.getAsJsonObject(), "outcome"))) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    /** The plan in plain lines for the Plan page. */
+    public static synchronized String planText(String scId) {
+        JsonObject plan = plan(scId);
+        if (!plan.has("steps")
+                || plan.getAsJsonArray("steps").size() == 0) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder();
+        for (JsonElement element : plan.getAsJsonArray("steps")) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            JsonObject step = element.getAsJsonObject();
+            String state = text(step, "state");
+            String mark = "done".equals(state) ? "✓ "
+                    : "current".equals(state) ? "● "
+                    : "stopped".equals(state) ? "❚❚ " : "○ ";
+            if (out.length() > 0) {
+                out.append("\n");
+            }
+            out.append(mark).append(text(step, "text"));
+        }
+        return out.toString();
+    }
+
+    /**
+     * A plan agreed in the same turn that creates its project was
+     * written under the previously selected one only because that is
+     * where the conversation started: it moves, like the style brief.
+     */
+    public static synchronized void movePlanIfAgreedSince(
+            String fromScId, String toScId, long sinceMillis) {
+        if (fromScId == null || fromScId.isEmpty()
+                || toScId == null || toScId.isEmpty()
+                || fromScId.equals(toScId)
+                || !hasPlan(fromScId) || hasPlan(toScId)) {
+            return;
+        }
+        JsonObject from = load(fromScId);
+        JsonObject plan = from.getAsJsonObject("plan");
+        if (number(plan, "updatedAt") < sinceMillis) {
+            return;
+        }
+        JsonObject to = load(toScId);
+        to.add("plan", plan);
+        save(toScId, to);
+        from.add("plan", new JsonObject());
+        save(fromScId, from);
+    }
+
+    // ------------------------------------------------------------------
+    // Drafts from a conversation that has no project yet
+
+    private static String draftStyleBrief = "";
+    private static String draftPlanTitle = "";
+    private static String draftPlanSteps = "";
+
+    /** Remembers a style agreed before any project was chosen. */
+    public static synchronized void setDraftStyleBrief(String brief) {
+        draftStyleBrief = brief == null ? "" : brief.trim();
+    }
+
+    /** Remembers a plan agreed before any project was chosen. */
+    public static synchronized void setDraftPlan(String title,
+                                                 String stepsText) {
+        draftPlanTitle = title == null ? "" : title.trim();
+        draftPlanSteps = stepsText == null ? "" : stepsText;
+    }
+
+    public static synchronized boolean hasDrafts() {
+        return !draftStyleBrief.isEmpty() || !draftPlanSteps.isEmpty();
+    }
+
+    /**
+     * When a conversation creates its project, the style and plan it
+     * agreed on the way are deposited into the new project (only
+     * where the project has none of its own yet) and the drafts are
+     * spent.
+     */
+    public static synchronized void depositDrafts(String scId) {
+        if (scId == null || scId.isEmpty()) {
+            return;
+        }
+        if (!draftStyleBrief.isEmpty() && styleBrief(scId).isEmpty()) {
+            setStyleBrief(scId, draftStyleBrief);
+        }
+        if (!draftPlanSteps.isEmpty() && !hasPlan(scId)) {
+            setPlan(scId, draftPlanTitle, draftPlanSteps, 0, 0);
+        }
+        draftStyleBrief = "";
+        draftPlanTitle = "";
+        draftPlanSteps = "";
     }
 
     /** Empties the project's record (the user's own choice, only). */
@@ -327,6 +516,39 @@ public final class AgentJournal {
         if (!style.isEmpty()) {
             out.append("\n\nStyle brief for this project (agreed with "
                     + "the user; keep to it): ").append(style);
+        }
+        JsonObject plan = root.getAsJsonObject("plan");
+        boolean havePlan = plan != null && plan.has("steps")
+                && plan.getAsJsonArray("steps").size() > 0;
+        if (havePlan) {
+            int done = 0;
+            String current = "";
+            for (JsonElement element : plan.getAsJsonArray("steps")) {
+                if (!element.isJsonObject()) {
+                    continue;
+                }
+                JsonObject step = element.getAsJsonObject();
+                if ("done".equals(text(step, "state"))) {
+                    done++;
+                } else if (current.isEmpty()) {
+                    current = text(step, "text");
+                }
+            }
+            out.append("\n\nImplementation plan \"")
+                    .append(text(plan, "title")).append("\": ")
+                    .append(done).append(" of ")
+                    .append(plan.getAsJsonArray("steps").size())
+                    .append(" steps done.");
+            if (!current.isEmpty()) {
+                out.append(" Next step: ").append(current).append(".");
+            }
+            out.append(" Keep the plan updated with set_plan as "
+                    + "milestones land.");
+        } else if (!style.isEmpty()) {
+            out.append("\n\nThis project has a style but no saved "
+                    + "implementation plan yet. For substantial work, "
+                    + "agree the plan and save it with set_plan before "
+                    + "building further.");
         }
         JsonObject open = null;
         JsonObject lastStopped = null;

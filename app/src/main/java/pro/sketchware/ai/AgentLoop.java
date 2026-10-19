@@ -120,6 +120,24 @@ public class AgentLoop {
             + "('for kids', 'dark and minimal', 'use our brand colour'), "
             + "save it with set_style_brief so it survives the chat, and "
             + "keep to it afterwards."
+            + "\n\nORDER OF WORK for a new app or substantial build: style "
+            + "first, plan second, building third. If the project has no "
+            + "style brief, ask what look and feel the user wants; if "
+            + "they don't know, propose one yourself in plain words, "
+            + "save it when they accept (or tell you to decide), then "
+            + "agree the implementation plan and save it with set_plan "
+            + "BEFORE building. Save both even when no project is "
+            + "chosen yet — they are held as drafts and land in the "
+            + "project this work creates. If a style and plan already "
+            + "exist, use them and don't re-ask. As each plan milestone "
+            + "genuinely lands and you have verified it against the "
+            + "real project, call set_plan again with the updated "
+            + "progress. If the user changes direction mid-plan, update "
+            + "the plan rather than quietly abandoning it. Small "
+            + "one-off requests need neither a style nor a plan. A "
+            + "saved style guides new work; it never silently restyles "
+            + "what is already built — redesigning existing screens is "
+            + "separate work to agree and plan."
             + "\n\nLAYOUT SENSE: match_parent suits text inputs, lists, "
             + "scroll areas and the main content column; wrap_content suits "
             + "labels, icons, chips and ordinary buttons — a primary action "
@@ -129,7 +147,28 @@ public class AgentLoop {
             + "headings clearly bigger), give touch targets room, and "
             + "never stretch a small widget across a screen just to fill "
             + "it. For kids' apps: big readable text (18sp+), large touch "
-            + "targets, bright friendly colours, simple rounded layouts.";
+            + "targets, bright friendly colours, simple rounded layouts."
+            + "\n\nWEIGHT: inside a LinearLayout, decide for every child: "
+            + "hug its content (wrap_content), fill the parent "
+            + "(match_parent), or share the leftover space (weight). A "
+            + "weighted child uses 0dp on the layout's axis (width in a "
+            + "horizontal layout, height in a vertical one). Patterns: "
+            + "text column between an icon and an arrow gets weight 1; "
+            + "the main content between a header and a bottom action "
+            + "gets weight 1; equal action buttons share equal weights; "
+            + "an input beside a send button takes weight 1 while the "
+            + "button wraps. match_parent on one child of a row leaves "
+            + "nothing for its siblings — that is what weight is for. "
+            + "Weight takes space; gravity only aligns inside space "
+            + "already given. Before adding widgets, check each planned "
+            + "child against these choices, its padding (space inside) "
+            + "and margins (space outside, consistent across the "
+            + "screen), and the saved style's sizes. A tappable row or "
+            + "menu entry with an icon, title and subtitle is often "
+            + "better composed as a whole clickable layout/card than a "
+            + "plain Button; a single-word action stays a Button. "
+            + "Match the sizing pattern of widgets already on the "
+            + "screen before inventing a new one.";
 
     public interface Listener {
         /** A quiet activity line, e.g. "Looked at MainActivity". */
@@ -304,6 +343,12 @@ public class AgentLoop {
                         AgentJournal.moveStyleBriefIfAgreedSince(
                                 previousProject, workingProjectId,
                                 turnStartedAt);
+                        AgentJournal.movePlanIfAgreedSince(
+                                previousProject, workingProjectId,
+                                turnStartedAt);
+                        // Style/plan agreed before any project was
+                        // chosen become this project's own.
+                        AgentJournal.depositDrafts(workingProjectId);
                         result.remove("bind_project");
                         String bound = workingProjectId;
                         dispatch(listener,

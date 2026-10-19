@@ -127,6 +127,7 @@ public final class AgentTools {
         register(new GetScreen());
         register(new AskColor());
         register(new SetStyleBrief());
+        register(new SetPlan());
         register(new GetTaskLog());
         register(new CreateProject());
         register(new CreateActivity());
@@ -2869,10 +2870,16 @@ public final class AgentTools {
                     + "app's memory, so it survives the chat and any change "
                     + "of key or model. Call it as soon as a direction is "
                     + "agreed — no approval card, it changes nothing in the "
-                    + "project itself. Write it as plain design guidance: "
-                    + "audience, mood, colours, text size, shapes, spacing. "
-                    + "A new brief replaces the old one, so include "
-                    + "anything that should carry over.";
+                    + "project itself. Write it in headed lines so it can "
+                    + "be followed exactly: Audience; Mood; Colours (name "
+                    + "the actual colours, e.g. 'primary cheerful orange "
+                    + "#FF8A3D'); Text sizes (title/body/button sp); "
+                    + "Buttons and cards (height, corner roundness); "
+                    + "Spacing (screen padding, gaps); Do; Avoid. A new "
+                    + "brief replaces the old one, so include anything "
+                    + "that should carry over. If no project is chosen "
+                    + "yet, the brief is held as a draft and lands in the "
+                    + "project this work creates.";
         }
 
         @Override
@@ -2894,18 +2901,116 @@ public final class AgentTools {
         @Override
         public JsonObject run(Session session, JsonObject args)
                 throws ToolException {
-            String scId = requiredProject(session.workingProjectId);
             String brief = stringArg(args, "brief");
             if (brief.isEmpty()) {
                 throw new ToolException("E_BAD_ARGS",
                         "Pass the agreed style direction in \"brief\".");
             }
-            AgentJournal.setStyleBrief(scId, brief);
             JsonObject result = new JsonObject();
+            if (session.workingProjectId == null
+                    || session.workingProjectId.isEmpty()) {
+                // Agreed before any project exists: held as a draft
+                // and deposited into the project this work creates.
+                AgentJournal.setDraftStyleBrief(brief);
+                result.addProperty("saved", "draft");
+                result.addProperty("message",
+                        "Style remembered as a draft. When the project "
+                                + "is created it becomes that project's "
+                                + "style automatically.");
+                return result;
+            }
+            String scId = requiredProject(session.workingProjectId);
+            AgentJournal.setStyleBrief(scId, brief);
             result.addProperty("saved", true);
             result.addProperty("message",
                     "Style brief remembered for this project. Keep to it "
                             + "in everything you make here.");
+            return result;
+        }
+    }
+
+    /** set_plan: remembers the agreed implementation plan. */
+    private static final class SetPlan implements Tool {
+        @Override
+        public String name() {
+            return "set_plan";
+        }
+
+        @Override
+        public String description() {
+            return "Saves the implementation plan the user has agreed "
+                    + "for this project — the start-to-finish build "
+                    + "order — to the app's memory, where the Plan "
+                    + "button shows it with its progress. Call it right "
+                    + "after the plan is agreed, before building, and "
+                    + "again whenever the plan changes or a milestone "
+                    + "lands: pass the full step list each time, with "
+                    + "\"done_steps\" set to how many leading steps are "
+                    + "genuinely finished (check the real project "
+                    + "first — the app will not let done steps run "
+                    + "ahead of the changes it has recorded) and "
+                    + "\"current_step\" as the 0-based step in hand. "
+                    + "Steps are milestones ('Build the Quiz screen "
+                    + "with its timer and saved best score'), not "
+                    + "single tool calls, and should name the behaviour "
+                    + "too: where buttons lead, what is saved, what "
+                    + "happens at the end. For a small one-off request, "
+                    + "no plan is needed. No approval card — it changes "
+                    + "nothing in the project itself. With no project "
+                    + "chosen yet, the plan is held as a draft and "
+                    + "lands in the project this work creates.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("title", stringSchema(
+                    "The plan's name, e.g. \"Little Learners app\""));
+            properties.add("steps", stringSchema(
+                    "The steps, one per line, in build order"));
+            properties.add("done_steps", stringSchema(
+                    "How many leading steps are finished (a number, "
+                            + "e.g. \"2\"). Optional; default 0"));
+            properties.add("current_step", stringSchema(
+                    "The 0-based step now in hand (a number, e.g. "
+                            + "\"2\"). Optional; default 0"));
+            return AgentTools.parameters(properties, "title", "steps");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Saving the implementation plan";
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String title = stringArg(args, "title");
+            String steps = stringArg(args, "steps");
+            if (steps.isEmpty()) {
+                throw new ToolException("E_BAD_ARGS",
+                        "Pass the agreed steps in \"steps\", one per line.");
+            }
+            int done = Math.max(0, intArg(args, "done_steps"));
+            int current = Math.max(0, intArg(args, "current_step"));
+            JsonObject result = new JsonObject();
+            if (session.workingProjectId == null
+                    || session.workingProjectId.isEmpty()) {
+                AgentJournal.setDraftPlan(title, steps);
+                result.addProperty("saved", "draft");
+                result.addProperty("message",
+                        "Plan remembered as a draft. When the project "
+                                + "is created it becomes that project's "
+                                + "plan automatically.");
+                return result;
+            }
+            String scId = requiredProject(session.workingProjectId);
+            AgentJournal.setPlan(scId, title, steps, done, current);
+            result.addProperty("saved", true);
+            result.addProperty("message",
+                    "Plan remembered for this project and shown under "
+                            + "its Plan button. Work to it, and keep it "
+                            + "updated as milestones land.");
             return result;
         }
     }
