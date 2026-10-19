@@ -665,7 +665,7 @@ public final class AgentTools {
                     + "default_font), set_list_item_view {id,custom_view} "
                     + "(a custom view name from list_activities, or \"none\" "
                     + "to clear; for ListView, GridView, RecyclerView, "
-                    + "ViewPager), "
+                    + "ViewPager, Spinner), "
                     + "set_progress {id,progress?,max?} (ProgressBar/SeekBar), "
                     + "set_indeterminate {id,indeterminate}, set_alpha "
                     + "{id,alpha} (0 to 1), set_clickable {id,clickable}, "
@@ -1420,7 +1420,20 @@ public final class AgentTools {
                     + "date_picker component whose onDateSet handler "
                     + "takes the picked date), timepicker_show "
                     + "{component} (its onTimeSet handler takes the "
-                    + "picked time). Typed map stores: "
+                    + "picked time). Custom list rows: give a "
+                    + "ListView, GridView, RecyclerView, ViewPager "
+                    + "or Spinner an item layout (create_custom_view, "
+                    + "then edit_screen op set_list_item_view), fill "
+                    + "it with list_custom_data / grid_custom_data / "
+                    + "recycler_custom_data / pager_custom_data / "
+                    + "spinner_custom_data {target, list} (a list of "
+                    + "maps), and dress each row in the widget's "
+                    + "onBindCustomView event: there the targets are "
+                    + "the item layout's own widgets, "
+                    + "{\"arg\":\"position\"} is the row number, and "
+                    + "{\"list_map_value\": list, \"index\": "
+                    + "{\"arg\":\"position\"}, \"key\": ...} reads "
+                    + "that row's values. Typed map stores: "
                     + "map_put_number {variable, "
                     + "key, value}, map_put_flag {variable, key, "
                     + "flag}, map_put_list {variable, key, list}, "
@@ -1626,7 +1639,9 @@ public final class AgentTools {
                     "set_background_color_filter", "return_fragment",
                     "return_title", "return_text", "asynctask_execute",
                     "asynctask_publish", "datepicker_show",
-                    "timepicker_show"}) {
+                    "timepicker_show", "list_custom_data",
+                    "grid_custom_data", "recycler_custom_data",
+                    "pager_custom_data", "spinner_custom_data"}) {
                 kinds.add(kind);
             }
             blockProp.add("enum", kinds);

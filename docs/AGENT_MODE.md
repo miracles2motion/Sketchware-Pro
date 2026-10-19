@@ -983,3 +983,14 @@ Device test findings (SportyNivida / Sporty Bet):
   stored block shapes match what the editor itself stamps.
 - Coverage: 533/584 stock blocks. Remaining: custom-view list
   binding, the MenuItem/SubMenu pair, and the by-design exclusions.
+
+## Wave 13 — custom list rows (data binding)
+
+- A ListView, GridView, RecyclerView, ViewPager or Spinner can now
+  be filled from a list of maps through a custom item layout:
+  create the layout as a custom view, attach it with edit_screen's
+  set_list_item_view, bind data with the *_custom_data blocks, and
+  dress each row in the widget's onBindCustomView handler — where
+  the row's own widgets are the targets, {"arg": "position"} is the
+  row number, and list_map_value reads that row's values.
+- Coverage: 538/584 stock blocks.

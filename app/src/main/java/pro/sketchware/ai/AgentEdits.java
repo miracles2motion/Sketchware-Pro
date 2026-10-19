@@ -484,11 +484,13 @@ public final class AgentEdits {
                             && bean.type
                                     != ViewBeans.VIEW_TYPE_WIDGET_RECYCLERVIEW
                             && bean.type
-                                    != ViewBeans.VIEW_TYPE_LAYOUT_VIEWPAGER) {
+                                    != ViewBeans.VIEW_TYPE_LAYOUT_VIEWPAGER
+                            && bean.type
+                                    != ViewBean.VIEW_TYPE_WIDGET_SPINNER) {
                         throw new AgentTools.ToolException("E_WRONG_WIDGET",
-                                "Only a ListView, GridView, RecyclerView or "
-                                        + "ViewPager uses an item layout: "
-                                        + bean.id + " is a "
+                                "Only a ListView, GridView, RecyclerView, "
+                                        + "ViewPager or Spinner uses an item "
+                                        + "layout: " + bean.id + " is a "
                                         + typeName(bean.type) + ".");
                     }
                     String customView = stringOf(op, "custom_view");

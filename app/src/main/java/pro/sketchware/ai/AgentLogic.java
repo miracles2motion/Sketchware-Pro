@@ -1044,6 +1044,7 @@ public final class AgentLogic {
             {"onLocationChanged", "lat:d,lng:d,acc:d"},
             {"onMarkerClicked", "id:s"},
             {"onPictureTaken", "filePath:s"},
+            {"onBindCustomView", "position:d"},
             {"onFragmentAdded", "position:d"},
             {"onTabAdded", "position:d"},
             {"doInBackground", "param:s"},
@@ -1217,6 +1218,19 @@ public final class AgentLogic {
                         ? " (“" + widgetText + "”)" : "";
                 plan.header = "When " + widget.id + label + " "
                         + plan.eventName + ":";
+                if ("onBindCustomView".equals(plan.eventName)
+                        && (widget.customView == null
+                                || widget.customView.isEmpty()
+                                || "none".equals(widget.customView))) {
+                    throw new AgentTools.ToolException("E_BAD_EVENT",
+                            widget.id + " has no item layout yet, so "
+                                    + "onBindCustomView has no row to "
+                                    + "fill. Give it one first with "
+                                    + "edit_screen (op "
+                                    + "set_list_item_view) — creating "
+                                    + "the layout with create_custom_view "
+                                    + "if the project has none.");
+                }
             }
         }
         plan.eventArgs.putAll(eventArgsOf(plan.eventName));
@@ -1227,7 +1241,37 @@ public final class AgentLogic {
         plan.existingCount = existing.size();
         int nextId = nextFreeId(existing);
 
-        Builder builder = new Builder(context, byId, variables, nextId);
+        // Inside onBindCustomView, blocks address the item layout's
+        // widgets (the editor swaps its widget menus to that layout);
+        // the screen's own ids keep priority on a clash.
+        Map<String, ViewBean> builderWidgets = byId;
+        if ("onBindCustomView".equals(plan.eventName)
+                && !plan.activityEvent && !plan.componentEvent) {
+            ViewBean host = byId.get(plan.targetId);
+            if (host != null && host.customView != null
+                    && !host.customView.isEmpty()
+                    && !"none".equals(host.customView)) {
+                builderWidgets = new LinkedHashMap<>(byId);
+                try {
+                    ArrayList<ViewBean> itemViews = store.d(
+                            ProjectFileBean.getXmlName(host.customView));
+                    if (itemViews != null) {
+                        for (ViewBean item : itemViews) {
+                            if (item != null && item.id != null
+                                    && !builderWidgets
+                                            .containsKey(item.id)) {
+                                builderWidgets.put(item.id, item);
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {
+                    // The screen's own widgets still resolve.
+                }
+            }
+        }
+
+        Builder builder = new Builder(context, builderWidgets,
+                variables, nextId);
         builder.lists = listsOf(store, javaName);
         builder.components = components;
         builder.scId = scId;
@@ -5205,6 +5249,74 @@ public final class AgentLogic {
                 stmt.sentence = "Show list “" + list + "” in "
                         + widget.id;
                 stmt.expectCode = widget.id + ".setAdapter(";
+            }
+            case "list_custom_data", "grid_custom_data",
+                    "recycler_custom_data", "pager_custom_data",
+                    "spinner_custom_data" -> {
+                // The *SetCustomViewData family: one Fx case fills a
+                // widget from a list of maps through its custom item
+                // layout ("<widget>.setAdapter(new <Widget>Adapter(
+                // <list>));"); each row is then dressed by the
+                // widget's onBindCustomView handler.
+                ViewBean widget = requireWidget(op, byId);
+                String widgetType;
+                String dataOpCode;
+                switch (kind) {
+                    case "list_custom_data" -> {
+                        widgetType = "ListView";
+                        dataOpCode = "listSetCustomViewData";
+                    }
+                    case "grid_custom_data" -> {
+                        widgetType = "GridView";
+                        dataOpCode = "gridSetCustomViewData";
+                    }
+                    case "recycler_custom_data" -> {
+                        widgetType = "RecyclerView";
+                        dataOpCode = "recyclerSetCustomViewData";
+                    }
+                    case "pager_custom_data" -> {
+                        widgetType = "ViewPager";
+                        dataOpCode = "pagerSetCustomViewData";
+                    }
+                    default -> {
+                        widgetType = "Spinner";
+                        dataOpCode = "spnSetCustomViewData";
+                    }
+                }
+                if (!widgetType.equals(
+                        AgentEdits.typeName(widget.type))) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            widget.id + " is a "
+                                    + AgentEdits.typeName(widget.type)
+                                    + ", not a " + widgetType + ".");
+                }
+                if (widget.customView == null
+                        || widget.customView.isEmpty()
+                        || "none".equals(widget.customView)) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            widget.id + " has no item layout yet. Give "
+                                    + "it one with edit_screen (op "
+                                    + "set_list_item_view) — creating "
+                                    + "the layout with create_custom_view "
+                                    + "first if needed — then fill each "
+                                    + "row in its onBindCustomView event.");
+                }
+                String list = stringOf(op, "list");
+                Integer listKind = lists.get(list);
+                if (listKind == null || listKind != 3) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            kind + " needs a list of maps on this "
+                                    + "screen; “" + list + "” is not one. "
+                                    + "Declare it with create_variable "
+                                    + "(type list_map).");
+                }
+                stmt.opCode = dataOpCode;
+                stmt.type = " ";
+                stmt.params.add(widget.id);
+                stmt.params.add(list);
+                stmt.sentence = "Show each row of “" + list + "” in "
+                        + widget.id + " using its item layout";
+                stmt.expectCode = widget.id + ".setAdapter(new";
             }
             case "put_in_map" -> {
                 String name = stringOf(op, "variable");

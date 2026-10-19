@@ -3982,8 +3982,8 @@
   "type": " "
  },
  "gridSetCustomViewData": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "grid_custom_data",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "",
@@ -5064,8 +5064,8 @@
   "type": " "
  },
  "listSetCustomViewData": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "list_custom_data",
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app generator case (dynamic)",
@@ -7304,8 +7304,8 @@
   "type": " "
  },
  "pagerSetCustomViewData": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "pager_custom_data",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "",
@@ -7850,8 +7850,8 @@
   "type": " "
  },
  "recyclerSetCustomViewData": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "recycler_custom_data",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "",
@@ -10649,8 +10649,8 @@
   "type": " "
  },
  "spnSetCustomViewData": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "spinner_custom_data",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "",

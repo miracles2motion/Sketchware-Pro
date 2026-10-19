@@ -964,3 +964,29 @@ Only after this stock set is exhausted do agent-defined custom blocks
   raw objects or lists (onUserEarnedReward's reward, onFilesPicked's
   path list, onDataChanged's snapshot) register fine; their values
   are simply not readable as {"arg"} yet.
+
+## Wave 13 implementation (custom-view data binding)
+
+- The five *SetCustomViewData blocks (list/grid/recycler/pager/spn)
+  share one Fx case: "<widget>.setAdapter(new <Widget>Adapter(<list>));"
+  with params [widget, list-of-maps]. Taught as list_custom_data,
+  grid_custom_data, recycler_custom_data, pager_custom_data,
+  spinner_custom_data {target, list}; the list must be kind 3 and the
+  widget must already carry an item layout (honest refusal otherwise).
+- The layout itself was already settable via edit_screen's
+  set_list_item_view (bean.customView = the custom view's file name);
+  its widget gate gains Spinner, matching spnSetCustomViewData.
+- onBindCustomView wiring: already a widget event in oq's tables for
+  all five families (ManageEvent.addExtraEvents), so the existing
+  widget-event path registers it — with two additions. plan() refuses
+  it while the widget has no item layout (the editor hides it then;
+  the adapter, and its generated class, only exist with one), and
+  the Builder's widget namespace gains the item layout's own widgets
+  (screen ids win a clash), mirroring the editor's menu swap in
+  LogicEditorActivity. Row values: {"arg": "position"} (the
+  _position local every adapter declares) indexing the same list of
+  maps via list_map_value/list_map_has.
+- Coverage: 533 -> **538/584**. What remains (46): the MenuItem/
+  SubMenu declared-name trio, two third-party listener containers
+  (YouTube/OTP listener bodies), typed hashmap GETS (excluded,
+  unsafe casts), and the by-design raw-source/junk set.
