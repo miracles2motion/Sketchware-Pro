@@ -297,6 +297,10 @@ public class AgentLoop {
         int sameFailure = 0;
         final int[] segment = {1};
         final boolean[] rollover = {false};
+        // Fingerprints refused as "already done" in this turn: a
+        // second request for the same change is the user asking for
+        // it on purpose, so it is let through.
+        final java.util.Set<String> insisted = new java.util.HashSet<>();
         while (!cancelled) {
             AiChatService.AgentReply reply;
             try {
@@ -384,7 +388,7 @@ public class AgentLoop {
                 JsonObject result;
                 if (AgentTools.isMutation(call.name)) {
                     result = proposeAndExecute(call, session, listener,
-                            journalProject[0]);
+                            journalProject[0], insisted);
                     if (cancelled) {
                         closeTask(journalProject[0], false, "you stopped it",
                                 taskClosed);
@@ -566,9 +570,12 @@ public class AgentLoop {
     private JsonObject proposeAndExecute(AiChatService.ToolCallData call,
                                          AgentTools.Session session,
                                          Listener listener,
-                                         String journalProject) {
-        AgentTools.ProposalResult proposed =
-                AgentTools.propose(call.name, call.arguments, session);
+                                         String journalProject,
+                                         java.util.Set<String> insisted) {
+        String fingerprint = AgentTools.fingerprint(call.name,
+                call.arguments);
+        AgentTools.ProposalResult proposed = AgentTools.propose(call.name,
+                call.arguments, session, insisted.contains(fingerprint));
         if (proposed.error != null) {
             AgentJournal.mutationFailed(journalProject, call.name,
                     AgentTools.labelFor(call.name, call.arguments),
@@ -585,6 +592,10 @@ public class AgentLoop {
             // on to the next step.
             AgentJournal.noteCheck(journalProject, call.name,
                     "Already in the project: " + proposalLabel(call));
+            // Refused once. If the model asks again for the very same
+            // thing, the user must have asked for it too; it is then
+            // allowed through instead of argued with.
+            insisted.add(fingerprint);
             return proposed.error;
         }
         if (proposed.error != null && "E_ALREADY_SET".equals(
@@ -595,6 +606,7 @@ public class AgentLoop {
             // user either.
             AgentJournal.noteCheck(journalProject, call.name,
                     "Already set: " + proposalLabel(call));
+            insisted.add(fingerprint);
             return proposed.error;
         }
         AgentProposal proposal = proposed.proposal;

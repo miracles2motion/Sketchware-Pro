@@ -271,6 +271,19 @@ public final class AgentTools {
      */
     public static ProposalResult propose(String name, String argumentsJson,
                                          Session session) {
+        return propose(name, argumentsJson, session, false);
+    }
+
+    /**
+     * Asks a mutating tool to validate and describe a change, with
+     * {@code allowRepeat} lifting the duplicate refusal for this one
+     * call (used when the model insists after being told the change
+     * is already in the project — the user may genuinely want it
+     * again).
+     */
+    public static ProposalResult propose(String name, String argumentsJson,
+                                         Session session,
+                                         boolean allowRepeat) {
         Tool tool = TOOLS.get(name);
         if (tool == null || !tool.mutates()) {
             return ProposalResult.failed(error("E_UNKNOWN_TOOL",
@@ -292,14 +305,18 @@ public final class AgentTools {
         // The app remembers what landed. A change that is already in
         // the project never reaches an approval card again: it is
         // reported back to the model as done, whatever model sent it.
-        if (session.workingProjectId != null
+        if (!allowRepeat
+                && session.workingProjectId != null
                 && !session.workingProjectId.isEmpty()
                 && AgentJournal.hasDoneFingerprint(session.workingProjectId,
                         fingerprint(name, argumentsJson))) {
             return ProposalResult.failed(error("E_ALREADY_DONE",
                     "This exact change is already in the project — it "
                             + "landed earlier in this work. Do not propose "
-                            + "it again; continue with the next step."));
+                            + "it again; continue with the next step — "
+                            + "unless the user has explicitly asked for "
+                            + "this exact change again, in which case "
+                            + "call it once more and it will run."));
         }
         try {
             return ProposalResult.of(tool.propose(session, args));
