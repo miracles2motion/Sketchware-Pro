@@ -32,6 +32,7 @@ import java.util.concurrent.Executors;
 
 import a.a.a.qA;
 import pro.sketchware.R;
+import pro.sketchware.ai.AgentChatLog;
 import pro.sketchware.ai.AgentJournal;
 import pro.sketchware.ai.AgentKnowledgePack;
 import pro.sketchware.ai.AgentLoop;
@@ -97,6 +98,8 @@ public class AgentFragment extends qA {
     /** The task-strip line currently shown (dismiss remembers it). */
     private String stripShownText = "";
     private String stripDismissedText = "";
+    /** The project whose stored conversation is on screen, if any. */
+    private String chatProjectId = "";
 
     @Nullable
     @Override
@@ -206,6 +209,7 @@ public class AgentFragment extends qA {
                     .removeOnGlobalLayoutListener(layoutListener);
         }
         layoutListener = null;
+        persistChat();
         closePendingCard(getString(
                 R.string.agent_approval_not_applied_failed));
         binding = null;
@@ -399,6 +403,7 @@ public class AgentFragment extends qA {
                             setStreamingComplete();
                             updateActionButton();
                             refreshStrip();
+                            persistChat();
                         });
                     }
 
@@ -412,6 +417,8 @@ public class AgentFragment extends qA {
                             generating = false;
                             handleError(error);
                             updateActionButton();
+                            refreshStrip();
+                            persistChat();
                         });
                     }
 
@@ -437,6 +444,10 @@ public class AgentFragment extends qA {
                         runOnUi(() -> {
                             providerConfig.setWorkingProjectId(scId);
                             providerConfig.save(requireContext());
+                            // The conversation that created this project
+                            // belongs to it from here on.
+                            chatProjectId = scId;
+                            persistChat();
                             updateWorkingOnCard();
                         });
                     }
@@ -474,6 +485,7 @@ public class AgentFragment extends qA {
                         setStreamingComplete();
                         updateActionButton();
                         refreshStrip();
+                        persistChat();
                     }
 
                     @Override
@@ -481,6 +493,8 @@ public class AgentFragment extends qA {
                         generating = false;
                         handleError(error);
                         updateActionButton();
+                        refreshStrip();
+                        persistChat();
                     }
                 });
     }
@@ -498,6 +512,8 @@ public class AgentFragment extends qA {
         generating = false;
         setStreamingComplete();
         updateActionButton();
+        refreshStrip();
+        persistChat();
     }
 
     /** Binds the card to the chosen project, or to the empty state. */
@@ -595,10 +611,31 @@ public class AgentFragment extends qA {
         providerConfig.setWorkingProjectId(scId);
         providerConfig.save(requireContext());
         stripDismissedText = "";
+        // Each project keeps its own conversation: the old one is
+        // stored away and this project's chat comes back on screen.
+        persistChat();
+        chatProjectId = scId;
+        messages.clear();
+        if (!scId.isEmpty()) {
+            messages.addAll(AgentChatLog.load(scId));
+        }
+        if (adapter != null) {
+            adapter.notifyDataSetChanged();
+        }
+        if (!messages.isEmpty() && binding != null) {
+            binding.chatList.scrollToPosition(messages.size() - 1);
+        }
         updateWorkingOnCard();
         appendMessage(ChatMessage.error(getString(scId.isEmpty()
                 ? R.string.agent_working_on_cleared
                 : R.string.agent_working_on_set, name)));
+    }
+
+    /** Stores the on-screen conversation under its project. */
+    private void persistChat() {
+        if (!chatProjectId.isEmpty()) {
+            AgentChatLog.save(chatProjectId, messages);
+        }
     }
 
     /**

@@ -290,11 +290,18 @@ public class AgentLoop {
                         return;
                     }
                     if (result.has("bind_project")) {
+                        String previousProject = journalProject[0];
                         workingProjectId = result.get("bind_project").getAsString();
                         journalProject[0] = workingProjectId;
-                        // The turn's task is titled under the project
-                        // it created, not the empty starting point.
+                        // The task follows the work: whatever the turn
+                        // opened under the old project closes there,
+                        // and the created project gets the task — and
+                        // any style brief agreed along the way — so
+                        // its log is never empty after an interruption.
+                        AgentJournal.endTurn(previousProject, true, "");
                         AgentJournal.beginTurn(workingProjectId, lastUserText);
+                        AgentJournal.carryStyleBriefIfEmpty(
+                                previousProject, workingProjectId);
                         result.remove("bind_project");
                         String bound = workingProjectId;
                         dispatch(listener,
@@ -459,6 +466,14 @@ public class AgentLoop {
         JsonObject result = AgentTools.execute(proposal,
                 new AgentTools.Session(context, proposal.workingProjectId,
                         session.allowModify));
+        if (result.has("bind_project")) {
+            // A project this step created journals under itself, not
+            // under wherever the turn happened to start.
+            String created = result.get("bind_project").getAsString();
+            if (!created.isEmpty()) {
+                journal = created;
+            }
+        }
         if (result.has("error")) {
             AgentJournal.mutationFailed(journal, call.name, proposal.title,
                     result.has("message")

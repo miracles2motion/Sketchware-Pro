@@ -93,12 +93,20 @@ public final class AgentJournal {
     // ------------------------------------------------------------------
     // Recording (called by the agent loop as things actually happen)
 
-    /** Notes what the user just asked, to title the next task. */
+    /**
+     * Notes what the user just asked, to title the next task. The
+     * task entry is written to disk right away, not when the first
+     * change lands: closing the app while an approval card is still
+     * waiting must still leave a task to come back to.
+     */
     public static synchronized void beginTurn(String scId, String userText) {
         if (scId == null || scId.isEmpty()) {
             return;
         }
         pendingTitles.put(scId, userText == null ? "" : userText.trim());
+        JsonObject root = load(scId);
+        openTask(scId, root);
+        save(scId, root);
     }
 
     private static JsonObject openTask(String scId, JsonObject root) {
@@ -189,6 +197,15 @@ public final class AgentJournal {
             return;
         }
         JsonObject task = last.getAsJsonObject();
+        // A finished turn in which nothing was actually changed was
+        // conversation, not a task: it leaves no entry behind. (A
+        // stopped one stays even with no steps — the request was
+        // never answered, and the user may want to resume it.)
+        if (done && task.getAsJsonArray("steps").size() == 0) {
+            tasks.remove(tasks.size() - 1);
+            save(scId, root);
+            return;
+        }
         task.addProperty("state", done ? "done" : "stopped");
         task.addProperty("stopReason",
                 done ? "" : (stopReason == null ? "" : stopReason));
@@ -211,6 +228,27 @@ public final class AgentJournal {
 
     public static synchronized String styleBrief(String scId) {
         return text(load(scId), "styleBrief");
+    }
+
+    /**
+     * When a turn creates the project it was designing for, the style
+     * brief agreed along the way belongs to the new project too: it
+     * carries over unless the new project already has one of its own.
+     */
+    public static synchronized void carryStyleBriefIfEmpty(String fromScId,
+                                                           String toScId) {
+        if (fromScId == null || fromScId.isEmpty()
+                || toScId == null || toScId.isEmpty()
+                || fromScId.equals(toScId)) {
+            return;
+        }
+        String brief = styleBrief(fromScId);
+        if (brief.isEmpty() || !styleBrief(toScId).isEmpty()) {
+            return;
+        }
+        JsonObject root = load(toScId);
+        root.addProperty("styleBrief", brief);
+        save(toScId, root);
     }
 
     /** Empties the project's record (the user's own choice, only). */
