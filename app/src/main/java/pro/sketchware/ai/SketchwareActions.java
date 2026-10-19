@@ -21,6 +21,7 @@ import a.a.a.oB;
 import a.a.a.wq;
 import com.besome.sketch.beans.EventBean;
 import com.besome.sketch.beans.ProjectFileBean;
+import com.besome.sketch.beans.ProjectLibraryBean;
 import com.besome.sketch.beans.ViewBean;
 import mod.hey.studios.project.ProjectSettings;
 import mod.hey.studios.util.ProjectFile;
@@ -254,10 +255,12 @@ public final class SketchwareActions {
     }
 
     /**
-     * Changes one activity's toolbar/fullscreen options and orientation,
-     * persisting through the same file-manager save sequence as screen
-     * creation. Drawer and FAB bits are never touched here — adding or
-     * removing those has file side effects this call does not perform.
+     * Changes one activity's toolbar/fullscreen/drawer options and
+     * orientation, persisting through the same file-manager save
+     * sequence as screen creation. A drawer bit carries a file with it
+     * ({@code _drawer_<activity>}), which this call creates or removes
+     * exactly as the screen manager does, so the screen never ends up
+     * with a drawer that has no layout.
      */
     public static void editActivityOptions(String scId, String fileName,
                                            int options, int orientation)
@@ -290,6 +293,33 @@ public final class SketchwareActions {
             // a floating button is switched on (Fw's option save).
             jC.c(scId).c().useYn = "Y";
         }
+        // A drawer is a screen of its own — `_drawer_<activity>` —
+        // which the screen manager creates when the option goes on and
+        // deletes when it goes off (Fw.b() → ManageViewActivity.b()/c()).
+        // Setting the bit alone would give the screen a drawer that has
+        // no layout, so the file is kept in step here.
+        String drawerName = ProjectFileBean.getDrawerName(fileName);
+        boolean hasDrawer = (options
+                & ProjectFileBean.OPTION_ACTIVITY_DRAWER) != 0;
+        ProjectFileBean drawerFile = null;
+        for (ProjectFileBean view : customViews) {
+            if (view.fileName.equalsIgnoreCase(drawerName)) {
+                drawerFile = view;
+                break;
+            }
+        }
+        if (hasDrawer) {
+            if (drawerFile == null) {
+                customViews.add(new ProjectFileBean(
+                        ProjectFileBean.PROJECT_FILE_TYPE_DRAWER,
+                        drawerName));
+            }
+            // The screen manager switches the design library on for a
+            // drawer too (Fw.b()), and the drawer layout is AndroidX.
+            enableAppCompat(scId);
+        } else if (drawerFile != null) {
+            customViews.remove(drawerFile);
+        }
         jC.b(scId).a(activities);
         jC.b(scId).b(customViews);
         jC.b(scId).l();
@@ -302,6 +332,34 @@ public final class SketchwareActions {
                 || readBack.orientation != orientation) {
             throw new ActionException("The change was saved but cannot "
                     + "be read back as made.");
+        }
+    }
+
+    /**
+     * Switches AppCompat / Material on, the way the screen manager does
+     * when a drawer or a floating button is added (Fw.b(): it sets the
+     * compat bean's {@code useYn} to "Y" itself) and the way the
+     * Library Manager saves it. A project that never opened the Library
+     * Manager has no bean yet, so one is created first — the editor
+     * guards against the same null (ManageLibraryActivity).
+     *
+     * <p>This is not the agent deciding for the user: without it, the
+     * screen it just made cannot compile, because the build only
+     * includes the AndroidX libraries when this switch is on.
+     */
+    private static void enableAppCompat(String scId) {
+        try {
+            ProjectLibraryBean compat = jC.c(scId).c();
+            if (compat == null) {
+                compat = new ProjectLibraryBean(
+                        ProjectLibraryBean.PROJECT_LIB_TYPE_COMPAT);
+            }
+            compat.useYn = ProjectLibraryBean.LIB_USE_Y;
+            jC.c(scId).b(compat);
+            jC.c(scId).k();
+        } catch (Exception ignored) {
+            // A library switch that cannot be written is reported by
+            // get_project_setup; it must not fail the screen change.
         }
     }
 

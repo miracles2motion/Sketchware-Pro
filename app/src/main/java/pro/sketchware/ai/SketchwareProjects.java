@@ -158,7 +158,15 @@ public final class SketchwareProjects {
         return null;
     }
 
-    /** The custom views of a project (reusable layouts, no logic). */
+    /**
+     * The layouts of a project that carry no logic: custom views AND
+     * drawers. The app keeps both in the same file list
+     * ({@code jC.b(sc_id).c()}, which is also where the screen manager
+     * adds a {@code _drawer_<activity>} when a drawer is switched on),
+     * and both are edited the same way — widgets in, no events. A
+     * drawer hidden here would be a screen the agent can create but
+     * never fill.
+     */
     public static List<ProjectFileBean> customViews(String scId) {
         List<ProjectFileBean> views = new ArrayList<>();
         try {
@@ -166,7 +174,9 @@ public final class SketchwareProjects {
             if (files != null) {
                 for (ProjectFileBean file : files) {
                     if (file.fileType
-                            == ProjectFileBean.PROJECT_FILE_TYPE_CUSTOM_VIEW) {
+                            == ProjectFileBean.PROJECT_FILE_TYPE_CUSTOM_VIEW
+                            || file.fileType
+                                    == ProjectFileBean.PROJECT_FILE_TYPE_DRAWER) {
                         views.add(file);
                     }
                 }

@@ -3686,7 +3686,7 @@ public final class AgentTools {
         }
     }
 
-    /** edit_activity: toolbar/fullscreen/orientation of one screen. */
+    /** edit_activity: toolbar/drawer/orientation settings of a screen. */
     private static final class EditActivity implements Tool {
         @Override
         public String name() {
@@ -3695,10 +3695,15 @@ public final class AgentTools {
 
         @Override
         public String description() {
-            return "Proposes changing one activity's toolbar, fullscreen "
+            return "Proposes changing one activity's toolbar, "
+                    + "fullscreen, navigation drawer, floating button "
                     + "or orientation setting. Only what is passed "
-                    + "changes; the drawer and floating-button settings "
-                    + "are not touched by this tool.";
+                    + "changes. Switching the drawer on also creates "
+                    + "its screen — a layout named _drawer_<activity> "
+                    + "— and switches AppCompat on, because a drawer "
+                    + "needs it to compile; fill that layout with "
+                    + "edit_screen afterwards (a drawer has no events "
+                    + "of its own).";
         }
 
         @Override
@@ -3716,6 +3721,14 @@ public final class AgentTools {
             fullscreen.addProperty("description",
                     "Fullscreen (true) or normal (false)");
             properties.add("fullscreen", fullscreen);
+            JsonObject drawer = new JsonObject();
+            drawer.addProperty("type", "boolean");
+            drawer.addProperty("description",
+                    "Give the screen a navigation drawer (true) or "
+                            + "remove it (false). Its layout, "
+                            + "_drawer_<activity>, is created for you "
+                            + "and is edited with edit_screen.");
+            properties.add("drawer", drawer);
             JsonObject floatingButton = new JsonObject();
             floatingButton.addProperty("type", "boolean");
             floatingButton.addProperty("description",
@@ -3783,6 +3796,19 @@ public final class AgentTools {
                         + SketchwareProjects.activityName(target)
                         + "'s floating button");
             }
+            if (args.has("drawer")) {
+                boolean show = args.get("drawer").getAsBoolean();
+                options = show
+                        ? options | ProjectFileBean.OPTION_ACTIVITY_DRAWER
+                        : options & ~ProjectFileBean.OPTION_ACTIVITY_DRAWER;
+                lines.add((show ? "Give " : "Remove the navigation drawer of ")
+                        + SketchwareProjects.activityName(target)
+                        + (show
+                                ? " a navigation drawer (its _drawer_"
+                                        + " layout is created too, and "
+                                        + "AppCompat is switched on)"
+                                : ""));
+            }
             if (args.has("orientation")) {
                 String word = stringArg(args, "orientation")
                         .toLowerCase(Locale.ROOT);
@@ -3799,7 +3825,8 @@ public final class AgentTools {
             if (lines.isEmpty()) {
                 throw new ToolException("E_BAD_OP",
                         "Nothing to change: pass toolbar, fullscreen, "
-                                + "floating_button and/or orientation.");
+                                + "drawer, floating_button and/or "
+                                + "orientation.");
             }
             SketchwareProjects.ProjectInfo project =
                     SketchwareProjects.project(scId);

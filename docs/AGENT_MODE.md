@@ -1261,3 +1261,23 @@ resource/native-lib/import files, ProGuard presence and the tail of the
 last compile log. Libraries and permissions are also in every project
 read, so the model cannot propose an impossible widget without
 seeing the fact first.
+
+### Wave 27b: the navigation drawer
+
+"Component settings" in the Configuration panel gives a screen a
+toolbar, fullscreen, orientation, a floating button — **and a
+navigation drawer**, which the agent could not do, while silently
+claiming to change "one activity's settings".
+
+A drawer is not a flag. The app's screen manager (`Fw.b()`) creates a
+whole layout file named `_drawer_<activity>` when the option goes on,
+deletes it when it goes off, and switches AppCompat on, because a
+drawer layout is AndroidX. Setting the bit alone would have produced a
+screen with a drawer that has no content.
+
+So `edit_activity` now takes `drawer: true/false`, and the action
+keeps the file in step, enables AppCompat the way the screen manager
+does, and — because the app stores drawers in the same file list as
+custom views — the drawer layout is now visible to the agent's screen
+reads, so `edit_screen` can fill it with menu items. It remains a
+layout without logic, like a custom view.
