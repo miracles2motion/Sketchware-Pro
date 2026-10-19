@@ -165,7 +165,8 @@ public class AgentFragment extends qA {
         // chat, each one a door back into that conversation. (What
         // was done in a project lives in its task log, in the box.)
         binding.historyButton.setOnClickListener(v -> showChatHistoryDialog());
-        binding.planButton.setOnClickListener(v -> showStyleBriefDialog());
+        binding.styleButton.setOnClickListener(v -> showStyleBriefDialog());
+        binding.planButton.setOnClickListener(v -> showPlanDialog());
         binding.taskLogButton.setOnClickListener(v -> showTaskLogDialog());
         binding.taskStripResume.setOnClickListener(v -> resumeTask());
         binding.taskStripDismiss.setOnClickListener(v -> {
@@ -360,6 +361,13 @@ public class AgentFragment extends qA {
         requestStartedAt = SystemClock.elapsedRealtime();
         updateActionButton();
         refreshStrip();
+        // An honest stage line: with no style or no plan saved yet,
+        // the turn ahead includes settling them.
+        String scId = providerConfig.workingProjectId();
+        if (!scId.isEmpty() && (AgentJournal.styleBrief(scId).isEmpty()
+                || !AgentJournal.hasPlan(scId))) {
+            insertToolNote(getString(R.string.agent_note_planning));
+        }
         List<ChatMessage> history = new ArrayList<>();
         for (ChatMessage message : messages) {
             if (message == streamingMessage || message.role == ChatMessage.Role.SYSTEM
@@ -575,6 +583,12 @@ public class AgentFragment extends qA {
     /** The project list behind the Working-On card: the projects the way
      * the app's own project list shows them. */
     private void showProjectPicker() {
+        if (generating) {
+            Toast.makeText(getContext(),
+                    R.string.agent_project_locked_working,
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
         io.execute(() -> {
             List<SketchwareProjects.ProjectInfo> projects =
                     SketchwareProjects.listProjects();
@@ -796,6 +810,40 @@ public class AgentFragment extends qA {
                         .show();
             });
         });
+    }
+
+    /** The Plan button: the agreed build order and its progress. */
+    private void showPlanDialog() {
+        String scId = workingProjectOrToast();
+        if (scId.isEmpty()) {
+            return;
+        }
+        com.google.gson.JsonObject plan = AgentJournal.plan(scId);
+        String steps = AgentJournal.planText(scId);
+        String title = plan.has("title")
+                ? plan.get("title").getAsString() : "";
+        StringBuilder body = new StringBuilder();
+        if (steps.isEmpty()) {
+            body.append(getString(R.string.agent_plan_empty));
+        } else {
+            int done = 0;
+            int total = plan.getAsJsonArray("steps").size();
+            for (com.google.gson.JsonElement element
+                    : plan.getAsJsonArray("steps")) {
+                if (element.isJsonObject() && "done".equals(element
+                        .getAsJsonObject().get("state").getAsString())) {
+                    done++;
+                }
+            }
+            body.append(getString(R.string.agent_plan_progress, done, total))
+                    .append("\n\n").append(steps);
+        }
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(title.isEmpty()
+                        ? getString(R.string.agent_plan_title) : title)
+                .setMessage(body.toString())
+                .setNegativeButton(R.string.agent_action_close, null)
+                .show();
     }
 
     /** The Task log button: the recorded work. */
@@ -1745,6 +1793,10 @@ public class AgentFragment extends qA {
         boolean hasText = binding.chatInput.getText() != null
                 && !binding.chatInput.getText().toString().trim().isEmpty();
         binding.sendButton.setEnabled(hasText || generating);
+        // The working project is locked to a running turn: switching
+        // it mid-flight would mix two projects' context and memory.
+        binding.workingOnCard.setEnabled(!generating);
+        binding.workingOnCard.setAlpha(generating ? 0.6f : 1.0f);
     }
 
     // endregion

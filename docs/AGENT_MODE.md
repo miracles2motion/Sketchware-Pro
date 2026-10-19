@@ -1068,3 +1068,27 @@ Device test findings (SportyNivida / Sporty Bet):
   was filed under whichever project was selected when the style was
   agreed, then filed again in the new one). Briefs record when they
   were saved, and only a brief from that same turn moves.
+
+## Wave 19 — plan memory, drafts, layout rules
+
+- The journal holds an agreed implementation plan per project;
+  done steps are clamped to changes actually recorded, and a
+  stopped turn leaves the current step honestly paused. set_plan
+  saves/updates it; the turn brief carries plan progress (and the
+  "style saved, no plan yet" state).
+- Style/plan agreed before a project exists are held as drafts and
+  deposited into the project the conversation creates; a same-turn
+  plan also moves at bind like the style brief.
+- Guidance: style-then-plan-then-build order; full layout rules
+  (per-child wrap/match/weight with 0dp weighted sides, padding vs
+  margin, composed clickable cards vs plain Buttons).
+
+## Wave 20 — Style/Plan UI, project lock
+
+- The composer row is Style · Plan · Task log: the old Plan button
+  is now Style (Project style page), and a real Plan button shows
+  the saved plan with ✓/●/○/❚❚ progress marks.
+- The working project is locked while a turn runs (card disabled;
+  picker guarded), so context cannot cross projects mid-flight.
+- A quiet "Checking the project style and plan" stage line opens
+  turns where either is still missing.
