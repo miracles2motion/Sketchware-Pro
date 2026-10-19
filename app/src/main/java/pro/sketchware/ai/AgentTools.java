@@ -289,13 +289,13 @@ public final class AgentTools {
         if (workingProjectId == null || workingProjectId.isEmpty()) {
             throw new ToolException("E_NO_PROJECT",
                     "No working project is chosen. Ask the user to tap the "
-                            + "\"Working on\" card at the top of the chat and "
-                            + "pick a project, then try again.");
+                            + "project card at the top of the chat and pick a "
+                            + "project, then try again.");
         }
         if (SketchwareProjects.project(workingProjectId) == null) {
             throw new ToolException("E_NO_PROJECT",
                     "The working project no longer exists. Ask the user to "
-                            + "pick a project with the \"Working on\" card.");
+                            + "pick a project with the project card at the top.");
         }
         return workingProjectId;
     }

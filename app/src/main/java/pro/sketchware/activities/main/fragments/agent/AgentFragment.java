@@ -93,6 +93,9 @@ public class AgentFragment extends qA {
     private boolean keyboardOpen;
     /** When the current turn was sent, to time the reply. */
     private long requestStartedAt;
+    /** The task-strip line currently shown (dismiss remembers it). */
+    private String stripShownText = "";
+    private String stripDismissedText = "";
 
     @Nullable
     @Override
@@ -154,11 +157,16 @@ public class AgentFragment extends qA {
         binding.chooseModelButton.setOnClickListener(v -> openSettings());
         binding.settingsButton.setOnClickListener(v -> openSettings());
         binding.modelPickerArea.setOnClickListener(v -> showModelPicker());
-        binding.historyButton.setOnClickListener(v ->
-                // Reserved for the history phase: saved conversations will
-                // live behind this icon.
-                android.widget.Toast.makeText(getContext(),
-                        R.string.agent_history_soon, android.widget.Toast.LENGTH_SHORT).show());
+        // History is the project's task log: what was asked, what
+        // landed, and where an unfinished task stopped.
+        binding.historyButton.setOnClickListener(v -> showTaskLogDialog());
+        binding.planButton.setOnClickListener(v -> showStyleBriefDialog());
+        binding.taskLogButton.setOnClickListener(v -> showTaskLogDialog());
+        binding.taskStripResume.setOnClickListener(v -> resumeTask());
+        binding.taskStripDismiss.setOnClickListener(v -> {
+            stripDismissedText = stripShownText;
+            binding.taskStrip.setVisibility(View.GONE);
+        });
 
         chatService = new AiChatService();
         providerConfig = AiProviderConfig.load(requireContext());
@@ -345,6 +353,7 @@ public class AgentFragment extends qA {
         generating = true;
         requestStartedAt = SystemClock.elapsedRealtime();
         updateActionButton();
+        refreshStrip();
         List<ChatMessage> history = new ArrayList<>();
         for (ChatMessage message : messages) {
             if (message == streamingMessage || message.role == ChatMessage.Role.SYSTEM
@@ -388,6 +397,7 @@ public class AgentFragment extends qA {
                             flushPendingTokens();
                             setStreamingComplete();
                             updateActionButton();
+                            refreshStrip();
                         });
                     }
 
@@ -462,6 +472,7 @@ public class AgentFragment extends qA {
                         generating = false;
                         setStreamingComplete();
                         updateActionButton();
+                        refreshStrip();
                     }
 
                     @Override
@@ -497,21 +508,50 @@ public class AgentFragment extends qA {
         if (scId.isEmpty()) {
             binding.workingOnName.setText(R.string.agent_working_on_choose);
             binding.workingOnSubtitle.setText(R.string.agent_working_on_hint);
+            setCardCompact(false);
+            refreshStrip();
             return;
         }
         io.execute(() -> {
             SketchwareProjects.ProjectInfo project = SketchwareProjects.project(scId);
             runOnUi(() -> {
+                if (binding == null) {
+                    return;
+                }
                 if (project == null) {
                     binding.workingOnName.setText(R.string.agent_working_on_choose);
                     binding.workingOnSubtitle.setText(R.string.agent_working_on_hint);
-                    return;
+                    setCardCompact(false);
+                } else {
+                    binding.workingOnName.setText(project.name);
+                    binding.workingOnSubtitle.setText(
+                            project.appName + " · " + project.packageName);
+                    // Chosen: the card settles into a compact chip so
+                    // the chat gets the room.
+                    setCardCompact(true);
                 }
-                binding.workingOnName.setText(project.name);
-                binding.workingOnSubtitle.setText(
-                        project.appName + " · " + project.packageName);
+                refreshStrip();
             });
         });
+    }
+
+    /** Shrinks the project card once a project is chosen. */
+    private void setCardCompact(boolean compact) {
+        if (binding == null) {
+            return;
+        }
+        float density = getResources().getDisplayMetrics().density;
+        int icon = (int) ((compact ? 32 : 40) * density + 0.5f);
+        ViewGroup.LayoutParams iconParams =
+                binding.workingOnIcon.getLayoutParams();
+        if (iconParams.width != icon) {
+            iconParams.width = icon;
+            iconParams.height = icon;
+            binding.workingOnIcon.setLayoutParams(iconParams);
+        }
+        int padding = (int) ((compact ? 8 : 12) * density + 0.5f);
+        binding.workingOnContent.setPadding(
+                padding, padding, padding, padding);
     }
 
     /** The project list behind the Working-On card: the projects the way
@@ -553,10 +593,155 @@ public class AgentFragment extends qA {
     private void chooseProject(String scId, String name) {
         providerConfig.setWorkingProjectId(scId);
         providerConfig.save(requireContext());
+        stripDismissedText = "";
         updateWorkingOnCard();
         appendMessage(ChatMessage.error(getString(scId.isEmpty()
                 ? R.string.agent_working_on_cleared
                 : R.string.agent_working_on_set, name)));
+    }
+
+    /**
+     * The strip above the composer: the one place a task's state shows
+     * outside the chat. It speaks only while work runs or sits paused —
+     * finished work needs no strip.
+     */
+    private void refreshStrip() {
+        if (binding == null || providerConfig == null) {
+            return;
+        }
+        String scId = providerConfig.workingProjectId();
+        String text = "";
+        boolean resumable = false;
+        if (!scId.isEmpty()) {
+            if (generating) {
+                String title = AgentJournal.openTitle(scId);
+                if (title.isEmpty()) {
+                    title = lastUserText;
+                }
+                text = getString(R.string.agent_task_working, title);
+            } else {
+                text = AgentJournal.stripText(scId);
+                resumable = !text.isEmpty();
+            }
+        }
+        stripShownText = text;
+        boolean show = !text.isEmpty() && !text.equals(stripDismissedText);
+        binding.taskStrip.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (show) {
+            binding.taskStripText.setText(text);
+            binding.taskStripResume.setVisibility(
+                    resumable ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    /** Continues the paused task as a normal message in the chat. */
+    private void resumeTask() {
+        if (generating || binding == null) {
+            return;
+        }
+        stripDismissedText = "";
+        // The same task entry continues — its title and finished
+        // steps are already recorded; the brief tells the model so.
+        AgentJournal.reopenLatest(providerConfig.workingProjectId());
+        binding.chatInput.setText(
+                getString(R.string.agent_task_resume_message));
+        sendCurrentInput();
+    }
+
+    /** The working project, or a nudge to pick one first. */
+    private String workingProjectOrToast() {
+        String scId = providerConfig == null
+                ? "" : providerConfig.workingProjectId();
+        if (scId.isEmpty()) {
+            Toast.makeText(getContext(), R.string.agent_pick_project_first,
+                    Toast.LENGTH_SHORT).show();
+        }
+        return scId;
+    }
+
+    /** The Plan button: the project's agreed style direction. */
+    private void showStyleBriefDialog() {
+        String scId = workingProjectOrToast();
+        if (scId.isEmpty()) {
+            return;
+        }
+        String brief = AgentJournal.styleBrief(scId);
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.agent_style_brief_title)
+                .setMessage(brief.isEmpty()
+                        ? getString(R.string.agent_style_brief_empty) : brief)
+                .setNegativeButton(R.string.agent_action_close, null)
+                .setPositiveButton(R.string.agent_style_brief_edit,
+                        (dialog, which) -> showStyleBriefEditor(scId))
+                .show();
+    }
+
+    private void showStyleBriefEditor(String scId) {
+        android.widget.EditText input =
+                new android.widget.EditText(requireContext());
+        input.setText(AgentJournal.styleBrief(scId));
+        input.setHint(R.string.agent_style_brief_hint);
+        input.setMinLines(3);
+        input.setGravity(android.view.Gravity.TOP);
+        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        android.widget.FrameLayout frame =
+                new android.widget.FrameLayout(requireContext());
+        frame.setPadding(pad, pad / 2, pad, 0);
+        frame.addView(input);
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.agent_style_brief_title)
+                .setView(frame)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.agent_action_save,
+                        (dialog, which) -> {
+                            AgentJournal.setStyleBrief(scId,
+                                    input.getText().toString());
+                            Toast.makeText(getContext(),
+                                    R.string.agent_style_brief_saved,
+                                    Toast.LENGTH_SHORT).show();
+                        })
+                .show();
+    }
+
+    /** The Task log button (and History icon): the recorded work. */
+    private void showTaskLogDialog() {
+        String scId = workingProjectOrToast();
+        if (scId.isEmpty()) {
+            return;
+        }
+        android.widget.TextView body =
+                new android.widget.TextView(requireContext());
+        body.setText(AgentJournal.logText(scId));
+        body.setTextAppearance(
+                com.google.android.material.R.style
+                        .TextAppearance_Material3_BodyMedium);
+        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        body.setPadding(pad, pad / 2, pad, pad);
+        android.widget.ScrollView scroll =
+                new android.widget.ScrollView(requireContext());
+        scroll.addView(body);
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.agent_task_log_title)
+                .setView(scroll)
+                .setNegativeButton(R.string.agent_action_close, null)
+                .setNeutralButton(R.string.agent_task_log_clear,
+                        (dialog, which) -> confirmClearTaskLog(scId))
+                .show();
+    }
+
+    private void confirmClearTaskLog(String scId) {
+        new MaterialAlertDialogBuilder(requireContext())
+                .setMessage(R.string.agent_task_log_clear_confirm)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.agent_action_clear,
+                        (dialog, which) -> {
+                            AgentJournal.clear(scId);
+                            refreshStrip();
+                            Toast.makeText(getContext(),
+                                    R.string.agent_task_log_cleared,
+                                    Toast.LENGTH_SHORT).show();
+                        })
+                .show();
     }
 
     /** Rows of the picker: "No project", then one row per project. */
@@ -1178,8 +1363,7 @@ public class AgentFragment extends qA {
                         settings.models = models;
                         providerConfig.save(requireContext());
                         if (binding == null || models.isEmpty()) {
-                            appendMessage(ChatMessage.error(
-                                    getString(R.string.agent_error_no_models)));
+                            appendMessage(ChatMessage.er                     getString(R.string.agent_error_no_models)));
                             return;
                         }
                         String[] items = models.toArray(new String[0]);
@@ -1493,5 +1677,12 @@ public class AgentFragment extends qA {
         public void afterTextChanged(android.text.Editable s) {
             callback.onChanged(s == null ? "" : s.toString());
         }
+    }
+}
+;
+        }
+    }
+}
+      }
     }
 }

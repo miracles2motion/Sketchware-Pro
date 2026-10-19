@@ -224,6 +224,41 @@ public final class AgentJournal {
         save(scId, root);
     }
 
+    /**
+     * Reopens the latest stopped task so the work continues in the
+     * same entry, under its original title, with its steps intact —
+     * the Resume button's path. No-op when nothing is stopped.
+     */
+    public static synchronized void reopenLatest(String scId) {
+        if (scId == null || scId.isEmpty()) {
+            return;
+        }
+        JsonObject root = load(scId);
+        JsonArray tasks = root.getAsJsonArray("tasks");
+        if (tasks.size() == 0) {
+            return;
+        }
+        JsonObject last = tasks.get(tasks.size() - 1).getAsJsonObject();
+        if (!"stopped".equals(text(last, "state"))) {
+            return;
+        }
+        last.addProperty("state", "open");
+        last.addProperty("stopReason", "");
+        save(scId, root);
+    }
+
+    /** The title of the task currently open, or "" when none is. */
+    public static synchronized String openTitle(String scId) {
+        JsonObject root = load(scId);
+        JsonArray tasks = root.getAsJsonArray("tasks");
+        if (tasks.size() == 0) {
+            return "";
+        }
+        JsonObject last = tasks.get(tasks.size() - 1).getAsJsonObject();
+        return "open".equals(text(last, "state"))
+                ? text(last, "title") : "";
+    }
+
     // ------------------------------------------------------------------
     // Reading
 

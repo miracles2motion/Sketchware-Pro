@@ -19,6 +19,7 @@
         tools:visibility="visible">
 
         <LinearLayout
+            android:id="@+id/working_on_content"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
@@ -183,39 +184,130 @@
         android:id="@+id/input_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="bottom"
-        android:orientation="horizontal"
+        android:orientation="vertical"
         android:paddingHorizontal="16dp"
         android:paddingTop="8dp"
         android:paddingBottom="12dp">
 
-        <EditText
-            android:id="@+id/chat_input"
-            android:layout_width="0dp"
+        <!-- Slim task strip: present only while a task is running or
+             sits paused. Resume continues it; the x tucks it away. -->
+        <LinearLayout
+            android:id="@+id/task_strip"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:background="@drawable/agent_input_background"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/agent_task_strip_background"
             android:gravity="center_vertical"
-            android:hint="@string/agent_hint_message"
-            android:inputType="textMultiLine|textCapSentences"
-            android:maxLines="6"
-            android:minHeight="52dp"
-            android:paddingHorizontal="18dp"
-            android:paddingVertical="14dp"
-            android:textColor="?attr/colorOnSurface"
-            android:textColorHint="?attr/colorOnSurfaceVariant"
-            android:textSize="16sp" />
+            android:orientation="horizontal"
+            android:paddingStart="14dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="6dp"
+            android:paddingBottom="6dp"
+            android:visibility="gone"
+            tools:visibility="visible">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/send_button"
-            style="@style/Widget.Material3.Button.IconButton.Filled"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_marginStart="10dp"
-            android:layout_marginBottom="2dp"
-            android:contentDescription="@string/agent_action_send"
-            android:enabled="false"
-            app:icon="@drawable/agent_ic_send" />
+            <TextView
+                android:id="@+id/task_strip_text"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                tools:text="“Add a login screen” stopped after 2 of 5 steps — the provider's limit was hit" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/task_strip_resume"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:text="@string/agent_task_resume" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/task_strip_dismiss"
+                style="@style/Widget.Material3.Button.IconButton"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:contentDescription="@string/agent_task_dismiss"
+                app:icon="@drawable/ic_mtrl_close" />
+        </LinearLayout>
+
+        <!-- One rounded message box: the text field, the in-box actions
+             (Plan, Task log — more can join the row later), and send. -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/composer_card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerHighest"
+            app:cardCornerRadius="24dp"
+            app:cardElevation="0dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <EditText
+                    android:id="@+id/chat_input"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@null"
+                    android:gravity="center_vertical"
+                    android:hint="@string/agent_hint_message"
+                    android:inputType="textMultiLine|textCapSentences"
+                    android:maxLines="6"
+                    android:minHeight="48dp"
+                    android:paddingHorizontal="18dp"
+                    android:paddingTop="14dp"
+                    android:paddingBottom="4dp"
+                    android:textColor="?attr/colorOnSurface"
+                    android:textColorHint="?attr/colorOnSurfaceVariant"
+                    android:textSize="16sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:paddingBottom="6dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/plan_button"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:text="@string/agent_plan_button"
+                        app:icon="@drawable/ic_mtrl_checklist"
+                        app:iconPadding="4dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/task_log_button"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:text="@string/agent_task_log_button"
+                        app:icon="@drawable/ic_mtrl_history"
+                        app:iconPadding="4dp" />
+
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="1dp"
+                        android:layout_weight="1" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/send_button"
+                        style="@style/Widget.Material3.Button.IconButton.Filled"
+                        android:layout_width="44dp"
+                        android:layout_height="44dp"
+                        android:contentDescription="@string/agent_action_send"
+                        android:enabled="false"
+                        app:icon="@drawable/agent_ic_send" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
     </LinearLayout>
 
 </LinearLayout>

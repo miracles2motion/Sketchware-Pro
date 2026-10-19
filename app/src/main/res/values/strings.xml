@@ -1021,4 +1021,24 @@ ACTION_VIEW
     <string name="agent_install_failed">Couldn\'t open the installer. The APK is at %1$s</string>
     <string name="agent_settings_allow_modify">Allow the agent to modify projects</string>
     <string name="agent_settings_allow_modify_hint">The agent still asks for your approval before every change</string>
+
+    <string name="agent_plan_button">Plan</string>
+    <string name="agent_task_log_button">Task log</string>
+    <string name="agent_pick_project_first">Pick a project first — its plan and task log live with it.</string>
+    <string name="agent_style_brief_title">Style brief</string>
+    <string name="agent_style_brief_empty">No style brief yet. Agree one with the agent — like “for young kids” — and it will be remembered here and followed in everything made for this project.</string>
+    <string name="agent_style_brief_hint">The style direction for this project</string>
+    <string name="agent_style_brief_edit">Edit brief</string>
+    <string name="agent_style_brief_saved">Style brief remembered</string>
+    <string name="agent_task_log_title">Task log</string>
+    <string name="agent_task_log_clear">Clear log</string>
+    <string name="agent_task_log_clear_confirm">Clear this project’s whole task log? Tasks and steps recorded so far will be gone.</string>
+    <string name="agent_task_log_cleared">Task log cleared</string>
+    <string name="agent_task_resume">Resume</string>
+    <string name="agent_task_dismiss">Hide this</string>
+    <string name="agent_task_working">Working on “%1$s”…</string>
+    <string name="agent_task_resume_message">Please continue the unfinished task. First re-check the project’s current state with your tools, then pick up at the next step — don’t redo anything already done.</string>
+    <string name="agent_action_save">Save</string>
+    <string name="agent_action_close">Close</string>
+    <string name="agent_action_clear">Clear</string>
 </resources>
