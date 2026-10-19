@@ -860,3 +860,63 @@ Only after this stock set is exhausted do agent-defined custom blocks
   FragmentAdapter return blocks, MenuItem/SubMenu declared names),
   typed map GETS (unsafe casts over string-valued agent maps —
   excluded with reason), and the by-design raw-source/junk set.
+
+## Wave 12 research (component events + event parameters) — verified
+
+- Registration mirrors AddEventActivity.java:153 exactly: EventBean with
+  type EVENT_TYPE_COMPONENT (2), targetType = the component's ComponentBean
+  type int, targetId = componentId, plus the event name. Logic is stored
+  under key `targetId + "_" + eventName` and read type-agnostically by the
+  compiler (Hx.a -> Fx), so the agent's existing read/write path for widget
+  events applies unchanged. No head BlockBean is stored; Fx.a() starts
+  generation at the first statement bean, matching the agent's beans.
+- Event NAMES come from oq.getComponentEventsForClass(ComponentBean
+  .getClassInfo()) exactly as AddEventActivity builds its list, plus
+  ManageEvent.addExtraComponentEvents (WebView/MapView/Firebase/Gyro/
+  RequestNetwork/Bluetooth/Ads families). Hx gives every component an
+  Event object wired to oq.getListenersForClass(classInfo); each event
+  name lands in Lx.getEventCode / ManageEvent.f wrappers. Nothing else
+  needs to exist for the code to generate.
+- Event VALUES are `getArg` reporter beans: opCode "getArg", spec = the
+  local's name (no underscore; Fx emits "_" + spec), type = slot letter.
+  The editor builds them from the event head spec (xB -> FB.c ->
+  BlockUtil.getVariableBlock): %d/%s/%b.name -> letter; %m.<menu>.<name>
+  -> last segment, letter from kq.a(menuType) (maps/lists -> 'a').
+  ManageEvent.i() head specs are effectively dead; the real parameter
+  names are the `final` locals in Lx.getEventCode / ManageEvent.f.
+- Parameter table (name:letter), from the generated locals:
+  FirebaseDB onChildAdded/Changed/Removed: childKey(s), childValue('a');
+  onDataChanged: none usable; onCancelled: errorCode(d), errorMessage(s).
+  Gyroscope onSensorChanged: x,y,z (d). FirebaseAuth completions
+  (onCreateUserComplete, onSignInUserComplete, onGoogleSignIn,
+  signInWithPhoneAuthComplete, onUpdateProfileComplete,
+  onDeleteUserComplete, onUpdateEmailComplete, onUpdatePasswordComplete,
+  onEmailVerificationSent): success(b), errorMessage(s);
+  onCodeSent: verificationId(s); onVerificationFailed: exception(s).
+  FirebaseStorage: onUploadProgress/onDownloadProgress: progressValue(d);
+  onUploadSuccess: downloadUrl(s); onDownloadSuccess: totalByteCount(d);
+  onDeleteSuccess: none; onFailure: message(s).
+  RequestNetwork onResponse: tag(s), response(s), responseHeaders('a');
+  onErrorResponse: tag(s), message(s). SpeechToText onSpeechResult:
+  result(s) (the results list is not exposed); onSpeechError:
+  errorMessage(s). Bluetooth onConnected: tag(s), deviceData('a');
+  onDataReceived/onDataSent: tag(s), data(s); onConnectionError: tag(s),
+  connectionState(s), errorMessage(s); onConnectionStopped: tag(s).
+  MapView onLocationChanged: lat,lng,acc (d); onMarkerClicked: id(s);
+  onMapReady: none. Camera onPictureTaken: filePath(s); FilePicker
+  onFilesPicked: filePath is a list of paths (not slot-expressible yet);
+  Ad failed-to-load events: errorCode(d), errorMessage(s).
+  FragmentAdapter onFragmentAdded/onTabAdded: position(d), and their
+  handlers must end with returnFragment / returnTitle (see below).
+  AsyncTask (component type 36): onPreExecute none, doInBackground
+  param(s), onProgressUpdate value(d), onPostExecute result(s).
+  Date/time picker dialogs: onDateSet year,month,day (d); onTimeSet
+  hour,minute (d).
+- Map-typed args (childValue, deviceData, responseHeaders) plug into any
+  positional parameter slot (the editor loader wires @id refs by index;
+  Fx mapGet emits "%s.get(%s).toString()"), so map_get / map_has accept
+  {"arg": name} as the map source. Other args must match the slot letter.
+- Camera/FilePicker/GoogleLogin events are onActivityResult callbacks
+  (Hx.addCallbackEvents -> Lx.getOnActivityResultCode); same EventBean
+  registration, generated as switch cases. FilePicker's _filePath is an
+  ArrayList<String>; Camera's is a plain String.
