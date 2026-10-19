@@ -1453,8 +1453,16 @@ measurements: the real height, the real colour, the real text size. A
 component is something you look at, not something you read. "Change
 this" puts the request in the chat for the agent to do.
 
-**Honest limits.** Token fields are only the properties our tools can
-apply today (no corner radius, no elevation, no stroke yet). The system
-describes the app; where the tools cannot yet follow, it says so
-instead of pretending. Screens already built are never restyled
-silently — the agent offers.
+**Corrected, because the user caught me.** I first limited the token
+fields to *properties*, and wrote here that corner radius and elevation
+were unavailable. They are available — as **blocks**, not properties:
+`set_corner_radius` (radius + background colour, any view),
+`set_radius_and_stroke`, `set_elevation`, and `set_card_radius` /
+`set_card_elevation` / `set_card_color` on a CardView. They have been in
+`AgentLogic`'s block table all along — the StickerBoard agent invented
+`set_card_radius` in a moment of not knowing it already existed. What I
+had audited was the *property* panel, which is a different list. Both
+fields are now in the design system, and the guidance says where they
+belong: the screen's `initializeLogic`, not a widget's properties.
+
+Screens already built are never restyled silently — the agent offers.

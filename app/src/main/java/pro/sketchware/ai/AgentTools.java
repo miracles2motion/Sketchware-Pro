@@ -3525,16 +3525,24 @@ public final class AgentTools {
             new java.util.HashMap<>();
 
     static {
+        // corner_radius and elevation ARE available: they are blocks,
+        // not properties (set_corner_radius / set_radius_and_stroke /
+        // set_elevation, and set_card_radius / set_card_elevation on a
+        // CardView), which is why they belong in the screen's
+        // initializeLogic rather than in a widget's properties. They
+        // were left out here once, on the strength of a property audit
+        // that never looked at blocks — and the user caught it.
         DESIGN_FIELDS.put("button", new String[]{"height", "background",
                 "text_color", "text_size", "text_style", "padding",
-                "margin"});
+                "margin", "corner_radius", "elevation"});
         DESIGN_FIELDS.put("card", new String[]{"background", "padding",
-                "margin"});
+                "margin", "corner_radius", "elevation"});
         DESIGN_FIELDS.put("list_row", new String[]{"height", "background",
-                "padding", "margin", "title_size", "subtitle_size"});
+                "padding", "margin", "title_size", "subtitle_size",
+                "corner_radius", "elevation"});
         DESIGN_FIELDS.put("input", new String[]{"height", "background",
                 "hint_color", "text_color", "text_size", "padding",
-                "margin"});
+                "margin", "corner_radius", "elevation"});
         DESIGN_FIELDS.put("screen", new String[]{"background", "padding",
                 "gap"});
         DESIGN_FIELDS.put("text", new String[]{"text_size", "text_color",
@@ -3647,12 +3655,20 @@ public final class AgentTools {
                     + "text_size, padding, margin]; screen [background, "
                     + "padding, gap]; text [text_size, text_color, "
                     + "text_style, margin]. Sizes are plain numbers (dp "
-                    + "or sp) and colours hex. No approval card — it "
-                    + "changes nothing in the project itself. Calling it "
-                    + "again replaces the set, so include everything "
-                    + "that should carry over. To change ONE component "
-                    + "later use edit_design_token — never rewrite the "
-                    + "whole set to change one row.";
+                    + "or sp) and colours hex. corner_radius and "
+                    + "elevation are real and you CAN build them — they "
+                    + "are blocks, not properties: apply them in the "
+                    + "screen's initializeLogic with set_corner_radius "
+                    + "{target, value, color} (radius plus background "
+                    + "colour in one), set_radius_and_stroke, "
+                    + "set_elevation {target, value}, or on a CardView "
+                    + "set_card_radius / set_card_elevation / "
+                    + "set_card_color. No approval card — it changes "
+                    + "nothing in the project itself. Calling it again "
+                    + "replaces the set, so include everything that "
+                    + "should carry over. To change ONE component later "
+                    + "use edit_design_token — never rewrite the whole "
+                    + "set to change one row.";
         }
 
         @Override
