@@ -997,7 +997,7 @@ public final class AgentLogic {
                         return "@" + bean.id;
                     }
                     default -> throw badValue(what, "unknown "
-                            + "function \\"" + fn + "\\" (abs, ceil, "
+                            + "function \"" + fn + "\" (abs, ceil, "
                             + "floor, round, sqrt, pow, max, min, "
                             + "random, pi, len, concat, contains, "
                             + "upper, lower, trim, substring, "
