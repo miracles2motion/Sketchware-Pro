@@ -1023,6 +1023,10 @@ ACTION_VIEW
     <string name="agent_settings_allow_modify_hint">The agent still asks for your approval before every change</string>
 
     <string name="agent_style_button">Style</string>
+    <string name="agent_design_system_button">Design system</string>
+    <string name="agent_design_system_title">Design system</string>
+    <string name="agent_design_system_empty">No design system yet. Ask the agent to build something and it will propose one — the components every screen is built from.</string>
+    <string name="agent_design_system_components">Components</string>
     <string name="agent_plan_button">Plan</string>
     <string name="agent_task_log_button">Task log</string>
     <string name="agent_pick_project_first">Pick a project first — its plan and task log live with it.</string>

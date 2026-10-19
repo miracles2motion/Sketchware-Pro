@@ -68,6 +68,10 @@ public final class AgentExport {
                 journal.has("styleBriefAt")
                         ? journal.get("styleBriefAt").getAsLong() : 0);
         root.add("style", style);
+        root.add("design_system",
+                journal.has("designSystem")
+                        ? journal.get("designSystem").getAsJsonObject()
+                        : new JsonObject());
         root.add("plan",
                 journal.has("plan")
                         ? journal.get("plan").getAsJsonObject()

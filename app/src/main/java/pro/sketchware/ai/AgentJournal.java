@@ -742,6 +742,19 @@ public final class AgentJournal {
     private static String draftStyleBrief = "";
     private static String draftPlanTitle = "";
     private static String draftPlanSteps = "";
+    private static String draftDesignTitle = "";
+    private static JsonArray draftDesignTokens = new JsonArray();
+
+    /**
+     * Remembers a design system agreed before any project was chosen;
+     * it lands in the project this work creates.
+     */
+    public static synchronized void setDraftDesignSystem(String title,
+                                                         JsonArray tokens) {
+        draftDesignTitle = title == null ? "" : title.trim();
+        draftDesignTokens = tokens == null
+                ? new JsonArray() : tokens.deepCopy();
+    }
 
     /**
      * Whether a style direction has been agreed for this work: saved
@@ -762,6 +775,111 @@ public final class AgentJournal {
     public static synchronized boolean hasPlanOrDraft(String scId) {
         return !draftPlanSteps.isEmpty()
                 || hasPlan(scId == null ? "" : scId);
+    }
+
+    // ------------------------------------------------------------------
+    // The design system: the project's components, by name
+
+    /**
+     * The project's design system: one entry per component — primary
+     * button, card, list row, input, screen, title, body — each holding
+     * the measurements every instance of it uses.
+     *
+     * <p>A style says "sunny and playful". A design system says what a
+     * button IS in that style: 56dp tall, orange #FF8A3D, 12dp corners,
+     * 16sp bold white text, 16dp of padding. It is stored as structured
+     * entries rather than prose because it exists to be looked up, not
+     * read: the same button on the fifth screen has to match the one on
+     * the first, and a model asked to remember a number across a dozen
+     * tool calls will not.
+     */
+    public static synchronized JsonObject designSystem(String scId) {
+        JsonObject root = load(scId);
+        JsonElement element = root.get("designSystem");
+        return element != null && element.isJsonObject()
+                ? element.getAsJsonObject() : new JsonObject();
+    }
+
+    /** Saves the whole design system (a coherent set, replaced as one). */
+    public static synchronized void setDesignSystem(String scId,
+                                                    String title,
+                                                    JsonArray tokens) {
+        if (scId == null || scId.isEmpty()) {
+            return;
+        }
+        JsonObject root = load(scId);
+        JsonObject system = new JsonObject();
+        system.addProperty("title",
+                truncate(title == null ? "" : title.trim(), 120));
+        system.add("tokens", tokens == null ? new JsonArray() : tokens);
+        system.addProperty("updatedAt", System.currentTimeMillis());
+        root.add("designSystem", system);
+        save(scId, root);
+        record(scId, "design_system_saved", "title",
+                system.get("title").getAsString());
+    }
+
+    /**
+     * One component's measurements, replaced on its own. Changing a
+     * button's height must not touch a card, and must not silently
+     * rewrite the set the user agreed.
+     */
+    public static synchronized boolean setDesignToken(String scId,
+                                                      String key,
+                                                      JsonObject token) {
+        if (scId == null || scId.isEmpty() || key == null
+                || key.isEmpty() || token == null) {
+            return false;
+        }
+        JsonObject root = load(scId);
+        JsonElement element = root.get("designSystem");
+        if (element == null || !element.isJsonObject()) {
+            return false;
+        }
+        JsonObject system = element.getAsJsonObject();
+        JsonElement tokensElement = system.get("tokens");
+        if (tokensElement == null || !tokensElement.isJsonArray()) {
+            return false;
+        }
+        JsonArray tokens = tokensElement.getAsJsonArray();
+        for (int i = 0; i < tokens.size(); i++) {
+            JsonElement existing = tokens.get(i);
+            if (!existing.isJsonObject()) {
+                continue;
+            }
+            JsonObject current = existing.getAsJsonObject();
+            if (key.equals(text(current, "key"))) {
+                tokens.set(i, token);
+                system.addProperty("updatedAt",
+                        System.currentTimeMillis());
+                save(scId, root);
+                JsonObject entry = new JsonObject();
+                entry.addProperty("key", key);
+                entry.addProperty("label", text(token, "label"));
+                entry.addProperty("props",
+                        token.has("props")
+                                ? token.get("props").toString() : "");
+                record(scId, "design_token_changed", entry);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Whether this project has a design system of its own. */
+    public static synchronized boolean hasDesignSystem(String scId) {
+        JsonObject system = designSystem(scId == null ? "" : scId);
+        JsonElement tokens = system.get("tokens");
+        return tokens != null && tokens.isJsonArray()
+                && tokens.getAsJsonArray().size() > 0;
+    }
+
+    /**
+     * Whether a design system has been agreed for this work: saved on
+     * the project, or held as a draft for a project not yet created.
+     */
+    public static synchronized boolean hasDesignSystemOrDraft(String scId) {
+        return draftDesignTokens.size() > 0 || hasDesignSystem(scId);
     }
 
     /** Remembers a style agreed before any project was chosen. */
@@ -796,9 +914,14 @@ public final class AgentJournal {
         if (!draftPlanSteps.isEmpty() && !hasPlan(scId)) {
             setPlan(scId, draftPlanTitle, draftPlanSteps, 0, 0);
         }
+        if (draftDesignTokens.size() > 0 && !hasDesignSystem(scId)) {
+            setDesignSystem(scId, draftDesignTitle, draftDesignTokens);
+        }
         draftStyleBrief = "";
         draftPlanTitle = "";
         draftPlanSteps = "";
+        draftDesignTitle = "";
+        draftDesignTokens = new JsonArray();
     }
 
     /** Empties the project's record (the user's own choice, only). */
@@ -866,6 +989,37 @@ public final class AgentJournal {
         if (!style.isEmpty()) {
             out.append("\n\nStyle brief for this project (agreed with "
                     + "the user; keep to it): ").append(style);
+        }
+        JsonObject design = root.getAsJsonObject("designSystem");
+        if (design != null && design.has("tokens")) {
+            JsonElement tokens = design.get("tokens");
+            if (tokens != null && tokens.isJsonArray()
+                    && tokens.getAsJsonArray().size() > 0) {
+                out.append("\n\nDesign system for this project (build ")
+                        .append("every screen from these components by ")
+                        .append("name — the same button is the same ")
+                        .append("button everywhere):");
+                for (JsonElement element : tokens.getAsJsonArray()) {
+                    if (!element.isJsonObject()) {
+                        continue;
+                    }
+                    JsonObject token = element.getAsJsonObject();
+                    out.append("\n• ").append(text(token, "key"))
+                            .append(" (“")
+                            .append(text(token, "label")).append("”)");
+                    JsonElement props = token.get("props");
+                    if (props != null && props.isJsonObject()) {
+                        for (java.util.Map.Entry<String, JsonElement> field
+                                : props.getAsJsonObject().entrySet()) {
+                            out.append(" ").append(field.getKey())
+                                    .append("=")
+                                    .append(field.getValue().isJsonPrimitive()
+                                            ? field.getValue().getAsString()
+                                            : "");
+                        }
+                    }
+                }
+            }
         }
         JsonObject plan = root.getAsJsonObject("plan");
         boolean havePlan = plan != null && plan.has("steps")
@@ -1068,6 +1222,11 @@ public final class AgentJournal {
     }
 
     // ------------------------------------------------------------------
+
+    /** A string field of a stored object, empty when absent. */
+    public static String textOf(JsonObject object, String key) {
+        return text(object, key);
+    }
 
     private static String text(JsonObject object, String key) {
         try {

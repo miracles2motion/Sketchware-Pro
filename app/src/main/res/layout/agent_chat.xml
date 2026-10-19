@@ -292,6 +292,14 @@
                         app:iconPadding="4dp" />
 
                     <com.google.android.material.button.MaterialButton
+                        android:id="@+id/design_system_button"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:text="@string/agent_design_system_button"
+                        app:iconPadding="4dp" />
+
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/plan_button"
                         style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"

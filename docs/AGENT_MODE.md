@@ -1419,3 +1419,42 @@ its headings, hexes and sizes is longer than that, and a cut-off style
 is one the builder cannot follow. 140 per step is what turned a
 detailed plan into a list of stubs. The truncation appends "…", so
 what the user saw was a sentence that simply stopped.
+
+### Wave 31: the design system
+
+A style says "sunny and playful". What building actually needs is what
+a button IS in that style: 56 tall, orange #FF8A3D, 16 bold white text,
+16 of padding, 8 of margin. Left in the model's head that number drifts
+from screen to screen — which is why screens of one app end up looking
+like different apps. So the design system is a third thing the user
+agrees, between style and plan.
+
+**Storage.** Per project, in the journal, as structured tokens — not
+prose, because it exists to be looked up. Each token: `key`
+(`primary_button`), `label` ("Big friendly button"), `kind`, `props`.
+Held as a draft when no project exists yet and deposited into the
+project this work creates.
+
+**Two tools.** `set_design_system` saves the whole set (validated: a
+kind's properties are only what the builder can actually put on a
+widget — a design system promising a corner radius the tools cannot set
+is a lie the user finds on screen; minimum four components).
+`edit_design_token` changes ONE component, because "make the button
+taller" must never rewrite the set the user agreed.
+
+**The gate.** `create_project` and `create_activity` now need style,
+design system and plan. Advice in a 200-line brief was skipped; a
+refusal is not.
+
+**The page.** A "Design system" button beside Style, Plan and Task log.
+It opens a list of components; tapping one shows its properties as
+plain lines and — above them — the component drawn with those exact
+measurements: the real height, the real colour, the real text size. A
+component is something you look at, not something you read. "Change
+this" puts the request in the chat for the agent to do.
+
+**Honest limits.** Token fields are only the properties our tools can
+apply today (no corner radius, no elevation, no stroke yet). The system
+describes the app; where the tools cannot yet follow, it says so
+instead of pretending. Screens already built are never restyled
+silently — the agent offers.

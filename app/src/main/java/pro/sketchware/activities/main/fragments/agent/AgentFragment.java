@@ -179,6 +179,8 @@ public class AgentFragment extends qA {
         binding.historyButton.setOnClickListener(v -> showChatHistoryDialog());
         binding.exportButton.setOnClickListener(v -> exportConversation());
         binding.styleButton.setOnClickListener(v -> showStyleBriefDialog());
+        binding.designSystemButton.setOnClickListener(
+                v -> showDesignSystemDialog());
         binding.planButton.setOnClickListener(v -> showPlanDialog());
         binding.taskLogButton.setOnClickListener(v -> showTaskLogDialog());
         binding.taskStripResume.setOnClickListener(v -> resumeTask());
@@ -343,6 +345,15 @@ public class AgentFragment extends qA {
     }
 
     // region chat
+
+    /** Sends a message as if the user had typed it. */
+    private void askAgent(String text) {
+        if (binding == null) {
+            return;
+        }
+        binding.chatInput.setText(text);
+        sendCurrentInput();
+    }
 
     private void sendCurrentInput() {
         String text = binding.chatInput.getText() == null
@@ -787,6 +798,262 @@ public class AgentFragment extends qA {
                 .setPositiveButton(R.string.agent_style_brief_edit,
                         (dialog, which) -> showStyleBriefEditor(scId))
                 .show();
+    }
+
+    /**
+     * The design system: a list of the project's components. Tapping one
+     * opens what it is made of — and shows it, drawn with those exact
+     * measurements, because a component is something you look at, not
+     * something you read.
+     */
+    private void showDesignSystemDialog() {
+        String scId = workingProjectOrToast();
+        if (scId.isEmpty()) {
+            return;
+        }
+        com.google.gson.JsonObject system =
+                AgentJournal.designSystem(scId);
+        com.google.gson.JsonElement stored = system.get("tokens");
+        if (stored == null || !stored.isJsonArray()
+                || stored.getAsJsonArray().size() == 0) {
+            new MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(R.string.agent_design_system_title)
+                    .setMessage(R.string.agent_design_system_empty)
+                    .setPositiveButton(R.string.agent_action_close, null)
+                    .show();
+            return;
+        }
+        com.google.gson.JsonArray tokens = stored.getAsJsonArray();
+        String[] labels = new String[tokens.size()];
+        for (int i = 0; i < tokens.size(); i++) {
+            com.google.gson.JsonElement element = tokens.get(i);
+            if (!element.isJsonObject()) {
+                labels[i] = "Component";
+                continue;
+            }
+            com.google.gson.JsonObject token = element.getAsJsonObject();
+            String label = AgentJournal.textOf(token, "label");
+            labels[i] = label.isEmpty()
+                    ? AgentJournal.textOf(token, "key") : label;
+        }
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.agent_design_system_title)
+                .setItems(labels, (dialog, which) -> {
+                    com.google.gson.JsonElement chosen = tokens.get(which);
+                    if (chosen.isJsonObject()) {
+                        showDesignTokenDialog(chosen.getAsJsonObject());
+                    }
+                })
+                .setNegativeButton(R.string.agent_action_close, null)
+                .show();
+    }
+
+    /** One component: what it is made of, and what it looks like. */
+    private void showDesignTokenDialog(com.google.gson.JsonObject token) {
+        android.content.Context context = requireContext();
+        String label = AgentJournal.textOf(token, "label");
+        String key = AgentJournal.textOf(token, "key");
+        android.widget.LinearLayout layout =
+                new android.widget.LinearLayout(context);
+        layout.setOrientation(android.widget.LinearLayout.VERTICAL);
+        int pad = (int) (20 * context.getResources()
+                .getDisplayMetrics().density);
+        layout.setPadding(pad, pad / 2, pad, 0);
+        android.view.View preview = designPreview(context, token);
+        if (preview != null) {
+            layout.addView(preview);
+        }
+        android.widget.TextView details =
+                new android.widget.TextView(context);
+        details.setText(designTokenText(token));
+        details.setTextSize(14f);
+        details.setPadding(0, pad / 2, 0, 0);
+        details.setLineSpacing(4f, 1f);
+        layout.addView(details);
+        new MaterialAlertDialogBuilder(context)
+                .setTitle(label.isEmpty() ? key : label)
+                .setView(layout)
+                .setPositiveButton(R.string.agent_action_close, null)
+                .setNeutralButton("Change this", (dialog, which) ->
+                        askAgent("Change the " + key + " component in "
+                                + "the design system."))
+                .show();
+    }
+
+    /** A component drawn with its own measurements, so it can be seen. */
+    private android.view.View designPreview(android.content.Context context,
+                                            com.google.gson.JsonObject token) {
+        String kind = AgentJournal.textOf(token, "kind")
+                .toLowerCase(java.util.Locale.ROOT);
+        com.google.gson.JsonObject props = token.has("props")
+                && token.get("props").isJsonObject()
+                ? token.getAsJsonObject("props") : new com.google.gson.JsonObject();
+        String background = designColour(props, "background", "#E0E0E0");
+        int textColour = designColour(props, "text_color", "#000000");
+        int padding = designDp(context, props, "padding", 12);
+        android.widget.LinearLayout box =
+                new android.widget.LinearLayout(context);
+        box.setOrientation(android.widget.LinearLayout.VERTICAL);
+        box.setBackgroundColor(android.graphics.Color.parseColor("#F5F5F5"));
+        box.setPadding(padding, padding, padding, padding);
+        switch (kind) {
+            case "button" -> {
+                android.widget.TextView button =
+                        new android.widget.TextView(context);
+                button.setText("Button");
+                button.setGravity(android.view.Gravity.CENTER);
+                button.setTextColor(textColour);
+                button.setTextSize(designSp(props, "text_size", 16));
+                button.setBackgroundColor(
+                        android.graphics.Color.parseColor(background));
+                int height = designDp(context, props, "height", 48);
+                box.addView(button, new android.widget.LinearLayout
+                        .LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        height));
+            }
+            case "card" -> {
+                android.widget.TextView card =
+                        new android.widget.TextView(context);
+                card.setText("Card");
+                card.setTextColor(textColour);
+                card.setTextSize(15f);
+                card.setBackgroundColor(
+                        android.graphics.Color.parseColor(background));
+                card.setPadding(padding, padding, padding, padding);
+                box.addView(card);
+            }
+            case "list_row" -> {
+                android.widget.TextView title =
+                        new android.widget.TextView(context);
+                title.setText("List row title");
+                title.setTextColor(textColour);
+                title.setTextSize(designSp(props, "title_size", 16));
+                android.widget.TextView subtitle =
+                        new android.widget.TextView(context);
+                subtitle.setText("Supporting line");
+                subtitle.setTextSize(designSp(props, "subtitle_size", 13));
+                android.widget.LinearLayout row =
+                        new android.widget.LinearLayout(context);
+                row.setOrientation(android.widget.LinearLayout.VERTICAL);
+                row.setBackgroundColor(
+                        android.graphics.Color.parseColor(background));
+                int height = designDp(context, props, "height", 64);
+                row.setPadding(padding, padding, padding, padding);
+                row.addView(title);
+                row.addView(subtitle);
+                box.addView(row, new android.widget.LinearLayout
+                        .LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        height));
+            }
+            case "input" -> {
+                android.widget.TextView input =
+                        new android.widget.TextView(context);
+                input.setText("Type here");
+                input.setTextSize(designSp(props, "text_size", 16));
+                input.setTextColor(designColour(props, "hint_color",
+                        "#757575"));
+                input.setBackgroundColor(
+                        android.graphics.Color.parseColor(background));
+                input.setPadding(padding, padding, padding, padding);
+                int height = designDp(context, props, "height", 48);
+                box.addView(input, new android.widget.LinearLayout
+                        .LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        height));
+            }
+            case "screen" -> {
+                android.widget.TextView screen =
+                        new android.widget.TextView(context);
+                screen.setText("Screen");
+                screen.setGravity(android.view.Gravity.CENTER);
+                screen.setTextColor(textColour);
+                screen.setBackgroundColor(
+                        android.graphics.Color.parseColor(background));
+                box.addView(screen, new android.widget.LinearLayout
+                        .LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        (int) (120 * context.getResources()
+                                .getDisplayMetrics().density)));
+            }
+            default -> {
+                android.widget.TextView text =
+                        new android.widget.TextView(context);
+                text.setText("Aa");
+                text.setTextSize(designSp(props, "text_size", 16));
+                text.setTextColor(textColour);
+                box.addView(text);
+            }
+        }
+        return box;
+    }
+
+    /** One component's properties, in plain words. */
+    private static String designTokenText(com.google.gson.JsonObject token) {
+        com.google.gson.JsonObject props = token.has("props")
+                && token.get("props").isJsonObject()
+                ? token.getAsJsonObject("props") : new com.google.gson.JsonObject();
+        StringBuilder out = new StringBuilder();
+        for (java.util.Map.Entry<String, com.google.gson.JsonElement> field
+                : props.entrySet()) {
+            String value = field.getValue().isJsonPrimitive()
+                    ? field.getValue().getAsString() : "";
+            if (value.isEmpty()) {
+                continue;
+            }
+            if (out.length() > 0) {
+                out.append("\n");
+            }
+            out.append("• ").append(field.getKey().replace('_', ' '))
+                    .append(": ").append(value);
+        }
+        return out.length() > 0 ? out.toString()
+                : "No measurements saved for this component.";
+    }
+
+    /** A size in the design system, in dp, with a sane fallback. */
+    private static int designDp(android.content.Context context,
+                                com.google.gson.JsonObject props,
+                                String key, int fallback) {
+        String raw = designValue(props, key);
+        float dp = parseFloatOr(raw, fallback);
+        return (int) (dp * context.getResources().getDisplayMetrics().density);
+    }
+
+    /** A text size in the design system, in sp. */
+    private static float designSp(com.google.gson.JsonObject props,
+                                  String key, float fallback) {
+        return parseFloatOr(designValue(props, key), fallback);
+    }
+
+    private static String designValue(com.google.gson.JsonObject props,
+                                      String key) {
+        com.google.gson.JsonElement element = props.get(key);
+        return element != null && element.isJsonPrimitive()
+                ? element.getAsString().trim() : "";
+    }
+
+    private static float parseFloatOr(String value, float fallback) {
+        try {
+            return Float.parseFloat(value.replaceAll("[^0-9.]", ""));
+        } catch (Exception e) {
+            return fallback;
+        }
+    }
+
+    /** A colour in the design system, with a fallback when it is not one. */
+    private static int designColour(com.google.gson.JsonObject props,
+                                    String key, String fallback) {
+        String raw = designValue(props, key);
+        if (raw.isEmpty()) {
+            raw = fallback;
+        }
+        try {
+            return android.graphics.Color.parseColor(raw);
+        } catch (Exception e) {
+            return android.graphics.Color.parseColor(fallback);
+        }
     }
 
     /**

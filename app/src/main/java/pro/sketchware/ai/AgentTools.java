@@ -132,6 +132,8 @@ public final class AgentTools {
         register(new AskColor());
         register(new AskChoice());
         register(new SetStyleBrief());
+        register(new SetDesignSystem());
+        register(new EditDesignToken());
         register(new SetPlan());
         register(new GetTaskLog());
         register(new CreateProject());
@@ -3513,6 +3515,315 @@ public final class AgentTools {
         }
     }
 
+    /**
+     * The properties each kind of component may carry. Only what the
+     * builder can actually put on a widget is listed — a design system
+     * that promises a corner radius the tools cannot set is a lie the
+     * user discovers on screen.
+     */
+    private static final java.util.Map<String, String[]> DESIGN_FIELDS =
+            new java.util.HashMap<>();
+
+    static {
+        DESIGN_FIELDS.put("button", new String[]{"height", "background",
+                "text_color", "text_size", "text_style", "padding",
+                "margin"});
+        DESIGN_FIELDS.put("card", new String[]{"background", "padding",
+                "margin"});
+        DESIGN_FIELDS.put("list_row", new String[]{"height", "background",
+                "padding", "margin", "title_size", "subtitle_size"});
+        DESIGN_FIELDS.put("input", new String[]{"height", "background",
+                "hint_color", "text_color", "text_size", "padding",
+                "margin"});
+        DESIGN_FIELDS.put("screen", new String[]{"background", "padding",
+                "gap"});
+        DESIGN_FIELDS.put("text", new String[]{"text_size", "text_color",
+                "text_style", "margin"});
+    }
+
+    /** The plain name of each component kind, for messages. */
+    private static String designKindLabel(String kind) {
+        return switch (kind == null ? "" : kind.toLowerCase(Locale.ROOT)) {
+            case "button" -> "button";
+            case "card" -> "card";
+            case "list_row" -> "list row";
+            case "input" -> "input field";
+            case "screen" -> "screen";
+            case "text" -> "text";
+            default -> kind == null ? "" : kind;
+        };
+    }
+
+    /**
+     * Checks one design-system entry. A token is a name the builder can
+     * look up later, so a token with no properties is just a word.
+     */
+    private static void checkDesignToken(JsonObject token, int index)
+            throws ToolException {
+        String key = stringOf(token, "key");
+        if (key.isEmpty() || !key.matches("[a-z][a-z0-9_]{1,29}")) {
+            throw new ToolException("E_BAD_TOKEN",
+                    "Token " + (index + 1) + " needs a \"key\" in "
+                            + "lowercase letters, digits and underscores "
+                            + "(e.g. primary_button), 2 to 30 characters.");
+        }
+        String kind = stringOf(token, "kind").toLowerCase(Locale.ROOT);
+        String[] allowed = DESIGN_FIELDS.get(kind);
+        if (allowed == null) {
+            throw new ToolException("E_BAD_TOKEN",
+                    "Token \"" + key + "\" has kind \"" + kind
+                            + "\", which is not one of: button, card, "
+                            + "list_row, input, screen, text.");
+        }
+        if (!token.has("props") || !token.get("props").isJsonObject()) {
+            throw new ToolException("E_BAD_TOKEN",
+                    "Token \"" + key + "\" needs \"props\": the "
+                            + "measurements every " + designKindLabel(kind)
+                            + " uses.");
+        }
+        JsonObject props = token.getAsJsonObject("props");
+        if (props.size() == 0) {
+            throw new ToolException("E_BAD_TOKEN",
+                    "Token \"" + key + "\" has no properties — a "
+                            + "component with no measurements is nothing "
+                            + "the builder can follow.");
+        }
+        StringBuilder unknown = new StringBuilder();
+        for (String field : props.keySet()) {
+            boolean known = false;
+            for (String candidate : allowed) {
+                if (candidate.equals(field)) {
+                    known = true;
+                    break;
+                }
+            }
+            if (!known) {
+                if (unknown.length() > 0) {
+                    unknown.append(", ");
+                }
+                unknown.append(field);
+            }
+        }
+        if (unknown.length() > 0) {
+            throw new ToolException("E_BAD_TOKEN",
+                    "A " + designKindLabel(kind) + " has no \"" + unknown
+                            + "\"; its properties are: "
+                            + String.join(", ", allowed) + ".");
+        }
+    }
+
+    /**
+     * set_design_system: saves the components the whole app is built
+     * from. One coherent set, agreed as one.
+     */
+    private static final class SetDesignSystem implements Tool {
+        @Override
+        public String name() {
+            return "set_design_system";
+        }
+
+        @Override
+        public String description() {
+            return "Saves the project's design system: the components "
+                    + "every screen is built from, by name, with the "
+                    + "measurements each one uses. Call it after the "
+                    + "style is agreed and before the plan — the plan "
+                    + "builds screens out of these. Pass the COMPLETE "
+                    + "set (usually 7 to 10 components): "
+                    + "primary_button, secondary_button, ghost_button, "
+                    + "card, list_row, input, screen, title, body. Each "
+                    + "entry: {\"key\":\"primary_button\","
+                    + "\"label\":\"Big friendly button\","
+                    + "\"kind\":\"button\",\"props\":{\"height\":\"56\","
+                    + "\"background\":\"#FF8A3D\",\"text_color\":"
+                    + "\"#FFFFFF\",\"text_size\":\"16\",\"text_style\":"
+                    + "\"bold\",\"padding\":\"16\",\"margin\":\"8\"}}. "
+                    + "Kinds and their properties: button [height, "
+                    + "background, text_color, text_size, text_style, "
+                    + "padding, margin]; card [background, padding, "
+                    + "margin]; list_row [height, background, padding, "
+                    + "margin, title_size, subtitle_size]; input "
+                    + "[height, background, hint_color, text_color, "
+                    + "text_size, padding, margin]; screen [background, "
+                    + "padding, gap]; text [text_size, text_color, "
+                    + "text_style, margin]. Sizes are plain numbers (dp "
+                    + "or sp) and colours hex. No approval card — it "
+                    + "changes nothing in the project itself. Calling it "
+                    + "again replaces the set, so include everything "
+                    + "that should carry over. To change ONE component "
+                    + "later use edit_design_token — never rewrite the "
+                    + "whole set to change one row.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("title", stringSchema(
+                    "The set's name, e.g. \"Kids Notes components\""));
+            properties.add("components", stringSchema(
+                    "The components as a JSON array, one object each"));
+            return AgentTools.parameters(properties, "title", "components");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Saving the design system";
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String title = stringArg(args, "title");
+            JsonArray components;
+            try {
+                components = com.google.gson.JsonParser
+                        .parseString(stringArg(args, "components"))
+                        .getAsJsonArray();
+            } catch (Exception e) {
+                throw new ToolException("E_BAD_ARGS",
+                        "Pass the components as a JSON array in "
+                                + "\"components\".");
+            }
+            if (components.size() < 4) {
+                throw new ToolException("E_DESIGN_TOO_THIN",
+                        "A design system needs at least four components "
+                                + "(a button, a card or list row, an "
+                                + "input, a screen) — this is what makes "
+                                + "every screen look like the same app.");
+            }
+            JsonArray tokens = new JsonArray();
+            for (int i = 0; i < components.size(); i++) {
+                JsonElement element = components.get(i);
+                if (!element.isJsonObject()) {
+                    throw new ToolException("E_BAD_TOKEN",
+                            "Component " + (i + 1) + " must be an object "
+                                    + "with key, label, kind and props.");
+                }
+                JsonObject token = element.getAsJsonObject();
+                checkDesignToken(token, i);
+                tokens.add(token);
+            }
+            JsonObject result = new JsonObject();
+            if (session.workingProjectId == null
+                    || session.workingProjectId.isEmpty()) {
+                AgentJournal.setDraftDesignSystem(title, tokens);
+                result.addProperty("saved", "draft");
+                result.addProperty("message",
+                        "Design system held as a draft; it lands in the "
+                                + "project this work creates. Build every "
+                                + "screen from these components now.");
+                return result;
+            }
+            String scId = requiredProject(session.workingProjectId);
+            AgentJournal.setDesignSystem(scId, title, tokens);
+            result.addProperty("saved", true);
+            result.addProperty("components", tokens.size());
+            result.addProperty("message",
+                    "Design system saved for this project. Every screen "
+                            + "you build now uses these components by "
+                            + "name — a primary_button is the same button "
+                            + "on every screen, so never invent new "
+                            + "measurements for one.");
+            return result;
+        }
+    }
+
+    /** edit_design_token: changes one component of the design system. */
+    private static final class EditDesignToken implements Tool {
+        @Override
+        public String name() {
+            return "edit_design_token";
+        }
+
+        @Override
+        public String description() {
+            return "Changes ONE component of the project's design "
+                    + "system — the user asked for one thing to change, "
+                    + "so change that one thing. Pass its \"key\" "
+                    + "(e.g. primary_button) and the component's FULL "
+                    + "new entry (key, label, kind, props). Nothing else "
+                    + "in the set is touched. Use set_design_system only "
+                    + "when the whole set is being replaced. After the "
+                    + "change, OFFER to update screens already built — "
+                    + "never restyle them on your own.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("key", stringSchema(
+                    "The component to change, e.g. primary_button"));
+            properties.add("component", stringSchema(
+                    "The component's full new entry, as JSON"));
+            return AgentTools.parameters(properties, "key", "component");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Changing the " + stringArg(args, "key") + " component";
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String key = stringArg(args, "key");
+            JsonObject component;
+            try {
+                component = com.google.gson.JsonParser
+                        .parseString(stringArg(args, "component"))
+                        .getAsJsonObject();
+            } catch (Exception e) {
+                throw new ToolException("E_BAD_ARGS",
+                        "Pass the component's new entry as JSON in "
+                                + "\"component\".");
+            }
+            checkDesignToken(component, 0);
+            if (!key.equals(stringOf(component, "key"))) {
+                throw new ToolException("E_BAD_ARGS",
+                        "The \"key\" must match the component's own "
+                                + "\"key\" — one change at a time.");
+            }
+            String scId = requiredProject(session.workingProjectId);
+            if (!AgentJournal.hasDesignSystem(scId)) {
+                throw new ToolException("E_NO_DESIGN_SYSTEM",
+                        "This project has no design system yet, so there "
+                                + "is nothing to change. Propose the "
+                                + "whole set with set_design_system "
+                                + "first.");
+            }
+            if (!AgentJournal.setDesignToken(scId, key, component)) {
+                JsonObject system = AgentJournal.designSystem(scId);
+                StringBuilder known = new StringBuilder();
+                JsonElement element = system.get("tokens");
+                if (element != null && element.isJsonArray()) {
+                    for (JsonElement token : element.getAsJsonArray()) {
+                        if (!token.isJsonObject()) {
+                            continue;
+                        }
+                        if (known.length() > 0) {
+                            known.append(", ");
+                        }
+                        known.append(stringOf(token.getAsJsonObject(),
+                                "key"));
+                    }
+                }
+                throw new ToolException("E_NO_TOKEN",
+                        "There is no component called \"" + key
+                                + "\" in this project's design system. "
+                                + "Its components are: " + known + ".");
+            }
+            JsonObject result = new JsonObject();
+            result.addProperty("changed", key);
+            result.addProperty("message",
+                    "The " + key + " component is changed. Screens built "
+                            + "from now on use it. Screens already built "
+                            + "keep the old measurements until the user "
+                            + "asks — offer to update them, do not do it "
+                            + "on your own.");
+            return result;
+        }
+    }
+
     /** get_task_log: the app's recorded task history for this project. */
     private static final class GetTaskLog implements Tool {
         @Override
@@ -3614,7 +3925,7 @@ public final class AgentTools {
             // before this can even be proposed.
             requireDesign(session.workingProjectId == null
                     ? "" : session.workingProjectId, name, "app", true,
-                    true);
+                    true, true);
             String pkg = stringArg(args, "package_name");
             if (!pkg.isEmpty() && (pkg.length() > 120
                     || !PACKAGE_PATTERN.matcher(pkg).matches())) {
@@ -3668,12 +3979,14 @@ public final class AgentTools {
      */
     private static void requireDesign(String scId, String what,
                                       String kind, boolean newProject,
-                                      boolean styleToo)
+                                      boolean styleToo, boolean designToo)
             throws ToolException {
         boolean hasStyle = !styleToo
                 || AgentJournal.hasStyleBriefOrDraft(scId);
+        boolean hasDesign = !designToo
+                || AgentJournal.hasDesignSystemOrDraft(scId);
         boolean hasPlan = AgentJournal.hasPlanOrDraft(scId);
-        if (hasStyle && hasPlan) {
+        if (hasStyle && hasDesign && hasPlan) {
             return;
         }
         StringBuilder message = new StringBuilder(
@@ -3694,6 +4007,21 @@ public final class AgentTools {
                             + "Buttons and cards (height, corner roundness); "
                             + "Spacing; Do; Avoid. ");
         }
+        if (!hasDesign) {
+            message.append("There is no design system yet, so next turn "
+                            + "the style into components and save them "
+                            + "with set_design_system: primary_button, "
+                            + "secondary_button, card, list_row, input, "
+                            + "screen, title, body — each with the exact "
+                            + "measurements every instance of it uses "
+                            + "(height, background with hex, text size, "
+                            + "text colour, padding, margin). Propose the "
+                            + "whole set yourself from the style — do not "
+                            + "interview the user property by property — "
+                            + "then show it to them and let them change a "
+                            + "row. From then on build every screen out "
+                            + "of these components by name. ");
+        }
         if (!hasPlan) {
             message.append("There is no plan yet, so next write the "
                             + "implementation plan for this ")
@@ -3707,12 +4035,11 @@ public final class AgentTools {
                             + "you build. ");
         }
         if (newProject) {
-            message.append("Do not create the project until both are "
-                    + "saved; come back and create it as the first step of "
-                    + "building.");
+            message.append("Do not create the project until the style, "
+                    + "the design system and the plan are all saved; come "
+                    + "back and create it as the first step of building.");
         } else {
-            message.append("Do not add the screen until the plan is "
-                    + "saved.");
+            message.append("Do not add the screen until those are saved.");
         }
         throw new ToolException("E_DESIGN_FIRST", message.toString());
     }
@@ -3761,7 +4088,7 @@ public final class AgentTools {
             String asked = stringArg(args, "activity");
             // A new screen is real work: it is planned before it is
             // added, so the user sees where it fits before it exists.
-            requireDesign(scId, asked, "screen", false, false);
+            requireDesign(scId, asked, "screen", false, false, true);
             String fileName = fileNameFor(asked);
             if (!NAME_PATTERN.matcher(fileName).matches()) {
                 throw new ToolException("E_BAD_NAME",
