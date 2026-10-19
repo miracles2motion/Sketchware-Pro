@@ -859,7 +859,10 @@ public final class AgentLogic {
         // Wave 11: the verified leftovers. Every emission, stored
         // picker value and field dependency was read out of Fx, Lx,
         // BlocksHandler and uq before teaching (see the knowledge
-        // doc's Wave 11 research notes).
+        // doc's Wave 11 research notes). (This comment also serves
+        // as the app-path change that re-triggers Android CI after
+        // a transient runner failure; the bootstrap workflow's
+        // build of the same code was already green.)
         int auth = ComponentBean.COMPONENT_TYPE_FIREBASE_AUTH;
         int storage = ComponentBean.COMPONENT_TYPE_FIREBASE_STORAGE;
         int rewarded = ComponentBean.COMPONENT_TYPE_REWARDED_VIDEO_AD;
