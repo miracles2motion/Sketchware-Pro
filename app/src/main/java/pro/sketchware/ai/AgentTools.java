@@ -1433,7 +1433,28 @@ public final class AgentTools {
                     + "{\"arg\":\"position\"} is the row number, and "
                     + "{\"list_map_value\": list, \"index\": "
                     + "{\"arg\":\"position\"}, \"key\": ...} reads "
-                    + "that row's values. Typed map stores: "
+                    + "that row's values. Menus (only inside the "
+                    + "activity's onCreateOptionsMenu event): "
+                    + "menu_item {name, id, title, icon, action} "
+                    + "declares a named item (action is always, "
+                    + "if_room, never, with_text or collapse), "
+                    + "submenu {name, title, blocks} declares a "
+                    + "submenu whose blocks are submenu_item "
+                    + "{submenu, id, title}, and menu_item_visible / "
+                    + "menu_item_enabled {name, flag} show, hide, "
+                    + "enable or disable a declared item. Listener "
+                    + "bodies: otp_listener {target, blocks} runs "
+                    + "when a full code is typed into an OTPView — "
+                    + "{\"arg\":\"otp\"} is the code inside; "
+                    + "youtube_listener {target, video_id, blocks} "
+                    + "loads a video when a YouTube player is ready, "
+                    + "then runs its blocks. A YouTube player also "
+                    + "needs youtube_lifecycle {target} once (it "
+                    + "registers the player with the screen's "
+                    + "lifecycle). Images: crop_image {text path, "
+                    + "value request code} opens the crop screen "
+                    + "for an image file; its answer arrives in "
+                    + "onActivityResult under that code. Typed map stores: "
                     + "map_put_number {variable, "
                     + "key, value}, map_put_flag {variable, key, "
                     + "flag}, map_put_list {variable, key, list}, "
@@ -1641,7 +1662,11 @@ public final class AgentTools {
                     "asynctask_publish", "datepicker_show",
                     "timepicker_show", "list_custom_data",
                     "grid_custom_data", "recycler_custom_data",
-                    "pager_custom_data", "spinner_custom_data"}) {
+                    "pager_custom_data", "spinner_custom_data",
+                    "menu_item", "submenu", "submenu_item",
+                    "menu_item_visible", "menu_item_enabled",
+                    "otp_listener", "youtube_listener",
+                    "crop_image", "youtube_lifecycle"}) {
                 kinds.add(kind);
             }
             blockProp.add("enum", kinds);

@@ -994,3 +994,15 @@ Device test findings (SportyNivida / Sporty Bet):
   the row's own widgets are the targets, {"arg": "position"} is the
   row number, and list_map_value reads that row's values.
 - Coverage: 538/584 stock blocks.
+
+## Wave 14 — menus, listener bodies, and the last singles
+
+- Options menus inside onCreateOptionsMenu: named menu items and
+  submenus the handler can later show, hide or disable.
+- Listener bodies: otp_listener (the entered code is an event
+  value inside) and youtube_listener (load a video when ready),
+  plus crop_image and youtube_lifecycle.
+- Stock-block census closed out: 556 of 584 blocks taught; the
+  remaining 28 are documented exclusions (raw-source blocks, unsafe
+  typed map reads, dead/junk blocks, More-block-only returns), each
+  with its reason in docs/STOCK_BLOCK_KNOWLEDGE.md.

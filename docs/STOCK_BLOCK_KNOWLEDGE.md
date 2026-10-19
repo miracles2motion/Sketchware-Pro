@@ -990,3 +990,42 @@ Only after this stock set is exhausted do agent-defined custom blocks
   SubMenu declared-name trio, two third-party listener containers
   (YouTube/OTP listener bodies), typed hashmap GETS (excluded,
   unsafe casts), and the by-design raw-source/junk set.
+
+## Wave 14 implementation (menus, listener bodies, final two) + census close-out
+
+- Menus, gated to the onCreateOptionsMenu activity event where the
+  `menu` local exists: menu_item {name, id, title, icon, action}
+  (menuAddMenuItem; action validated against uq's
+  SHOW_AS_ACTION_* set, icon against the project's drawables),
+  submenu {name, title, blocks} (menuAddSubmenu, a "c" container),
+  submenu_item {submenu, id, title} (submenuAddItem; the submenu
+  must be declared earlier in the same handler — Builder tracks the
+  declared names in build order, matching Java's scoping), and
+  menu_item_visible / menu_item_enabled {name, flag}
+  (menuItemSetVisible/SetEnabled, offered by ExtraBlocks only in
+  that event). menuFindItem returns a MenuItem *value* — no agent
+  slot can hold one, so it stays out, like viewGetChildAt.
+- Listener-body containers: otp_listener {target, blocks}
+  (otpViewSetOTPListener; inside the body {"arg": "otp"} is the
+  entered code — Builder pushes it into the event-args scope for the
+  body and restores it after) and youtube_listener {target,
+  video_id, blocks} (YTPVSetListener; body runs in onReady after the
+  video cues). Plus two verified singles: crop_image {text, value}
+  (imageCrop) and youtube_lifecycle {target} (YTPVLifecycle).
+- Census reconciliation: docs/stock_blocks_v2.json flags were audited
+  row by row against the wave registries. Final count: **556/584**.
+  The 28 rows left are all exclusions with reasons, not gaps:
+  raw-source blocks by design (CommandBlockJava, addCustomVariable,
+  addInitializer, addSourceDirectly, asdBoolean/Number/String);
+  getResStr/getResString (menu-picker storage format never verified
+  in the app's own code); typed hashmap GETS hashmapGetBoolean/
+  Number/Listmap/Map (Fx emits unchecked casts onto String-valued
+  agent maps — unsafe); dead showKeyboard/hideKeyboard; More-block
+  returns returnBoolean/Number/String/ListStr/ListMap/View (only
+  legal inside user-defined More blocks, which the agent does not
+  create); junk emissions setImage (regex fragment) and
+  setCustomLetter; duplicates timepickerSetCurrentHour/Minute
+  (set_picker_hour/set_picker_minute already taught); property-path
+  blocks setTypeface (edit_screen set_font) and
+  setRecyclerViewLayoutParams (layout sizing, a property concern);
+  viewGetChildAt (returns a View value no slot can hold).

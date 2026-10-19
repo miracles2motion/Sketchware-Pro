@@ -19,6 +19,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import mod.agus.jcoderz.beans.ViewBeans;
+
 import a.a.a.Fx;
 import a.a.a.eC;
 import a.a.a.jC;
@@ -1455,6 +1457,12 @@ public final class AgentLogic {
                 new LinkedHashMap<>();
         /** The event being built (gates return/publish blocks). */
         String currentEvent = "";
+        /** MenuItem names declared so far in this handler. */
+        final java.util.Set<String> menuItemNames =
+                new java.util.HashSet<>();
+        /** SubMenu names declared so far in this handler. */
+        final java.util.Set<String> submenuNames =
+                new java.util.HashSet<>();
 
         Builder(Context context, Map<String, ViewBean> byId,
                 Map<String, Integer> variables, int nextId) {
@@ -1570,6 +1578,36 @@ public final class AgentLogic {
                 return 's';
             }
             throw new AgentTools.ToolException("E_BAD_BLOCK", what);
+        }
+
+        /** Menu blocks live where the options menu itself exists. */
+        private void requireOptionsMenu(String kind)
+                throws AgentTools.ToolException {
+            if (!"onCreateOptionsMenu".equals(currentEvent)) {
+                throw new AgentTools.ToolException("E_BAD_BLOCK",
+                        kind + " only works inside the activity's "
+                                + "onCreateOptionsMenu event, where "
+                                + "the menu exists.");
+            }
+        }
+
+        /** A declared menu name: a fresh Java identifier. */
+        private String newMenuName(JsonObject op, String field,
+                                   java.util.Set<String> declared)
+                throws AgentTools.ToolException {
+            String name = stringOf(op, field);
+            if (!name.matches("[A-Za-z_$][A-Za-z0-9_$]*")) {
+                throw new AgentTools.ToolException("E_BAD_BLOCK",
+                        "A menu name is one word of letters, digits "
+                                + "or underscores starting with a "
+                                + "letter, like \"saveItem\".");
+            }
+            if (declared.contains(name)) {
+                throw new AgentTools.ToolException("E_BAD_BLOCK",
+                        "The name \"" + name + "\" is already used "
+                                + "in this menu. Pick another.");
+            }
+            return name;
         }
 
         BlockBean buildStatement(JsonObject op, int depth)
@@ -2312,6 +2350,206 @@ public final class AgentLogic {
                             "Show the " + componentId + " time picker");
                     lines.add(indent(depth) + "Show the " + componentId
                             + " time picker");
+                    return bean;
+                }
+                case "menu_item" -> {
+                    // menuAddMenuItem: declare a named item so later
+                    // blocks can show, hide or disable it again.
+                    requireOptionsMenu("menu_item");
+                    String name = newMenuName(op, "name",
+                            menuItemNames);
+                    String action = stringOf(op, "action")
+                            .toUpperCase(Locale.ROOT);
+                    String actionConstant = switch (action) {
+                        case "", "ALWAYS", "SHOW_AS_ACTION_ALWAYS" ->
+                                "SHOW_AS_ACTION_ALWAYS";
+                        case "IF_ROOM", "SHOW_AS_ACTION_IF_ROOM" ->
+                                "SHOW_AS_ACTION_IF_ROOM";
+                        case "NEVER", "SHOW_AS_ACTION_NEVER" ->
+                                "SHOW_AS_ACTION_NEVER";
+                        case "WITH_TEXT", "SHOW_AS_ACTION_WITH_TEXT" ->
+                                "SHOW_AS_ACTION_WITH_TEXT";
+                        case "COLLAPSE", "COLLAPSE_ACTION_VIEW",
+                                "SHOW_AS_ACTION_COLLAPSE_ACTION_VIEW" ->
+                                "SHOW_AS_ACTION_COLLAPSE_ACTION_VIEW";
+                        default -> throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "menu_item \"action\" is one of: "
+                                        + "always, if_room, never, "
+                                        + "with_text, collapse.");
+                    };
+                    String icon = stringOf(op, "icon");
+                    if (!SketchwareProjects.resources(scId).images
+                            .contains(icon)) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "There is no drawable called \"" + icon
+                                        + "\" in this project. Use "
+                                        + "list_resources to see its "
+                                        + "images.");
+                    }
+                    BlockBean bean = newBean("menuAddMenuItem", " ");
+                    bean.parameters.add(name);
+                    bean.parameters.add(numericField(op, "id"));
+                    bean.parameters.add(expr(op.get("title"), 's',
+                            "menu_item needs \"title\": the item text"));
+                    bean.parameters.add(icon);
+                    bean.parameters.add(actionConstant);
+                    allStatements.add(bean);
+                    menuItemNames.add(name);
+                    addExpect("MenuItem " + name + " = menu.add(",
+                            "Add menu item " + describeExpr(
+                                    op.get("title")));
+                    lines.add(indent(depth) + "Add menu item "
+                            + describeExpr(op.get("title")) + " ("
+                            + name + ")");
+                    return bean;
+                }
+                case "submenu" -> {
+                    // menuAddSubmenu: a named submenu whose items
+                    // are the body (submenu_item blocks).
+                    requireOptionsMenu("submenu");
+                    String name = newMenuName(op, "name",
+                            submenuNames);
+                    BlockBean bean = newBean("menuAddSubmenu", "c");
+                    bean.parameters.add(name);
+                    bean.parameters.add(expr(op.get("title"), 's',
+                            "submenu needs \"title\": its text"));
+                    allStatements.add(bean);
+                    addExpect("SubMenu " + name + " = menu.addSubMenu(",
+                            "Add submenu " + describeExpr(
+                                    op.get("title")));
+                    lines.add(indent(depth) + "Add submenu "
+                            + describeExpr(op.get("title")) + " ("
+                            + name + "):");
+                    submenuNames.add(name);
+                    ArrayList<BlockBean> body = buildList(
+                            arrayOf(op, "blocks"), depth + 1, "blocks");
+                    bean.subStack1 = Integer.parseInt(body.get(0).id);
+                    return bean;
+                }
+                case "submenu_item" -> {
+                    requireOptionsMenu("submenu_item");
+                    String name = stringOf(op, "submenu");
+                    if (!submenuNames.contains(name)) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "submenu_item adds to a submenu "
+                                        + "declared earlier in this "
+                                        + "handler with a submenu block; "
+                                        + "\"" + name + "\" is not one.");
+                    }
+                    BlockBean bean = newBean("submenuAddItem", " ");
+                    bean.parameters.add(name);
+                    bean.parameters.add(numericField(op, "id"));
+                    bean.parameters.add(expr(op.get("title"), 's',
+                            "submenu_item needs \"title\": the item "
+                                    + "text"));
+                    allStatements.add(bean);
+                    addExpect(name + ".add(0,",
+                            "Add " + describeExpr(op.get("title"))
+                                    + " to submenu " + name);
+                    lines.add(indent(depth) + "Add "
+                            + describeExpr(op.get("title"))
+                            + " to submenu " + name);
+                    return bean;
+                }
+                case "menu_item_visible", "menu_item_enabled" -> {
+                    // menuItemSetVisible / menuItemSetEnabled on a
+                    // named item declared earlier in this handler.
+                    requireOptionsMenu(kind);
+                    boolean visible = "menu_item_visible".equals(kind);
+                    String name = stringOf(op, "name");
+                    if (!menuItemNames.contains(name)) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                kind + " works on a menu item declared "
+                                        + "earlier in this handler with "
+                                        + "menu_item; \"" + name
+                                        + "\" is not one.");
+                    }
+                    BlockBean bean = newBean(visible
+                            ? "menuItemSetVisible"
+                            : "menuItemSetEnabled", " ");
+                    bean.parameters.add(name);
+                    bean.parameters.add(expr(op.get("flag"), 'b',
+                            kind + " needs \"flag\": true or false"));
+                    allStatements.add(bean);
+                    addExpect(name + (visible ? ".setVisible("
+                                    : ".setEnabled("),
+                            (visible ? "Show or hide " : "Enable or "
+                                    + "disable ") + name);
+                    lines.add(indent(depth) + (visible
+                            ? "Set whether " + name + " is visible"
+                            : "Set whether " + name + " is enabled"));
+                    return bean;
+                }
+                case "otp_listener" -> {
+                    // otpViewSetOTPListener: the body runs when the
+                    // user finishes typing the code, which is
+                    // {"arg": "otp"} inside it.
+                    ViewBean widget = requireWidget(op, byId);
+                    if (!"OTPView".equals(
+                            AgentEdits.typeName(widget.type))) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                widget.id + " is a "
+                                        + AgentEdits.typeName(widget.type)
+                                        + ", not an OTPView.");
+                    }
+                    BlockBean bean =
+                            newBean("otpViewSetOTPListener", "c");
+                    bean.parameters.add(widget.id);
+                    allStatements.add(bean);
+                    addExpect(widget.id
+                                    + ".setOTPListener(new OTPListener()",
+                            "When a full code is entered in "
+                                    + widget.id);
+                    lines.add(indent(depth) + "When a full code is "
+                            + "entered in " + widget.id + ":");
+                    Character previous = eventArgs.put("otp", 's');
+                    try {
+                        ArrayList<BlockBean> body = buildList(
+                                arrayOf(op, "blocks"), depth + 1,
+                                "blocks");
+                        bean.subStack1 = Integer.parseInt(
+                                body.get(0).id);
+                    } finally {
+                        if (previous == null) {
+                            eventArgs.remove("otp");
+                        } else {
+                            eventArgs.put("otp", previous);
+                        }
+                    }
+                    return bean;
+                }
+                case "youtube_listener" -> {
+                    // YTPVSetListener: cue a video when the player is
+                    // ready, then run the body.
+                    ViewBean widget = requireWidget(op, byId);
+                    if (widget.type
+                            != ViewBeans.VIEW_TYPE_WIDGET_YOUTUBEPLAYERVIEW) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                widget.id + " is a "
+                                        + AgentEdits.typeName(widget.type)
+                                        + ", not a YouTube player.");
+                    }
+                    BlockBean bean = newBean("YTPVSetListener", "c");
+                    bean.parameters.add(widget.id);
+                    bean.parameters.add(expr(op.get("video_id"), 's',
+                            "youtube_listener needs \"video_id\": the "
+                                    + "video to load"));
+                    allStatements.add(bean);
+                    addExpect(widget.id + ".addYouTubePlayerListener("
+                                    + "new AbstractYouTubePlayerListener()",
+                            "When " + widget.id + " is ready, load "
+                                    + "the video");
+                    lines.add(indent(depth) + "When " + widget.id
+                            + " is ready, load the video:");
+                    ArrayList<BlockBean> body = buildList(
+                            arrayOf(op, "blocks"), depth + 1, "blocks");
+                    bean.subStack1 = Integer.parseInt(body.get(0).id);
                     return bean;
                 }
                 default -> {
@@ -5778,6 +6016,43 @@ public final class AgentLogic {
                 stmt.type = "f";
                 stmt.sentence = "Close all screens";
                 stmt.expectCode = "finishAffinity();";
+            }
+            case "crop_image" -> {
+                // imageCrop: open the crop screen for an image
+                // file; the answer comes back to onActivityResult
+                // under the request code given here.
+                String path = stringOf(op, "text");
+                if (path.isEmpty()) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "crop_image needs \"text\": the image "
+                                    + "file's path.");
+                }
+                stmt.opCode = "imageCrop";
+                stmt.type = " ";
+                stmt.params.add(path);
+                stmt.params.add(numericField(op, "value"));
+                stmt.sentence = "Crop the image at “" + path + "”";
+                stmt.expectCode = "SketchwareUtil.CropImage(this,";
+            }
+            case "youtube_lifecycle" -> {
+                // YTPVLifecycle: register the player with the
+                // screen's lifecycle, as the player's own docs
+                // require ("getLifecycle().addObserver(%1$s);").
+                ViewBean widget = requireWidget(op, byId);
+                if (widget.type
+                        != ViewBeans.VIEW_TYPE_WIDGET_YOUTUBEPLAYERVIEW) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            widget.id + " is a "
+                                    + AgentEdits.typeName(widget.type)
+                                    + ", not a YouTube player.");
+                }
+                stmt.opCode = "YTPVLifecycle";
+                stmt.type = " ";
+                stmt.params.add(widget.id);
+                stmt.sentence = "Let " + widget.id + " follow the "
+                        + "screen's lifecycle";
+                stmt.expectCode = "getLifecycle().addObserver("
+                        + widget.id + ")";
             }
             case "light_status_bar" -> {
                 stmt.opCode = "LightStatusBar";

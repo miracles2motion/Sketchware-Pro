@@ -251,8 +251,8 @@
   "type": "c"
  },
  "Dialog SetIcon": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "dialog_icon",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%s.setIcon(R.drawable.%s);",
@@ -493,8 +493,8 @@
   "type": " "
  },
  "LightStatusBar": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "light_status_bar",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);\r\ngetWindow().setStatusBarColor(0xFFFFFFFF);",
@@ -551,8 +551,8 @@
   "type": " "
  },
  "RepeatKnownNumDescending": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "repeat_index_down",
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "for (int %2$s = ((int) %1$s - 1); %2$s > -1; %2$s--) {\r\n%3$s\r\n}",
@@ -587,8 +587,8 @@
   "type": " "
  },
  "YTPVLifecycle": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "youtube_lifecycle",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "getLifecycle().addObserver(%1$s);",
@@ -605,8 +605,8 @@
   "type": " "
  },
  "YTPVSetListener": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "youtube_listener",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%1$s.addYouTubePlayerListener(new AbstractYouTubePlayerListener() {\r\n  @Override\r\n  public void onReady(@NonNull YouTubePlayer youTubePlayer) {\r\n    String videoId = %2$s;\r\n    youTubePlayer.cueVideo(videoId, 0);\r\n    %3$s\r\n  }\r\n});",
@@ -753,8 +753,8 @@
   "type": " "
  },
  "addPermission": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "add_permission",
+  "agent_known": true,
   "builtin": true,
   "category": "More",
   "code": "",
@@ -921,8 +921,8 @@
   "type": " "
  },
  "bannerAdViewLoadAd": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "banner_load_ad",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "{\r\nAdRequest adRequest = new AdRequest.Builder().build();\r\n%1$s.loadAd(adRequest);\r\n}",
@@ -939,8 +939,8 @@
   "type": " "
  },
  "bluetoothConnectActivateBluetooth": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bt_enable",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.activateBluetooth();",
@@ -964,8 +964,8 @@
   "type": " "
  },
  "bluetoothConnectGetPairedDevices": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bt_paired",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.getPairedDevices(%s);",
@@ -990,8 +990,8 @@
   "type": " "
  },
  "bluetoothConnectGetRandomUuid": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bt_uuid",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: .getRandomUUID()",
@@ -1015,8 +1015,8 @@
   "type": "s"
  },
  "bluetoothConnectIsBluetoothActivated": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bt_on",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "%s.isBluetoothActivated()",
@@ -1040,8 +1040,8 @@
   "type": "b"
  },
  "bluetoothConnectIsBluetoothEnabled": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bt_enabled",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "%s.isBluetoothEnabled()",
@@ -1065,8 +1065,8 @@
   "type": "b"
  },
  "bluetoothConnectReadyConnection": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bt_ready",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.readyConnection(_%s_bluetooth_connection_listener, %s);",
@@ -1091,8 +1091,8 @@
   "type": " "
  },
  "bluetoothConnectReadyConnectionToUuid": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bt_ready_uuid",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.readyConnection(_%s_bluetooth_connection_listener, %s, %s);",
@@ -1118,8 +1118,8 @@
   "type": " "
  },
  "bluetoothConnectSendData": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bt_send",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.sendData(_%s_bluetooth_connection_listener, %s, %s);",
@@ -1145,8 +1145,8 @@
   "type": " "
  },
  "bluetoothConnectStartConnection": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bt_connect",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.startConnection(_%s_bluetooth_connection_listener, %s, %s);",
@@ -1172,8 +1172,8 @@
   "type": " "
  },
  "bluetoothConnectStartConnectionToUuid": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bt_connect_uuid",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.startConnection(_%s_bluetooth_connection_listener, %s, %s, %s);",
@@ -1200,8 +1200,8 @@
   "type": " "
  },
  "bluetoothConnectStopConnection": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bt_disconnect",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.stopConnection(_%s_bluetooth_connection_listener, %s);",
@@ -1267,8 +1267,8 @@
   "type": "f"
  },
  "calendarAdd": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "calendar_add",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.add(Calendar.%s, (int)(%s));",
@@ -1294,8 +1294,8 @@
   "type": " "
  },
  "calendarDiff": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fn calendar_diff",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "(long)(%s.getTimeInMillis() - %s.getTimeInMillis())",
@@ -1321,8 +1321,8 @@
   "type": "d"
  },
  "calendarFormat": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fn calendar_text",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "new SimpleDateFormat(%s).format(%s.getTime())",
@@ -1349,8 +1349,8 @@
   "type": "s"
  },
  "calendarGetNow": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "calendar_now",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s = Calendar.getInstance();",
@@ -1374,8 +1374,8 @@
   "type": " "
  },
  "calendarGetTime": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fn calendar_text",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "%s.getTimeInMillis()",
@@ -1399,8 +1399,8 @@
   "type": "d"
  },
  "calendarSet": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "calendar_set",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.set(Calendar.%s, (int)(%s));",
@@ -1426,8 +1426,8 @@
   "type": " "
  },
  "calendarSetTime": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "calendar_set_time",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setTimeInMillis((long)(%s));",
@@ -1524,8 +1524,8 @@
   "type": " "
  },
  "camerastarttakepicture": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "take_picture",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: startActivityForResult(%s, REQ_CD_%s);",
@@ -1566,8 +1566,8 @@
   "type": "c"
  },
  "caseNumAnd": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "(switch fall-through)",
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "case ((int)%s):",
@@ -1600,8 +1600,8 @@
   "type": "c"
  },
  "caseStrAnd": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "(switch fall-through)",
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "case %s:",
@@ -1617,8 +1617,8 @@
   "type": " "
  },
  "changeStatebarColour": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "status_bar_color",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "if (Build.VERSION.SDK_INT > Build.VERSION_CODES.KITKAT) {\r\nfinal Window window = %s.this.getWindow();\r\nwindow.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);\r\nwindow.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);\r\nwindow.setStatusBarColor(%s);\r\n}",
@@ -1636,8 +1636,8 @@
   "type": " "
  },
  "checkViewVisibility": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "visibility_is",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.getVisibility() == View.%s",
@@ -1655,8 +1655,8 @@
   "type": "b"
  },
  "checkboxIsChecked": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "checked",
+  "agent_known": true,
   "builtin": true,
   "category": "Custom views",
   "code": "isChecked",
@@ -1670,8 +1670,8 @@
   "type": "b"
  },
  "checkboxOnChecked": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "(widget event)",
+  "agent_known": true,
   "builtin": true,
   "category": "Custom views",
   "code": "%s.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {\r\n@Override\r\npublic void onCheckedChanged(CompoundButton cb, boolean isChecked) {\r\n%s\r\n}});",
@@ -1829,8 +1829,8 @@
   "type": "b"
  },
  "containListMap": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "list_map_has",
+  "agent_known": true,
   "builtin": false,
   "category": "List",
   "emission": "%s.get((int)%s).containsKey(%s)",
@@ -1891,8 +1891,8 @@
   "type": "f"
  },
  "copyAssetFile": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "asset_text",
+  "agent_known": true,
   "builtin": true,
   "category": "File",
   "code": "SketchwareUtil.copyFromInputStream(%s)",
@@ -1935,8 +1935,8 @@
   "type": " "
  },
  "cropBitmapFileFromCenter": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "crop_bitmap_center",
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -1962,8 +1962,8 @@
   "type": " "
  },
  "customToast": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "custom_toast",
+  "agent_known": true,
   "builtin": true,
   "category": "More",
   "code": "SketchwareUtil.CustomToast(getApplicationContext(), %s, %s, %s, %s, %s, SketchwareUtil.%s);",
@@ -1984,8 +1984,8 @@
   "type": " "
  },
  "customToastWithIcon": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "custom_toast_icon",
+  "agent_known": true,
   "builtin": true,
   "category": "More",
   "code": "SketchwareUtil.CustomToastWithIcon(getApplicationContext(), %s, %s, %s, %s, %s, SketchwareUtil.%s, R.drawable.%s);",
@@ -2083,8 +2083,8 @@
   "type": " "
  },
  "deleteMapFromListmap": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "remove_map_from_list",
+  "agent_known": true,
   "builtin": true,
   "category": "List",
   "code": "%2$s.remove(%1$s);",
@@ -2101,8 +2101,8 @@
   "type": "a"
  },
  "dialogCancelButton": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "dialog_negative_button",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setNegativeButton(%s, new DialogInterface.OnClickListener() { @Over",
@@ -2127,8 +2127,8 @@
   "type": "c"
  },
  "dialogNeutralButton": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "dialog_neutral_button",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setNeutralButton(%s, new DialogInterface.OnClickListener() { @Overr",
@@ -2153,8 +2153,8 @@
   "type": "c"
  },
  "dialogOkButton": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "dialog_ok_button",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setPositiveButton(%s, new DialogInterface.OnClickListener() { @Over",
@@ -2179,8 +2179,8 @@
   "type": "c"
  },
  "dialogSetMessage": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "dialog_message",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setMessage(%s);",
@@ -2205,8 +2205,8 @@
   "type": " "
  },
  "dialogSetTitle": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "dialog_title",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setTitle(%s);",
@@ -2231,8 +2231,8 @@
   "type": " "
  },
  "dialogShow": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "dialog_show",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.create().show();",
@@ -2279,8 +2279,8 @@
   "type": " "
  },
  "fabIcon": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fab_icon",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "",
@@ -2308,8 +2308,8 @@
   "type": " "
  },
  "fabSize": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fab_size",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "",
@@ -2336,8 +2336,8 @@
   "type": " "
  },
  "fabVisibility": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fab_visibility",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "",
@@ -2382,8 +2382,8 @@
   "type": "b"
  },
  "fileContainsData": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "pref_has",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%1$s.contains(%2$s)",
@@ -2403,8 +2403,8 @@
   "type": "b"
  },
  "fileGetData": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "pref_get",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "%s.getString(%s, \"\")",
@@ -2429,8 +2429,8 @@
   "type": "s"
  },
  "fileRemoveData": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "remove_pref",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.edit().remove(%s).commit();",
@@ -2455,8 +2455,8 @@
   "type": " "
  },
  "fileSetData": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "save_pref",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.edit().putString(%s, %s).commit();",
@@ -2482,8 +2482,8 @@
   "type": " "
  },
  "filepickerstartpickfiles": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "pick_file",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: startActivityForResult(%s, REQ_CD_%s);",
@@ -2879,8 +2879,8 @@
   "type": "f"
  },
  "finishAffinity": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "finish_all",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "finishAffinity();",
@@ -2895,8 +2895,8 @@
   "type": "f"
  },
  "firebaseAdd": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fb_set",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.child(%s).updateChildren(%s);",
@@ -2920,8 +2920,8 @@
   "type": " "
  },
  "firebaseDelete": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fb_delete",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.child(%s).removeValue();",
@@ -2944,8 +2944,8 @@
   "type": " "
  },
  "firebaseGetChildren": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fb_get_children",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.addListenerForSingleValueEvent(new ValueEventListener() { @Override",
@@ -2968,8 +2968,8 @@
   "type": "c"
  },
  "firebaseGetPushKey": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fb_push_key",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "%s.push().getKey()",
@@ -2991,8 +2991,8 @@
   "type": "s"
  },
  "firebasePush": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fb_push",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.push().updateChildren(%s);",
@@ -3015,8 +3015,8 @@
   "type": " "
  },
  "firebaseStartListen": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fb_listen",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.addChildEventListener(_%s_child_listener);",
@@ -3038,8 +3038,8 @@
   "type": " "
  },
  "firebaseStopListen": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fb_stop_listen",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.removeEventListener(_%s_child_listener);",
@@ -3061,8 +3061,8 @@
   "type": " "
  },
  "firebaseauthCreateUser": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "auth_create_user",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: \"\"",
@@ -3092,8 +3092,8 @@
   "type": " "
  },
  "firebaseauthGetCurrentUser": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fn auth_email",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: FirebaseAuth.getInstance().getCurrentUser().getEmail()",
@@ -3113,8 +3113,8 @@
   "type": "s"
  },
  "firebaseauthGetUid": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fn auth_uid",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: FirebaseAuth.getInstance().getCurrentUser().getUid()",
@@ -3134,8 +3134,8 @@
   "type": "s"
  },
  "firebaseauthIsLoggedIn": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fn auth_logged_in",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: (FirebaseAuth.getInstance().getCurrentUser() != null)",
@@ -3155,8 +3155,8 @@
   "type": "b"
  },
  "firebaseauthResetPassword": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "auth_reset_password",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: \"\"",
@@ -3184,8 +3184,8 @@
   "type": " "
  },
  "firebaseauthSignInAnonymously": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "auth_sign_in_anon",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.signInAnonymously().addOnCompleteListener(%s.this, %s);",
@@ -3211,8 +3211,8 @@
   "type": " "
  },
  "firebaseauthSignInUser": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "auth_sign_in",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: \"\"",
@@ -3242,8 +3242,8 @@
   "type": " "
  },
  "firebaseauthSignOutUser": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "auth_sign_out",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: FirebaseAuth.getInstance().signOut();",
@@ -3263,8 +3263,8 @@
   "type": " "
  },
  "firebasestorageDelete": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "storage_delete",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: \"\"",
@@ -3290,8 +3290,8 @@
   "type": " "
  },
  "firebasestorageDownloadFile": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "storage_download",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: \"\"",
@@ -3319,8 +3319,8 @@
   "type": " "
  },
  "firebasestorageUploadFile": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "storage_upload",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: \"\"",
@@ -3391,8 +3391,8 @@
   "type": "d"
  },
  "getAssetFile": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "open_asset",
+  "agent_known": true,
   "builtin": true,
   "category": "File",
   "code": "java.io.InputStream %s = getAssets().open(%s);",
@@ -3432,8 +3432,8 @@
   "type": "d"
  },
  "getAtListMap": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "list_map_value",
+  "agent_known": true,
   "builtin": false,
   "category": "List",
   "emission": "%s.get((int)%s).get(%s).toString()",
@@ -3581,8 +3581,8 @@
   "type": "d"
  },
  "getJpegRotate": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "jpeg_rotation",
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "FileUtil.getJpegRotate(%s)",
@@ -3604,8 +3604,8 @@
   "type": "d"
  },
  "getLastVisiblePosition": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "last_visible_of",
+  "agent_known": true,
   "builtin": true,
   "category": "Events",
   "code": "%s.getLastVisiblePosition()",
@@ -3621,8 +3621,8 @@
   "type": "d"
  },
  "getLocationX": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "location_x_of",
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "SketchwareUtil.getLocationX(%s)",
@@ -3644,8 +3644,8 @@
   "type": "d"
  },
  "getLocationY": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "location_y_of",
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "SketchwareUtil.getLocationY(%s)",
@@ -3667,8 +3667,8 @@
   "type": "d"
  },
  "getMapAtPosListmap": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "get_map_from_list",
+  "agent_known": true,
   "builtin": true,
   "category": "List",
   "code": "%2$s.get((int)(%1$s))",
@@ -3729,8 +3729,8 @@
   "type": "s"
  },
  "getPublicDir": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "public_dir",
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "FileUtil.getPublicDir(Environment.%s)",
@@ -4087,8 +4087,8 @@
   "type": " "
  },
  "gyroscopeStartListen": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "gyro_start",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.registerListener(_%s_sensor_listener, %s.getDefaultSensor(Sensor.TY",
@@ -4112,8 +4112,8 @@
   "type": " "
  },
  "gyroscopeStopListen": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "gyro_stop",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.unregisterListener(_%s_sensor_listener);",
@@ -4209,8 +4209,8 @@
   "type": "d"
  },
  "hashmapListstr": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "map_keys_to_list",
+  "agent_known": true,
   "builtin": true,
   "category": "Variable",
   "code": "(ArrayList<String>)%s.get(%s)",
@@ -4227,8 +4227,8 @@
   "type": "l"
  },
  "hashmapPutBoolean": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "map_put_flag",
+  "agent_known": true,
   "builtin": true,
   "category": "Variable",
   "code": "%s.put(%s, %s);",
@@ -4246,8 +4246,8 @@
   "type": " "
  },
  "hashmapPutListmap": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "map_put_list",
+  "agent_known": true,
   "builtin": true,
   "category": "Variable",
   "code": "%s.put(%s, %s);",
@@ -4265,8 +4265,8 @@
   "type": " "
  },
  "hashmapPutListstr": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "map_put_list",
+  "agent_known": true,
   "builtin": true,
   "category": "Variable",
   "code": "%s.put(%s, %s);",
@@ -4284,8 +4284,8 @@
   "type": " "
  },
  "hashmapPutMap": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "map_put_map",
+  "agent_known": true,
   "builtin": true,
   "category": "Variable",
   "code": "%s.put(%s, %s);",
@@ -4303,8 +4303,8 @@
   "type": " "
  },
  "hashmapPutNumber": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "map_put_number",
+  "agent_known": true,
   "builtin": true,
   "category": "Variable",
   "code": "%s.put(%s, (int)(%s));",
@@ -4322,8 +4322,8 @@
   "type": " "
  },
  "hashmapPutNumber2": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "map_put_number",
+  "agent_known": true,
   "builtin": true,
   "category": "Variable",
   "code": "%s.put(%s, (double)(%s));",
@@ -4357,8 +4357,8 @@
   "type": " "
  },
  "html": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fn html",
+  "agent_known": true,
   "builtin": true,
   "category": "Operator",
   "code": "Html.fromHtml(%s)",
@@ -4418,8 +4418,8 @@
   "type": "e"
  },
  "imageCrop": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "crop_image",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "SketchwareUtil.CropImage(this, %s, (int) %s);",
@@ -4602,8 +4602,8 @@
   "type": " "
  },
  "instanceOfOperator": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "instance_of",
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "%1$s instanceof %2$s",
@@ -4643,8 +4643,8 @@
   "type": "s"
  },
  "intentHasExtra": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "has_extra",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "getIntent().hasExtra(%s)",
@@ -4661,8 +4661,8 @@
   "type": "b"
  },
  "intentPutExtra": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "put_extra",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.putExtra(%s, %s);",
@@ -4688,8 +4688,8 @@
   "type": " "
  },
  "intentRemoveExtra": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "remove_extra",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%s.removeExtra(%s);",
@@ -4709,8 +4709,8 @@
   "type": " "
  },
  "intentSetAction": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "set_intent_action",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setAction(%s);",
@@ -4737,8 +4737,8 @@
   "type": " "
  },
  "intentSetData": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "set_intent_data",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setData(Uri.parse(%s));",
@@ -4763,8 +4763,8 @@
   "type": " "
  },
  "intentSetFlags": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "set_intent_flag",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setFlags(%s);",
@@ -4816,8 +4816,8 @@
   "type": " "
  },
  "intentSetType": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "set_intent_type",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%s.setType(%s);",
@@ -4837,8 +4837,8 @@
   "type": " "
  },
  "interstitialAdIsLoaded": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "ad_loaded",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%1$s != null",
@@ -4857,8 +4857,8 @@
   "type": "b"
  },
  "interstitialAdLoad": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "ad_load",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "{\r\nAdRequest adRequest = new AdRequest.Builder().build();\r\nInterstitialAd.load(%2$s.this, _ad_unit_id, adRequest, _%1$s_interstitial_ad_load_callback);\r\n}",
@@ -4882,8 +4882,8 @@
   "type": " "
  },
  "interstitialAdShow": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "ad_show",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "if (%1$s != null) {\r\n%1$s.show(%2$s.this);\r\n} else {\r\nSketchwareUtil.showMessage(getApplicationContext(), Error: InterstitialAd %1$s hasn't been loaded yet!);\r\n}",
@@ -4903,8 +4903,8 @@
   "type": " "
  },
  "isConnected": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fn is_connected",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "SketchwareUtil.isConnected(getApplicationContext())",
@@ -4958,8 +4958,8 @@
   "type": "b"
  },
  "launchApp": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "launch_app",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%s = getPackageManager().getLaunchIntentForPackage(%s);",
@@ -5001,8 +5001,8 @@
   "type": "d"
  },
  "listAddAll": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "add_all_to_list",
+  "agent_known": true,
   "builtin": true,
   "category": "List",
   "code": "%1$s.addAll(%2$s);",
@@ -5019,8 +5019,8 @@
   "type": " "
  },
  "listMapToStr": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "json_of_list_map",
+  "agent_known": true,
   "builtin": false,
   "category": "Operator",
   "emission": "new Gson().toJson(%s)",
@@ -5229,8 +5229,8 @@
   "type": " "
  },
  "listscrollparam": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fn list_scroll_state",
+  "agent_known": true,
   "builtin": true,
   "category": "Events",
   "code": "ListView.%s",
@@ -5246,8 +5246,8 @@
   "type": "d"
  },
  "locationManagerRemoveUpdates": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "loc_remove",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: .removeUpdates(_",
@@ -5272,8 +5272,8 @@
   "type": " "
  },
  "locationManagerRequestLocationUpdates": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "loc_request",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "if (ContextCompat.checkSelfPermission(%s.this, Manifest.permission.ACCESS_FINE_LOCATION) =",
@@ -5722,8 +5722,8 @@
   "type": " "
  },
  "mapViewSetMarkerColor": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "map_marker_color",
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: _%s_controller.setMarkerColor(%s, BitmapDescriptorFactory.%s, %s);",
@@ -5748,8 +5748,8 @@
   "type": " "
  },
  "mapViewSetMarkerIcon": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "map_marker_icon",
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: .9",
@@ -6445,8 +6445,8 @@
   "type": "d"
  },
  "mediaplayerCreate": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "mp_create",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s = MediaPlayer.create(getApplicationContext(), R.raw.%s);",
@@ -6471,8 +6471,8 @@
   "type": " "
  },
  "mediaplayerGetCurrent": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "mp_position_of",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "%s.getCurrentPosition()",
@@ -6496,8 +6496,8 @@
   "type": "d"
  },
  "mediaplayerGetDuration": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "mp_duration_of",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "%s.getDuration()",
@@ -6521,8 +6521,8 @@
   "type": "d"
  },
  "mediaplayerIsLooping": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "mp_looping",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "%s.isLooping()",
@@ -6546,8 +6546,8 @@
   "type": "b"
  },
  "mediaplayerIsPlaying": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "mp_playing",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "%s.isPlaying()",
@@ -6571,8 +6571,8 @@
   "type": "b"
  },
  "mediaplayerPause": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "mp_pause",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.pause();",
@@ -6596,8 +6596,8 @@
   "type": " "
  },
  "mediaplayerRelease": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "mp_release",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.release();",
@@ -6621,8 +6621,8 @@
   "type": " "
  },
  "mediaplayerReset": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "mp_reset",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.reset();",
@@ -6646,8 +6646,8 @@
   "type": " "
  },
  "mediaplayerSeek": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "mp_seek",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.seekTo((int)(%s));",
@@ -6672,8 +6672,8 @@
   "type": " "
  },
  "mediaplayerSetLooping": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "mp_looping",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setLooping(%s);",
@@ -6698,8 +6698,8 @@
   "type": " "
  },
  "mediaplayerStart": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "mp_start",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.start();",
@@ -6723,8 +6723,8 @@
   "type": " "
  },
  "menuAddItem": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "menu_add_item",
+  "agent_known": true,
   "builtin": true,
   "category": "Events",
   "code": "menu.add(0, %s, 0, %s);",
@@ -6741,8 +6741,8 @@
   "type": " "
  },
  "menuAddMenuItem": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "menu_item",
+  "agent_known": true,
   "builtin": true,
   "category": "Events",
   "code": "MenuItem %1$s = menu.add(Menu.NONE, %2$s, Menu.NONE, %3$s);\r\n%1$s.setIcon(R.drawable.%4$s);\r\n%s.setShowAsAction(MenuItem.%5$s);",
@@ -6762,8 +6762,8 @@
   "type": " "
  },
  "menuAddSubmenu": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "submenu",
+  "agent_known": true,
   "builtin": true,
   "category": "Events",
   "code": "SubMenu %s = menu.addSubMenu(%s);\r\n%s",
@@ -6780,8 +6780,8 @@
   "type": "c"
  },
  "menuInflater": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "menu_inflate",
+  "agent_known": true,
   "builtin": true,
   "category": "Events",
   "code": "getMenuInflater().inflate(R.menu.%s, menu);",
@@ -6838,8 +6838,8 @@
   "type": "b"
  },
  "notifyDataSetChanged": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "refresh_list",
+  "agent_known": true,
   "builtin": true,
   "category": "Custom views",
   "code": "notifyDataSetChanged();",
@@ -6853,8 +6853,8 @@
   "type": " "
  },
  "objectanimatorCancel": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "anim_cancel",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.cancel();",
@@ -6878,8 +6878,8 @@
   "type": " "
  },
  "objectanimatorIsRunning": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "anim_running",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "%s.isRunning()",
@@ -6903,8 +6903,8 @@
   "type": "b"
  },
  "objectanimatorSetDuration": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "anim_duration",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setDuration((int)(%s));",
@@ -6929,8 +6929,8 @@
   "type": " "
  },
  "objectanimatorSetFromTo": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "anim_from_to",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setFloatValues((float)(%s), (float)(%s));",
@@ -6956,8 +6956,8 @@
   "type": " "
  },
  "objectanimatorSetInterpolator": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "anim_interpolator",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app generator case (dynamic)",
@@ -6980,8 +6980,8 @@
   "type": " "
  },
  "objectanimatorSetProperty": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "anim_property",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setPropertyName(\"%s\");",
@@ -7006,8 +7006,8 @@
   "type": " "
  },
  "objectanimatorSetRepeatCount": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "anim_repeat",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setRepeatCount((int)(%s));",
@@ -7032,8 +7032,8 @@
   "type": " "
  },
  "objectanimatorSetRepeatMode": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "anim_repeat_mode",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setRepeatMode(ValueAnimator.%s);",
@@ -7058,8 +7058,8 @@
   "type": " "
  },
  "objectanimatorSetTarget": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "anim_target",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setTarget(%s);",
@@ -7084,8 +7084,8 @@
   "type": " "
  },
  "objectanimatorSetValue": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "anim_value",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setFloatValues((float)(%s));",
@@ -7110,8 +7110,8 @@
   "type": " "
  },
  "objectanimatorStart": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "anim_start",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.start();",
@@ -7135,8 +7135,8 @@
   "type": " "
  },
  "onSwipeRefreshLayout": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "(widget event)",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() {\r\n@Override\r\npublic void onRefresh() {\r\n%s\r\n}\r\n});",
@@ -7212,8 +7212,8 @@
   "type": " "
  },
  "otpViewSetOTPListener": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "otp_listener",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%1$s.setOTPListener(new OTPListener() {\r\npublic void onOTPEntered(String _otp) {\r\n%2$s\r\n}\r\n});",
@@ -7329,8 +7329,8 @@
   "type": " "
  },
  "pagerSetFragmentAdapter": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "set_fragment_adapter",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%2$s.setTabCount(%3$s);\r\n%1$s.setAdapter(%2$s);",
@@ -7370,8 +7370,8 @@
   "type": " "
  },
  "pagerscrollparam": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fn pager_scroll_state",
+  "agent_known": true,
   "builtin": true,
   "category": "Events",
   "code": "ViewPager.%s",
@@ -7500,8 +7500,8 @@
   "type": " "
  },
  "patternToMD5": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "pattern_md5_of",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "PatternLockUtils.patternToMD5(%s, %s)",
@@ -7519,8 +7519,8 @@
   "type": "s"
  },
  "patternToSha1": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "pattern_sha1_of",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "PatternLockUtils.patternToSha1(%s, %s)",
@@ -7538,8 +7538,8 @@
   "type": "s"
  },
  "patternToString": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "pattern_text_of",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "PatternLockUtils.patternToString(%s, %s)",
@@ -7599,8 +7599,8 @@
   "type": " "
  },
  "progressdialogCreate": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "progress_create",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%s = new ProgressDialog(%s.this);",
@@ -7620,8 +7620,8 @@
   "type": " "
  },
  "progressdialogDismiss": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "progress_dismiss",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%s.dismiss();",
@@ -7640,8 +7640,8 @@
   "type": " "
  },
  "progressdialogSetCancelable": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "progress_cancelable",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%s.setCancelable(%s);",
@@ -7661,8 +7661,8 @@
   "type": " "
  },
  "progressdialogSetCanceledOutside": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "progress_outside",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%s.setCanceledOnTouchOutside(%s);",
@@ -7682,8 +7682,8 @@
   "type": " "
  },
  "progressdialogSetMax": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "progress_max",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%s.setMax((int)%s);",
@@ -7703,8 +7703,8 @@
   "type": " "
  },
  "progressdialogSetMessage": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "progress_message",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%s.setMessage(%s);",
@@ -7724,8 +7724,8 @@
   "type": " "
  },
  "progressdialogSetProgress": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "progress_value",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%s.setProgress((int)%s);",
@@ -7745,8 +7745,8 @@
   "type": " "
  },
  "progressdialogSetStyle": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "progress_style",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%s.setProgressStyle(ProgressDialog.%s);",
@@ -7766,8 +7766,8 @@
   "type": " "
  },
  "progressdialogSetTitle": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "progress_title",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%s.setTitle(%s);",
@@ -7787,8 +7787,8 @@
   "type": " "
  },
  "progressdialogShow": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "progress_show",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%s.show();",
@@ -7949,8 +7949,8 @@
   "type": " "
  },
  "recyclerscrollparam": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fn recycler_scroll_state",
+  "agent_known": true,
   "builtin": true,
   "category": "Events",
   "code": "RecyclerView.%s",
@@ -7984,8 +7984,8 @@
   "type": " "
  },
  "removePermission": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "remove_permission",
+  "agent_known": true,
   "builtin": true,
   "category": "More",
   "code": "",
@@ -8078,8 +8078,8 @@
   "type": "c"
  },
  "repeatKnownNum": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "repeat_index",
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "for (int %2$s = 0; %2$s < (int)(%1$s); %2$s++) {\r\n%3$s\r\n}",
@@ -8119,8 +8119,8 @@
   "type": " "
  },
  "requestnetworkSetHeaders": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "net_headers",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setHeaders(%s);",
@@ -8145,8 +8145,8 @@
   "type": " "
  },
  "requestnetworkSetParams": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "net_params",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setParams(%s, RequestNetworkController.%s);",
@@ -8172,8 +8172,8 @@
   "type": " "
  },
  "requestnetworkStartRequestNetwork": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "net_start",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.startRequestNetwork(RequestNetworkController.%s, %s, %s, _%s_reques",
@@ -8200,8 +8200,8 @@
   "type": " "
  },
  "resizeBitmapFileRetainRatio": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "resize_bitmap_ratio",
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -8226,8 +8226,8 @@
   "type": " "
  },
  "resizeBitmapFileToCircle": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "resize_bitmap_circle",
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -8251,8 +8251,8 @@
   "type": " "
  },
  "resizeBitmapFileToSquare": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "resize_bitmap_square",
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -8277,8 +8277,8 @@
   "type": " "
  },
  "resizeBitmapFileWithRoundedBorder": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "resize_bitmap_rounded",
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -8490,8 +8490,8 @@
   "type": " "
  },
  "rewardedVideoAdLoad": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "rewarded_load",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "RewardedAd.load(%2$s.this, _reward_ad_unit_id, new AdRequest.Builder().build(), _%1$s_rewarded_ad_load_callback);",
@@ -8509,8 +8509,8 @@
   "type": " "
  },
  "rewardedVideoAdShow": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "rewarded_show",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "%1s.show(%2$s.this, _%1$s_on_user_earned_reward_listener);",
@@ -8528,8 +8528,8 @@
   "type": " "
  },
  "rotateBitmapFile": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "rotate_bitmap",
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -8554,8 +8554,8 @@
   "type": " "
  },
  "scaleBitmapFile": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "scale_bitmap",
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -8675,8 +8675,8 @@
   "type": " "
  },
  "sendBroadcast": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "send_broadcast",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "sendBroadcast(%s);",
@@ -8921,8 +8921,8 @@
   "type": " "
  },
  "setBitmapFileBrightness": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bitmap_brightness",
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -8947,8 +8947,8 @@
   "type": " "
  },
  "setBitmapFileColorFilter": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bitmap_color_filter",
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -8973,8 +8973,8 @@
   "type": " "
  },
  "setBitmapFileContrast": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bitmap_contrast",
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -8999,8 +8999,8 @@
   "type": " "
  },
  "setBubbleArrowHeight": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bubble_arrow_height",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setArrowHeight((float)%s);",
@@ -9018,8 +9018,8 @@
   "type": " "
  },
  "setBubbleArrowPosition": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bubble_arrow_position",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setArrowPosition((float)%s);",
@@ -9037,8 +9037,8 @@
   "type": " "
  },
  "setBubbleArrowWidth": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bubble_arrow_width",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setArrowWidth((float)%s);",
@@ -9056,8 +9056,8 @@
   "type": " "
  },
  "setBubbleColor": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bubble_color",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setBubbleColor(%s);",
@@ -9075,8 +9075,8 @@
   "type": " "
  },
  "setBubbleCornerRadius": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bubble_corner_radius",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setCornersRadius((float)%s);",
@@ -9094,8 +9094,8 @@
   "type": " "
  },
  "setBubbleStrokeColor": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bubble_stroke_color",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setStrokeColor(%s);",
@@ -9113,8 +9113,8 @@
   "type": " "
  },
  "setBubbleStrokeWidth": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "bubble_stroke_width",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setStrokeWidth((float)%s);",
@@ -9237,8 +9237,8 @@
   "type": " "
  },
  "setColorFilterView": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "set_background_color_filter",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.getBackground().setColorFilter(%s, PorterDuff.Mode.%s);",
@@ -9589,8 +9589,8 @@
   "type": " "
  },
  "setMapAtPosListmap": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "set_map_in_list",
+  "agent_known": true,
   "builtin": true,
   "category": "List",
   "code": "%3$s.set((int)(%2$s), %1$s);",
@@ -10267,8 +10267,8 @@
   "type": " "
  },
  "showSnackbar": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "snackbar",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "com.google.android.material.snackbar.Snackbar.make(%s, %s, com.google.android.material.snackbar.Snackbar.LENGTH_SHORT).setAction(%s, new View.OnClickListener(){\r\n@Override\r\npublic void onClick(View _view) {\r\n%s\r\n}\r\n}).show();",
@@ -10304,8 +10304,8 @@
   "type": " "
  },
  "signInButtonSetColorScheme": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "signin_color_scheme",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%1$s.setColorScheme(SignInButton.%2$s);",
@@ -10323,8 +10323,8 @@
   "type": " "
  },
  "signInButtonSetSize": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "signin_size",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%1$s.setSize(SignInButton.%2$s);",
@@ -10342,8 +10342,8 @@
   "type": " "
  },
  "skewBitmapFile": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "skew_bitmap",
+  "agent_known": true,
   "builtin": false,
   "category": "File",
   "emission": "app logic: \"\"",
@@ -10423,8 +10423,8 @@
   "type": " "
  },
  "soundpoolCreate": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "sp_create",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s = new SoundPool((int)(%s), AudioManager.STREAM_MUSIC, 0);",
@@ -10449,8 +10449,8 @@
   "type": " "
  },
  "soundpoolLoad": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "load_sound",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.load(getApplicationContext(), R.raw.%s, 1);",
@@ -10475,8 +10475,8 @@
   "type": "d"
  },
  "soundpoolStreamPlay": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "play_sound",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.play((int)(%s), 1.0f, 1.0f, 1, (int)(%s), 1.0f);",
@@ -10502,8 +10502,8 @@
   "type": "d"
  },
  "soundpoolStreamStop": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "sp_stop",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.stop((int)(%s));",
@@ -10528,8 +10528,8 @@
   "type": " "
  },
  "speechToTextShutdown": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "stt_shutdown",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.cancel(); %s.destroy();",
@@ -10553,8 +10553,8 @@
   "type": " "
  },
  "speechToTextStartListening": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "stt_start",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: Intent _intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);",
@@ -10578,8 +10578,8 @@
   "type": " "
  },
  "speechToTextStopListening": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "stt_stop",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.stopListening();",
@@ -10747,8 +10747,8 @@
   "type": " "
  },
  "startActivityWithChooser": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "start_with_chooser",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "startActivity(Intent.createChooser(%s, %s));",
@@ -10768,8 +10768,8 @@
   "type": " "
  },
  "startService": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "start_service",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "startService(new Intent(getApplicationContext(), %s.class));",
@@ -10786,8 +10786,8 @@
   "type": " "
  },
  "stopService": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "stop_service",
+  "agent_known": true,
   "builtin": true,
   "category": "Component",
   "code": "stopService(new Intent(getApplicationContext(), %s.class));",
@@ -11050,8 +11050,8 @@
   "type": "s"
  },
  "stringReplaceAll": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "replace_all",
+  "agent_known": true,
   "builtin": true,
   "category": "Operator",
   "code": "%s.replaceAll(%s, %s)",
@@ -11104,8 +11104,8 @@
   "type": "s"
  },
  "stringSplitToList": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "split_into_list",
+  "agent_known": true,
   "builtin": true,
   "category": "Operator",
   "code": "%3$s = new ArrayList<String>(Arrays.asList(%1$s.split(%2$s)));",
@@ -11165,8 +11165,8 @@
   "type": "s"
  },
  "submenuAddItem": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "submenu_item",
+  "agent_known": true,
   "builtin": true,
   "category": "Events",
   "code": "%s.add(0, %s, 0, %s);",
@@ -11275,8 +11275,8 @@
   "type": "s"
  },
  "textToSpeechIsSpeaking": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "tts_speaking",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "%s.isSpeaking()",
@@ -11300,8 +11300,8 @@
   "type": "b"
  },
  "textToSpeechSetPitch": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "tts_pitch",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setPitch((float)%s);",
@@ -11326,8 +11326,8 @@
   "type": " "
  },
  "textToSpeechSetSpeechRate": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "tts_rate",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.setSpeechRate((float)%s);",
@@ -11352,8 +11352,8 @@
   "type": " "
  },
  "textToSpeechShutdown": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "tts_shutdown",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.shutdown();",
@@ -11377,8 +11377,8 @@
   "type": " "
  },
  "textToSpeechSpeak": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "tts_speak",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.speak(%s, TextToSpeech.QUEUE_ADD, null);",
@@ -11403,8 +11403,8 @@
   "type": " "
  },
  "textToSpeechStop": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "tts_stop",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.stop();",
@@ -11716,8 +11716,8 @@
   "type": " "
  },
  "timerAfter": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "timer_after",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s = new TimerTask() { @Override public void run() { runOnUiThread(new",
@@ -11742,8 +11742,8 @@
   "type": "c"
  },
  "timerCancel": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "timer_cancel",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.cancel();",
@@ -11767,8 +11767,8 @@
   "type": " "
  },
  "timerEvery": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "timer_every",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s = new TimerTask() { @Override public void run() { runOnUiThread(new",
@@ -11794,8 +11794,8 @@
   "type": "c"
  },
  "toHashCode": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fn hash_code",
+  "agent_known": true,
   "builtin": true,
   "category": "Operator",
   "code": "%s.hashCode()",
@@ -11857,8 +11857,8 @@
   "type": "d"
  },
  "toString": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "fn to_string",
+  "agent_known": true,
   "builtin": false,
   "category": "Operator",
   "emission": "String.valueOf((long)(%s))",
@@ -12005,8 +12005,8 @@
   "type": "e"
  },
  "vibratorAction": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "vibrate",
+  "agent_known": true,
   "builtin": false,
   "category": "Component",
   "emission": "app logic: %s.vibrate((long)(%s));",
@@ -12031,8 +12031,8 @@
   "type": " "
  },
  "videoviewCanPause": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "can_pause",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.canPause()",
@@ -12049,8 +12049,8 @@
   "type": "b"
  },
  "videoviewCanSeekBackward": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "can_seek_back",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.canSeekBackward()",
@@ -12067,8 +12067,8 @@
   "type": "b"
  },
  "videoviewCanSeekForward": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "can_seek_forward",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.canSeekForward()",
@@ -12231,8 +12231,8 @@
   "type": "v"
  },
  "viewOnClick": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "(widget event)",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setOnClickListener(new View.OnClickListener() {\n@Override\npublic void onClick(View _view) {\n%s\n}\n});",
@@ -12257,8 +12257,8 @@
   "type": "c"
  },
  "viewOnLongClick": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "(widget event)",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setOnLongClickListener(new View.OnLongClickListener() {\r\n@Override\r\npublic boolean onLongClick(View _view) {\r\n%s\r\nreturn true;\r\n}\r\n});",
@@ -12275,8 +12275,8 @@
   "type": "c"
  },
  "viewOnTouch": {
-  "agent": "",
-  "agent_known": false,
+  "agent": "(widget event)",
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setOnTouchListener(new View.OnTouchListener(){\r\n@Override\r\npublic boolean onTouch(View _view, MotionEvent _motionEvent){\r\n%s\r\nreturn true;\r\n}\r\n});",
