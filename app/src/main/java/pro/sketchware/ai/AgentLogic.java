@@ -553,6 +553,52 @@ public final class AgentLogic {
         WIDGET_ACTIONS.put("bottom_add_item", new WA("bottomMenuAddItem",
                 "bottomnavigation", "dsr", ".getMenu().add(",
                 "Add the item “{2}” to {t}"));
+        // Wave 11 widget leftovers, Fx-verified like the rest.
+        WIDGET_ACTIONS.put("map_marker_color", new WA(
+                "mapViewSetMarkerColor", "mapview", "smd",
+                "_controller.setMarkerColor(",
+                "Set marker “{1}” colour on {t} to {2}"));
+        WIDGET_ACTIONS.put("map_marker_icon", new WA(
+                "mapViewSetMarkerIcon", "mapview", "sr",
+                "_controller.setMarkerIcon(",
+                "Set marker “{1}” icon on {t} to “{2}”"));
+        WIDGET_ACTIONS.put("bubble_arrow_height", new WA(
+                "setBubbleArrowHeight", "bubblelayout", "d",
+                ".setArrowHeight(", "Set {t} arrow height to {1}"));
+        WIDGET_ACTIONS.put("bubble_arrow_position", new WA(
+                "setBubbleArrowPosition", "bubblelayout", "d",
+                ".setArrowPosition(",
+                "Set {t} arrow position to {1}"));
+        WIDGET_ACTIONS.put("bubble_arrow_width", new WA(
+                "setBubbleArrowWidth", "bubblelayout", "d",
+                ".setArrowWidth(", "Set {t} arrow width to {1}"));
+        WIDGET_ACTIONS.put("bubble_color", new WA("setBubbleColor",
+                "bubblelayout", "c", ".setBubbleColor(",
+                "Set {t} bubble colour to {1}"));
+        WIDGET_ACTIONS.put("bubble_corner_radius", new WA(
+                "setBubbleCornerRadius", "bubblelayout", "d",
+                ".setCornersRadius(",
+                "Set {t} corner radius to {1}"));
+        WIDGET_ACTIONS.put("bubble_stroke_color", new WA(
+                "setBubbleStrokeColor", "bubblelayout", "c",
+                ".setStrokeColor(", "Set {t} outline colour to {1}"));
+        WIDGET_ACTIONS.put("bubble_stroke_width", new WA(
+                "setBubbleStrokeWidth", "bubblelayout", "d",
+                ".setStrokeWidth(", "Set {t} outline width to {1}"));
+        WIDGET_ACTIONS.put("signin_color_scheme", new WA(
+                "signInButtonSetColorScheme", "signinbutton", "m",
+                ".setColorScheme(SignInButton.",
+                "Set {t} colour scheme to {1}"));
+        WIDGET_ACTIONS.put("signin_size", new WA(
+                "signInButtonSetSize", "signinbutton", "m",
+                ".setSize(SignInButton.", "Set {t} size to {1}"));
+        WIDGET_ACTIONS.put("banner_load_ad", new WA(
+                "bannerAdViewLoadAd", "adview", "", ".loadAd(",
+                "Load an ad into {t}"));
+        WIDGET_ACTIONS.put("set_background_color_filter", new WA(
+                "setColorFilterView", "", "cm",
+                ".getBackground().setColorFilter(",
+                "Tint {t}'s background {1} ({2})"));
     }
 
     /**
@@ -569,14 +615,22 @@ public final class AgentLogic {
         final String args;
         final String expect;
         final String sentence;
+        /** Allowed stored values for an 'm'/'M'/'F' slot, or null. */
+        final String[] modes;
 
         CA(String opCode, int componentType, String args, String expect,
            String sentence) {
+            this(opCode, componentType, args, expect, sentence, null);
+        }
+
+        CA(String opCode, int componentType, String args, String expect,
+           String sentence, String[] modes) {
             this.opCode = opCode;
             this.componentType = componentType;
             this.args = args;
             this.expect = expect;
             this.sentence = sentence;
+            this.modes = modes;
         }
     }
 
@@ -801,6 +855,101 @@ public final class AgentLogic {
                 "progressdialogSetStyle", progress, "m",
                 ".setProgressStyle(ProgressDialog.",
                 "Set {c} style to {1}"));
+
+        // Wave 11: the verified leftovers. Every emission, stored
+        // picker value and field dependency was read out of Fx, Lx,
+        // BlocksHandler and uq before teaching (see the knowledge
+        // doc's Wave 11 research notes).
+        int auth = ComponentBean.COMPONENT_TYPE_FIREBASE_AUTH;
+        int storage = ComponentBean.COMPONENT_TYPE_FIREBASE_STORAGE;
+        int rewarded = ComponentBean.COMPONENT_TYPE_REWARDED_VIDEO_AD;
+
+        COMPONENT_ACTIONS.put("set_intent_flag", new CA(
+                "intentSetFlags", intent, "F",
+                ".setFlags(Intent.FLAG_ACTIVITY_",
+                "Set {c} flag to {1}"));
+        COMPONENT_ACTIONS.put("anim_value", new CA(
+                "objectanimatorSetValue", animator, "d",
+                ".setFloatValues(", "Set {c} value to {1}"));
+        COMPONENT_ACTIONS.put("anim_repeat_mode", new CA(
+                "objectanimatorSetRepeatMode", animator, "m",
+                ".setRepeatMode(ValueAnimator.",
+                "Set {c} repeat mode to {1}",
+                new String[]{"RESTART", "REVERSE"}));
+        COMPONENT_ACTIONS.put("anim_interpolator", new CA(
+                "objectanimatorSetInterpolator", animator, "M",
+                ".setInterpolator(", "Set {c} easing to {1}",
+                new String[]{"Linear", "Accelerate", "Decelerate",
+                        "AccelerateDecelerate", "Bounce"}));
+        COMPONENT_ACTIONS.put("dialog_icon", new CA(
+                "Dialog SetIcon", dialog, "r", ".setIcon(R.drawable.",
+                "Set {c} icon to “{1}”"));
+        COMPONENT_ACTIONS.put("rewarded_load", new CA(
+                "rewardedVideoAdLoad", rewarded, "A",
+                "RewardedAd.load(", "Load a rewarded ad into {c}"));
+        COMPONENT_ACTIONS.put("rewarded_show", new CA(
+                "rewardedVideoAdShow", rewarded, "A", ".show(",
+                "Show the rewarded ad in {c}"));
+        COMPONENT_ACTIONS.put("auth_create_user", new CA(
+                "firebaseauthCreateUser", auth, "ss",
+                ".createUserWithEmailAndPassword(",
+                "Create a user with email “{1}” in {c}"));
+        COMPONENT_ACTIONS.put("auth_sign_in", new CA(
+                "firebaseauthSignInUser", auth, "ss",
+                ".signInWithEmailAndPassword(",
+                "Sign in with email “{1}” in {c}"));
+        COMPONENT_ACTIONS.put("auth_sign_in_anon", new CA(
+                "firebaseauthSignInAnonymously", auth, "",
+                ".signInAnonymously(", "Sign in anonymously"));
+        COMPONENT_ACTIONS.put("auth_reset_password", new CA(
+                "firebaseauthResetPassword", auth, "s",
+                ".sendPasswordResetEmail(",
+                "Send a password reset to “{1}”"));
+        COMPONENT_ACTIONS.put("storage_upload", new CA(
+                "firebasestorageUploadFile", storage, "ss",
+                ".putFile(Uri.fromFile(new File(",
+                "Upload the file “{1}” to “{2}” in {c}"));
+        COMPONENT_ACTIONS.put("storage_download", new CA(
+                "firebasestorageDownloadFile", storage, "ss",
+                "getReferenceFromUrl(",
+                "Download “{1}” to “{2}” in {c}"));
+        COMPONENT_ACTIONS.put("storage_delete", new CA(
+                "firebasestorageDelete", storage, "s",
+                "getReferenceFromUrl(", "Delete “{1}” in {c}"));
+        COMPONENT_ACTIONS.put("bt_ready", new CA(
+                "bluetoothConnectReadyConnection", bluetooth, "s",
+                ".readyConnection(",
+                "Make {c} ready to receive as “{1}”"));
+        COMPONENT_ACTIONS.put("bt_ready_uuid", new CA(
+                "bluetoothConnectReadyConnectionToUuid", bluetooth,
+                "ss", ".readyConnection(",
+                "Make {c} ready to receive with ID “{1}” as “{2}”"));
+        COMPONENT_ACTIONS.put("bt_connect", new CA(
+                "bluetoothConnectStartConnection", bluetooth, "ss",
+                ".startConnection(",
+                "Connect {c} to “{1}” as “{2}”"));
+        COMPONENT_ACTIONS.put("bt_connect_uuid", new CA(
+                "bluetoothConnectStartConnectionToUuid", bluetooth,
+                "sss", ".startConnection(",
+                "Connect {c} to “{2}” via ID “{1}” as “{3}”"));
+        COMPONENT_ACTIONS.put("bt_disconnect", new CA(
+                "bluetoothConnectStopConnection", bluetooth, "s",
+                ".stopConnection(", "Disconnect {c} (“{1}”)"));
+        COMPONENT_ACTIONS.put("bt_send", new CA(
+                "bluetoothConnectSendData", bluetooth, "ss",
+                ".sendData(", "Send “{1}” via {c} (“{2}”)"));
+        COMPONENT_ACTIONS.put("bt_paired", new CA(
+                "bluetoothConnectGetPairedDevices", bluetooth, "L",
+                ".getPairedDevices(",
+                "Put paired devices into list {1}"));
+        COMPONENT_ACTIONS.put("net_params", new CA(
+                "requestnetworkSetParams", network, "vm",
+                ".setParams(", "Set {c} parameters from map {1} as "
+                + "{2}",
+                new String[]{"REQUEST_PARAM", "REQUEST_BODY"}));
+        COMPONENT_ACTIONS.put("send_broadcast", new CA(
+                "sendBroadcast", intent, "", "sendBroadcast(",
+                "Send {c} as a broadcast"));
     }
 
     private AgentLogic() {
@@ -992,9 +1141,14 @@ public final class AgentLogic {
                     continue;
                 }
                 String name = param.substring("@var:".length());
+                // A name the activity never declared can only be a
+                // repeat_index loop variable in scope there; Fx
+                // emits the getVar spec as the identifier itself.
+                String reporterType = variables.containsKey(name)
+                        ? variableTypeLetter(variables.get(name)) : "d";
                 BlockBean reporter = new BlockBean(
                         String.valueOf(nextId), name,
-                        variableTypeLetter(variables.get(name)), "",
+                        reporterType, "",
                         "getVar");
                 try {
                     reporter.color = kq.a("getVar", reporter.type);
@@ -1116,6 +1270,14 @@ public final class AgentLogic {
         String scId;
         /** This activity's class name, for %m.activity slots. */
         String activityName;
+        /** Loop-variable names in scope at this point of the build. */
+        final java.util.Set<String> loopVars = new java.util.HashSet<>();
+        /** Every loop-variable name used, for the getVar pass. */
+        final java.util.Set<String> loopVarNames =
+                new java.util.HashSet<>();
+        /** InputStream names opened by open_asset in this build. */
+        final java.util.Set<String> assetStreams =
+                new java.util.HashSet<>();
         /** Intent component apply() must create, once per plan. */
         String componentToCreate;
 
@@ -1238,6 +1400,14 @@ public final class AgentLogic {
                                 + "nested ones included.");
             }
             String kind = blockKindOf(op);
+            if ("open_asset".equals(kind)) {
+                // Remember the stream name before anything reads
+                // it back with asset_text later in this handler.
+                String streamName = stringOf(op, "name");
+                if (!streamName.isEmpty()) {
+                    assetStreams.add(streamName);
+                }
+            }
             switch (kind) {
                 case "if", "if_else" -> {
                     boolean withElse = "if_else".equals(kind);
@@ -1640,6 +1810,144 @@ public final class AgentLogic {
                             + "” to " + describeExpr(value));
                     return bean;
                 }
+                case "snackbar" -> {
+                    // The Pro showSnackbar container: a snackbar on
+                    // a widget whose action button runs the body.
+                    ViewBean widget = requireWidget(op, byId);
+                    BlockBean bean = newBean("showSnackbar", "c");
+                    bean.parameters.add(widget.id);
+                    bean.parameters.add(expr(op.get("text"), 's',
+                            "A snackbar needs its message \"text\""));
+                    bean.parameters.add(expr(op.get("action"), 's',
+                            "A snackbar needs its button \"action\" "
+                                    + "text"));
+                    allStatements.add(bean);
+                    addExpect("Snackbar.make(",
+                            "Show a snackbar on " + widget.id);
+                    lines.add(indent(depth) + "Show a snackbar on "
+                            + widget.id + " (“"
+                            + describeExpr(op.get("text"))
+                            + "”, button “"
+                            + describeExpr(op.get("action")) + "”):");
+                    ArrayList<BlockBean> body = buildList(
+                            arrayOf(op, "blocks"), depth + 1, "blocks");
+                    bean.subStack1 = Integer.parseInt(body.get(0).id);
+                    return bean;
+                }
+                case "fb_get_children" -> {
+                    // The firebaseGetChildren container: read a
+                    // node's children once into a list of maps, then
+                    // run the body with the filled list.
+                    String componentId = requireComponent(op,
+                            ComponentBean.COMPONENT_TYPE_FIREBASE,
+                            "Firebase DB");
+                    String list = stringOf(op, "variable");
+                    Integer listKind = lists.get(list);
+                    if (listKind == null || listKind != 3) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "fb_get_children fills a list of "
+                                        + "maps; “" + list + "” is "
+                                        + "not one on this screen. "
+                                        + "Declare it with "
+                                        + "create_variable (list_map).");
+                    }
+                    BlockBean bean = newBean("firebaseGetChildren",
+                            "c");
+                    bean.parameters.add(componentId);
+                    bean.parameters.add(list);
+                    allStatements.add(bean);
+                    addExpect("addListenerForSingleValueEvent(",
+                            "When " + componentId + " children load "
+                                    + "into " + list);
+                    lines.add(indent(depth) + "When " + componentId
+                            + "'s children load into “" + list
+                            + "”:");
+                    ArrayList<BlockBean> body = buildList(
+                            arrayOf(op, "blocks"), depth + 1, "blocks");
+                    bean.subStack1 = Integer.parseInt(body.get(0).id);
+                    return bean;
+                }
+                case "repeat_index", "repeat_index_down" -> {
+                    // repeatKnownNum: the same counted loop, but
+                    // the body can read the counter by name. The
+                    // name is free text in the editor too, stored
+                    // as the second slot; referencing it is an
+                    // ordinary getVar whose spec is that name.
+                    boolean down = "repeat_index_down".equals(kind);
+                    String name = stringOf(op, "name");
+                    if (!name.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "repeat_index needs \"name\": the "
+                                        + "counter's name (letters, "
+                                        + "digits, _, starting with a "
+                                        + "letter).");
+                    }
+                    if (variables.containsKey(name)
+                            || loopVars.contains(name)) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "“" + name + "” is already used on "
+                                        + "this screen; pick another "
+                                        + "counter name.");
+                    }
+                    String times = expr(op.get("times"), 'd',
+                            "repeat_index needs how many \"times\"");
+                    BlockBean bean = newBean(down
+                            ? "RepeatKnownNumDescending"
+                            : "repeatKnownNum", "c");
+                    bean.parameters.add(times);
+                    bean.parameters.add(name);
+                    allStatements.add(bean);
+                    addExpect("for (int " + name,
+                            "Repeat " + describeExpr(op.get("times"))
+                                    + " times counting " + name);
+                    lines.add(indent(depth) + "Repeat "
+                            + describeExpr(op.get("times"))
+                            + " times (counter “" + name + "”):");
+                    loopVars.add(name);
+                    loopVarNames.add(name);
+                    ArrayList<BlockBean> body;
+                    try {
+                        body = buildList(arrayOf(op, "blocks"),
+                                depth + 1, "blocks");
+                    } finally {
+                        loopVars.remove(name);
+                    }
+                    bean.subStack1 = Integer.parseInt(body.get(0).id);
+                    return bean;
+                }
+                case "start_service", "stop_service" -> {
+                    // startService/stopService over a screen class,
+                    // resolved like open_screen resolves screens.
+                    String screen = stringOf(op, "screen");
+                    ProjectFileBean target =
+                            SketchwareProjects.findActivity(scId,
+                                    screen);
+                    if (target == null) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "There is no screen called " + screen
+                                        + " in this project. Create "
+                                        + "it first, or check "
+                                        + "list_activities.");
+                    }
+                    boolean start = "start_service".equals(kind);
+                    String targetName =
+                            SketchwareProjects.activityName(target);
+                    BlockBean bean = newBean(start ? "startService"
+                            : "stopService", " ");
+                    bean.parameters.add(targetName);
+                    allStatements.add(bean);
+                    addExpect((start ? "startService" : "stopService")
+                                    + "(new Intent(",
+                            (start ? "Start " : "Stop ")
+                                    + targetName);
+                    lines.add(indent(depth) + (start ? "Start the "
+                            : "Stop the ") + targetName + " service");
+                    return bean;
+                }
                 default -> {
                     return buildTranslated(op, depth);
                 }
@@ -1763,6 +2071,17 @@ public final class AgentLogic {
             JsonObject object = element.getAsJsonObject();
             if (object.has("var")) {
                 String name = stringOf(object, "var");
+                if (!variables.containsKey(name)
+                        && loopVars.contains(name)) {
+                    // A repeat_index loop variable: a number that
+                    // only exists inside its loop body.
+                    if (slot != 'd') {
+                        throw badValue(what, "the loop counter \""
+                                + name + "\" is a number and does "
+                                + "not fit here");
+                    }
+                    return "@var:" + name;
+                }
                 requireVariable(variables, name);
                 int kind = variables.get(name);
                 int needed = slot == 'd' ? 1 : slot == 'b' ? 0 : 2;
@@ -1903,6 +2222,217 @@ public final class AgentLogic {
                 BlockBean bean = newBean("mapContainKey", "b");
                 bean.parameters.add(name);
                 bean.parameters.add(key);
+                return "@" + bean.id;
+            }
+            if (object.has("instance_of")) {
+                // %s instanceof %s: the second slot is a class
+                // name the editor lets its user type freely.
+                if (slot != 'b') {
+                    throw badValue(what, "that yes/no value does "
+                            + "not fit here");
+                }
+                String className = stringOf(object, "class");
+                if (!className.matches(
+                        "[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$]"
+                                + "[A-Za-z0-9_$]*)*")) {
+                    throw badValue(what, "this needs \"class\": a "
+                            + "class name like String or TextView");
+                }
+                BlockBean bean = newBean("instanceOfOperator", "b");
+                bean.parameters.add(expr(object.get("instance_of"),
+                        's', what));
+                bean.parameters.add(className);
+                return "@" + bean.id;
+            }
+            if (object.has("replace_all")) {
+                if (slot != 's') {
+                    throw badValue(what, "that text does not fit "
+                            + "here");
+                }
+                BlockBean bean = newBean("stringReplaceAll", "s");
+                bean.parameters.add(expr(object.get("replace_all"),
+                        's', what));
+                bean.parameters.add(expr(object.get("regex"),
+                        's', what));
+                bean.parameters.add(expr(object.get("with"),
+                        's', what));
+                return "@" + bean.id;
+            }
+            if (object.has("json_of_list_map")) {
+                if (slot != 's') {
+                    throw badValue(what, "JSON text does not fit "
+                            + "here");
+                }
+                String list = stringOf(object, "json_of_list_map");
+                Integer listKind = lists.get(list);
+                if (listKind == null || listKind != 3) {
+                    throw badValue(what, "there is no list of maps "
+                            + "called " + list + " on this screen");
+                }
+                BlockBean bean = newBean("listMapToStr", "s");
+                bean.parameters.add(list);
+                return "@" + bean.id;
+            }
+            if (object.has("has_extra")) {
+                // Whether the screen that opened this one passed a
+                // named extra (intentHasExtra, a single text slot).
+                if (slot != 'b') {
+                    throw badValue(what, "that yes/no value does "
+                            + "not fit here");
+                }
+                String key = stringOf(object, "has_extra");
+                if (key.isEmpty()) {
+                    throw badValue(what, "this needs the name of "
+                            + "the extra to look for");
+                }
+                BlockBean bean = newBean("intentHasExtra", "b");
+                bean.parameters.add(key);
+                return "@" + bean.id;
+            }
+            if (object.has("asset_text")) {
+                // The text of an asset file opened earlier in this
+                // handler by open_asset (copyAssetFile over the
+                // stream that block declared).
+                if (slot != 's') {
+                    throw badValue(what, "that text does not fit "
+                            + "here");
+                }
+                String name = stringOf(object, "asset_text");
+                if (!assetStreams.contains(name)) {
+                    throw badValue(what, "no asset stream called "
+                            + name + " was opened in this handler; "
+                            + "use open_asset first");
+                }
+                BlockBean bean = newBean("copyAssetFile", "s");
+                bean.parameters.add(name);
+                return "@" + bean.id;
+            }
+            if (object.has("jpeg_rotation")) {
+                if (slot != 'd') {
+                    throw badValue(what, "that number does not fit "
+                            + "here");
+                }
+                BlockBean bean = newBean("getJpegRotate", "d");
+                bean.parameters.add(expr(object.get("jpeg_rotation"),
+                        's', what));
+                return "@" + bean.id;
+            }
+            if (object.has("public_dir")) {
+                // A public folder on shared storage; the stored
+                // value is the Environment constant name itself.
+                if (slot != 's') {
+                    throw badValue(what, "that text does not fit "
+                            + "here");
+                }
+                String constant = stringOf(object, "public_dir")
+                        .toUpperCase(Locale.ROOT);
+                java.util.Set<String> allowed = java.util.Set.of(
+                        "DIRECTORY_MUSIC", "DIRECTORY_PODCASTS",
+                        "DIRECTORY_RINGTONES", "DIRECTORY_ALARMS",
+                        "DIRECTORY_NOTIFICATIONS", "DIRECTORY_PICTURES",
+                        "DIRECTORY_MOVIES", "DIRECTORY_DOWNLOADS",
+                        "DIRECTORY_DCIM", "DIRECTORY_DOCUMENT");
+                if (!allowed.contains(constant)) {
+                    throw badValue(what, "\"public_dir\" must be "
+                            + "one of: " + String.join(", ", allowed));
+                }
+                BlockBean bean = newBean("getPublicDir", "s");
+                bean.parameters.add(constant);
+                return "@" + bean.id;
+            }
+            if (object.has("list_map_value")
+                    || object.has("list_map_has")) {
+                // Reading inside the map at one position of a list
+                // of maps. Fx emits the two blocks with different
+                // parameter orders; both are honoured exactly.
+                boolean value = object.has("list_map_value");
+                if (slot != (value ? 's' : 'b')) {
+                    throw badValue(what, "that value does not fit "
+                            + "here");
+                }
+                String list = stringOf(object, value
+                        ? "list_map_value" : "list_map_has");
+                Integer listKind = lists.get(list);
+                if (listKind == null || listKind != 3) {
+                    throw badValue(what, "there is no list of maps "
+                            + "called " + list + " on this screen");
+                }
+                String index = expr(object.get("index"), 'd', what);
+                String key = expr(object.get("key"), 's', what);
+                BlockBean bean = newBean(value ? "getAtListMap"
+                        : "containListMap", value ? "s" : "b");
+                if (value) {
+                    bean.parameters.add(index);
+                    bean.parameters.add(key);
+                    bean.parameters.add(list);
+                } else {
+                    bean.parameters.add(list);
+                    bean.parameters.add(index);
+                    bean.parameters.add(key);
+                }
+                return "@" + bean.id;
+            }
+            if (object.has("pattern_md5_of")
+                    || object.has("pattern_sha1_of")
+                    || object.has("pattern_text_of")) {
+                // A PatternLockView's drawn pattern (kept in a list
+                // of text) as MD5 / SHA1 / plain text.
+                if (slot != 's') {
+                    throw badValue(what, "that text does not fit "
+                            + "here");
+                }
+                String key = object.has("pattern_md5_of")
+                        ? "pattern_md5_of" : object.has(
+                                "pattern_sha1_of") ? "pattern_sha1_of"
+                                : "pattern_text_of";
+                ViewBean widget = findWidget(byId,
+                        stringOf(object, key));
+                if (widget == null || !"PatternLockView".equals(
+                        AgentEdits.typeName(widget.type))) {
+                    throw badValue(what, "there is no pattern view "
+                            + "called " + stringOf(object, key)
+                            + " on this screen");
+                }
+                String list = stringOf(object, "list");
+                Integer listKind = lists.get(list);
+                if (listKind == null || listKind != 2) {
+                    throw badValue(what, "the pattern is kept in a "
+                            + "list of text; \"" + list + "\" is "
+                            + "not one on this screen");
+                }
+                BlockBean bean = newBean(
+                        "pattern_md5_of".equals(key) ? "patternToMD5"
+                                : "pattern_sha1_of".equals(key)
+                                        ? "patternToSha1"
+                                        : "patternToString", "s");
+                bean.parameters.add(widget.id);
+                bean.parameters.add(list);
+                return "@" + bean.id;
+            }
+            if (object.has("visibility_is")) {
+                // checkViewVisibility: a widget's visibility
+                // compared against VISIBLE / INVISIBLE / GONE.
+                if (slot != 'b') {
+                    throw badValue(what, "that yes/no value does "
+                            + "not fit here");
+                }
+                ViewBean widget = findWidget(byId,
+                        stringOf(object, "visibility_is"));
+                if (widget == null) {
+                    throw badValue(what, "there is no widget called "
+                            + stringOf(object, "visibility_is")
+                            + " on this screen");
+                }
+                String mode = stringOf(object, "mode")
+                        .toUpperCase(Locale.ROOT);
+                if (!mode.equals("VISIBLE") && !mode.equals(
+                        "INVISIBLE") && !mode.equals("GONE")) {
+                    throw badValue(what, "\"mode\" must be VISIBLE, "
+                            + "INVISIBLE or GONE");
+                }
+                BlockBean bean = newBean("checkViewVisibility", "b");
+                bean.parameters.add(widget.id);
+                bean.parameters.add(mode);
                 return "@" + bean.id;
             }
             if (object.has("pref_get") || object.has("pref_has")
@@ -2340,6 +2870,38 @@ public final class AgentLogic {
                                 'd', what));
                         return "@" + bean.id;
                     }
+                    case "html" -> {
+                        if (slot != 's') {
+                            throw badValue(what, "HTML text does "
+                                    + "not fit here");
+                        }
+                        BlockBean bean = newBean("html", "s");
+                        bean.parameters.add(expr(object.get("a"),
+                                's', what));
+                        return "@" + bean.id;
+                    }
+                    case "hash_code" -> {
+                        if (slot != 'd') {
+                            throw badValue(what, "a hash number "
+                                    + "does not fit here");
+                        }
+                        BlockBean bean = newBean("toHashCode", "d");
+                        bean.parameters.add(expr(object.get("a"),
+                                's', what));
+                        return "@" + bean.id;
+                    }
+                    case "to_string" -> {
+                        // String.valueOf((long) x): a whole number
+                        // as text, without decimals.
+                        if (slot != 's') {
+                            throw badValue(what, "converted text "
+                                    + "does not fit here");
+                        }
+                        BlockBean bean = newBean("toString", "s");
+                        bean.parameters.add(expr(object.get("a"),
+                                'd', what));
+                        return "@" + bean.id;
+                    }
                     case "substring" -> {
                         if (slot != 's') {
                             throw badValue(what, "part of a text "
@@ -2396,6 +2958,50 @@ public final class AgentLogic {
                                             "firebaseauthIsLoggedIn";
                                     default -> "isConnected";
                                 }, String.valueOf(needed));
+                        return "@" + bean.id;
+                    }
+                    case "list_scroll_state", "pager_scroll_state",
+                            "recycler_scroll_state" -> {
+                        // The scroll-state constants the editor
+                        // offers inside scroll events (ListView /
+                        // ViewPager / RecyclerView nested names);
+                        // the stored slot is the constant name.
+                        if (slot != 'd') {
+                            throw badValue(what, "that number does "
+                                    + "not fit here");
+                        }
+                        String mode = stringOf(object, "mode")
+                                .toUpperCase(Locale.ROOT);
+                        java.util.Set<String> allowed =
+                                "recycler_scroll_state".equals(fn)
+                                        ? java.util.Set.of(
+                                                "SCROLL_STATE_IDLE",
+                                                "SCROLL_STATE_SETTLING",
+                                                "SCROLL_STATE_DRAGGING")
+                                        : java.util.Set.of(
+                                                "SCROLL_STATE_IDLE",
+                                                "SCROLL_STATE_FLING",
+                                                "SCROLL_STATE_TOUCH_SCROLL");
+                        if ("pager_scroll_state".equals(fn)) {
+                            allowed = java.util.Set.of(
+                                    "SCROLL_STATE_IDLE",
+                                    "SCROLL_STATE_DRAGGING",
+                                    "SCROLL_STATE_SETTLING");
+                        }
+                        if (!allowed.contains(mode)) {
+                            throw badValue(what, "\"mode\" must be "
+                                    + "one of: " + String.join(", ",
+                                            allowed));
+                        }
+                        BlockBean bean = newBean(
+                                switch (fn) {
+                                    case "list_scroll_state" ->
+                                            "listscrollparam";
+                                    case "pager_scroll_state" ->
+                                            "pagerscrollparam";
+                                    default -> "recyclerscrollparam";
+                                }, "d");
+                        bean.parameters.add(mode);
                         return "@" + bean.id;
                     }
                     case "drawer_open" -> {
@@ -2619,6 +3225,12 @@ public final class AgentLogic {
                     || object.has("web_progress_of")
                     || object.has("can_go_back")
                     || object.has("can_go_forward")
+                    || object.has("can_pause")
+                    || object.has("can_seek_back")
+                    || object.has("can_seek_forward")
+                    || object.has("last_visible_of")
+                    || object.has("location_x_of")
+                    || object.has("location_y_of")
                     || object.has("badge_count_of")
                     || object.has("otp_text_of")
                     || object.has("counter_max_of")
@@ -2638,7 +3250,10 @@ public final class AgentLogic {
                         "selection_end_of", "video_position_of",
                         "video_duration_of", "video_playing",
                         "web_progress_of", "can_go_back",
-                        "can_go_forward", "badge_count_of",
+                        "can_go_forward", "can_pause", "can_seek_back",
+                        "can_seek_forward", "last_visible_of",
+                        "location_x_of", "location_y_of",
+                        "badge_count_of",
                         "otp_text_of", "counter_max_of",
                         "page_limit_of"}) {
                     if (object.has(candidate)) {
@@ -2655,7 +3270,10 @@ public final class AgentLogic {
                 String typeName = AgentEdits.typeName(widget.type);
                 char needed = "video_playing".equals(key)
                         || "can_go_back".equals(key)
-                        || "can_go_forward".equals(key) ? 'b'
+                        || "can_go_forward".equals(key)
+                        || "can_pause".equals(key)
+                        || "can_seek_back".equals(key)
+                        || "can_seek_forward".equals(key) ? 'b'
                         : "otp_text_of".equals(key) ? 's' : 'd';
                 if (slot != needed) {
                     throw badValue(what, "that value does not fit here");
@@ -2741,6 +3359,30 @@ public final class AgentLogic {
                     case "can_go_forward" -> {
                         opCode = "webViewCanGoForward";
                         yield "WebView";
+                    }
+                    case "can_pause" -> {
+                        opCode = "videoviewCanPause";
+                        yield "VideoView";
+                    }
+                    case "can_seek_back" -> {
+                        opCode = "videoviewCanSeekBackward";
+                        yield "VideoView";
+                    }
+                    case "can_seek_forward" -> {
+                        opCode = "videoviewCanSeekForward";
+                        yield "VideoView";
+                    }
+                    case "last_visible_of" -> {
+                        opCode = "getLastVisiblePosition";
+                        yield "ListView";
+                    }
+                    case "location_x_of" -> {
+                        opCode = "getLocationX";
+                        yield "";
+                    }
+                    case "location_y_of" -> {
+                        opCode = "getLocationY";
+                        yield "";
                     }
                     case "badge_count_of" -> {
                         opCode = "getBadgeCount";
@@ -3032,6 +3674,13 @@ public final class AgentLogic {
                     case "auth_uid" -> "the signed-in user's ID";
                     case "auth_logged_in" -> "someone is signed in";
                     case "is_connected" -> "the device is online";
+                    case "html" -> "the HTML in a text";
+                    case "hash_code" -> "a text's hash number";
+                    case "to_string" -> "a whole number as text";
+                    case "list_scroll_state" -> "a list scroll state";
+                    case "pager_scroll_state" -> "a pager scroll state";
+                    case "recycler_scroll_state" ->
+                            "a recycler scroll state";
                     case "display_width" -> "the screen width";
                     case "display_height" -> "the screen height";
                     case "e" -> "e (2.718…)";
@@ -3084,6 +3733,58 @@ public final class AgentLogic {
                 return "the position of "
                         + describeExpr(object.get("value")) + " in "
                         + stringOf(object, "index_of");
+            }
+            if (object.has("instance_of")) {
+                return describeExpr(object.get("instance_of"))
+                        + " is a " + stringOf(object, "class");
+            }
+            if (object.has("replace_all")) {
+                return describeExpr(object.get("replace_all"))
+                        + " with matches replaced";
+            }
+            if (object.has("json_of_list_map")) {
+                return "list of maps " + stringOf(object,
+                        "json_of_list_map") + " as JSON text";
+            }
+            if (object.has("has_extra")) {
+                return "the screen was passed a “"
+                        + stringOf(object, "has_extra") + "”";
+            }
+            if (object.has("asset_text")) {
+                return "the text of asset stream "
+                        + stringOf(object, "asset_text");
+            }
+            if (object.has("jpeg_rotation")) {
+                return "the rotation of the photo at "
+                        + describeExpr(object.get("jpeg_rotation"));
+            }
+            if (object.has("public_dir")) {
+                return "the public "
+                        + stringOf(object, "public_dir") + " folder";
+            }
+            if (object.has("list_map_value")) {
+                return "the “" + describeExpr(object.get("key"))
+                        + "” in the map at "
+                        + describeExpr(object.get("index")) + " of "
+                        + stringOf(object, "list_map_value");
+            }
+            if (object.has("list_map_has")) {
+                return stringOf(object, "list_map_has") + " has “"
+                        + describeExpr(object.get("key")) + "” at "
+                        + describeExpr(object.get("index"));
+            }
+            if (object.has("pattern_md5_of")
+                    || object.has("pattern_sha1_of")
+                    || object.has("pattern_text_of")) {
+                String key = object.has("pattern_md5_of")
+                        ? "pattern_md5_of" : object.has(
+                                "pattern_sha1_of") ? "pattern_sha1_of"
+                                : "pattern_text_of";
+                return "the pattern of " + stringOf(object, key);
+            }
+            if (object.has("visibility_is")) {
+                return stringOf(object, "visibility_is") + " is "
+                        + stringOf(object, "mode");
             }
             for (String key : new String[]{"pref_get", "pref_has",
                     "calendar_millis", "calendar_text", "calendar_diff",
@@ -3156,7 +3857,10 @@ public final class AgentLogic {
                     "selection_end_of", "video_position_of",
                     "video_duration_of", "video_playing",
                     "web_progress_of", "can_go_back",
-                    "can_go_forward", "badge_count_of",
+                    "can_go_forward", "can_pause", "can_seek_back",
+                    "can_seek_forward", "last_visible_of",
+                    "location_x_of", "location_y_of",
+                    "badge_count_of",
                     "otp_text_of", "counter_max_of",
                     "page_limit_of"}) {
                 if (object.has(key)) {
@@ -3180,6 +3884,14 @@ public final class AgentLogic {
                         case "video_playing" -> "playing state";
                         case "web_progress_of" -> "loading progress";
                         case "can_go_back" -> "can-go-back state";
+                        case "can_pause" -> "can-pause state";
+                        case "can_seek_back" -> "can-seek-back state";
+                        case "can_seek_forward" ->
+                                "can-seek-forward state";
+                        case "last_visible_of" ->
+                                "last visible position";
+                        case "location_x_of" -> "screen x";
+                        case "location_y_of" -> "screen y";
                         case "badge_count_of" -> "badge count";
                         case "otp_text_of" -> "entered code";
                         case "counter_max_of" -> "character limit";
@@ -3259,6 +3971,13 @@ public final class AgentLogic {
                     || object.has("is_file") || object.has("is_folder")
                     || object.has("map_empty")
                     || object.has("map_has_value")
+                    || object.has("has_extra")
+                    || object.has("instance_of")
+                    || object.has("list_map_has")
+                    || object.has("visibility_is")
+                    || object.has("can_pause")
+                    || object.has("can_seek_back")
+                    || object.has("can_seek_forward")
                     || object.has("pref_has")
                     || object.has("mp_playing")
                     || object.has("mp_looping")
@@ -4521,6 +5240,463 @@ public final class AgentLogic {
                     stmt.expectCode = list + " = new Gson().fromJson(";
                 }
             }
+            case "finish_all" -> {
+                stmt.opCode = "finishAffinity";
+                stmt.type = "f";
+                stmt.sentence = "Close all screens";
+                stmt.expectCode = "finishAffinity();";
+            }
+            case "light_status_bar" -> {
+                stmt.opCode = "LightStatusBar";
+                stmt.type = " ";
+                stmt.sentence = "Use a light status bar";
+                stmt.expectCode = "SYSTEM_UI_FLAG_LIGHT_STATUS_BAR";
+            }
+            case "status_bar_color" -> {
+                stmt.opCode = "changeStatebarColour";
+                stmt.type = " ";
+                stmt.params.add(activityName);
+                stmt.params.add(colourField(op, "color"));
+                stmt.sentence = "Set the status bar colour to "
+                        + stringOf(op, "color");
+                stmt.expectCode = "setStatusBarColor(";
+            }
+            case "custom_toast", "custom_toast_icon" -> {
+                boolean icon = "custom_toast_icon".equals(kind);
+                stmt.opCode = icon ? "customToastWithIcon"
+                        : "customToast";
+                stmt.type = " ";
+                stmt.params.add(stringOf(op, "text"));
+                stmt.params.add(colourField(op, "color"));
+                stmt.params.add(numericField(op, "value"));
+                stmt.params.add(colourField(op, "color2"));
+                stmt.params.add(numericField(op, "value2"));
+                String gravity = stringOf(op, "mode")
+                        .toUpperCase(Locale.ROOT);
+                if (!gravity.equals("TOP") && !gravity.equals(
+                        "CENTER") && !gravity.equals("BOTTOM")) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "A custom toast's \"mode\" (position) "
+                                    + "must be TOP, CENTER or "
+                                    + "BOTTOM.");
+                }
+                stmt.params.add(gravity);
+                if (icon) {
+                    String image = stringOf(op, "image");
+                    if (!image.matches("(?i)[a-z0-9_]+")) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "custom_toast_icon needs \"image\": "
+                                        + "the name of an image in "
+                                        + "the project.");
+                    }
+                    stmt.params.add(image.toLowerCase(Locale.ROOT));
+                }
+                stmt.sentence = "Show a custom toast: “"
+                        + stringOf(op, "text") + "”";
+                stmt.expectCode = "SketchwareUtil.CustomToast";
+            }
+            case "fab_icon", "fab_size", "fab_visibility" -> {
+                // The activity's own floating action button: Fx
+                // addresses the _fab field directly, no widget.
+                stmt.type = " ";
+                switch (kind) {
+                    case "fab_icon" -> {
+                        String image = stringOf(op, "image");
+                        if (!image.matches("(?i)[a-z0-9_]+")) {
+                            throw new AgentTools.ToolException(
+                                    "E_BAD_BLOCK",
+                                    "fab_icon needs \"image\": the "
+                                            + "name of an image in "
+                                            + "the project.");
+                        }
+                        stmt.opCode = "fabIcon";
+                        stmt.params.add(
+                                image.toLowerCase(Locale.ROOT));
+                        stmt.sentence = "Set the round button's "
+                                + "icon to “" + image + "”";
+                        stmt.expectCode = "setImageResource(R.drawable.";
+                    }
+                    case "fab_size" -> {
+                        String mode = stringOf(op, "mode")
+                                .toUpperCase(Locale.ROOT);
+                        if (!mode.equals("AUTO") && !mode.equals(
+                                "MINI") && !mode.equals("NORMAL")) {
+                            throw new AgentTools.ToolException(
+                                    "E_BAD_BLOCK",
+                                    "fab_size's \"mode\" must be "
+                                            + "AUTO, MINI or NORMAL.");
+                        }
+                        stmt.opCode = "fabSize";
+                        stmt.params.add(mode);
+                        stmt.sentence = "Set the round button's "
+                                + "size to " + mode;
+                        stmt.expectCode =
+                                "setSize(FloatingActionButton.SIZE_";
+                    }
+                    default -> {
+                        String mode = stringOf(op, "mode")
+                                .toLowerCase(Locale.ROOT);
+                        if (!mode.equals("show") && !mode.equals(
+                                "hide")) {
+                            throw new AgentTools.ToolException(
+                                    "E_BAD_BLOCK",
+                                    "fab_visibility's \"mode\" must "
+                                            + "be show or hide.");
+                        }
+                        stmt.opCode = "fabVisibility";
+                        stmt.params.add(mode);
+                        stmt.sentence = ("show".equals(mode)
+                                ? "Show" : "Hide")
+                                + " the round button";
+                        stmt.expectCode = "." + mode + "();";
+                    }
+                }
+            }
+            case "add_permission", "remove_permission" -> {
+                // No generated code: PermissionManager scans the
+                // activity's blocks at build time and requests the
+                // named permission at runtime.
+                String permission = stringOf(op, "text")
+                        .toUpperCase(Locale.ROOT);
+                if (!permission.matches("[A-Z0-9_]+")) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "This block needs \"text\": a permission "
+                                    + "name like CAMERA or "
+                                    + "ACCESS_FINE_LOCATION.");
+                }
+                boolean add = "add_permission".equals(kind);
+                stmt.opCode = add ? "addPermission"
+                        : "removePermission";
+                stmt.type = " ";
+                stmt.params.add(permission);
+                stmt.sentence = (add ? "Ask for the " : "Stop "
+                        + "asking for the ") + permission
+                        + " permission";
+                stmt.expectCode = "";
+            }
+            case "auth_sign_out" -> {
+                // firebaseauthSignOutUser stores no slots at all;
+                // the component is still validated so a typo
+                // cannot pass silently.
+                String componentId = stringOf(op, "component");
+                Integer type = components.get(componentId);
+                if (type == null || type != ComponentBean
+                        .COMPONENT_TYPE_FIREBASE_AUTH) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "auth_sign_out needs a Firebase Auth "
+                                    + "component on this screen; "
+                                    + "add one with create_component "
+                                    + "(type firebase_auth).");
+                }
+                stmt.opCode = "firebaseauthSignOutUser";
+                stmt.type = " ";
+                stmt.sentence = "Sign out";
+                stmt.expectCode =
+                        "FirebaseAuth.getInstance().signOut();";
+            }
+            case "map_put_number", "map_put_flag", "map_put_list",
+                    "map_put_map" -> {
+                String name = stringOf(op, "variable");
+                requireVariable(variables, name);
+                requireVariableKind(variables, name, 3,
+                        "This block needs a map variable.");
+                String key = stringOf(op, "key");
+                if (key.isEmpty()) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "This block needs the \"key\" to store "
+                                    + "under.");
+                }
+                stmt.type = " ";
+                stmt.params.add(name);
+                stmt.params.add(key);
+                switch (kind) {
+                    case "map_put_number" -> {
+                        stmt.opCode = "hashmapPutNumber2";
+                        stmt.params.add(numericField(op, "value"));
+                        stmt.sentence = "In map “" + name + "”, store "
+                                + "the number " + stringOf(op, "value")
+                                + " under “" + key + "”";
+                        stmt.expectCode = ".put(";
+                    }
+                    case "map_put_flag" -> {
+                        stmt.opCode = "hashmapPutBoolean";
+                        stmt.params.add(String.valueOf(
+                                boolOf(op, "flag", true)));
+                        stmt.sentence = "In map “" + name + "”, store "
+                                + boolOf(op, "flag", true)
+                                + " under “" + key + "”";
+                        stmt.expectCode = ".put(";
+                    }
+                    case "map_put_list" -> {
+                        String list = requireList(op, lists);
+                        int listKind = lists.get(list);
+                        if (listKind == 2) {
+                            stmt.opCode = "hashmapPutListstr";
+                        } else if (listKind == 3) {
+                            stmt.opCode = "hashmapPutListmap";
+                        } else {
+                            throw new AgentTools.ToolException(
+                                    "E_BAD_BLOCK",
+                                    "map_put_list stores a list of "
+                                            + "text or of maps; “"
+                                            + list + "” is a list of "
+                                            + "numbers.");
+                        }
+                        stmt.params.add(list);
+                        stmt.sentence = "In map “" + name + "”, store "
+                                + "the list “" + list + "” under “"
+                                + key + "”";
+                        stmt.expectCode = ".put(";
+                    }
+                    default -> {
+                        String other = stringOf(op, "from_variable");
+                        requireVariable(variables, other);
+                        requireVariableKind(variables, other, 3,
+                                "map_put_map stores another map "
+                                        + "variable.");
+                        stmt.opCode = "hashmapPutMap";
+                        stmt.params.add(other);
+                        stmt.sentence = "In map “" + name + "”, store "
+                                + "the map “" + other + "” under “"
+                                + key + "”";
+                        stmt.expectCode = ".put(";
+                    }
+                }
+            }
+            case "add_all_to_list" -> {
+                String list = requireList(op, lists);
+                String from = stringOf(op, "from");
+                if (!lists.containsKey(from)) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "There is no list called " + from
+                                    + " on this screen to copy from.");
+                }
+                if (!lists.get(from).equals(lists.get(list))) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "add_all_to_list copies between two "
+                                    + "lists of the same kind; “"
+                                    + list + "” and “" + from
+                                    + "” hold different things.");
+                }
+                stmt.opCode = "listAddAll";
+                stmt.type = " ";
+                stmt.params.add(list);
+                stmt.params.add(from);
+                stmt.sentence = "Add everything in “" + from
+                        + "” to “" + list + "”";
+                stmt.expectCode = ".addAll(";
+            }
+            case "set_map_in_list" -> {
+                String name = stringOf(op, "variable");
+                requireVariable(variables, name);
+                requireVariableKind(variables, name, 3,
+                        "set_map_in_list needs a map variable to "
+                                + "place.");
+                String list = requireList(op, lists);
+                if (lists.get(list) != 3) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "set_map_in_list places into a list of "
+                                    + "maps; “" + list + "” is not "
+                                    + "one.");
+                }
+                stmt.opCode = "setMapAtPosListmap";
+                stmt.type = " ";
+                stmt.params.add(name);
+                stmt.params.add(indexParam(op));
+                stmt.params.add(list);
+                stmt.sentence = "Put map “" + name + "” at item "
+                        + stringOf(op, "index") + " of “" + list
+                        + "”";
+                stmt.expectCode = ".set((int)";
+            }
+            case "remove_map_from_list" -> {
+                String name = stringOf(op, "variable");
+                requireVariable(variables, name);
+                requireVariableKind(variables, name, 3,
+                        "remove_map_from_list needs the map "
+                                + "variable to remove.");
+                String list = requireList(op, lists);
+                if (lists.get(list) != 3) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "remove_map_from_list works on a list "
+                                    + "of maps; “" + list + "” is "
+                                    + "not one.");
+                }
+                stmt.opCode = "deleteMapFromListmap";
+                stmt.type = " ";
+                stmt.params.add(name);
+                stmt.params.add(list);
+                stmt.sentence = "Remove map “" + name + "” from “"
+                        + list + "”";
+                stmt.expectCode = ".remove(";
+            }
+            case "split_into_list" -> {
+                String list = requireList(op, lists);
+                if (lists.get(list) != 2) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "split_into_list fills a list of text; "
+                                    + "“" + list + "” is not one.");
+                }
+                stmt.opCode = "stringSplitToList";
+                stmt.type = " ";
+                stmt.params.add(stringOf(op, "text"));
+                stmt.params.add(stringOf(op, "text2"));
+                stmt.params.add(list);
+                stmt.sentence = "Split “" + stringOf(op, "text")
+                        + "” by “" + stringOf(op, "text2")
+                        + "” into “" + list + "”";
+                stmt.expectCode = ".split(";
+            }
+            case "open_asset" -> {
+                String name = stringOf(op, "name");
+                if (!name.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "open_asset needs \"name\": what to call "
+                                    + "the stream (letters, digits, "
+                                    + "_, starting with a letter).");
+                }
+                stmt.opCode = "getAssetFile";
+                stmt.type = " ";
+                stmt.params.add(name);
+                stmt.params.add(stringOf(op, "text"));
+                stmt.sentence = "Open the asset “"
+                        + stringOf(op, "text") + "” as " + name;
+                stmt.expectCode = "getAssets().open(";
+            }
+            case "scale_bitmap", "resize_bitmap_ratio",
+                    "resize_bitmap_square", "resize_bitmap_circle",
+                    "resize_bitmap_rounded", "crop_bitmap_center",
+                    "rotate_bitmap", "skew_bitmap",
+                    "bitmap_brightness", "bitmap_contrast",
+                    "bitmap_color_filter" -> {
+                // The FileUtil bitmap family: from path, to path,
+                // then the block's own numbers (Fx-verified).
+                stmt.type = " ";
+                stmt.params.add(stringOf(op, "text"));
+                stmt.params.add(stringOf(op, "text2"));
+                String verb;
+                switch (kind) {
+                    case "scale_bitmap" -> {
+                        stmt.opCode = "scaleBitmapFile";
+                        stmt.params.add(numericField(op, "value"));
+                        stmt.params.add(numericField(op, "value2"));
+                        verb = "Scale";
+                    }
+                    case "resize_bitmap_ratio" -> {
+                        stmt.opCode = "resizeBitmapFileRetainRatio";
+                        stmt.params.add(numericField(op, "value"));
+                        verb = "Resize";
+                    }
+                    case "resize_bitmap_square" -> {
+                        stmt.opCode = "resizeBitmapFileToSquare";
+                        stmt.params.add(numericField(op, "value"));
+                        verb = "Resize square";
+                    }
+                    case "resize_bitmap_circle" -> {
+                        stmt.opCode = "resizeBitmapFileToCircle";
+                        verb = "Crop to a circle";
+                    }
+                    case "resize_bitmap_rounded" -> {
+                        stmt.opCode =
+                                "resizeBitmapFileWithRoundedBorder";
+                        stmt.params.add(numericField(op, "value"));
+                        verb = "Round the corners of";
+                    }
+                    case "crop_bitmap_center" -> {
+                        stmt.opCode = "cropBitmapFileFromCenter";
+                        stmt.params.add(numericField(op, "value"));
+                        stmt.params.add(numericField(op, "value2"));
+                        verb = "Centre-crop";
+                    }
+                    case "rotate_bitmap" -> {
+                        stmt.opCode = "rotateBitmapFile";
+                        stmt.params.add(numericField(op, "value"));
+                        verb = "Rotate";
+                    }
+                    case "skew_bitmap" -> {
+                        stmt.opCode = "skewBitmapFile";
+                        stmt.params.add(numericField(op, "value"));
+                        stmt.params.add(numericField(op, "value2"));
+                        verb = "Skew";
+                    }
+                    case "bitmap_brightness" -> {
+                        stmt.opCode = "setBitmapFileBrightness";
+                        stmt.params.add(numericField(op, "value"));
+                        verb = "Set the brightness of";
+                    }
+                    case "bitmap_contrast" -> {
+                        stmt.opCode = "setBitmapFileContrast";
+                        stmt.params.add(numericField(op, "value"));
+                        verb = "Set the contrast of";
+                    }
+                    default -> {
+                        stmt.opCode = "setBitmapFileColorFilter";
+                        stmt.params.add(colourField(op, "color"));
+                        verb = "Tint";
+                    }
+                }
+                stmt.sentence = verb + " the image at “"
+                        + stringOf(op, "text") + "” into “"
+                        + stringOf(op, "text2") + "”";
+                stmt.expectCode = "FileUtil.";
+            }
+            case "set_fragment_adapter" -> {
+                // A ViewPager bound to a FragmentAdapter
+                // component: pager first, component, tab count.
+                ViewBean pager = findWidget(byId,
+                        stringOf(op, "target"));
+                if (pager == null || !"ViewPager".equals(
+                        AgentEdits.typeName(pager.type))) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "set_fragment_adapter needs a ViewPager "
+                                    + "as its \"target\".");
+                }
+                String componentId = stringOf(op, "component");
+                Integer type = components.get(componentId);
+                if (type == null || type != ComponentBean
+                        .COMPONENT_TYPE_FRAGMENT_ADAPTER) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "set_fragment_adapter needs a Fragment "
+                                    + "Adapter component; add one "
+                                    + "with create_component (type "
+                                    + "fragment_adapter).");
+                }
+                stmt.opCode = "pagerSetFragmentAdapter";
+                stmt.type = " ";
+                stmt.params.add(pager.id);
+                stmt.params.add(componentId);
+                stmt.params.add(numericField(op, "value"));
+                stmt.sentence = "Give " + pager.id + " the pages "
+                        + "from " + componentId;
+                stmt.expectCode = ".setAdapter(";
+            }
+            case "menu_add_item" -> {
+                // Only meaningful inside onCreateOptionsMenu,
+                // where the menu itself is in scope.
+                stmt.opCode = "menuAddItem";
+                stmt.type = " ";
+                stmt.params.add(numericField(op, "value"));
+                stmt.params.add(stringOf(op, "text"));
+                stmt.sentence = "Add menu item “"
+                        + stringOf(op, "text") + "” (id "
+                        + stringOf(op, "value") + ")";
+                stmt.expectCode = "menu.add(0,";
+            }
+            case "menu_inflate" -> {
+                String menu = stringOf(op, "menu");
+                if (!menu.matches("(?i)[a-z0-9_]+")) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "menu_inflate needs \"menu\": the name "
+                                    + "of a menu file in the "
+                                    + "project.");
+                }
+                stmt.opCode = "menuInflater";
+                stmt.type = " ";
+                stmt.params.add(menu.toLowerCase(Locale.ROOT));
+                stmt.sentence = "Use the “" + menu + "” menu file";
+                stmt.expectCode = "getMenuInflater().inflate(R.menu.";
+            }
             default -> {
                 WA action = WIDGET_ACTIONS.get(kind);
                 CA componentAction = action == null
@@ -4638,6 +5814,19 @@ public final class AgentLogic {
         return list;
     }
 
+    /** A numeric literal argument field, validated before storing. */
+    private static String numericField(JsonObject op, String field)
+            throws AgentTools.ToolException {
+        String value = stringOf(op, field);
+        try {
+            Double.parseDouble(value);
+        } catch (Exception e) {
+            throw new AgentTools.ToolException("E_BAD_BLOCK",
+                    "This block needs a numeric \"" + field + "\".");
+        }
+        return value;
+    }
+
     /** A numeric "index" argument, stored the way Fx casts it. */
     private static String indexParam(JsonObject op)
             throws AgentTools.ToolException {
@@ -4751,6 +5940,9 @@ public final class AgentLogic {
             case "swiperefresh" -> "SwipeRefreshLayout".equals(typeName);
             case "bottomnavigation" ->
                     "BottomNavigationView".equals(typeName);
+            case "bubblelayout" -> "BubbleLayout".equals(typeName);
+            case "signinbutton" -> "SignInButton".equals(typeName);
+            case "adview" -> "AdView".equals(typeName);
             default -> false;
         };
         if (!familyOk) {
@@ -4891,6 +6083,22 @@ public final class AgentLogic {
         stmt.expectCode = widget.id + action.expect;
     }
 
+    /** Fails when a registry entry restricts a mode slot's values. */
+    private static void checkMode(CA action, String mode)
+            throws AgentTools.ToolException {
+        if (action.modes == null) {
+            return;
+        }
+        for (String allowed : action.modes) {
+            if (allowed.equals(mode)) {
+                return;
+            }
+        }
+        throw new AgentTools.ToolException("E_BAD_BLOCK",
+                "This block's \"mode\" must be one of: "
+                        + String.join(", ", action.modes) + ".");
+    }
+
     /**
      * Builds one registry component action (see
      * {@link #COMPONENT_ACTIONS}): the component first (validated
@@ -4932,6 +6140,7 @@ public final class AgentLogic {
         String sentence = action.sentence.replace("{c}", componentId);
         int numberField = 0;
         int textField = 0;
+        int colourField = 0;
         for (int i = 0; i < action.args.length(); i++) {
             char arg = action.args.charAt(i);
             String shown;
@@ -4975,8 +6184,64 @@ public final class AgentLogic {
                                         + "constant name like GET, "
                                         + "YEAR or GPS_PROVIDER.");
                     }
+                    checkMode(action, mode);
                     stmt.params.add(mode);
                     shown = mode;
+                }
+                case 'M' -> {
+                    // A mode stored exactly as given (the animator
+                    // easing names are mixed-case in Fx's table).
+                    String mode = stringOf(op, "mode");
+                    checkMode(action, mode);
+                    stmt.params.add(mode);
+                    shown = mode;
+                }
+                case 'F' -> {
+                    // An intent-flag suffix: Fx itself prepends
+                    // "Intent.FLAG_ACTIVITY_".
+                    String flag = stringOf(op, "mode")
+                            .toUpperCase(Locale.ROOT);
+                    if (!flag.matches("[A-Z0-9_]+")) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "This block needs \"mode\" as a flag "
+                                        + "name like NEW_TASK, "
+                                        + "CLEAR_TOP or SINGLE_TOP.");
+                    }
+                    stmt.params.add(flag);
+                    shown = flag;
+                }
+                case 'r' -> {
+                    String image = stringOf(op, "image");
+                    if (!image.matches("(?i)[a-z0-9_]+")) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "This block needs \"image\": the name "
+                                        + "of an image in the project "
+                                        + "(letters, digits, _).");
+                    }
+                    stmt.params.add(image.toLowerCase(Locale.ROOT));
+                    shown = image;
+                }
+                case 'c' -> {
+                    String field = colourField++ == 0 ? "color"
+                            : "color2";
+                    stmt.params.add(colourField(op, field));
+                    shown = stringOf(op, field);
+                }
+                case 'L' -> {
+                    String name = stringOf(op, "variable");
+                    Integer listKind = lists.get(name);
+                    if (listKind == null || listKind != 3) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "This block fills a list of maps; “"
+                                        + name + "” is not one on "
+                                        + "this screen. Declare it with "
+                                        + "create_variable (list_map).");
+                    }
+                    stmt.params.add(name);
+                    shown = name;
                 }
                 case 'v' -> {
                     String name = stringOf(op, "variable");

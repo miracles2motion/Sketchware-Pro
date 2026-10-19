@@ -1290,7 +1290,110 @@ public final class AgentTools {
                     + "(0 = play once, -1 = loop), and functions "
                     + "{\"fn\":\"auth_email\"} (the signed-in user's "
                     + "email), auth_uid, auth_logged_in, is_connected "
-                    + "(device online); "
+                    + "(device online), {\"fn\":\"html\",\"a\":...} "
+                    + "(HTML text), {\"fn\":\"hash_code\"}, "
+                    + "{\"fn\":\"to_string\"} (whole number as "
+                    + "text), {\"replace_all\":text,\"regex\":...,"
+                    + "\"with\":...}, {\"instance_of\":text,\"class\":"
+                    + "\"TextView\"}, {\"json_of_list_map\":\"items\"} "
+                    + "(JSON of a list of maps). More widget "
+                    + "blocks: MapView map_marker_color {text "
+                    + "marker, mode=HUE_RED etc, value alpha}, "
+                    + "map_marker_icon {text marker, image}; "
+                    + "BubbleLayout bubble_color {color}, "
+                    + "bubble_arrow_height/position/width {value}, "
+                    + "bubble_corner_radius {value}, "
+                    + "bubble_stroke_color {color}, "
+                    + "bubble_stroke_width {value}; SignInButton "
+                    + "signin_color_scheme {mode=COLOR_AUTO etc}, "
+                    + "signin_size {mode=SIZE_STANDARD etc}; "
+                    + "AdView banner_load_ad; any widget "
+                    + "set_background_color_filter {color, mode="
+                    + "SRC_IN etc}. More component blocks: "
+                    + "Intent set_intent_flag {mode=NEW_TASK|"
+                    + "CLEAR_TOP|SINGLE_TOP} (one flag at a time), "
+                    + "send_broadcast; ObjectAnimator anim_value "
+                    + "{value}, anim_repeat_mode {mode=RESTART|"
+                    + "REVERSE}, anim_interpolator {mode=Linear|"
+                    + "Accelerate|Decelerate|AccelerateDecelerate|"
+                    + "Bounce}; Dialog dialog_icon {image}; "
+                    + "RewardedVideoAd rewarded_load/rewarded_show "
+                    + "(needs the project's ad setup to build); "
+                    + "Firebase Auth auth_create_user {text email, "
+                    + "text2 password}, auth_sign_in, "
+                    + "auth_sign_in_anon, auth_reset_password "
+                    + "{text email}, auth_sign_out (their result is "
+                    + "handled by the component's own event, which "
+                    + "the editor adds); Firebase Storage "
+                    + "storage_upload {text local path, text2 "
+                    + "storage path}, storage_download {text url, "
+                    + "text2 local path}, storage_delete {text url}; "
+                    + "Bluetooth bt_ready {text tag}, bt_ready_uuid "
+                    + "{text uuid, text2 tag}, bt_connect {text "
+                    + "address, text2 tag}, bt_connect_uuid, "
+                    + "bt_disconnect {text tag}, bt_send {text data, "
+                    + "text2 tag}, bt_paired {variable=list of maps "
+                    + "to fill with name/address}; RequestNetwork "
+                    + "net_params {variable=map, mode=REQUEST_PARAM|"
+                    + "REQUEST_BODY}; Firebase DB container "
+                    + "fb_get_children {component, variable=list of "
+                    + "maps, blocks} (runs its blocks once the "
+                    + "children load). Screen blocks: finish_all, "
+                    + "light_status_bar, status_bar_color {color}, "
+                    + "custom_toast {text, color text, value size, "
+                    + "color2 background, value2 corner, mode="
+                    + "TOP|CENTER|BOTTOM}, custom_toast_icon (plus "
+                    + "image), the round floating button (no "
+                    + "target: fab_icon {image}, fab_size {mode="
+                    + "AUTO|MINI|NORMAL}, fab_visibility {mode=show|"
+                    + "hide}), add_permission/remove_permission "
+                    + "{text=CAMERA}, start_service/stop_service "
+                    + "{screen}, menu_add_item {value id, text} and "
+                    + "menu_inflate {menu} (only inside the "
+                    + "onCreateOptionsMenu activity event), "
+                    + "snackbar {target, text, action, blocks} "
+                    + "(blocks run when its button is tapped), "
+                    + "set_fragment_adapter {target=ViewPager, "
+                    + "component, value tab count}. Repeat with a "
+                    + "counter: repeat_index {times, name, blocks} "
+                    + "and repeat_index_down — inside the blocks "
+                    + "{\"var\":\"name\"} reads the counter. "
+                    + "Values: {\"has_extra\":\"key\"} (opened with "
+                    + "an extra), {\"list_map_value\":\"items\","
+                    + "\"index\":...,\"key\":...}, {\"list_map_has\":...}, "
+                    + "{\"pattern_md5_of\":\"patternview1\",\"list\":"
+                    + "\"dots\"} (also pattern_sha1_of, "
+                    + "pattern_text_of), {\"visibility_is\":\"button1\","
+                    + "\"mode\":\"VISIBLE\"}, {\"can_pause\":\"videoview1\"} "
+                    + "(also can_seek_back, can_seek_forward), "
+                    + "{\"last_visible_of\":\"listview1\"}, "
+                    + "{\"location_x_of\":\"view1\"} (screen position, "
+                    + "also location_y_of), {\"public_dir\":"
+                    + "\"DIRECTORY_DOWNLOADS\"}, {\"jpeg_rotation\":path}"
+                    + ", {\"asset_text\":\"stream1\"} (needs "
+                    + "open_asset {name, text path} earlier in the "
+                    + "same handler), {\"fn\":\"list_scroll_state\","
+                    + "\"mode\":\"SCROLL_STATE_IDLE\"} (also "
+                    + "pager_scroll_state, recycler_scroll_state). "
+                    + "Typed map stores: map_put_number {variable, "
+                    + "key, value}, map_put_flag {variable, key, "
+                    + "flag}, map_put_list {variable, key, list}, "
+                    + "map_put_map {variable, key, from_variable}; "
+                    + "list blocks add_all_to_list {list, from}, "
+                    + "set_map_in_list {variable=map, index, list}, "
+                    + "remove_map_from_list {variable=map, list}, "
+                    + "split_into_list {text, text2 separator, "
+                    + "list=list of text}; image-file blocks "
+                    + "(text=from path, text2=to path): scale_bitmap "
+                    + "{value width, value2 height}, "
+                    + "resize_bitmap_ratio {value max size}, "
+                    + "resize_bitmap_square {value}, "
+                    + "resize_bitmap_circle, resize_bitmap_rounded "
+                    + "{value radius}, crop_bitmap_center {value, "
+                    + "value2}, rotate_bitmap {value degrees}, "
+                    + "skew_bitmap {value, value2}, "
+                    + "bitmap_brightness {value}, bitmap_contrast "
+                    + "{value}, bitmap_color_filter {color}; "
                     + "= between texts "
                     + "compares their text. At most "
                     + "8 blocks per list and 24 blocks total per handler. "
@@ -1437,7 +1540,41 @@ public final class AgentTools {
                     "progress_cancelable", "progress_outside",
                     "progress_style", "timer_after", "timer_every",
                     "dialog_ok_button", "dialog_negative_button",
-                    "dialog_neutral_button"}) {
+                    "dialog_neutral_button", "set_intent_flag",
+                    "anim_value", "anim_repeat_mode",
+                    "anim_interpolator", "dialog_icon",
+                    "rewarded_load", "rewarded_show",
+                    "auth_create_user", "auth_sign_in",
+                    "auth_sign_in_anon", "auth_reset_password",
+                    "auth_sign_out", "storage_upload",
+                    "storage_download", "storage_delete", "bt_ready",
+                    "bt_ready_uuid", "bt_connect", "bt_connect_uuid",
+                    "bt_disconnect", "bt_send", "bt_paired",
+                    "net_params", "send_broadcast", "finish_all",
+                    "light_status_bar", "status_bar_color",
+                    "custom_toast", "custom_toast_icon", "fab_icon",
+                    "fab_size", "fab_visibility", "add_permission",
+                    "remove_permission", "map_put_number",
+                    "map_put_flag", "map_put_list", "map_put_map",
+                    "add_all_to_list", "set_map_in_list",
+                    "remove_map_from_list", "split_into_list",
+                    "open_asset", "scale_bitmap", "resize_bitmap_ratio",
+                    "resize_bitmap_square", "resize_bitmap_circle",
+                    "resize_bitmap_rounded", "crop_bitmap_center",
+                    "rotate_bitmap", "skew_bitmap",
+                    "bitmap_brightness", "bitmap_contrast",
+                    "bitmap_color_filter", "set_fragment_adapter",
+                    "menu_add_item", "menu_inflate", "snackbar",
+                    "fb_get_children", "repeat_index",
+                    "repeat_index_down", "start_service",
+                    "stop_service", "map_marker_color",
+                    "map_marker_icon", "bubble_arrow_height",
+                    "bubble_arrow_position", "bubble_arrow_width",
+                    "bubble_color", "bubble_corner_radius",
+                    "bubble_stroke_color", "bubble_stroke_width",
+                    "signin_color_scheme", "signin_size",
+                    "banner_load_ad",
+                    "set_background_color_filter"}) {
                 kinds.add(kind);
             }
             blockProp.add("enum", kinds);

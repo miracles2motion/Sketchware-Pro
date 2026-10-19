@@ -749,3 +749,114 @@ Only after this stock set is exhausted do agent-defined custom blocks
   (`datePickerDialogShow`, `timePickerDialogShow`), misc singletons
   (`sendBroadcast`, `startService`, `AsyncTask*`, status-bar colour
   blocks with non-standard census names).
+
+## Wave 11 research (verified in Fx / Lx / BlocksHandler / uq / ExtraMenuBean)
+
+- intentSetFlags: Fx emits `"Intent.FLAG_ACTIVITY_" + param` — the stored
+  picker value is the bare suffix (NEW_TASK, CLEAR_TOP, ...).
+- firebaseauth* actions compile standalone: Lx declares
+  `_<auth>_create_user_listener` / `_sign_in_listener` /
+  `_reset_password_listener` fields for EVERY FirebaseAuth component;
+  the fields are only assigned inside the matching component event
+  (Wave 12), so sign-in/create/reset work now and their completion
+  handling arrives with component events. firebaseauthSignOutUser has
+  ZERO slots (Fx emits FirebaseAuth.getInstance().signOut()).
+- firebasestorage*: listener fields likewise declared per component;
+  `_firebase_storage` field auto-declared (Lx.getComponentFieldCode).
+  Upload params = [comp, local file path, storage path]; Download =
+  [comp, URL, local path]; Delete = [comp, URL].
+- rewardedVideoAd*: `_reward_ad_unit_id` field auto-declared for the
+  component (same pattern as InterstitialAd) — teachable with the
+  same project-ad-setup caveat.
+- Bluetooth (generated BluetoothConnect helper, Lx.b): readyConnection
+  (listener, tag); readyConnectionToUuid (listener, uuid, tag);
+  startConnection (listener, address, tag); startConnectionToUuid
+  (listener, uuid, address, tag); stopConnection (listener, tag);
+  sendData (listener, data, tag); getPairedDevices fills a listMap
+  with name/address maps. Listener field declared per component.
+- requestnetworkSetParams: [comp, varMap, %m.requestType] with stored
+  constants REQUEST_PARAM / REQUEST_BODY (uq.o; RequestNetworkController
+  REQUEST_PARAM=0, REQUEST_BODY=1).
+- objectanimatorSetInterpolator stored names come from uq.k
+  {Linear, Accelerate, Decelerate, AccelerateDecelerate, Bounce};
+  Fx's switch misspells "AccelerateDeccelerate", so the picker's
+  "AccelerateDecelerate" falls through to Linear — the editor's own
+  behaviour, reproduced faithfully. RepeatMode from uq.j {RESTART,
+  REVERSE}.
+- firebaseGetChildren is a CONTAINER: [firebase, listMap] + subStack1
+  running inside onDataChange after the list is filled.
+- datePickerDialogShow / timePickerDialogShow DEFERRED: the
+  DatePickerFragment class is only generated inside the component's
+  OnDateSet event (ManageEvent.g), and the TimePickerDialog field is
+  only initialised by its event — teaching "show" before component
+  events (Wave 12) would generate uncompilable or crashing code.
+- AsyncTaskExecute/AsyncTaskPublishProgress DEFERRED: AsyncTasks are
+  pseudo-components (type 36, jC.d) whose class body is an event-like
+  logic file — Wave 12 research with component events.
+- Custom-view data binding DECODED (Wave 12): the list widget's
+  ViewBean.customView names the item layout; Jx.addAdapterCode
+  generates <Widget>Adapter from that layout's widgets plus the
+  activity-logic event "<widgetId>_onBindCustomView"; the five
+  SetCustomViewData blocks just call setAdapter(new XAdapter(listMap)).
+- Menu blocks: onCreateOptionsMenu / onOptionsItemSelected are stock
+  activity events (EventsHandler.getActivityEvents), already accepted
+  by set_event_handler. menuAddItem/menuInflater taught now; the
+  MenuItem/SubMenu variable pair deferred (needs declared-name
+  tracking like asset streams).
+- addPermission/removePermission: PermissionManager scans every block
+  in the activity at build time; stored param is the bare permission
+  name (CAMERA) — Fx generates no code for them.
+- repeatKnownNum / RepeatKnownNumDescending: [%d, %s.inputOnly] — the
+  second slot is a free-text loop-variable name; referencing it uses
+  the ordinary getVar block shape (spec = the name).
+- FAB trio have NO widget slot: Fx hardcodes the activity's `_fab`
+  field; fabSize stored suffixes {AUTO, MINI, NORMAL} (uq.FAB_SIZE),
+  fabVisibility stored method names {show, hide} (uq.FAB_VISIBLE).
+- customToast gravity: SketchwareUtil.TOP/CENTER/BOTTOM = 1/2/3
+  (generated SketchwareUtil), colours stored as 0xAARRGGBB ints.
+- getAtListMap Fx reorders: format(list=params[2], index=params[0],
+  key=params[1]). containListMap is [listMap, index, key] in order.
+- getPublicDir directory constants from uq.l (note DIRECTORY_DOCUMENT
+  singular). Scroll-state constants from uq LIST/RECYCLER_SCROLL_STATES.
+
+## Wave 11 (verified leftovers) — agent coverage 526/584
+
+- CA registry: set_intent_flag (stored suffix only — Fx prepends
+  `Intent.FLAG_ACTIVITY_`), anim_value / anim_repeat_mode /
+  anim_interpolator (picker values from uq.j/uq.k, case preserved),
+  dialog_icon (opCode literally "Dialog SetIcon"), rewarded_load /
+  rewarded_show, Firebase Auth create/sign-in/anonymous/reset,
+  Firebase Storage upload/download/delete, the full Bluetooth set
+  (ready/connect/disconnect/send/paired — address, tag and uuid
+  semantics read from the generated BluetoothConnect helper),
+  net_params (REQUEST_PARAM/REQUEST_BODY), send_broadcast.
+  New CA slot codes: F (flag suffix), M (case-preserved mode with an
+  allowed-set), r (drawable), c (colour), L (list-of-maps variable);
+  'm' modes can now carry an allowed-set too.
+- translate() statements: finish_all, light_status_bar,
+  status_bar_color, custom_toast(+icon), the FAB trio (no widget —
+  Fx hardcodes `_fab`), add/remove_permission (build-time scan, no
+  generated code), auth_sign_out (zero stored slots), typed map
+  stores (number/flag/list/map), add_all_to_list, set_map_in_list,
+  remove_map_from_list, split_into_list, open_asset, the 11 FileUtil
+  bitmap ops, set_fragment_adapter, menu_add_item, menu_inflate.
+- Builder containers: snackbar (button body), fb_get_children
+  (one-shot child read into a list of maps), repeat_index /
+  repeat_index_down with a named counter the body reads via
+  `{"var": name}` (resolved as a getVar whose spec is the name,
+  exactly the editor's shape), start_service / stop_service.
+- Reporters: has_extra, asset_text, jpeg_rotation, public_dir,
+  list_map_value / list_map_has (Fx's differing parameter orders
+  honoured), pattern MD5/SHA1/text, visibility_is, can_pause /
+  can_seek_back / can_seek_forward, last_visible_of, location_x/y,
+  fn html / hash_code / to_string, scroll-state constants
+  (list/pager/recycler), replace_all, instance_of, json_of_list_map.
+- Widget actions: MapView marker colour/icon, the BubbleLayout
+  family (7), SignInButton scheme/size, AdView banner load,
+  background colour filter on any widget.
+- Coverage: 424 → **526/584**. What remains (58): Wave 12's
+  event-dependent set (component events incl. picker-dialog shows
+  and AsyncTask, listener containers, custom-view data binding,
+  FragmentAdapter return blocks, MenuItem/SubMenu declared names),
+  typed map GETS (unsafe casts over string-valued agent maps —
+  excluded with reason), and the by-design raw-source/junk set.

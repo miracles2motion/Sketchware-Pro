@@ -946,3 +946,17 @@ Device test findings (SportyNivida / Sporty Bet):
   child events etc.), FirebaseAuth sign-in/storage actions, rewarded
   ads, and a handful of blocks whose stored picker-value formats are
   unverified — researched and recorded, not guessed.
+
+## Wave 11 — verified leftovers (2026-10-19)
+
+- ~100 more blocks taught, every one traced to its emission and
+  stored shape in Fx/Lx/BlocksHandler first: intent flags, animator
+  easing/repeat modes, Firebase sign-in and storage, Bluetooth
+  connect/send, rewarded ads, permissions, custom toasts, the
+  floating-button trio, bitmap file ops, typed map stores, menu
+  blocks, indexed repeat loops, and the remaining reporters.
+- Deliberately held for the next wave (evidence recorded, not
+  guessed): component events and everything that hangs off them —
+  date/time picker dialogs, AsyncTask, Firebase child events in
+  their event form, custom-view list binding, listener containers.
+- Coverage: 526/584 stock blocks.
