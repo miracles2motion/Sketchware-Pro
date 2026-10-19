@@ -888,10 +888,10 @@ public class AgentFragment extends qA {
         com.google.gson.JsonObject props = token.has("props")
                 && token.get("props").isJsonObject()
                 ? token.getAsJsonObject("props") : new com.google.gson.JsonObject();
-        String background = designColour(props, "background", "#E0E0E0");
-        // designColour hands back a hex string; setTextColor wants an int.
-        String textColourHex = designColour(props, "text_color", "#000000");
-        int textColour = android.graphics.Color.parseColor(textColourHex);
+        // designColour parses the hex and returns an int, so anything
+        // wanting a colour uses these directly — no second parse.
+        int backgroundColour = designColour(props, "background", "#E0E0E0");
+        int textColour = designColour(props, "text_color", "#000000");
         int padding = designDp(context, props, "padding", 12);
         android.widget.LinearLayout box =
                 new android.widget.LinearLayout(context);
@@ -907,7 +907,7 @@ public class AgentFragment extends qA {
                 button.setTextColor(textColour);
                 button.setTextSize(designSp(props, "text_size", 16));
                 button.setBackgroundColor(
-                        android.graphics.Color.parseColor(background));
+                        backgroundColour);
                 int height = designDp(context, props, "height", 48);
                 box.addView(button, new android.widget.LinearLayout
                         .LayoutParams(
@@ -921,7 +921,7 @@ public class AgentFragment extends qA {
                 card.setTextColor(textColour);
                 card.setTextSize(15f);
                 card.setBackgroundColor(
-                        android.graphics.Color.parseColor(background));
+                        backgroundColour);
                 card.setPadding(padding, padding, padding, padding);
                 box.addView(card);
             }
@@ -939,7 +939,7 @@ public class AgentFragment extends qA {
                         new android.widget.LinearLayout(context);
                 row.setOrientation(android.widget.LinearLayout.VERTICAL);
                 row.setBackgroundColor(
-                        android.graphics.Color.parseColor(background));
+                        backgroundColour);
                 int height = designDp(context, props, "height", 64);
                 row.setPadding(padding, padding, padding, padding);
                 row.addView(title);
@@ -957,7 +957,7 @@ public class AgentFragment extends qA {
                 input.setTextColor(designColour(props, "hint_color",
                         "#757575"));
                 input.setBackgroundColor(
-                        android.graphics.Color.parseColor(background));
+                        backgroundColour);
                 input.setPadding(padding, padding, padding, padding);
                 int height = designDp(context, props, "height", 48);
                 box.addView(input, new android.widget.LinearLayout
@@ -972,7 +972,7 @@ public class AgentFragment extends qA {
                 screen.setGravity(android.view.Gravity.CENTER);
                 screen.setTextColor(textColour);
                 screen.setBackgroundColor(
-                        android.graphics.Color.parseColor(background));
+                        backgroundColour);
                 box.addView(screen, new android.widget.LinearLayout
                         .LayoutParams(
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT,
