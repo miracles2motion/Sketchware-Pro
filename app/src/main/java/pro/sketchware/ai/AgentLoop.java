@@ -107,7 +107,29 @@ public class AgentLoop {
                     + "you stated back, never a different one you quietly "
                     + "substituted. Vague amounts (\"a shade\", \"a bit "
                     + "bigger\", \"a few\") are choices to offer, not "
-                    + "values to invent.";
+                    + "values to invent."
+            + "\n\nMEMORY: the app keeps a task log per project — what was "
+            + "asked, the steps that landed, any style brief agreed — and "
+            + "you are briefed with it at the start of a turn. When a task "
+            + "is unfinished, continue it from the first step that is not "
+            + "done; never redo finished steps and never propose a change "
+            + "the user already turned down under a different name. The "
+            + "log records what the app applied, not what you remember "
+            + "saying, so trust your tool reads of the project over both. "
+            + "When the user agrees a style direction for the project "
+            + "('for kids', 'dark and minimal', 'use our brand colour'), "
+            + "save it with set_style_brief so it survives the chat, and "
+            + "keep to it afterwards."
+            + "\n\nLAYOUT SENSE: match_parent suits text inputs, lists, "
+            + "scroll areas and the main content column; wrap_content suits "
+            + "labels, icons, chips and ordinary buttons — a primary action "
+            + "button at the bottom of a form may span the form's width "
+            + "instead. Keep spacing and text sizes consistent across a "
+            + "screen (margins in steps of 4, body text around 14-18sp, "
+            + "headings clearly bigger), give touch targets room, and "
+            + "never stretch a small widget across a screen just to fill "
+            + "it. For kids' apps: big readable text (18sp+), large touch "
+            + "targets, bright friendly colours, simple rounded layouts.";
 
     public interface Listener {
         /** A quiet activity line, e.g. "Looked at MainActivity". */
@@ -172,6 +194,19 @@ public class AgentLoop {
     private void runTurn(String baseUrl, String apiKey, String model,
                          List<ChatMessage> history, String workingProjectId,
                          boolean allowModify, Listener listener) {
+        // The app's own record of this project: the task is titled
+        // from the user's message and closed wherever the turn ends,
+        // so an interrupted task is paused — never silently lost.
+        String lastUserText = "";
+        for (int i = history.size() - 1; i >= 0; i--) {
+            if (history.get(i).role == ChatMessage.Role.USER) {
+                lastUserText = history.get(i).text;
+                break;
+            }
+        }
+        AgentJournal.beginTurn(workingProjectId, lastUserText);
+        final String[] journalProject = {workingProjectId};
+        final boolean[] taskClosed = {false};
         List<JsonObject> messages = new ArrayList<>();
         messages.add(systemMessage(workingProjectId));
         int kept = 0;
@@ -203,6 +238,8 @@ public class AgentLoop {
                 reply = service.agentTurnSync(baseUrl, apiKey, model, messages,
                         AgentTools.definitions());
             } catch (AiChatService.AgentRequestException e) {
+                closeTask(journalProject[0], cancelled, stopReason(e.error),
+                        taskClosed);
                 if (!cancelled) {
                     dispatch(listener, () -> listener.onError(e.error));
                 }
@@ -211,9 +248,12 @@ public class AgentLoop {
             if (reply.toolCalls.isEmpty()) {
                 String answer = reply.content == null ? "" : reply.content.trim();
                 if (answer.isEmpty()) {
+                    closeTask(journalProject[0], false,
+                            "the model returned an empty reply", taskClosed);
                     dispatch(listener, () -> listener.onError(new AiChatService.AiError(
                             AiChatService.ErrorKind.EMPTY, 200, "empty reply")));
                 } else {
+                    closeTask(journalProject[0], true, "", taskClosed);
                     String thinking = reply.thinking == null ? "" : reply.thinking;
                     dispatch(listener, () -> listener.onAnswer(answer, thinking));
                 }
@@ -224,9 +264,14 @@ public class AgentLoop {
             }
             for (AiChatService.ToolCallData call : reply.toolCalls) {
                 if (cancelled) {
+                    closeTask(journalProject[0], false, "you stopped it",
+                            taskClosed);
                     return;
                 }
                 if (++calls > MAX_TOOL_CALLS) {
+                    closeTask(journalProject[0], false,
+                            "it reached the limit of " + MAX_TOOL_CALLS
+                                    + " steps for one message", taskClosed);
                     dispatch(listener, () -> listener.onError(new AiChatService.AiError(
                             AiChatService.ErrorKind.HTTP, 0,
                             "The agent stopped after " + MAX_TOOL_CALLS
@@ -237,12 +282,19 @@ public class AgentLoop {
                         context, workingProjectId, allowModify);
                 JsonObject result;
                 if (AgentTools.isMutation(call.name)) {
-                    result = proposeAndExecute(call, session, listener);
+                    result = proposeAndExecute(call, session, listener,
+                            journalProject[0]);
                     if (cancelled) {
+                        closeTask(journalProject[0], false, "you stopped it",
+                                taskClosed);
                         return;
                     }
                     if (result.has("bind_project")) {
                         workingProjectId = result.get("bind_project").getAsString();
+                        journalProject[0] = workingProjectId;
+                        // The turn's task is titled under the project
+                        // it created, not the empty starting point.
+                        AgentJournal.beginTurn(workingProjectId, lastUserText);
                         result.remove("bind_project");
                         String bound = workingProjectId;
                         dispatch(listener,
@@ -279,6 +331,9 @@ public class AgentLoop {
                                 + (reason.isEmpty() ? ""
                                         : " Last problem: " + reason)
                                 + " Tell me how you'd like to proceed.";
+                        closeTask(journalProject[0], false,
+                                "the same step failed twice (" + call.name
+                                        + ")", taskClosed);
                         dispatch(listener, () -> listener.onError(
                                 new AiChatService.AiError(
                                         AiChatService.ErrorKind.HTTP, 0,
@@ -296,6 +351,33 @@ public class AgentLoop {
                 messages.add(toolMessage);
             }
         }
+        // The loop only falls through here when the turn was stopped.
+        closeTask(journalProject[0], false, "you stopped it", taskClosed);
+    }
+
+    /** Closes the open task in the project journal, once per turn. */
+    private static void closeTask(String scId, boolean done, String reason,
+                                  boolean[] closed) {
+        if (closed[0]) {
+            return;
+        }
+        closed[0] = true;
+        AgentJournal.endTurn(scId, done, reason);
+    }
+
+    /** A short plain reason a request-level failure stopped a task. */
+    private static String stopReason(AiChatService.AiError error) {
+        if (error != null
+                && error.kind == AiChatService.ErrorKind.QUOTA) {
+            return "the provider's limit was hit (rate limit or quota)";
+        }
+        String message = error == null || error.message == null
+                ? "" : error.message.trim();
+        if (message.isEmpty()) {
+            return "something went wrong";
+        }
+        return message.length() <= 120
+                ? message : message.substring(0, 117) + "…";
     }
 
     /**
@@ -345,15 +427,27 @@ public class AgentLoop {
      */
     private JsonObject proposeAndExecute(AiChatService.ToolCallData call,
                                          AgentTools.Session session,
-                                         Listener listener) {
+                                         Listener listener,
+                                         String journalProject) {
         AgentTools.ProposalResult proposed =
                 AgentTools.propose(call.name, call.arguments, session);
         if (proposed.error != null) {
+            AgentJournal.mutationFailed(journalProject, call.name,
+                    AgentTools.labelFor(call.name, call.arguments),
+                    proposed.error.has("message")
+                            ? proposed.error.get("message").getAsString()
+                            : "");
             return proposed.error;
         }
         AgentProposal proposal = proposed.proposal;
+        // The change belongs to the project it targets (a created
+        // project journals under itself from its first step).
+        String journal = proposal.workingProjectId == null
+                || proposal.workingProjectId.isEmpty()
+                ? journalProject : proposal.workingProjectId;
         boolean approved = listener.onApproval(proposal);
         if (!approved) {
+            AgentJournal.mutationRejected(journal, call.name, proposal.title);
             JsonObject rejected = new JsonObject();
             rejected.addProperty("error", "E_REJECTED");
             rejected.addProperty("message",
@@ -365,6 +459,13 @@ public class AgentLoop {
         JsonObject result = AgentTools.execute(proposal,
                 new AgentTools.Session(context, proposal.workingProjectId,
                         session.allowModify));
+        if (result.has("error")) {
+            AgentJournal.mutationFailed(journal, call.name, proposal.title,
+                    result.has("message")
+                            ? result.get("message").getAsString() : "");
+        } else {
+            AgentJournal.mutationDone(journal, call.name, proposal.title);
+        }
         dispatch(listener, () -> listener.onApprovalResolved(proposal, result));
         return result;
     }
@@ -381,6 +482,11 @@ public class AgentLoop {
                         .append("\" (app \"").append(project.appName)
                         .append("\", package ").append(project.packageName)
                         .append(").");
+                // The app's own record of work on this project: the
+                // style brief, any unfinished task with the steps
+                // already done, and recent task titles. A fresh key or
+                // model resumes from this — not from chat memory.
+                prompt.append(AgentJournal.brief(workingProjectId));
                 // Per-turn snapshot: the bound project's screens as they
                 // are right now, so a basic "what's in my project" never
                 // has to be answered from conversation memory — which is

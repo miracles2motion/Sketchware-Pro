@@ -126,6 +126,8 @@ public final class AgentTools {
         register(new ListResources());
         register(new GetScreen());
         register(new AskColor());
+        register(new SetStyleBrief());
+        register(new GetTaskLog());
         register(new CreateProject());
         register(new CreateActivity());
         register(new CreateCustomView());
@@ -2849,6 +2851,104 @@ public final class AgentTools {
         @Override
         public boolean interactive() {
             return true;
+        }
+    }
+
+    /** set_style_brief: remembers the agreed style direction. */
+    private static final class SetStyleBrief implements Tool {
+        @Override
+        public String name() {
+            return "set_style_brief";
+        }
+
+        @Override
+        public String description() {
+            return "Saves the style direction the user has agreed for "
+                    + "this project ('for young kids', 'dark and minimal', "
+                    + "'friendly rounded shapes, our brand green') to the "
+                    + "app's memory, so it survives the chat and any change "
+                    + "of key or model. Call it as soon as a direction is "
+                    + "agreed — no approval card, it changes nothing in the "
+                    + "project itself. Write it as plain design guidance: "
+                    + "audience, mood, colours, text size, shapes, spacing. "
+                    + "A new brief replaces the old one, so include "
+                    + "anything that should carry over.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("brief", stringSchema(
+                    "The style direction in plain words, e.g. \"For "
+                            + "young kids: big readable text, large "
+                            + "buttons, bright friendly colours, rounded "
+                            + "shapes, simple layouts\""));
+            return AgentTools.parameters(properties, "brief");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Remembered the project's style direction";
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String brief = stringArg(args, "brief");
+            if (brief.isEmpty()) {
+                throw new ToolException("E_BAD_ARGS",
+                        "Pass the agreed style direction in \"brief\".");
+            }
+            AgentJournal.setStyleBrief(scId, brief);
+            JsonObject result = new JsonObject();
+            result.addProperty("saved", true);
+            result.addProperty("message",
+                    "Style brief remembered for this project. Keep to it "
+                            + "in everything you make here.");
+            return result;
+        }
+    }
+
+    /** get_task_log: the app's recorded task history for this project. */
+    private static final class GetTaskLog implements Tool {
+        @Override
+        public String name() {
+            return "get_task_log";
+        }
+
+        @Override
+        public String description() {
+            return "Reads the app's task log for this project: the "
+                    + "requests made, the steps that were applied, the "
+                    + "ones turned down or that failed, and why an "
+                    + "unfinished task stopped. Use it when the user asks "
+                    + "what was done or where something stopped, or when "
+                    + "you need the detail behind your brief. The current "
+                    + "state of the project itself still comes from your "
+                    + "other tools — the log is the history, not the "
+                    + "present.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            return AgentTools.parameters(new JsonObject());
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Read the task log";
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            JsonObject result = new JsonObject();
+            result.addProperty("style_brief",
+                    AgentJournal.styleBrief(scId));
+            result.addProperty("task_log", AgentJournal.logText(scId));
+            return result;
         }
     }
 

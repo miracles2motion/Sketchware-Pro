@@ -119,6 +119,14 @@ public class AiProviderConfig {
     private static final String KEYS_FILE_NAME = "agent_keys.json";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
+    /**
+     * The working project for this app session only. Deliberately not
+     * persisted: reopening the app starts the agent on a clean slate
+     * (no project chosen) and the user picks the project they mean —
+     * its chat, task log and any paused task greet them there instead.
+     */
+    private static String sessionWorkingProjectId = "";
+
     private AiProvider active = AiProvider.GEMINI;
     private String workingProjectId = "";
     private boolean allowAgentModify;
@@ -145,9 +153,9 @@ public class AiProviderConfig {
                 Stored stored = GSON.fromJson(reader, Stored.class);
                 if (stored != null) {
                     config.active = AiProvider.fromId(stored.activeProvider);
-                    if (stored.workingProjectId != null) {
-                        config.workingProjectId = stored.workingProjectId;
-                    }
+                    // A project stored by older versions is ignored on
+                    // purpose: the agent opens on a clean slate.
+                    config.workingProjectId = sessionWorkingProjectId;
                     config.allowAgentModify = stored.allowAgentModify;
                     if (stored.providers != null) {
                         for (Map.Entry<String, Settings> entry : stored.providers.entrySet()) {
@@ -213,11 +221,11 @@ public class AiProviderConfig {
         return config;
     }
 
-    /** Persists settings and keys. */
+    /** Persists settings and keys (never the working project). */
     public void save(Context context) {
         Stored stored = new Stored();
         stored.activeProvider = active.name();
-        stored.workingProjectId = workingProjectId;
+        stored.workingProjectId = "";
         stored.allowAgentModify = allowAgentModify;
         for (Map.Entry<AiProvider, Settings> entry : settings.entrySet()) {
             stored.providers.put(entry.getKey().name(), entry.getValue());
@@ -254,6 +262,7 @@ public class AiProviderConfig {
 
     public void setWorkingProjectId(String scId) {
         workingProjectId = scId == null ? "" : scId;
+        sessionWorkingProjectId = workingProjectId;
     }
 
     public AiProvider activeProvider() {
