@@ -883,3 +883,11 @@ Device test findings (SportyNivida / Sporty Bet):
   (chain heads first), and apply stores the combined list in
   editor order (editorOrder: main chain from element 0, the
   order Fx eventBlocks.get(0) and loadEventBlocks assume).
+  order Fx eventBlocks.get(0) and loadEventBlocks assume).
+- set_variable from expression (2026-10-19, device: map test
+  toasted an empty variable): set_variable's value may now be
+  any value expression (map_get, text_of, calculation, ...) -
+  the setVar block's value slot takes the reporter, slot-kind
+  checked against the variable's declared kind. Before, only
+  literals and variable copies could be assigned, so a map's
+  value could never reach a toast.

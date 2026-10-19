@@ -560,16 +560,58 @@ public final class AgentLogic {
                             + SketchwareProjects.activityName(target));
                     return setScreen;
                 }
-                default -> {
-                    Stmt stmt = translate(context, op, byId, variables, lists);
-                    stmts.add(stmt);
-                    BlockBean bean = newBean(stmt.opCode, stmt.type);
-                    bean.parameters.addAll(stmt.params);
+                case "set_variable" -> {
+                    JsonElement value = op.get("value");
+                    if (value == null || !value.isJsonObject()) {
+                        return buildTranslated(op, depth);
+                    }
+                    // Assign from any value expression: a map's
+                    // stored text, a widget's text, a calculation —
+                    // the editor's setVar blocks take a reporter
+                    // in the value slot exactly like this.
+                    String name = stringOf(op, "variable");
+                    requireVariable(variables, name);
+                    int varKind = variables.get(name);
+                    if (varKind == 3) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "\"" + name + "\" is a map variable; "
+                                        + "use put_in_map, clear_map "
+                                        + "or new_map for it instead.");
+                    }
+                    char slot = varKind == 0 ? 'b'
+                            : varKind == 1 ? 'd' : 's';
+                    String param = expr(value, slot,
+                            "set_variable needs a value that fits "
+                                    + "\"" + name + "\"");
+                    BlockBean bean = newBean(setVarOpCode(varKind),
+                            " ");
+                    bean.parameters.add(name);
+                    bean.parameters.add(param);
                     allStatements.add(bean);
-                    lines.add(indent(depth) + stmt.sentence);
+                    addExpect(name + " = ",
+                            "Set variable " + name + " to "
+                                    + describeExpr(value));
+                    lines.add(indent(depth) + "Set variable “" + name
+                            + "” to " + describeExpr(value));
                     return bean;
                 }
+                default -> {
+                    return buildTranslated(op, depth);
+                }
             }
+        }
+
+        /** One statement from the literal/picker vocabulary. */
+        private BlockBean buildTranslated(JsonObject op, int depth)
+                throws AgentTools.ToolException {
+            Stmt stmt = translate(context, op, byId, variables, lists);
+            stmts.add(stmt);
+            BlockBean bean = newBean(stmt.opCode, stmt.type);
+            bean.parameters.addAll(stmt.params);
+            allStatements.add(bean);
+            lines.add(indent(depth) + stmt.sentence);
+            return bean;
         }
 
         /** A JSON array member, or null when absent/misshapen. */
