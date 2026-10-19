@@ -1466,3 +1466,40 @@ fields are now in the design system, and the guidance says where they
 belong: the screen's `initializeLogic`, not a widget's properties.
 
 Screens already built are never restyled silently — the agent offers.
+
+### Wave 31c: custom attributes (the Inject field)
+
+The user pointed out something the property audit had skipped: every
+widget in Sketchware's property panel has a **Custom attributes** row
+(the `inject` field), and it is where a lot of design actually lives —
+as raw XML attributes written onto the widget's tag.
+
+The editor's own list (`PropertyInputItem.populateAttributes`):
+
+| on | attributes |
+|---|---|
+| every view | `android:background`, `backgroundTint`, `alpha`, `visibility`, `padding`, `layout_margin`, **`elevation`**, `rotation`, `scaleX/Y`, `translationX/Y` |
+| TextView | `text`, `textSize`, `textColor`, `textStyle`, `fontFamily`, `typeface`, `lines`, `maxLines`, `singleLine`, `gravity`, `ellipsize`, `hint`, `textColorHint`, `inputType`, `imeOptions`, `drawableLeft/Top/Right/Bottom`, `drawablePadding`, `drawableTint` |
+| ImageView | `src`, `scaleType`, `tint`, `adjustViewBounds`, `cropToPadding` |
+| LinearLayout | `orientation`, `gravity`, `weightSum`, `baselineAligned` |
+| ViewGroup | `clipChildren`, `clipToPadding`, `animateLayoutChanges` |
+| ProgressBar | `max`, `progress`, `indeterminate`, `indeterminateTint`, `progressTint` |
+| CompoundButton | `checked`, `button`, `buttonTint` |
+| CardView | `app:cardBackgroundColor`, **`cardCornerRadius`**, **`cardElevation`**, `cardMaxElevation`, `cardUseCompatPadding`, `cardPreventCornerOverlap`, `contentPadding`, `strokeColor`, `strokeWidth` |
+| MaterialButton | `app:icon`, `iconTint`, `iconGravity`, `iconPadding`, `strokeColor`, `strokeWidth`, **`cornerRadius`**, `rippleColor` |
+
+So corner radius, elevation and outline are available **twice**: as
+properties through custom attributes (declarative, visible in the
+editor) and as blocks (`set_corner_radius` / `set_elevation` /
+`set_card_radius`) for runtime changes.
+
+New `edit_screen` operation **`set_attributes`** writes them:
+`{"op":"set_attributes","id":"card1","attributes":{"app:cardCornerRadius":
+"8dp","app:cardElevation":"4dp"}}`. Each name must be `namespace:name`,
+values must contain no spaces, because the layout writer strips them
+(`Ox`: `inject.replace(" ", "")`) — 8dp, never 8 dp.
+
+**The lesson, twice now:** properties, blocks and the Inject field are
+three different lists. A thing missing from one says nothing about the
+others, and an agent that answers from a single list will keep telling
+the user something is impossible when it is not.

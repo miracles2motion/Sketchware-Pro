@@ -583,6 +583,19 @@ public final class AgentEdits {
                             ? "Make " + bean.id + " spin indefinitely"
                             : "Make " + bean.id + " show real progress");
                 }
+                case "set_attributes" -> {
+                    // The editor's Custom attributes (Inject) field: raw
+                    // XML attributes written onto the widget's tag. This
+                    // is where corner radius, elevation, stroke, ripple
+                    // and the card attributes live as PROPERTIES — the
+                    // list of them is the editor's own
+                    // (PropertyInputItem.populateAttributes).
+                    ViewBean bean = requireWidget(op, byId);
+                    String attributes = customAttributes(op);
+                    bean.inject = attributes;
+                    lines.add("Set " + bean.id + " custom attributes: "
+                            + attributes.replace("\n", ", "));
+                }
                 case "set_alpha" -> {
                     ViewBean bean = requireWidget(op, byId);
                     float alpha;
@@ -859,7 +872,8 @@ public final class AgentEdits {
                                 + "set_input_type, set_font, set_list_item_view, "
                                 + "set_progress, "
                                 + "set_indeterminate, set_alpha, "
-                                + "set_clickable, set_root, set_fab, "
+                                + "set_attributes, set_clickable, "
+                                + "set_root, set_fab, "
                                 + "remove_widget, "
                                 + "move_widget.");
             }
@@ -2345,6 +2359,88 @@ public final class AgentEdits {
             }
         }
         return ids;
+    }
+
+    /**
+     * The editor's Custom attributes (Inject) field, built from what
+     * the model sent: either an object of attribute to value, or a raw
+     * string of newline-separated attributes.
+     */
+    private static String customAttributes(JsonObject op)
+            throws AgentTools.ToolException {
+        StringBuilder out = new StringBuilder();
+        if (op.has("attributes") && op.get("attributes").isJsonObject()) {
+            for (java.util.Map.Entry<String, JsonElement> field
+                    : op.getAsJsonObject("attributes").entrySet()) {
+                String value = field.getValue().isJsonPrimitive()
+                        ? field.getValue().getAsString().trim() : "";
+                if (value.isEmpty()) {
+                    continue;
+                }
+                if (out.length() > 0) {
+                    out.append("\n");
+                }
+                out.append(checkAttribute(field.getKey(), value));
+            }
+        } else {
+            String raw = stringOf(op, "attributes");
+            if (raw.isEmpty()) {
+                raw = stringOf(op, "value");
+            }
+            for (String line : raw.split("\n")) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty()) {
+                    continue;
+                }
+                int eq = trimmed.indexOf('=');
+                if (eq <= 0) {
+                    throw new AgentTools.ToolException("E_BAD_VALUE",
+                            "A custom attribute looks like "
+                                    + "app:cardCornerRadius=8dp — a name, "
+                                    + "then =, then the value.");
+                }
+                if (out.length() > 0) {
+                    out.append("\n");
+                }
+                out.append(checkAttribute(trimmed.substring(0, eq).trim(),
+                        trimmed.substring(eq + 1).trim()));
+            }
+        }
+        if (out.length() == 0) {
+            throw new AgentTools.ToolException("E_BAD_VALUE",
+                    "set_attributes needs \"attributes\": either an "
+                            + "object like {\"app:cardCornerRadius\":"
+                            + "\"8dp\"} or a string of lines like "
+                            + "app:cardCornerRadius=8dp.");
+        }
+        return out.toString();
+    }
+
+    /**
+     * One custom attribute, checked. The layout writer strips spaces
+     * itself (Ox: inject.replace(" ", "")), so a value with a space in
+     * it would arrive wrong on screen — refuse it here instead.
+     */
+    private static String checkAttribute(String name, String value)
+            throws AgentTools.ToolException {
+        String cleanName = name.trim();
+        String cleanValue = value.trim().replace(" ", "")
+                .replace("\"", "");
+        if (!cleanName.matches("[a-zA-Z]+:[a-zA-Z]+")) {
+            throw new AgentTools.ToolException("E_BAD_VALUE",
+                    "\"" + cleanName + "\" is not a custom attribute "
+                            + "name: it must look like "
+                            + "app:cardCornerRadius or android:elevation.");
+        }
+        if (cleanValue.isEmpty()
+                || cleanValue.contains("<") || cleanValue.contains(">")) {
+            throw new AgentTools.ToolException("E_BAD_VALUE",
+                    "The custom attribute " + cleanName + " needs a plain "
+                            + "value with no spaces or angle brackets "
+                            + "(e.g. 8dp, 4, #FF8A3D) — it is written "
+                            + "straight into the widget's XML tag.");
+        }
+        return cleanName + "=\"" + cleanValue + "\"";
     }
 
     private static String stringOf(JsonObject object, String key) {
