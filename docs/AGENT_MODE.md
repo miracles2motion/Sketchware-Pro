@@ -891,3 +891,10 @@ Device test findings (SportyNivida / Sporty Bet):
   checked against the variable's declared kind. Before, only
   literals and variable copies could be assigned, so a map's
   value could never reach a toast.
+- create_component tool (2026-10-19, device: agent wrongly
+  told the user it has no components tools, despite having
+  created intent1 itself via open_screen): dedicated tool adds
+  an Intent component via the picker's own eC.a(javaName,
+  COMPONENT_TYPE_INTENT, name), name defaulting to the next
+  free intentN across all namespaces, verified by read-back.
+  Honest scope in the description: Intent only.

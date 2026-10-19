@@ -136,6 +136,7 @@ public final class AgentTools {
         register(new GetEventLogic());
         register(new EditEventBlock());
         register(new CreateVariable());
+        register(new CreateComponent());
         register(new EditProjectTheme());
         register(new BuildProject());
     }
@@ -1529,6 +1530,237 @@ public final class AgentTools {
                     SketchwareProjects.activityName(checked.activity())
                             + " now has a " + checked.typeName()
                             + " variable named " + checked.name()
+                            + " (read back and checked).");
+            return result;
+        }
+    }
+
+
+    /** create_component: add an Intent component to one screen. */
+    private static final class CreateComponent implements Tool {
+        private static final Pattern NAME_PATTERN =
+                Pattern.compile("^[a-zA-Z][a-zA-Z0-9_]*$");
+
+        @Override
+        public String name() {
+            return "create_component";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes adding an Intent component to one "
+                    + "screen, the way Sketchware's own component "
+                    + "picker adds it. An Intent is what open_screen "
+                    + "uses to open another screen — open_screen "
+                    + "also adds one automatically when the screen "
+                    + "has none; use this when the user asks for the "
+                    + "component itself. Only Intent components can "
+                    + "be added this way yet; other kinds "
+                    + "(SharedPreferences, Dialog, SoundPool, ...) "
+                    + "cannot. The user must approve before anything "
+                    + "is added.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("activity", stringSchema(
+                    "The screen, e.g. MainActivity"));
+            properties.add("name", stringSchema(
+                    "The component's name, e.g. intent1 (optional; "
+                            + "the next free intent name is used)"));
+            return AgentTools.parameters(properties, "activity");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to add a component";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        private record Checked(ProjectFileBean activity, String name) {
+        }
+
+        /** Every name already taken on this screen, any namespace. */
+        private java.util.Set<String> takenNames(String scId,
+                                                 String javaName,
+                                                 ProjectFileBean activity) {
+            java.util.Set<String> taken = new java.util.HashSet<>();
+            eC store = a.a.a.jC.a(scId);
+            try {
+                ArrayList<android.util.Pair<Integer, String>> vars =
+                        store.k(javaName);
+                if (vars != null) {
+                    for (android.util.Pair<Integer, String> pair : vars) {
+                        if (pair.second != null) taken.add(pair.second);
+                    }
+                }
+                ArrayList<android.util.Pair<Integer, String>> lists =
+                        store.j(javaName);
+                if (lists != null) {
+                    for (android.util.Pair<Integer, String> pair : lists) {
+                        if (pair.second != null) taken.add(pair.second);
+                    }
+                }
+                ArrayList<com.besome.sketch.beans.ComponentBean>
+                        components = store.e(javaName);
+                if (components != null) {
+                    for (com.besome.sketch.beans.ComponentBean component
+                            : components) {
+                        if (component.componentId != null) {
+                            taken.add(component.componentId);
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+                // Unreadable logic defers to the other checks.
+            }
+            for (com.besome.sketch.beans.ViewBean bean
+                    : SketchwareProjects.screenBeans(scId, activity)) {
+                taken.add(bean.id);
+            }
+            return taken;
+        }
+
+        private Checked check(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String asked = stringArg(args, "activity");
+            ProjectFileBean activity =
+                    SketchwareProjects.findActivity(scId, asked);
+            if (activity == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "There is no activity named \"" + asked
+                                + "\" in the working project.");
+            }
+            if (activity.fileType
+                    != ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
+                throw new ToolException("E_NOT_ACTIVITY",
+                        "Custom views have no components. Pick an "
+                                + "activity screen instead.");
+            }
+            String javaName = activity.getJavaName();
+            java.util.Set<String> taken =
+                    takenNames(scId, javaName, activity);
+            String name = stringArg(args, "name");
+            if (name.isEmpty()) {
+                int n = 1;
+                while (taken.contains("intent" + n)) {
+                    n++;
+                }
+                name = "intent" + n;
+            }
+            if (!NAME_PATTERN.matcher(name).matches()
+                    || name.length() > 100) {
+                throw new ToolException("E_BAD_NAME",
+                        "A component name starts with a letter and "
+                                + "uses only letters, numbers and "
+                                + "underscores, up to 100 characters "
+                                + "(Sketchware's own rule).");
+            }
+            for (String keyword : a.a.a.uq.b) {
+                if (keyword.equals(name)) {
+                    throw new ToolException("E_BAD_NAME",
+                            "\"" + name + "\" is a reserved word in "
+                                    + "Sketchware and cannot be a "
+                                    + "component name.");
+                }
+            }
+            if (taken.contains(name)) {
+                throw new ToolException("E_NAME_TAKEN",
+                        "\"" + name + "\" is already used on this "
+                                + "screen. Pick another name, or use "
+                                + "the one that is there.");
+            }
+            return new Checked(activity, name);
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            Checked checked = check(session, args);
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("activity",
+                    checked.activity().fileName);
+            clean.addProperty("name", checked.name());
+            return new AgentProposal(name(), clean, scId,
+                    "Add a component to "
+                            + SketchwareProjects.activityName(
+                                    checked.activity())
+                            + " in " + project.name,
+                    "New Intent component: " + checked.name(),
+                    "Adds the component to the screen, the same "
+                            + "entry Sketchware's component picker "
+                            + "adds. Nothing else on the screen "
+                            + "changes. A safety backup of the "
+                            + "project is made first.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            if (!scId.equals(session.workingProjectId)) {
+                throw new ToolException("E_PROJECT_CHANGED",
+                        "The working project changed since this "
+                                + "component was proposed, so it was "
+                                + "not added.");
+            }
+            Checked checked = check(session, proposal.args);
+            eC store = a.a.a.jC.a(scId);
+            String javaName = checked.activity().getJavaName();
+            try {
+                SketchwareActions.backupProjectOnce(scId);
+                // The component picker's own add call.
+                store.a(javaName,
+                        com.besome.sketch.beans.ComponentBean
+                                .COMPONENT_TYPE_INTENT,
+                        checked.name());
+                SketchwareActions.commitProject(scId);
+            } catch (Exception e) {
+                throw new ToolException("E_APPLY_FAILED",
+                        "Adding the component failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+            boolean found = false;
+            try {
+                ArrayList<com.besome.sketch.beans.ComponentBean>
+                        components = store.e(javaName);
+                if (components != null) {
+                    for (com.besome.sketch.beans.ComponentBean component
+                            : components) {
+                        if (checked.name().equals(component.componentId)
+                                && component.type
+                                        == com.besome.sketch.beans
+                                                .ComponentBean
+                                                .COMPONENT_TYPE_INTENT) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+                // Read-back below reports it.
+            }
+            if (!found) {
+                throw new ToolException("E_APPLY_FAILED",
+                        "The component was written but did not read "
+                                + "back from the screen's logic.");
+            }
+            JsonObject result = new JsonObject();
+            result.addProperty("added", checked.name());
+            result.addProperty("kind", "Intent");
+            result.addProperty("verified",
+                    SketchwareProjects.activityName(checked.activity())
+                            + " now has an Intent component named "
+                            + checked.name()
                             + " (read back and checked).");
             return result;
         }
