@@ -223,6 +223,7 @@ public final class AgentJournal {
         JsonObject root = load(scId);
         root.addProperty("styleBrief",
                 truncate(brief == null ? "" : brief.trim(), 600));
+        root.addProperty("styleBriefAt", System.currentTimeMillis());
         save(scId, root);
     }
 
@@ -231,24 +232,34 @@ public final class AgentJournal {
     }
 
     /**
-     * When a turn creates the project it was designing for, the style
-     * brief agreed along the way belongs to the new project too: it
-     * carries over unless the new project already has one of its own.
+     * When a turn creates the project it was designing for, a style
+     * brief agreed during that same turn was agreed for the new
+     * project — it was only parked under the previously selected one
+     * because that is where the conversation started. So it moves:
+     * the new project takes it and the old one lets it go. A brief
+     * the old project has held since before the turn is its own and
+     * stays put.
      */
-    public static synchronized void carryStyleBriefIfEmpty(String fromScId,
-                                                           String toScId) {
+    public static synchronized void moveStyleBriefIfAgreedSince(
+            String fromScId, String toScId, long sinceMillis) {
         if (fromScId == null || fromScId.isEmpty()
                 || toScId == null || toScId.isEmpty()
                 || fromScId.equals(toScId)) {
             return;
         }
-        String brief = styleBrief(fromScId);
-        if (brief.isEmpty() || !styleBrief(toScId).isEmpty()) {
+        JsonObject from = load(fromScId);
+        String brief = text(from, "styleBrief");
+        if (brief.isEmpty() || !styleBrief(toScId).isEmpty()
+                || number(from, "styleBriefAt") < sinceMillis) {
             return;
         }
-        JsonObject root = load(toScId);
-        root.addProperty("styleBrief", brief);
-        save(toScId, root);
+        JsonObject to = load(toScId);
+        to.addProperty("styleBrief", brief);
+        to.addProperty("styleBriefAt", System.currentTimeMillis());
+        save(toScId, to);
+        from.addProperty("styleBrief", "");
+        from.addProperty("styleBriefAt", 0);
+        save(fromScId, from);
     }
 
     /** Empties the project's record (the user's own choice, only). */

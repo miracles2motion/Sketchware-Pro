@@ -205,6 +205,7 @@ public class AgentLoop {
             }
         }
         AgentJournal.beginTurn(workingProjectId, lastUserText);
+        final long turnStartedAt = System.currentTimeMillis();
         final String[] journalProject = {workingProjectId};
         final boolean[] taskClosed = {false};
         List<JsonObject> messages = new ArrayList<>();
@@ -300,8 +301,9 @@ public class AgentLoop {
                         // its log is never empty after an interruption.
                         AgentJournal.endTurn(previousProject, true, "");
                         AgentJournal.beginTurn(workingProjectId, lastUserText);
-                        AgentJournal.carryStyleBriefIfEmpty(
-                                previousProject, workingProjectId);
+                        AgentJournal.moveStyleBriefIfAgreedSince(
+                                previousProject, workingProjectId,
+                                turnStartedAt);
                         result.remove("bind_project");
                         String bound = workingProjectId;
                         dispatch(listener,
