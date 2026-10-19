@@ -1376,6 +1376,23 @@ public final class AgentEdits {
                             + ". Pick the closest one from that list — "
                             + "there is no other kind of widget to add.");
         }
+        // The editor itself refuses these until their library is
+        // switched on (ViewEditor: AdView needs AdMob, MapView needs
+        // Google Maps). The agent has to say the same thing, instead
+        // of building a screen that can never work.
+        String needed = AgentSetup.requirementForWidget(type);
+        if (needed != null) {
+            JsonObject libraries = AgentSetup.libraries(scId);
+            // Only a library the app reports as OFF stops the change:
+            // settings that could not be read are not refused, so a
+            // check can never block work it cannot see.
+            if (libraries.has(needed)
+                    && !libraries.get(needed).getAsBoolean()) {
+                throw new AgentTools.ToolException("E_LIBRARY_REQUIRED",
+                        AgentSetup.requirementMessage(needed,
+                                "a " + typeName + " widget", false));
+            }
+        }
         if (type == ViewBean.VIEW_TYPE_WIDGET_FAB) {
             // The editor never stores a FAB as a screen widget: it is the
             // activity's floating button, held separately (eC's fab map,

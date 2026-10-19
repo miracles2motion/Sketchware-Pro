@@ -128,6 +128,7 @@ public final class AgentTools {
         register(new ListActivities());
         register(new ListResources());
         register(new GetScreen());
+        register(new GetProjectSetup());
         register(new AskColor());
         register(new SetStyleBrief());
         register(new SetPlan());
@@ -519,6 +520,113 @@ public final class AgentTools {
                 customViews.add(customView);
             }
             result.add("custom_views", customViews);
+            // Which libraries are switched on belongs in every
+            // project read: it decides whether an AdView, MapView,
+            // Firebase or ad component is even possible here.
+            result.add("libraries", AgentSetup.libraries(scId));
+            result.add("permissions", AgentSetup.permissions(scId));
+            return result;
+        }
+    }
+
+    /**
+     * get_project_setup: what the project has been SET UP FOR — the
+     * part that lives outside its screens. Sketchware refuses some
+     * widgets and components until their library is switched on in
+     * the Library Manager, and the agent has to know that before it
+     * proposes anything that needs one.
+     */
+    private static final class GetProjectSetup implements Tool {
+        @Override
+        public String name() {
+            return "get_project_setup";
+        }
+
+        @Override
+        public String description() {
+            return "Reads what the working project has been set up "
+                    + "for: which libraries are switched on in the "
+                    + "Library Manager (Firebase, AdMob, Google Maps, "
+                    + "AppCompat), the permissions declared in the "
+                    + "Permission Manager, which extra files the "
+                    + "project carries (assets, Java/Kotlin, resources, "
+                    + "native libraries, imports), whether it has "
+                    + "ProGuard rules, and the tail of its last compile "
+                    + "log. Check this BEFORE proposing anything that "
+                    + "depends on a library — an AdView, MapView, "
+                    + "Firebase, AdMob or FragmentAdapter component "
+                    + "needs its library switched on first, and the app "
+                    + "refuses the change until the user turns it on in "
+                    + "Configuration → Library Manager. Also check it "
+                    + "when the user reports a build or runtime "
+                    + "problem: the compile log is the compiler's own "
+                    + "last words on this project.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            return AgentTools.parameters(new JsonObject());
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Checked what the project is set up for";
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            JsonObject result = new JsonObject();
+            result.add("libraries", AgentSetup.libraries(scId));
+            result.add("permissions", AgentSetup.permissions(scId));
+            result.add("files", AgentSetup.files(scId));
+            String log = AgentSetup.compileLogTail(scId, 1500);
+            if (!log.isEmpty()) {
+                result.addProperty("last_compile_log_tail", log);
+            }
+            JsonArray notes = new JsonArray();
+            JsonObject libraries = AgentSetup.libraries(scId);
+            for (String key : new String[]{"firebase", "admob",
+                    "google_maps", "appcompat"}) {
+                if (!libraries.has(key)) {
+                    notes.add("The project's library settings could not "
+                            + "be read; ask the user what is enabled in "
+                            + "the Library Manager before proposing "
+                            + "anything that needs one.");
+                    break;
+                }
+            }
+            if (libraries.has("admob") && !libraries.get("admob")
+                    .getAsBoolean()) {
+                notes.add("AdMob is not switched on: AdView widgets and "
+                        + "ad components cannot be added yet.");
+            }
+            if (libraries.has("google_maps") && !libraries
+                    .get("google_maps").getAsBoolean()) {
+                notes.add("Google Maps is not switched on: MapView "
+                        + "cannot be added yet.");
+            }
+            if (libraries.has("firebase") && !libraries.get("firebase")
+                    .getAsBoolean()) {
+                notes.add("Firebase is not switched on: Firebase "
+                        + "components cannot be added yet.");
+            }
+            if (libraries.has("appcompat") && !libraries.get("appcompat")
+                    .getAsBoolean()) {
+                notes.add("AppCompat / Material is not switched on: the "
+                        + "editor still lets CardView, MaterialButton, "
+                        + "RecyclerView, TabLayout and similar widgets "
+                        + "be added, but the build only includes the "
+                        + "AndroidX dependencies when this switch is on, "
+                        + "so such a screen will not compile. Turn it on "
+                        + "(Library Manager → AppCompat) before using "
+                        + "Material widgets, or use plain widgets "
+                        + "instead.");
+            }
+            if (notes.size() > 0) {
+                result.add("notes", notes);
+            }
             return result;
         }
     }
@@ -2358,6 +2466,37 @@ public final class AgentTools {
                                 + "cloud_message, google_login.");
             }
             int componentType = (Integer) typeRow[1];
+            // The editor's own component picker refuses a component
+            // whose library has not been set up (Firebase, AdMob,
+            // AppCompat — InnerAddComponentBottomSheet). The agent
+            // refuses it the same way, naming the switch to turn on,
+            // instead of adding something that can never run. Checked
+            // here so both the proposal and its replayed execution
+            // agree.
+            String needed =
+                    AgentSetup.requirementForComponent(componentType);
+            if (needed != null) {
+                JsonObject libraries = AgentSetup.libraries(scId);
+                if (libraries.has(needed)
+                        && !libraries.get(needed).getAsBoolean()) {
+                    throw new ToolException("E_LIBRARY_REQUIRED",
+                            AgentSetup.requirementMessage(needed,
+                                    "a " + typeRow[3] + " component",
+                                    false));
+                }
+                if (AgentSetup.needsFirebaseAuthSetup(componentType)) {
+                    boolean configured = libraries
+                            .has("firebase_auth_configured")
+                            && libraries.get("firebase_auth_configured")
+                                    .getAsBoolean();
+                    if (!configured) {
+                        throw new ToolException("E_LIBRARY_REQUIRED",
+                                AgentSetup.requirementMessage("firebase",
+                                        "a " + typeRow[3] + " component",
+                                        true));
+                    }
+                }
+            }
             String prefix = (String) typeRow[2];
             String name = stringArg(args, "name");
             if (name.isEmpty()) {

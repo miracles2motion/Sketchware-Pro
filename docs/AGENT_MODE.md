@@ -1218,3 +1218,46 @@ longer lost on re-save.
   elsewhere does not exist here (AuthActivity declares ...)".
 - `edit_screen` accepts 20 operations per call instead of 12, so a
   whole screen fits in one proposal.
+
+### Wave 27: the project's setup, not just its screens
+
+Everything above reads the screens. This wave reads what a project is
+**set up for** — the Configuration panel — because Sketchware refuses
+some widgets and components until their library is switched on, and the
+agent used to add them anyway, producing screens that could never work.
+
+The gating table is the app's own, read out of its code rather than
+guessed:
+
+| Thing | Requires | Where the app says so |
+|---|---|---|
+| AdView widget | AdMob | `ViewEditor.e()` → `design_library_guide_setup_first` |
+| MapView widget | Google Maps | `ViewEditor.e()` |
+| Firebase DB / Auth / Storage / Phone Auth / Cloud Message / Google Login | Firebase | `InnerAddComponentBottomSheet` |
+| Firebase Auth family | Firebase **and** its API key | `design_library_firebase_guide_setup_first` |
+| Interstitial / Rewarded ad | AdMob | `InnerAddComponentBottomSheet` |
+| FragmentAdapter | AppCompat | `InnerAddComponentBottomSheet` |
+| Material widgets (CardView, MaterialButton, RecyclerView, TabLayout, …) | AppCompat **for the build**, not for the editor | `ViewEditor.e()` lists them; `yq` only adds AndroidX when `appCompat.useYn == "Y"` |
+
+Two honest distinctions the research forced:
+
+- **Refuse** only what the editor refuses (AdView, MapView, Firebase
+  and ad components). The message names the switch: "In order to use a
+  CardView widget, AppCompat / Material has to be set up in the
+  Library Manager first", matching the app's own wording.
+- **Warn, don't block**, for Material widgets: the editor happily adds
+  a CardView with AppCompat off, but the build then lacks the AndroidX
+  dependencies. `get_project_setup` reports that, and the guidance
+  tells the model to say so instead of discovering it at compile time.
+
+**Permissions needed no new machinery.** The app derives them itself
+when it generates the manifest (`Ix` writes RECORD_AUDIO, CAMERA,
+ACCESS_FINE_LOCATION from a per-activity bitfield, plus anything in
+`Permission Manager`), so the agent only reports what is declared —
+and is told not to invent permission steps.
+
+New: `get_project_setup` reads libraries, permissions, asset/Java/
+resource/native-lib/import files, ProGuard presence and the tail of the
+last compile log. Libraries and permissions are also in every project
+read, so the model cannot propose an impossible widget without
+seeing the fact first.
