@@ -1151,11 +1151,22 @@ public final class AgentLogic {
             plan.targetId = plan.eventName;
             if (!Arrays.asList(oq.getAllActivityEvents())
                     .contains(plan.eventName)) {
-                throw new AgentTools.ToolException("E_BAD_EVENT",
-                        "\"" + plan.eventName + "\" is not an activity "
-                                + "event. Activity events are: "
-                                + String.join(", ", oq.getAllActivityEvents())
-                                + ".");
+                // Models name screen events the Android way; accept
+                // the near-miss instead of refusing it. "onCreate" is
+                // this app's initializeLogic.
+                String alias = activityEventAlias(plan.eventName);
+                if (alias == null
+                        || !Arrays.asList(oq.getAllActivityEvents())
+                                .contains(alias)) {
+                    throw new AgentTools.ToolException("E_BAD_EVENT",
+                            "\"" + plan.eventName + "\" is not an activity "
+                                    + "event. Activity events are: "
+                                    + String.join(", ",
+                                            oq.getAllActivityEvents())
+                                    + ".");
+                }
+                plan.eventName = alias;
+                plan.targetId = alias;
             }
             plan.header = "When " + SketchwareProjects.activityName(activity)
                     + " runs " + plan.eventName + ":";
@@ -1286,8 +1297,22 @@ public final class AgentLogic {
                         "Every block must be an object like "
                                 + "{\"block\":\"toast\",\"message\":\"Hi\"}.");
             }
-            plan.chain.add(builder.buildStatement(
-                    element.getAsJsonObject(), 0));
+            try {
+                plan.chain.add(builder.buildStatement(
+                        element.getAsJsonObject(), 0));
+            } catch (AgentTools.ToolException e) {
+                // A missing variable is almost always the per-screen
+                // rule: the name exists — on another screen. Say so,
+                // instead of making the model guess again.
+                if ("E_NO_VARIABLE".equals(e.code)) {
+                    String hint = variablesByScreenHint(scId, activity);
+                    if (!hint.isEmpty()) {
+                        throw new AgentTools.ToolException(e.code,
+                                e.getMessage() + " " + hint);
+                    }
+                }
+                throw e;
+            }
         }
         if (builder.componentToCreate != null) {
             plan.newComponentId = builder.componentToCreate;
@@ -7193,6 +7218,71 @@ public final class AgentLogic {
     }
 
     /** Fails unless the activity declares a variable with this name. */
+    /**
+     * Where variables really live: one screen each. A model that
+     * declares "task" on MainActivity and then wires it on
+     * AuthActivity needs to be told the name is not global — and
+     * where it actually is.
+     */
+    private static String variablesByScreenHint(String scId,
+                                                ProjectFileBean current) {
+        if (scId == null || scId.isEmpty() || current == null) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder();
+        try {
+            eC store = jC.a(scId);
+            for (ProjectFileBean activity
+                    : SketchwareProjects.activities(scId)) {
+                if (activity.getJavaName()
+                        .equals(current.getJavaName())) {
+                    continue;
+                }
+                LinkedHashMap<String, Integer> variables =
+                        variablesOf(store, activity.getJavaName());
+                if (variables.isEmpty()) {
+                    continue;
+                }
+                if (out.length() > 0) {
+                    out.append("; ");
+                }
+                out.append(SketchwareProjects.activityName(activity))
+                        .append(" declares ")
+                        .append(String.join(", ", variables.keySet()));
+            }
+        } catch (Exception ignored) {
+            return "";
+        }
+        if (out.length() == 0) {
+            return "";
+        }
+        return "Variables belong to ONE screen — a variable declared "
+                + "elsewhere does not exist here ("
+                + out + "). Declare the one you need on this screen "
+                + "with create_variable first.";
+    }
+
+    /**
+     * The activity event a model means, even when it names it the
+     * Android way. Sketchware's own screen-created event is
+     * {@code initializeLogic}; models say {@code onCreate} almost
+     * every time, and a bare refusal just makes them try again.
+     * Returns null when the name is not a near-miss of one.
+     */
+    private static String activityEventAlias(String asked) {
+        if (asked == null) {
+            return null;
+        }
+        String key = asked.trim().toLowerCase(Locale.ROOT)
+                .replace("_", "").replace(" ", "");
+        return switch (key) {
+            case "oncreate", "oncreateview", "init", "initialize",
+                    "onviewcreated", "createlogic" -> "initializeLogic";
+            case "onfinish", "finish" -> "onDestroy";
+            default -> null;
+        };
+    }
+
     private static void requireVariable(Map<String, Integer> variables,
                                         String name)
             throws AgentTools.ToolException {

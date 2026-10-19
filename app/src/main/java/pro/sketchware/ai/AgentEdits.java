@@ -9,6 +9,7 @@ import com.google.gson.reflect.TypeToken;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -32,7 +33,7 @@ import mod.agus.jcoderz.beans.ViewBeans;
 public final class AgentEdits {
 
     /** Hard cap on operations in one edit, per the risk register. */
-    public static final int MAX_OPS = 12;
+    public static final int MAX_OPS = 20;
 
     /**
      * The screen itself is a virtual root in Sketchware's data model: it is
@@ -1369,7 +1370,11 @@ public final class AgentEdits {
         Integer type = typeByName(typeName);
         if (type == null) {
             throw new AgentTools.ToolException("E_BAD_TYPE",
-                    "Unknown widget type \"" + typeName + "\".");
+                    "Unknown widget type \"" + typeName + "\". Widget "
+                            + "types are the ones in Sketchware's own "
+                            + "palette: " + availableTypeNames()
+                            + ". Pick the closest one from that list — "
+                            + "there is no other kind of widget to add.");
         }
         if (type == ViewBean.VIEW_TYPE_WIDGET_FAB) {
             // The editor never stores a FAB as a screen widget: it is the
@@ -1563,6 +1568,20 @@ public final class AgentEdits {
         if (type != null) {
             return type;
         }
+        // Models often name a widget by its Android class
+        // ("androidx.recyclerview.widget.RecyclerView"): the palette
+        // knows it by its simple name, so a package is not a reason
+        // to fail — resolve the class's own name instead.
+        if (name != null && name.indexOf('.') >= 0) {
+            String simple = name.substring(name.lastIndexOf('.') + 1)
+                    .trim();
+            if (!simple.isEmpty()) {
+                Integer bySimple = typeByName(simple);
+                if (bySimple != null) {
+                    return bySimple;
+                }
+            }
+        }
         for (Map.Entry<String, Integer> entry : TYPE_BY_NAME.entrySet()) {
             if (entry.getKey().equalsIgnoreCase(name)) {
                 return entry.getValue();
@@ -1581,6 +1600,27 @@ public final class AgentEdits {
             }
         }
         return null;
+    }
+
+    /**
+     * Every widget type the palette offers, for an error that has to
+     * end the guessing: a model asked for "FrameLayout" (an Android
+     * class Sketchware has no palette entry for) and kept trying.
+     */
+    private static String availableTypeNames() {
+        ArrayList<String> names = new ArrayList<>();
+        for (Map.Entry<String, Integer> entry : TYPE_BY_NAME.entrySet()) {
+            names.add(entry.getKey());
+        }
+        for (int candidate = 19; candidate <= 48; candidate++) {
+            String name = ViewBeans.getViewTypeName(candidate);
+            if (!name.isEmpty()) {
+                names.add(name);
+            }
+        }
+        names.add("FloatingActionButton");
+        Collections.sort(names, String.CASE_INSENSITIVE_ORDER);
+        return String.join(", ", names);
     }
 
     /** Widget type names in {@link ViewBean} type order. */

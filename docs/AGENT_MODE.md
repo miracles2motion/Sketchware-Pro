@@ -1200,3 +1200,21 @@ longer lost on re-save.
 
 **8. Real task titles.** A resume with no subject of its own
 ("continue") takes the plan's name instead of "Work in progress".
+
+### Wave 26 follow-ups (found in the StickerBoardTodo export)
+
+- Build fix: a missing `java.util.ArrayList` import in AgentJournal
+  broke the compile (caught by CI, not shipped).
+- Widget types named by their Android class now resolve: a model
+  asking for `androidx.recyclerview.widget.RecyclerView` gets the
+  palette's RecyclerView instead of "unknown widget type". An
+  unknown type now lists every type the palette actually has, so
+  "FrameLayout" stops being retried.
+- `onCreate` is accepted as Sketchware's `initializeLogic` (models
+  name screen events the Android way; refusing them only made them
+  try again).
+- A missing variable now names the screens that do declare
+  variables: "Variables belong to ONE screen — a variable declared
+  elsewhere does not exist here (AuthActivity declares ...)".
+- `edit_screen` accepts 20 operations per call instead of 12, so a
+  whole screen fits in one proposal.
