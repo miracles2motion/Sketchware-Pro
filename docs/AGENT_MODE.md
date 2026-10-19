@@ -1006,3 +1006,36 @@ Device test findings (SportyNivida / Sporty Bet):
   remaining 28 are documented exclusions (raw-source blocks, unsafe
   typed map reads, dead/junk blocks, More-block-only returns), each
   with its reason in docs/STOCK_BLOCK_KNOWLEDGE.md.
+
+## Wave 15 — task journal, style brief, clean slate
+
+- The app now keeps its own memory of agent work per project
+  (ai/AgentJournal, tasks/<scId>.json under the agent root): each
+  task with the steps that landed, were turned down, or failed, plus
+  why an unfinished task stopped. The loop titles tasks from the
+  user's message, records mutations as they execute, and closes the
+  task on every exit path (answer, quota/error, empty reply, limit,
+  repeated failure, stop) — interruption pauses, never loses.
+- Every turn's system prompt carries a short verified brief: the
+  style brief, the unfinished task with its finished steps, recent
+  task titles. A fresh key or model resumes from the first
+  unfinished step after re-checking the real project state. New
+  tools: set_style_brief, get_task_log. Guidance adds resume rules
+  and layout sense (match_parent vs wrap_content, spacing/type
+  consistency, kids'-app direction).
+- Clean slate: the working project is session-only now
+  (AiProviderConfig no longer persists it). Reopening the agent
+  starts with no project chosen; each project's journal waits
+  inside it.
+
+## Wave 16 — composer, Plan/Task log, task strip
+
+- The composer is one rounded Material surface: text field, an
+  in-box action row (Plan — the style brief, viewable/editable;
+  Task log — the recorded tasks, clearable only by the user) and
+  send. The top-bar history icon opens the same task log.
+- A slim strip above the composer appears only while a task runs
+  or sits paused, naming the task and the stop reason; Resume
+  reopens the same journal entry and continues it.
+- The project card settles into a compact chip once a project is
+  chosen.
