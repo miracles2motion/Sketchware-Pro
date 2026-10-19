@@ -3591,14 +3591,14 @@ public final class AgentTools {
      */
     private static void checkDesignToken(JsonObject token, int index)
             throws ToolException {
-        String key = stringOf(token, "key");
+        String key = stringArg(token, "key");
         if (key.isEmpty() || !key.matches("[a-z][a-z0-9_]{1,29}")) {
             throw new ToolException("E_BAD_TOKEN",
                     "Token " + (index + 1) + " needs a \"key\" in "
                             + "lowercase letters, digits and underscores "
                             + "(e.g. primary_button), 2 to 30 characters.");
         }
-        String kind = stringOf(token, "kind").toLowerCase(Locale.ROOT);
+        String kind = stringArg(token, "kind").toLowerCase(Locale.ROOT);
         String[] allowed = DESIGN_FIELDS.get(kind);
         if (allowed == null) {
             throw new ToolException("E_BAD_TOKEN",
@@ -3817,7 +3817,7 @@ public final class AgentTools {
                                 + "\"component\".");
             }
             checkDesignToken(component, 0);
-            if (!key.equals(stringOf(component, "key"))) {
+            if (!key.equals(stringArg(component, "key"))) {
                 throw new ToolException("E_BAD_ARGS",
                         "The \"key\" must match the component's own "
                                 + "\"key\" — one change at a time.");
@@ -3842,7 +3842,7 @@ public final class AgentTools {
                         if (known.length() > 0) {
                             known.append(", ");
                         }
-                        known.append(stringOf(token.getAsJsonObject(),
+                        known.append(stringArg(token.getAsJsonObject(),
                                 "key"));
                     }
                 }

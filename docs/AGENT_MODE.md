@@ -1521,3 +1521,40 @@ that does not belong to that widget**, and says what does:
 The alternative — writing the attribute anyway — would put a line in
 the XML that fails at build time, which is worse than a refusal the
 model can act on.
+
+## Wave 31e: six red commits, and why
+
+Wave 30 (`bd0f13c`) broke the build, and so did every commit after it,
+because I pushed six times without ever looking at CI. The user had to
+tell me. These were the seven errors:
+
+| file | error |
+|---|---|
+| `AgentLoop.java:762` | `JsonElement` used, never imported |
+| `AgentFragment.java:1413` | `setItems(items, (which, ignored) ->` — the parameters are `(DialogInterface, int)`, so `which` was the dialog and `items[which]` did not compile |
+| `AgentTools.java` ×4 | `stringOf(...)` — a helper from `AgentEdits`. This file's own helper is `stringArg(...)` |
+| `AgentFragment.java:891` | `int textColour = designColour(...)` — it returns a hex `String`; `setTextColor` wants an int |
+
+Three of them have the same cause: **I wrote Java from habit instead of
+from the file I was standing in.** `AgentFragment` already called
+`setItems` correctly three times — at lines 841, 1174 and 1951, all
+`(dialog, which) ->`. `AgentTools` already had `stringArg`. I did not
+look at either, and the user was right to ask whether I had read the
+repo's own code at all.
+
+The second cause: my verification was counting braces. Braces cannot
+tell you a symbol is missing or a lambda has its parameters backwards.
+
+### What now binds
+
+1. **`scripts/check_symbols.py`** before every push. It is a poor
+   substitute for javac (no Android SDK in this sandbox, so no real
+   compile), but it catches the two errors that actually happened:
+   a type used without an import, and a method called that the file
+   never declares. Both real failures are reproduced in its tests.
+2. **Before using a helper, grep the file for how it does it there.**
+   Not what I would call it — what it calls it.
+3. **Before an Android call with a lambda, grep the repo for that
+   call** and copy the parameter order that already compiles.
+4. **CI is read, not assumed.** No commit is described as done until
+   the run for its SHA says so.

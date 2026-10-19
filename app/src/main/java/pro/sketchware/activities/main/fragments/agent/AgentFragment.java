@@ -889,7 +889,9 @@ public class AgentFragment extends qA {
                 && token.get("props").isJsonObject()
                 ? token.getAsJsonObject("props") : new com.google.gson.JsonObject();
         String background = designColour(props, "background", "#E0E0E0");
-        int textColour = designColour(props, "text_color", "#000000");
+        // designColour hands back a hex string; setTextColor wants an int.
+        String textColourHex = designColour(props, "text_color", "#000000");
+        int textColour = android.graphics.Color.parseColor(textColourHex);
         int padding = designDp(context, props, "padding", 12);
         android.widget.LinearLayout box =
                 new android.widget.LinearLayout(context);
@@ -1676,7 +1678,10 @@ public class AgentFragment extends qA {
                             .MaterialAlertDialogBuilder(activity);
             dialog.setTitle(question.isEmpty()
                     ? "Choose one" : question);
-            dialog.setItems(items, (which, ignored) -> {
+            // (dialog, which) — the order this file already uses at
+            // lines 841, 1174 and 1951. Reversed, it compiles as a
+            // DialogInterface index and crashes the build.
+            dialog.setItems(items, (dialog2, which) -> {
                 pickedChoice = items[which];
                 latch.countDown();
             });
