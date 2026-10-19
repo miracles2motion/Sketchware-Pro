@@ -898,6 +898,13 @@ public final class AgentEdits {
                 throw new AgentTools.ToolException("E_TREE",
                         bean.id + " would be left without a parent.");
             }
+            if (bean.image != null && bean.image.resName == null) {
+                // Screens saved by older agent versions can carry an
+                // ImageView with no image name; the editor's view
+                // loader dereferences it and crashes the whole app.
+                // Any edit through here heals the screen on save.
+                bean.image.resName = "default_image";
+            }
         }
         Outcome outcome = new Outcome(work, lines, frozenOps);
         outcome.warnings.addAll(visibilityWarnings(work));
@@ -1821,9 +1828,15 @@ public final class AgentEdits {
                 bean.layout.width = LayoutBean.LAYOUT_MATCH_PARENT;
                 bean.layout.height = LayoutBean.LAYOUT_MATCH_PARENT;
             }
+            case ViewBean.VIEW_TYPE_WIDGET_IMAGEVIEW -> {
+                // The editor's own palette writes "default_image" here;
+                // a null resName crashes its view loader
+                // (resName.equals(...)) when the screen is reopened.
+                bean.image.resName = "default_image";
+            }
             default -> {
-                // ImageView and anything else start from the plain bean,
-                // exactly as their palette icons do.
+                // Anything else starts from the plain bean, exactly as
+                // its palette icon does.
                 applyExtendedDefaults(bean, type);
             }
         }
@@ -1998,6 +2011,7 @@ public final class AgentEdits {
                 bean.inject = "app:cornerRadius=\"8dp\"";
             }
             case ViewBeans.VIEW_TYPE_WIDGET_CIRCLEIMAGEVIEW -> {
+                bean.image.resName = "default_image";
                 bean.inject = "app:civ_border_width=\"3dp\"\n"
                         + "app:civ_border_color=\"#008DCD\"\n"
                         + "app:civ_circle_background_color=\"#FFFFFF\"\n"

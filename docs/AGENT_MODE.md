@@ -1124,3 +1124,16 @@ Device test findings (SportyNivida / Sporty Bet):
   and an open Plan page re-reads itself while a turn runs.
   Completion still only comes from set_plan updates checked
   against recorded changes — live, but not self-awarded.
+
+## Wave 25 — editor crash from agent-made ImageViews (found on device)
+
+- Crash report: opening an agent-created project killed the editor
+  (NPE at ViewPane.updateItemView: resName.equals on null). Cause:
+  ImageBean leaves resName null unless someone sets it; the app's
+  own palette writes "default_image", but the agent never did — an
+  agent ImageView with no set_image saved resName=null, and the
+  editor dereferences it on load. Fixes: agent-created ImageView /
+  CircleImageView now default to "default_image"; simulate()
+  normalizes any null resName it saves (healing screens broken by
+  older builds on their next edit); ViewPane's two equals checks
+  are null-safe so no malformed project can crash the editor here.

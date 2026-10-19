@@ -453,7 +453,7 @@ public class ViewPane extends RelativeLayout {
                             if (resourceId != 0) {
                                 fab.setImageResource(resourceId);
                             }
-                        } else if (viewBean.image.resName.equals("default_image")) {
+                        } else if ("default_image".equals(viewBean.image.resName)) {
                             fab.setImageResource(R.drawable.default_image);
                         } else {
                             String imagePath = resourcesManager.f(viewBean.image.resName);
@@ -610,7 +610,7 @@ public class ViewPane extends RelativeLayout {
             if (classInfo.a("ImageView")) {
                 if (resourcesManager.h(viewBean.image.resName) == ProjectResourceBean.PROJECT_RES_TYPE_RESOURCE) {
                     ((ImageView) view).setImageResource(getContext().getResources().getIdentifier(viewBean.image.resName, "drawable", getContext().getPackageName()));
-                } else if (viewBean.image.resName.equals("default_image")) {
+                } else if ("default_image".equals(viewBean.image.resName)) {
                     ((ImageView) view).setImageResource(R.drawable.default_image);
                 } else {
                     try {
