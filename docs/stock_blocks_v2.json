@@ -510,7 +510,7 @@
  },
  "ListViewAddFooter": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.addFooterView(%s,%s,%s);",
@@ -531,7 +531,7 @@
  },
  "ListViewAddHeader": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.addHeaderView(%s,%s,%s);",
@@ -570,7 +570,7 @@
  },
  "ViewPagerNotifyOnDtatChange": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "((PagerAdapter)%s.getAdapter()).notifyDataSetChanged();",
@@ -794,7 +794,7 @@
  },
  "addTab": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%1$s.addTab(%1$s.newTab().setText(%2$s));",
@@ -1227,7 +1227,7 @@
  },
  "bottomMenuAddItem": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.getMenu().add(0, %s, 0, %s).setIcon(R.drawable.%s);",
@@ -1453,7 +1453,7 @@
  },
  "calendarViewSetDate": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.setDate((long)(%s), true, true);",
@@ -1477,7 +1477,7 @@
  },
  "calendarViewSetMinDate": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.setMinDate((long)(%s));",
@@ -1501,7 +1501,7 @@
  },
  "calnedarViewSetMaxDate": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.setMaxDate((long)(%s));",
@@ -1550,7 +1550,7 @@
  },
  "caseNum": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "case ((int)%s): {\r\n%s\r\nbreak;\r\n}",
@@ -1584,7 +1584,7 @@
  },
  "caseStr": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "case %s: {\r\n%s\r\nbreak;\r\n}",
@@ -1732,7 +1732,7 @@
  },
  "codeviewApply": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.apply();",
@@ -1750,7 +1750,7 @@
  },
  "codeviewSetCode": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setCode(%s);",
@@ -1769,7 +1769,7 @@
  },
  "codeviewSetLanguage": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setLanguage(Language.%s);",
@@ -1788,7 +1788,7 @@
  },
  "codeviewSetTheme": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setTheme(Theme.%s);",
@@ -1877,7 +1877,7 @@
  },
  "continue": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "continue;",
@@ -2046,7 +2046,7 @@
  },
  "defaultSwitch": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "default: {\r\n%s\r\nbreak;\r\n}",
@@ -3480,7 +3480,7 @@
  },
  "getBadgeCount": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.getBadgeCount();",
@@ -3964,7 +3964,7 @@
  },
  "gridSetColumnWidth": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setColumnWidth((int)%s);",
@@ -4012,7 +4012,7 @@
  },
  "gridSetHorizontalSpacing": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setHorizontalSpacing((int)%s);",
@@ -4031,7 +4031,7 @@
  },
  "gridSetNumColumns": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setNumColumns((int)%s);",
@@ -4050,7 +4050,7 @@
  },
  "gridSetStretchMode": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setStretchMode(GridView.%s);",
@@ -4069,7 +4069,7 @@
  },
  "gridSetVerticalSpacing": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setVerticalSpacing((int)%s);",
@@ -4920,7 +4920,7 @@
  },
  "isDrawerOpen": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: binding.Drawer.isDrawerOpen(GravityCompat.START)",
@@ -5042,7 +5042,7 @@
  },
  "listRefresh": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: ((BaseAdapter)%s.getAdapter()).notifyDataSetChanged();",
@@ -5111,7 +5111,7 @@
  },
  "listSetStackFromBottom": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setStackFromBottom(%s);",
@@ -5130,7 +5130,7 @@
  },
  "listSetTranscriptMode": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setTranscriptMode(ListView.%s);",
@@ -5149,7 +5149,7 @@
  },
  "listSmoothScrollTo": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.smoothScrollToPosition((int)(%s));",
@@ -5173,7 +5173,7 @@
  },
  "listViewRemoveFooter": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.removeFooterView(%s);",
@@ -5192,7 +5192,7 @@
  },
  "listViewRemoveHeader": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.removeHeaderView(%s);",
@@ -5211,7 +5211,7 @@
  },
  "listViewSetSelection": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setSelection((int)%s);",
@@ -5306,7 +5306,7 @@
  },
  "lottieSetAnimationFromAsset": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setAnimation(%s);",
@@ -5325,7 +5325,7 @@
  },
  "lottieSetAnimationFromJson": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setAnimationFromJson(%s);",
@@ -5344,7 +5344,7 @@
  },
  "lottieSetAnimationFromUrl": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setAnimationFromUrl(%s);",
@@ -5363,7 +5363,7 @@
  },
  "lottieSetRepeatCount": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setRepeatCount((int)%s);",
@@ -5382,7 +5382,7 @@
  },
  "lottieSetSpeed": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setSpeed((float)%s);",
@@ -5648,7 +5648,7 @@
  },
  "mapViewAddMarker": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: _%s_controller.addMarker(%s, %s, %s);",
@@ -5674,7 +5674,7 @@
  },
  "mapViewMoveCamera": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: _%s_controller.moveCamera(%s, %s);",
@@ -5699,7 +5699,7 @@
  },
  "mapViewSetMapType": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: _%s_controller.setMapType(GoogleMap.%s);",
@@ -5776,7 +5776,7 @@
  },
  "mapViewSetMarkerInfo": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: _%s_controller.setMarkerInfo(%s, %s, %s);",
@@ -5802,7 +5802,7 @@
  },
  "mapViewSetMarkerPosition": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: _%s_controller.setMarkerPosition(%s, %s, %s);",
@@ -5828,7 +5828,7 @@
  },
  "mapViewSetMarkerVisible": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: _%s_controller.setMarkerVisible(%s, %s);",
@@ -5853,7 +5853,7 @@
  },
  "mapViewZoomIn": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: _%s_controller.zoomIn();",
@@ -5876,7 +5876,7 @@
  },
  "mapViewZoomOut": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: _%s_controller.zoomOut();",
@@ -5899,7 +5899,7 @@
  },
  "mapViewZoomTo": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: _%s_controller.zoomTo(%s);",
@@ -7176,7 +7176,7 @@
  },
  "otpViewGetOTPText": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%1$s.getOTPText()",
@@ -7194,7 +7194,7 @@
  },
  "otpViewSetFieldCount": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%1$s.setFieldCount(%2$s);",
@@ -7231,7 +7231,7 @@
  },
  "otpViewSetOTPText": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%1$s.setOTPText(%2$s);",
@@ -7268,7 +7268,7 @@
  },
  "pagerGetOffscreenPageLimit": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.getOffscreenPageLimit()",
@@ -7286,7 +7286,7 @@
  },
  "pagerSetCurrentItem": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setCurrentItem((int)%s);",
@@ -7352,7 +7352,7 @@
  },
  "pagerSetOffscreenPageLimit": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setOffscreenPageLimit((int)%s);",
@@ -7388,7 +7388,7 @@
  },
  "patternLockClear": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.clearPattern();",
@@ -7406,7 +7406,7 @@
  },
  "patternSetCorrectStateColor": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setCorrectStateColor(%s);",
@@ -7425,7 +7425,7 @@
  },
  "patternSetDotCount": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setDotCount((int)%s);",
@@ -7444,7 +7444,7 @@
  },
  "patternSetNormalStateColor": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setNormalStateColor(%s);",
@@ -7463,7 +7463,7 @@
  },
  "patternSetViewMode": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setViewMode(PatternLockView.PatternViewMode.%s);",
@@ -7482,7 +7482,7 @@
  },
  "patternSetWrongStateColor": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setWrongStateColor(%s);",
@@ -7831,7 +7831,7 @@
  },
  "recyclerScrollToPositionWithOffset": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": " ((LinearLayoutManager) %s.getLayoutManager()).scrollToPositionWithOffset((int)%s, (int)%s);",
@@ -7876,7 +7876,7 @@
  },
  "recyclerSetHasFixedSize": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setHasFixedSize(%s);",
@@ -7895,7 +7895,7 @@
  },
  "recyclerSetLayoutManager": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setLayoutManager(new LinearLayoutManager(this));",
@@ -7913,7 +7913,7 @@
  },
  "recyclerSetLayoutManagerHorizontal": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setLayoutManager(new LinearLayoutManager(this,LinearLayoutManager.HORIZONTAL, false));",
@@ -7931,7 +7931,7 @@
  },
  "recyclerSmoothScrollToPosition": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.smoothScrollToPosition((int)%s);",
@@ -7967,7 +7967,7 @@
  },
  "refreshingList": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.invalidateViews();",
@@ -8756,7 +8756,7 @@
  },
  "setBadgeBackground": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setBadgeBackground(%s);",
@@ -8775,7 +8775,7 @@
  },
  "setBadgeNumber": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setBadgeCount(%s);",
@@ -8794,7 +8794,7 @@
  },
  "setBadgeString": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setBadgeCount(%s);",
@@ -8813,7 +8813,7 @@
  },
  "setBadgeTextColor": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setTextColor(%s);",
@@ -8832,7 +8832,7 @@
  },
  "setBadgeTextSize": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setTextSize((int)%s);",
@@ -9133,7 +9133,7 @@
  },
  "setCardBackgroundColor": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setCardBackgroundColor(%s);",
@@ -9152,7 +9152,7 @@
  },
  "setCardElevation": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setCardElevation((float)%s);",
@@ -9171,7 +9171,7 @@
  },
  "setCardRadius": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setRadius((float)%s);",
@@ -9546,7 +9546,7 @@
  },
  "setInlineLabel": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setInlineLabel(%s);",
@@ -9628,7 +9628,7 @@
  },
  "setPreventCornerOverlap": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setPreventCornerOverlap(%s);",
@@ -9707,7 +9707,7 @@
  },
  "setRefreshing": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setRefreshing(%s);",
@@ -9798,7 +9798,7 @@
  },
  "setSelectedTabIndicatorColor": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setSelectedTabIndicatorColor(%s);",
@@ -9817,7 +9817,7 @@
  },
  "setSelectedTabIndicatorHeight": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setSelectedTabIndicatorHeight(%s);",
@@ -9876,7 +9876,7 @@
  },
  "setTabRippleColor": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setTabRippleColor(new android.content.res.ColorStateList(new int[][]{new int[]{android.R.attr.state_pressed}}, \r\n\r\nnew int[] {%s}));",
@@ -9895,7 +9895,7 @@
  },
  "setTabTextColors": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setTabTextColors(%s, %s);",
@@ -10121,7 +10121,7 @@
  },
  "setUseCompatPadding": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setUseCompatPadding(%s);",
@@ -10233,7 +10233,7 @@
  },
  "setupWithViewPager": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setupWithViewPager(%s);",
@@ -10627,7 +10627,7 @@
  },
  "spnRefresh": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: ((ArrayAdapter)%s.getAdapter()).notifyDataSetChanged();",
@@ -10675,7 +10675,7 @@
  },
  "spnSetData": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.setAdapter(new ArrayAdapter<String>(getBaseContext(), android.R.lay",
@@ -10699,7 +10699,7 @@
  },
  "spnSetSelection": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.setSelection((int)(%s));",
@@ -11204,7 +11204,7 @@
  },
  "switchNum": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "switch((int)%s) {\r\n%s\r\n}",
@@ -11221,7 +11221,7 @@
  },
  "switchStr": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "switch(%s) {\r\n%s\r\n}",
@@ -11238,7 +11238,7 @@
  },
  "ternaryNumber": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "%s ? (int)%s : (int)%s",
@@ -11257,7 +11257,7 @@
  },
  "ternaryString": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "%s ? %s : %s",
@@ -11429,7 +11429,7 @@
  },
  "tilGetCounterMaxLength": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.getCounterMaxLength()",
@@ -11447,7 +11447,7 @@
  },
  "tilSetBoxBgColor": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setBoxBackgroundColor(%s);",
@@ -11466,7 +11466,7 @@
  },
  "tilSetBoxBgMode": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_%s);",
@@ -11485,7 +11485,7 @@
  },
  "tilSetBoxCornerRadii": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setBoxCornerRadii((float)%s, (float)%s, (float)%s, (float)%s);",
@@ -11507,7 +11507,7 @@
  },
  "tilSetBoxStrokeColor": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setBoxStrokeColor(%s);",
@@ -11526,7 +11526,7 @@
  },
  "tilSetCounterEnabled": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setCounterEnabled(%s);",
@@ -11545,7 +11545,7 @@
  },
  "tilSetCounterMaxLength": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setCounterMaxLength(%s);",
@@ -11564,7 +11564,7 @@
  },
  "tilSetError": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setError(%s);",
@@ -11583,7 +11583,7 @@
  },
  "tilSetErrorEnabled": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setErrorEnabled(%s);",
@@ -11660,7 +11660,7 @@
  },
  "timepickerSetHour": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setHour((int)%s);",
@@ -11679,7 +11679,7 @@
  },
  "timepickerSetIs24Hour": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setIs24HourView(%s);",
@@ -11698,7 +11698,7 @@
  },
  "timepickerSetMinute": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setMinute((int)%s);",
@@ -11990,7 +11990,7 @@
  },
  "tryCatch": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "try {\r\n%s\r\n} catch (Exception e) {\r\n%s\r\n}",
@@ -12590,7 +12590,7 @@
  },
  "whileLoop": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "while(%s) {\r\n%s\r\n}",

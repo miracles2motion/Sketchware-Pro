@@ -1135,7 +1135,40 @@ public final class AgentTools {
                     + "lists: if {condition,then:[...]}, if_else "
                     + "{condition,then:[...],else:[...]}, repeat "
                     + "{times,blocks:[...]}, forever {blocks:[...]}, and "
-                    + "break {} (leave a loop). Conditions and counts "
+                    + "break {} (leave a loop), continue {} (skip to "
+                    + "the next loop round), while {condition,blocks} "
+                    + "(run while a condition holds), try_catch "
+                    + "{blocks,catch:[...]} (run blocks, and the catch "
+                    + "blocks if anything fails), and switch {value,"
+                    + "cases:[{match,blocks:[...]}],default:[...]} "
+                    + "(run the case whose match equals the value — "
+                    + "a number or text value, up to 12 cases; a case "
+                    + "may have empty blocks). The gated widget families "
+                    + "work only on their widget: ListView (refresh_list, "
+                    + "list_smooth_scroll {value}, add_header/"
+                    + "remove_header {child}), Spinner (set_spinner_data "
+                    + "{list}, set_spinner_selection {value}), ViewPager "
+                    + "(set_pager_page {value}), RecyclerView "
+                    + "(recycler_layout, recycler_scroll_to {value}), "
+                    + "GridView (grid_columns {value}), TabLayout "
+                    + "(add_tab {text}, set_tab_colors {color,color2}, "
+                    + "setup_with_pager {child}), CardView "
+                    + "(set_card_color {color}, set_card_radius "
+                    + "{value}), TimePicker (set_picker_hour/"
+                    + "set_picker_minute {value}, set_24hour {flag}), "
+                    + "CalendarView (set_calendar_date {value}, epoch "
+                    + "milliseconds), TextInputLayout (til_box_color "
+                    + "{color}, til_set_error {text}, til_counter_max "
+                    + "{value}), BadgeView (set_badge_number {value}), "
+                    + "PatternLockView (clear_pattern, "
+                    + "pattern_dot_count {value}), OTPView "
+                    + "(set_otp_text {text}), Lottie (set_lottie_asset "
+                    + "{text}, set_lottie_speed {value}), CodeView "
+                    + "(set_code_text {text}), MapView (map_zoom_in, "
+                    + "map_add_marker {text,value,value2}, map_set_type "
+                    + "{mode}), SwipeRefreshLayout (set_refreshing "
+                    + "{flag}) and BottomNavigationView (bottom_add_item "
+                    + "{value,text,image}). Conditions and counts "
                     + "are value expressions: {\"var\":\"taps\"}, "
                     + "{\"number\":3}, {\"bool\":true}, calculations "
                     + "{\"op\":\"+\",\"a\":...,\"b\":...} (also - * / %), "
@@ -1189,7 +1222,15 @@ public final class AgentTools {
                     + "{\"video_position_of\":\"videoview1\"}, "
                     + "{\"video_playing\":\"videoview1\"}, "
                     + "{\"web_progress_of\":\"webview1\"}, "
-                    + "{\"can_go_back\":\"webview1\"}; "
+                    + "{\"can_go_back\":\"webview1\"}, "
+                    + "{\"badge_count_of\":\"badgeview1\"}, "
+                    + "{\"otp_text_of\":\"otpview1\"} (the code typed "
+                    + "into an OTP view), {\"counter_max_of\":"
+                    + "\"textinputlayout1\"}, {\"fn\":\"choose\","
+                    + "\"condition\":...,\"a\":...,\"b\":...} (a if b, "
+                    + "otherwise... a value picked by a condition), "
+                    + "and {\"fn\":\"drawer_open\"} (whether the "
+                    + "screen's drawer is open); "
                     + "= between texts "
                     + "compares their text. At most "
                     + "8 blocks per list and 24 blocks total per handler. "
@@ -1272,7 +1313,47 @@ public final class AgentTools {
                     "web_zoom_in", "web_zoom_out", "set_cache_mode",
                     "set_autocomplete_data", "set_multiautocomplete_data",
                     "set_threshold", "set_tokenizer",
-                    "if", "if_else", "repeat", "forever", "break"}) {
+                    "refresh_list", "refresh_list_views",
+                    "list_smooth_scroll", "list_set_selection",
+                    "list_stack_from_bottom", "list_transcript_mode",
+                    "add_header", "add_footer", "remove_header",
+                    "remove_footer", "set_spinner_data",
+                    "refresh_spinner", "set_spinner_selection",
+                    "set_pager_page", "set_pager_limit",
+                    "notify_pager_changed", "recycler_layout",
+                    "recycler_layout_horizontal", "recycler_fixed_size",
+                    "recycler_scroll_to", "recycler_scroll_offset",
+                    "grid_columns", "grid_column_width", "grid_spacing_h",
+                    "grid_spacing_v", "grid_stretch_mode", "add_tab",
+                    "set_tab_colors", "set_tab_indicator_color",
+                    "set_tab_indicator_height", "set_tab_ripple_color",
+                    "set_inline_label", "setup_with_pager",
+                    "set_card_color", "set_card_elevation",
+                    "set_card_radius", "set_prevent_overlap",
+                    "set_compat_padding", "set_picker_hour",
+                    "set_picker_minute", "set_24hour",
+                    "set_calendar_date", "set_calendar_min_date",
+                    "set_calendar_max_date", "til_box_color",
+                    "til_box_stroke", "til_box_mode", "til_corner_radii",
+                    "til_counter_enabled", "til_counter_max",
+                    "til_set_error", "til_error_enabled",
+                    "set_badge_number", "set_badge_text",
+                    "set_badge_background", "set_badge_text_color",
+                    "set_badge_text_size", "clear_pattern",
+                    "pattern_dot_count", "pattern_correct_color",
+                    "pattern_normal_color", "pattern_wrong_color",
+                    "pattern_view_mode", "set_otp_text",
+                    "set_otp_field_count", "set_lottie_asset",
+                    "set_lottie_json", "set_lottie_url",
+                    "set_lottie_repeat", "set_lottie_speed",
+                    "set_code_text", "apply_code", "set_code_language",
+                    "set_code_theme", "map_zoom_in", "map_zoom_out",
+                    "map_zoom_to", "map_move_camera", "map_add_marker",
+                    "map_set_type", "map_marker_position",
+                    "map_marker_visible", "map_marker_info",
+                    "set_refreshing", "bottom_add_item",
+                    "if", "if_else", "repeat", "forever", "break",
+                    "while", "try_catch", "switch", "continue"}) {
                 kinds.add(kind);
             }
             blockProp.add("enum", kinds);

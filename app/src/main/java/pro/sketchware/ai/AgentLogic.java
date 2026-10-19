@@ -262,6 +262,297 @@ public final class AgentLogic {
         WIDGET_ACTIONS.put("set_tokenizer", new WA("setTokenizer",
                 "mactv", "", ".setTokenizer(",
                 "Set {t} to separate entries with commas"));
+        // Widget-gated families (wave 9): each only offered when the
+        // matching widget is on the screen, as in the palette.
+        WIDGET_ACTIONS.put("refresh_list", new WA("listRefresh",
+                "listview", "", ".getAdapter()).notifyDataSetChanged(",
+                "Refresh the rows of {t}"));
+        WIDGET_ACTIONS.put("refresh_list_views", new WA("refreshingList",
+                "listview", "", ".invalidateViews(",
+                "Redraw the rows of {t}"));
+        WIDGET_ACTIONS.put("list_smooth_scroll", new WA(
+                "listSmoothScrollTo", "listview", "d",
+                ".smoothScrollToPosition(", "Scroll {t} smoothly to "
+                + "item {1}"));
+        WIDGET_ACTIONS.put("list_set_selection", new WA(
+                "listViewSetSelection", "listview", "d", ".setSelection(",
+                "Select item {1} in {t}"));
+        WIDGET_ACTIONS.put("list_stack_from_bottom", new WA(
+                "listSetStackFromBottom", "listview", "b",
+                ".setStackFromBottom(", "Set {t} to stack from the "
+                + "bottom: {1}"));
+        WIDGET_ACTIONS.put("list_transcript_mode", new WA(
+                "listSetTranscriptMode", "listview", "m",
+                ".setTranscriptMode(ListView.",
+                "Set {t} transcript mode to {1}"));
+        WIDGET_ACTIONS.put("add_header", new WA("ListViewAddHeader",
+                "listview", "wsb", ".addHeaderView(",
+                "Add {1} as a header of {t}"));
+        WIDGET_ACTIONS.put("add_footer", new WA("ListViewAddFooter",
+                "listview", "wsb", ".addFooterView(",
+                "Add {1} as a footer of {t}"));
+        WIDGET_ACTIONS.put("remove_header", new WA("listViewRemoveHeader",
+                "listview", "w", ".removeHeaderView(",
+                "Remove the header {1} from {t}"));
+        WIDGET_ACTIONS.put("remove_footer", new WA("listViewRemoveFooter",
+                "listview", "w", ".removeFooterView(",
+                "Remove the footer {1} from {t}"));
+        WIDGET_ACTIONS.put("set_spinner_data", new WA("spnSetData",
+                "spinner", "l", ".setAdapter(new ArrayAdapter",
+                "Fill {t} choices from list “{1}”"));
+        WIDGET_ACTIONS.put("refresh_spinner", new WA("spnRefresh",
+                "spinner", "", ".getAdapter()).notifyDataSetChanged(",
+                "Refresh the choices of {t}"));
+        WIDGET_ACTIONS.put("set_spinner_selection", new WA(
+                "spnSetSelection", "spinner", "d", ".setSelection(",
+                "Select item {1} in {t}"));
+        WIDGET_ACTIONS.put("set_pager_page", new WA("pagerSetCurrentItem",
+                "viewpager", "d", ".setCurrentItem(",
+                "Show page {1} in {t}"));
+        WIDGET_ACTIONS.put("set_pager_limit", new WA(
+                "pagerSetOffscreenPageLimit", "viewpager", "d",
+                ".setOffscreenPageLimit(", "Set {t} to keep {1} pages "
+                + "alive on each side"));
+        WIDGET_ACTIONS.put("notify_pager_changed", new WA(
+                "ViewPagerNotifyOnDtatChange", "viewpager", "",
+                ".notifyDataSetChanged(", "Tell {t} its pages "
+                + "changed"));
+        WIDGET_ACTIONS.put("recycler_layout", new WA(
+                "recyclerSetLayoutManager", "recyclerview", "",
+                ".setLayoutManager(new LinearLayoutManager(this));",
+                "Give {t} a vertical scrolling layout"));
+        WIDGET_ACTIONS.put("recycler_layout_horizontal", new WA(
+                "recyclerSetLayoutManagerHorizontal", "recyclerview",
+                "", ".setLayoutManager(new LinearLayoutManager(this,",
+                "Give {t} a horizontal scrolling layout"));
+        WIDGET_ACTIONS.put("recycler_fixed_size", new WA(
+                "recyclerSetHasFixedSize", "recyclerview", "b",
+                ".setHasFixedSize(", "Set {t} fixed size to {1}"));
+        WIDGET_ACTIONS.put("recycler_scroll_to", new WA(
+                "recyclerSmoothScrollToPosition", "recyclerview", "d",
+                ".smoothScrollToPosition(", "Scroll {t} smoothly to "
+                + "item {1}"));
+        WIDGET_ACTIONS.put("recycler_scroll_offset", new WA(
+                "recyclerScrollToPositionWithOffset", "recyclerview",
+                "dd", ".scrollToPositionWithOffset(",
+                "Scroll {t} to item {1} with offset {2}"));
+        WIDGET_ACTIONS.put("grid_columns", new WA("gridSetNumColumns",
+                "gridview", "d", ".setNumColumns(",
+                "Set {t} to {1} columns"));
+        WIDGET_ACTIONS.put("grid_column_width", new WA(
+                "gridSetColumnWidth", "gridview", "d",
+                ".setColumnWidth(", "Set {t} column width to {1}"));
+        WIDGET_ACTIONS.put("grid_spacing_h", new WA(
+                "gridSetHorizontalSpacing", "gridview", "d",
+                ".setHorizontalSpacing(", "Set {t} horizontal "
+                + "spacing to {1}"));
+        WIDGET_ACTIONS.put("grid_spacing_v", new WA(
+                "gridSetVerticalSpacing", "gridview", "d",
+                ".setVerticalSpacing(", "Set {t} vertical spacing "
+                + "to {1}"));
+        WIDGET_ACTIONS.put("grid_stretch_mode", new WA(
+                "gridSetStretchMode", "gridview", "m",
+                ".setStretchMode(GridView.", "Set {t} stretch mode "
+                + "to {1}"));
+        WIDGET_ACTIONS.put("add_tab", new WA("addTab",
+                "tablayout", "s", ".addTab(",
+                "Add a tab titled “{1}” to {t}"));
+        WIDGET_ACTIONS.put("set_tab_colors", new WA("setTabTextColors",
+                "tablayout", "cc", ".setTabTextColors(",
+                "Set {t} tab text colours to {1} and {2}"));
+        WIDGET_ACTIONS.put("set_tab_indicator_color", new WA(
+                "setSelectedTabIndicatorColor", "tablayout", "c",
+                ".setSelectedTabIndicatorColor(",
+                "Set {t} selected-tab line colour to {1}"));
+        WIDGET_ACTIONS.put("set_tab_indicator_height", new WA(
+                "setSelectedTabIndicatorHeight", "tablayout", "d",
+                ".setSelectedTabIndicatorHeight(",
+                "Set {t} selected-tab line height to {1}"));
+        WIDGET_ACTIONS.put("set_tab_ripple_color", new WA(
+                "setTabRippleColor", "tablayout", "c",
+                ".setTabRippleColor(", "Set {t} tab ripple colour "
+                + "to {1}"));
+        WIDGET_ACTIONS.put("set_inline_label", new WA("setInlineLabel",
+                "tablayout", "b", ".setInlineLabel(",
+                "Set {t} labels inline: {1}"));
+        WIDGET_ACTIONS.put("setup_with_pager", new WA("setupWithViewPager",
+                "tablayout", "w", ".setupWithViewPager(",
+                "Link {t} with the pager {1}"));
+        WIDGET_ACTIONS.put("set_card_color", new WA(
+                "setCardBackgroundColor", "cardview", "c",
+                ".setCardBackgroundColor(", "Set {t} card colour "
+                + "to {1}"));
+        WIDGET_ACTIONS.put("set_card_elevation", new WA("setCardElevation",
+                "cardview", "d", ".setCardElevation(",
+                "Set {t} card elevation to {1}"));
+        WIDGET_ACTIONS.put("set_card_radius", new WA("setCardRadius",
+                "cardview", "d", ".setRadius(",
+                "Set {t} corner radius to {1}"));
+        WIDGET_ACTIONS.put("set_prevent_overlap", new WA(
+                "setPreventCornerOverlap", "cardview", "b",
+                ".setPreventCornerOverlap(",
+                "Set {t} corner-overlap prevention to {1}"));
+        WIDGET_ACTIONS.put("set_compat_padding", new WA(
+                "setUseCompatPadding", "cardview", "b",
+                ".setUseCompatPadding(", "Set {t} compat padding "
+                + "to {1}"));
+        WIDGET_ACTIONS.put("set_picker_hour", new WA("timepickerSetHour",
+                "timepicker", "d", ".setHour(",
+                "Set {t} hour to {1}"));
+        WIDGET_ACTIONS.put("set_picker_minute", new WA(
+                "timepickerSetMinute", "timepicker", "d", ".setMinute(",
+                "Set {t} minute to {1}"));
+        WIDGET_ACTIONS.put("set_24hour", new WA("timepickerSetIs24Hour",
+                "timepicker", "b", ".setIs24HourView(",
+                "Set {t} to 24-hour view: {1}"));
+        WIDGET_ACTIONS.put("set_calendar_date", new WA(
+                "calendarViewSetDate", "calendarview", "d", ".setDate(",
+                "Set {t} to the date at {1} milliseconds"));
+        WIDGET_ACTIONS.put("set_calendar_min_date", new WA(
+                "calendarViewSetMinDate", "calendarview", "d",
+                ".setMinDate(", "Set {t} earliest date to {1} "
+                + "milliseconds"));
+        WIDGET_ACTIONS.put("set_calendar_max_date", new WA(
+                "calnedarViewSetMaxDate", "calendarview", "d",
+                ".setMaxDate(", "Set {t} latest date to {1} "
+                + "milliseconds"));
+        WIDGET_ACTIONS.put("til_box_color", new WA("tilSetBoxBgColor",
+                "textinputlayout", "c", ".setBoxBackgroundColor(",
+                "Set {t} box colour to {1}"));
+        WIDGET_ACTIONS.put("til_box_stroke", new WA(
+                "tilSetBoxStrokeColor", "textinputlayout", "c",
+                ".setBoxStrokeColor(", "Set {t} box outline colour "
+                + "to {1}"));
+        WIDGET_ACTIONS.put("til_box_mode", new WA("tilSetBoxBgMode",
+                "textinputlayout", "m",
+                ".setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_",
+                "Set {t} box style to {1}"));
+        WIDGET_ACTIONS.put("til_corner_radii", new WA(
+                "tilSetBoxCornerRadii", "textinputlayout", "dddd",
+                ".setBoxCornerRadii(", "Set {t} box corners to {1}, "
+                + "{2}, {3}, {4}"));
+        WIDGET_ACTIONS.put("til_counter_enabled", new WA(
+                "tilSetCounterEnabled", "textinputlayout", "b",
+                ".setCounterEnabled(", "Set {t} character counter "
+                + "to {1}"));
+        WIDGET_ACTIONS.put("til_counter_max", new WA(
+                "tilSetCounterMaxLength", "textinputlayout", "d",
+                ".setCounterMaxLength(", "Set {t} character limit "
+                + "to {1}"));
+        WIDGET_ACTIONS.put("til_set_error", new WA("tilSetError",
+                "textinputlayout", "s", ".setError(",
+                "Show the error “{1}” on {t}"));
+        WIDGET_ACTIONS.put("til_error_enabled", new WA(
+                "tilSetErrorEnabled", "textinputlayout", "b",
+                ".setErrorEnabled(", "Set {t} error display to {1}"));
+        WIDGET_ACTIONS.put("set_badge_number", new WA("setBadgeNumber",
+                "badgeview", "d", ".setBadgeCount(",
+                "Set {t} badge number to {1}"));
+        WIDGET_ACTIONS.put("set_badge_text", new WA("setBadgeString",
+                "badgeview", "s", ".setBadgeCount(",
+                "Set {t} badge text to “{1}”"));
+        WIDGET_ACTIONS.put("set_badge_background", new WA(
+                "setBadgeBackground", "badgeview", "c",
+                ".setBadgeBackground(", "Set {t} badge colour to {1}"));
+        WIDGET_ACTIONS.put("set_badge_text_color", new WA(
+                "setBadgeTextColor", "badgeview", "c", ".setTextColor(",
+                "Set {t} badge text colour to {1}"));
+        WIDGET_ACTIONS.put("set_badge_text_size", new WA(
+                "setBadgeTextSize", "badgeview", "d", ".setTextSize(",
+                "Set {t} badge text size to {1}"));
+        WIDGET_ACTIONS.put("clear_pattern", new WA("patternLockClear",
+                "patternview", "", ".clearPattern(",
+                "Clear the pattern on {t}"));
+        WIDGET_ACTIONS.put("pattern_dot_count", new WA(
+                "patternSetDotCount", "patternview", "d",
+                ".setDotCount(", "Set {t} to {1} dots per side"));
+        WIDGET_ACTIONS.put("pattern_correct_color", new WA(
+                "patternSetCorrectStateColor", "patternview", "c",
+                ".setCorrectStateColor(", "Set {t} correct-pattern "
+                + "colour to {1}"));
+        WIDGET_ACTIONS.put("pattern_normal_color", new WA(
+                "patternSetNormalStateColor", "patternview", "c",
+                ".setNormalStateColor(", "Set {t} pattern colour "
+                + "to {1}"));
+        WIDGET_ACTIONS.put("pattern_wrong_color", new WA(
+                "patternSetWrongStateColor", "patternview", "c",
+                ".setWrongStateColor(", "Set {t} wrong-pattern "
+                + "colour to {1}"));
+        WIDGET_ACTIONS.put("pattern_view_mode", new WA(
+                "patternSetViewMode", "patternview", "m",
+                ".setViewMode(PatternLockView.PatternViewMode.",
+                "Set {t} pattern mode to {1}"));
+        WIDGET_ACTIONS.put("set_otp_text", new WA("otpViewSetOTPText",
+                "otpview", "s", ".setOTPText(",
+                "Set the code in {t} to “{1}”"));
+        WIDGET_ACTIONS.put("set_otp_field_count", new WA(
+                "otpViewSetFieldCount", "otpview", "d",
+                ".setFieldCount(", "Set {t} to {1} code boxes"));
+        WIDGET_ACTIONS.put("set_lottie_asset", new WA(
+                "lottieSetAnimationFromAsset", "lottie", "s",
+                ".setAnimation(", "Play the animation file “{1}” "
+                + "in {t}"));
+        WIDGET_ACTIONS.put("set_lottie_json", new WA(
+                "lottieSetAnimationFromJson", "lottie", "s",
+                ".setAnimationFromJson(", "Play an animation from "
+                + "JSON in {t}"));
+        WIDGET_ACTIONS.put("set_lottie_url", new WA(
+                "lottieSetAnimationFromUrl", "lottie", "s",
+                ".setAnimationFromUrl(", "Play the animation at "
+                + "“{1}” in {t}"));
+        WIDGET_ACTIONS.put("set_lottie_repeat", new WA(
+                "lottieSetRepeatCount", "lottie", "d",
+                ".setRepeatCount(", "Set {t} to repeat {1} times"));
+        WIDGET_ACTIONS.put("set_lottie_speed", new WA(
+                "lottieSetSpeed", "lottie", "d", ".setSpeed(",
+                "Set {t} animation speed to {1}"));
+        WIDGET_ACTIONS.put("set_code_text", new WA("codeviewSetCode",
+                "codeview", "s", ".setCode(",
+                "Put code into {t}"));
+        WIDGET_ACTIONS.put("apply_code", new WA("codeviewApply",
+                "codeview", "", ".apply();", "Apply the code in {t}"));
+        WIDGET_ACTIONS.put("set_code_language", new WA(
+                "codeviewSetLanguage", "codeview", "m",
+                ".setLanguage(Language.", "Set {t} language to {1}"));
+        WIDGET_ACTIONS.put("set_code_theme", new WA("codeviewSetTheme",
+                "codeview", "m", ".setTheme(Theme.",
+                "Set {t} theme to {1}"));
+        WIDGET_ACTIONS.put("map_zoom_in", new WA("mapViewZoomIn",
+                "mapview", "", "_controller.zoomIn();",
+                "Zoom in on {t}"));
+        WIDGET_ACTIONS.put("map_zoom_out", new WA("mapViewZoomOut",
+                "mapview", "", "_controller.zoomOut();",
+                "Zoom out on {t}"));
+        WIDGET_ACTIONS.put("map_zoom_to", new WA("mapViewZoomTo",
+                "mapview", "d", "_controller.zoomTo(",
+                "Zoom {t} to level {1}"));
+        WIDGET_ACTIONS.put("map_move_camera", new WA("mapViewMoveCamera",
+                "mapview", "dd", "_controller.moveCamera(",
+                "Move {t} camera to {1}, {2}"));
+        WIDGET_ACTIONS.put("map_add_marker", new WA("mapViewAddMarker",
+                "mapview", "sdd", "_controller.addMarker(",
+                "Add a marker titled “{1}” at {2}, {3} on {t}"));
+        WIDGET_ACTIONS.put("map_set_type", new WA("mapViewSetMapType",
+                "mapview", "m", "_controller.setMapType(GoogleMap.",
+                "Set {t} map type to {1}"));
+        WIDGET_ACTIONS.put("map_marker_position", new WA(
+                "mapViewSetMarkerPosition", "mapview", "sdd",
+                "_controller.setMarkerPosition(",
+                "Move the marker “{1}” to {2}, {3} on {t}"));
+        WIDGET_ACTIONS.put("map_marker_visible", new WA(
+                "mapViewSetMarkerVisible", "mapview", "sb",
+                "_controller.setMarkerVisible(",
+                "Set the marker “{1}” visible to {2} on {t}"));
+        WIDGET_ACTIONS.put("map_marker_info", new WA(
+                "mapViewSetMarkerInfo", "mapview", "sss",
+                "_controller.setMarkerInfo(",
+                "Set the marker “{1}” info to “{2}” / “{3}” on {t}"));
+        WIDGET_ACTIONS.put("set_refreshing", new WA("setRefreshing",
+                "swiperefresh", "b", ".setRefreshing(",
+                "Set {t} refreshing to {1}"));
+        WIDGET_ACTIONS.put("bottom_add_item", new WA("bottomMenuAddItem",
+                "bottomnavigation", "dsr", ".getMenu().add(",
+                "Add the item “{2}” to {t}"));
     }
 
     private AgentLogic() {
@@ -598,6 +889,69 @@ public final class AgentLogic {
             return bean;
         }
 
+        /**
+         * The result kind ('d' or 's') of a switch value, decided
+         * before building so the case blocks match the switch kind.
+         * Anything undecidable is refused honestly rather than
+         * guessed.
+         */
+        char switchValueKind(JsonElement element)
+                throws AgentTools.ToolException {
+            String what = "A switch needs a \"value\" that is a "
+                    + "number or a piece of text (a variable, a "
+                    + "number/text literal, or a simple function of "
+                    + "those)";
+            if (element == null || element.isJsonNull()) {
+                throw new AgentTools.ToolException("E_BAD_BLOCK", what);
+            }
+            if (element.isJsonPrimitive()) {
+                return element.getAsJsonPrimitive().isNumber()
+                        ? 'd' : 's';
+            }
+            if (!element.isJsonObject()) {
+                throw new AgentTools.ToolException("E_BAD_BLOCK", what);
+            }
+            JsonObject object = element.getAsJsonObject();
+            if (object.has("var")) {
+                String name = stringOf(object, "var");
+                requireVariable(variables, name);
+                int kind = variables.get(name);
+                if (kind == 1) return 'd';
+                if (kind == 2) return 's';
+                throw new AgentTools.ToolException("E_BAD_BLOCK",
+                        "A switch cannot switch on variable \"" + name
+                                + "\"'s kind of value.");
+            }
+            if (object.has("number")) return 'd';
+            if (object.has("text")) return 's';
+            if (object.has("op")) {
+                return 'd';
+            }
+            if (object.has("fn")) {
+                String fn = stringOf(object, "fn")
+                        .toLowerCase(Locale.ROOT);
+                return switch (fn) {
+                    case "concat", "upper", "lower", "trim",
+                            "substring", "substring_from", "to_text",
+                            "format_number", "reverse_text",
+                            "last_segment", "external_dir", "app_dir" ->
+                            's';
+                    case "contains", "matches", "is_empty",
+                            "starts_with", "ends_with" ->
+                            throw new AgentTools.ToolException(
+                                    "E_BAD_BLOCK", what);
+                    default -> 'd';
+                };
+            }
+            if (object.has("map_get") || object.has("text_of")
+                    || object.has("json_of_map")
+                    || object.has("json_of_list")
+                    || object.has("read_file")) {
+                return 's';
+            }
+            throw new AgentTools.ToolException("E_BAD_BLOCK", what);
+        }
+
         BlockBean buildStatement(JsonObject op, int depth)
                 throws AgentTools.ToolException {
             if (depth > MAX_DEPTH) {
@@ -674,6 +1028,154 @@ public final class AgentLogic {
                     allStatements.add(bean);
                     addExpect("break;", "Break out of the loop");
                     lines.add(indent(depth) + "Break out of the loop");
+                    return bean;
+                }
+                case "continue" -> {
+                    BlockBean bean = newBean("continue", "f");
+                    allStatements.add(bean);
+                    addExpect("continue;", "Skip to the next loop round");
+                    lines.add(indent(depth)
+                            + "Skip to the next loop round");
+                    return bean;
+                }
+                case "while" -> {
+                    // The Pro whileLoop container: while %b with one
+                    // sub-stack, emitted while(cond) { ... }.
+                    String condition = expr(op.get("condition"), 'b',
+                            "A while needs a \"condition\"");
+                    BlockBean bean = newBean("whileLoop", "c");
+                    bean.parameters.add(condition);
+                    allStatements.add(bean);
+                    addExpect("while(", "While "
+                            + describeExpr(op.get("condition")));
+                    lines.add(indent(depth) + "While "
+                            + describeExpr(op.get("condition")) + ":");
+                    ArrayList<BlockBean> body = buildList(
+                            arrayOf(op, "blocks"), depth + 1, "blocks");
+                    bean.subStack1 = Integer.parseInt(body.get(0).id);
+                    return bean;
+                }
+                case "try_catch" -> {
+                    // The Pro tryCatch (type e): try sub-stack 1,
+                    // catch sub-stack 2, no slots.
+                    BlockBean bean = newBean("tryCatch", "e");
+                    allStatements.add(bean);
+                    addExpect("try {", "Try, and catch errors");
+                    lines.add(indent(depth) + "Try:");
+                    ArrayList<BlockBean> body = buildList(
+                            arrayOf(op, "blocks"), depth + 1, "blocks");
+                    bean.subStack1 = Integer.parseInt(body.get(0).id);
+                    JsonArray catchArray = arrayOf(op, "catch");
+                    if (catchArray != null && !catchArray.isEmpty()) {
+                        lines.add(indent(depth) + "If that fails:");
+                        ArrayList<BlockBean> caught = buildList(
+                                catchArray, depth + 1, "catch");
+                        bean.subStack2 = Integer.parseInt(
+                                caught.get(0).id);
+                    }
+                    return bean;
+                }
+                case "switch" -> {
+                    // The Pro switch blocks: a switchNum/switchStr
+                    // container whose sub-stack is a chain of
+                    // caseNum/caseStr containers (and a defaultSwitch
+                    // last), each with its own sub-stack.
+                    JsonElement valueEl = op.get("value");
+                    char slot = switchValueKind(valueEl);
+                    String value = expr(valueEl, slot,
+                            "A switch needs a \"value\" to switch on");
+                    BlockBean bean = newBean(
+                            slot == 'd' ? "switchNum" : "switchStr",
+                            "c");
+                    bean.parameters.add(value);
+                    allStatements.add(bean);
+                    addExpect(slot == 'd' ? "switch((int)" : "switch(",
+                            "Switch on " + describeExpr(valueEl));
+                    lines.add(indent(depth) + "Switch on "
+                            + describeExpr(valueEl) + ":");
+                    JsonArray cases = arrayOf(op, "cases");
+                    if (cases == null || cases.isEmpty()) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "A switch needs a \"cases\" list: "
+                                        + "[{\"match\":...,\"blocks\":"
+                                        + "[...]}].");
+                    }
+                    if (cases.size() > 12) {
+                        throw new AgentTools.ToolException(
+                                "E_BLOCKS_LIMIT",
+                                "At most 12 cases in one switch.");
+                    }
+                    BlockBean previous = null;
+                    BlockBean first = null;
+                    for (JsonElement element : cases) {
+                        if (!element.isJsonObject()) {
+                            throw new AgentTools.ToolException(
+                                    "E_BAD_BLOCK",
+                                    "Every case must be an object "
+                                            + "like {\"match\":1,"
+                                            + "\"blocks\":[...]}.");
+                        }
+                        JsonObject caseOp = element.getAsJsonObject();
+                        if (++total > MAX_TOTAL) {
+                            throw new AgentTools.ToolException(
+                                    "E_BLOCKS_LIMIT",
+                                    "At most " + MAX_TOTAL
+                                            + " blocks per handler.");
+                        }
+                        BlockBean caseBean = newBean(
+                                slot == 'd' ? "caseNum" : "caseStr",
+                                "c");
+                        caseBean.parameters.add(expr(
+                                caseOp.get("match"), slot,
+                                "A case needs a \"match\" value"));
+                        allStatements.add(caseBean);
+                        lines.add(indent(depth + 1) + "When it is "
+                                + describeExpr(caseOp.get("match"))
+                                + ":");
+                        JsonArray body = arrayOf(caseOp, "blocks");
+                        if (body != null && !body.isEmpty()) {
+                            ArrayList<BlockBean> bodyHeads = buildList(
+                                    body, depth + 2, "case blocks");
+                            caseBean.subStack1 = Integer.parseInt(
+                                    bodyHeads.get(0).id);
+                        }
+                        if (first == null) {
+                            first = caseBean;
+                        }
+                        if (previous != null) {
+                            previous.nextBlock = Integer.parseInt(
+                                    caseBean.id);
+                        }
+                        previous = caseBean;
+                    }
+                    JsonArray defaultBody = arrayOf(op, "default");
+                    if (defaultBody != null && !defaultBody.isEmpty()) {
+                        if (++total > MAX_TOTAL) {
+                            throw new AgentTools.ToolException(
+                                    "E_BLOCKS_LIMIT",
+                                    "At most " + MAX_TOTAL
+                                            + " blocks per handler.");
+                        }
+                        BlockBean defaultBean = newBean("defaultSwitch",
+                                "c");
+                        allStatements.add(defaultBean);
+                        lines.add(indent(depth + 1) + "Otherwise:");
+                        ArrayList<BlockBean> bodyHeads = buildList(
+                                defaultBody, depth + 2,
+                                "default blocks");
+                        defaultBean.subStack1 = Integer.parseInt(
+                                bodyHeads.get(0).id);
+                        if (first == null) {
+                            first = defaultBean;
+                        }
+                        if (previous != null) {
+                            previous.nextBlock = Integer.parseInt(
+                                    defaultBean.id);
+                        }
+                        previous = defaultBean;
+                    }
+                    bean.subStack1 = Integer.parseInt(first.id);
                     return bean;
                 }
                 case "open_screen" -> {
@@ -1301,6 +1803,36 @@ public final class AgentLogic {
                                 'd', what));
                         return "@" + bean.id;
                     }
+                    case "choose" -> {
+                        // The ternary reporters: %b ? %d : %d or
+                        // %b ? %s : %s depending on the slot it
+                        // feeds (ternaryNumber/ternaryString).
+                        if (slot != 'd' && slot != 's') {
+                            throw badValue(what, "a chosen value is "
+                                    + "a number or text and does not "
+                                    + "fit here");
+                        }
+                        BlockBean bean = newBean(
+                                slot == 'd' ? "ternaryNumber"
+                                        : "ternaryString",
+                                String.valueOf(slot));
+                        bean.parameters.add(expr(
+                                object.get("condition"), 'b', what));
+                        bean.parameters.add(expr(object.get("a"),
+                                slot, what));
+                        bean.parameters.add(expr(object.get("b"),
+                                slot, what));
+                        return "@" + bean.id;
+                    }
+                    case "drawer_open" -> {
+                        if (slot != 'b') {
+                            throw badValue(what, "whether the drawer "
+                                    + "is open is true/false and does "
+                                    + "not fit here");
+                        }
+                        BlockBean bean = newBean("isDrawerOpen", "b");
+                        return "@" + bean.id;
+                    }
                     case "sin", "cos", "tan", "asin", "acos", "atan",
                             "exp", "log", "log10", "to_degrees",
                             "to_radians", "dip" -> {
@@ -1512,7 +2044,11 @@ public final class AgentLogic {
                     || object.has("video_playing")
                     || object.has("web_progress_of")
                     || object.has("can_go_back")
-                    || object.has("can_go_forward")) {
+                    || object.has("can_go_forward")
+                    || object.has("badge_count_of")
+                    || object.has("otp_text_of")
+                    || object.has("counter_max_of")
+                    || object.has("page_limit_of")) {
                 // Widget geometry/state reporters (View page):
                 // getWidth/getHeight/getAlpha/getRotation/getScaleX/
                 // getScaleY/getTranslationX/getTranslationY for any
@@ -1528,7 +2064,9 @@ public final class AgentLogic {
                         "selection_end_of", "video_position_of",
                         "video_duration_of", "video_playing",
                         "web_progress_of", "can_go_back",
-                        "can_go_forward"}) {
+                        "can_go_forward", "badge_count_of",
+                        "otp_text_of", "counter_max_of",
+                        "page_limit_of"}) {
                     if (object.has(candidate)) {
                         key = candidate;
                         break;
@@ -1543,7 +2081,8 @@ public final class AgentLogic {
                 String typeName = AgentEdits.typeName(widget.type);
                 char needed = "video_playing".equals(key)
                         || "can_go_back".equals(key)
-                        || "can_go_forward".equals(key) ? 'b' : 'd';
+                        || "can_go_forward".equals(key) ? 'b'
+                        : "otp_text_of".equals(key) ? 's' : 'd';
                 if (slot != needed) {
                     throw badValue(what, "that value does not fit here");
                 }
@@ -1625,9 +2164,25 @@ public final class AgentLogic {
                         opCode = "webViewCanGoBack";
                         yield "WebView";
                     }
-                    default -> {
+                    case "can_go_forward" -> {
                         opCode = "webViewCanGoForward";
                         yield "WebView";
+                    }
+                    case "badge_count_of" -> {
+                        opCode = "getBadgeCount";
+                        yield "BadgeView";
+                    }
+                    case "otp_text_of" -> {
+                        opCode = "otpViewGetOTPText";
+                        yield "OTPView";
+                    }
+                    case "counter_max_of" -> {
+                        opCode = "tilGetCounterMaxLength";
+                        yield "TextInputLayout";
+                    }
+                    default -> {
+                        opCode = "pagerGetOffscreenPageLimit";
+                        yield "ViewPager";
                     }
                 };
                 if (!family.isEmpty() && !family.equals(typeName)) {
@@ -1893,6 +2448,12 @@ public final class AgentLogic {
                     case "substring_from" -> "part of "
                             + describeExpr(object.get("a")) + " from "
                             + describeExpr(object.get("from"));
+                    case "choose" -> describeExpr(object.get("a"))
+                            + " if "
+                            + describeExpr(object.get("condition"))
+                            + ", otherwise "
+                            + describeExpr(object.get("b"));
+                    case "drawer_open" -> "the drawer is open";
                     case "display_width" -> "the screen width";
                     case "display_height" -> "the screen height";
                     case "e" -> "e (2.718…)";
@@ -1983,7 +2544,9 @@ public final class AgentLogic {
                     "selection_end_of", "video_position_of",
                     "video_duration_of", "video_playing",
                     "web_progress_of", "can_go_back",
-                    "can_go_forward"}) {
+                    "can_go_forward", "badge_count_of",
+                    "otp_text_of", "counter_max_of",
+                    "page_limit_of"}) {
                 if (object.has(key)) {
                     String label = switch (key) {
                         case "width_of" -> "width";
@@ -2005,6 +2568,10 @@ public final class AgentLogic {
                         case "video_playing" -> "playing state";
                         case "web_progress_of" -> "loading progress";
                         case "can_go_back" -> "can-go-back state";
+                        case "badge_count_of" -> "badge count";
+                        case "otp_text_of" -> "entered code";
+                        case "counter_max_of" -> "character limit";
+                        case "page_limit_of" -> "page limit";
                         default -> "can-go-forward state";
                     };
                     return "the " + label + " of "
@@ -2090,7 +2657,8 @@ public final class AgentLogic {
                         .toLowerCase(Locale.ROOT);
                 return "contains".equals(fn) || "starts_with".equals(fn)
                         || "ends_with".equals(fn) || "matches".equals(fn)
-                        || "is_empty".equals(fn);
+                        || "is_empty".equals(fn)
+                        || "drawer_open".equals(fn);
             }
             if (object.has("var")) {
                 Integer kind = variables.get(stringOf(object, "var"));
@@ -2325,6 +2893,12 @@ public final class AgentLogic {
         }
         if (kind.isEmpty()) {
             // Shape alone names some blocks unambiguously.
+            if (op.has("cases")) {
+                return "switch";
+            }
+            if (op.has("catch")) {
+                return "try_catch";
+            }
             if (op.has("condition")) {
                 return op.has("else") ? "if_else" : "if";
             }
@@ -2349,6 +2923,8 @@ public final class AgentLogic {
             case "decreaseint" -> "decrease";
             case "finishactivity" -> "finish";
             case "ifelse" -> "if_else";
+            case "whileloop" -> "while";
+            case "trycatch" -> "try_catch";
             case "writefile", "fileutilwrite" -> "write_file";
             case "deletefile", "fileutildelete" -> "delete_file";
             case "makedir", "makefolder", "fileutilmakedir" ->
@@ -3527,6 +4103,25 @@ public final class AgentLogic {
             case "actv" -> "AutoCompleteTextView".equals(typeName);
             case "mactv" -> "MultiAutoCompleteTextView".equals(typeName);
             case "videoview" -> "VideoView".equals(typeName);
+            case "listview" -> "ListView".equals(typeName);
+            case "recyclerview" -> "RecyclerView".equals(typeName);
+            case "gridview" -> "GridView".equals(typeName);
+            case "spinner" -> "Spinner".equals(typeName);
+            case "viewpager" -> "ViewPager".equals(typeName);
+            case "tablayout" -> "TabLayout".equals(typeName);
+            case "cardview" -> "CardView".equals(typeName);
+            case "timepicker" -> "TimePicker".equals(typeName);
+            case "calendarview" -> "CalendarView".equals(typeName);
+            case "textinputlayout" -> "TextInputLayout".equals(typeName);
+            case "badgeview" -> "BadgeView".equals(typeName);
+            case "patternview" -> "PatternLockView".equals(typeName);
+            case "otpview" -> "OTPView".equals(typeName);
+            case "lottie" -> "LottieAnimationView".equals(typeName);
+            case "codeview" -> "CodeView".equals(typeName);
+            case "mapview" -> "MapView".equals(typeName);
+            case "swiperefresh" -> "SwipeRefreshLayout".equals(typeName);
+            case "bottomnavigation" ->
+                    "BottomNavigationView".equals(typeName);
             default -> false;
         };
         if (!familyOk) {
@@ -3541,13 +4136,16 @@ public final class AgentLogic {
         String sentence = action.sentence.replace("{t}", widget.id);
         int numberField = 0;
         int colourField = 0;
+        int textField = 0;
         for (int i = 0; i < action.args.length(); i++) {
             char arg = action.args.charAt(i);
             String shown;
             switch (arg) {
                 case 'd' -> {
-                    String field = numberField++ == 0 ? "value"
-                            : "value2";
+                    String[] fields = {"value", "value2", "value3",
+                            "value4"};
+                    String field = fields[Math.min(numberField++,
+                            fields.length - 1)];
                     String value = stringOf(op, field);
                     try {
                         Double.parseDouble(value);
@@ -3561,8 +4159,11 @@ public final class AgentLogic {
                     shown = value;
                 }
                 case 's' -> {
-                    String text = stringOf(op, "text");
-                    if (text.isEmpty()) {
+                    String[] fields = {"text", "text2", "text3"};
+                    String field = fields[Math.min(textField++,
+                            fields.length - 1)];
+                    String text = stringOf(op, field);
+                    if (text.isEmpty() && "text".equals(field)) {
                         text = stringOf(op, "url");
                     }
                     stmt.params.add(text);

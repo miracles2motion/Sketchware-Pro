@@ -8,7 +8,7 @@ Every stock block in Sketchware Pro, extracted 2026-10-19 from the app's own sou
 - Statements: 374 · number/text/boolean values: 168 · containers: 29 · end/stop: 6
 - Blocks with a generator case in `Fx`: 316; with spec/code in Pro block data: 279; with a known slot layout: 554
 - Blocks gated behind a component on the screen's component list: 109
-- Agent-known today (opCode emitted by `AgentLogic`/`AgentTools`): 228
+- Agent-known today (opCode emitted by `AgentLogic`/`AgentTools`): 328
 
 Params use the app's slot tokens: `%s` text, `%d` number, `%b` boolean, `%m.x` picker (widget/variable/component of kind x). Emission = the Java the app generates (truncated). ✔ = agent can already build it.
 
@@ -88,12 +88,12 @@ Params use the app's slot tokens: `%s` text, `%d` number, `%b` boolean, `%m.x` p
 |---|---|---|---|---|---|
 | `RepeatKnownNumDescending` | container | %d %s.inputOnly | — | `for (int %2$s = ((int) %1$s - 1); %2$s > -1; %2$s--) { %3$s }` |  |
 | `break` | end/stop | — | — | `app logic: break;` | ✔ have |
-| `caseNum` | container | %d | — | `case ((int)%s): { %s break; }` |  |
+| `caseNum` | container | %d | — | `case ((int)%s): { %s break; }` | ✔ have |
 | `caseNumAnd` | statement | %d | — | `case ((int)%s):` |  |
-| `caseStr` | container | %s | — | `case %s: { %s break; }` |  |
+| `caseStr` | container | %s | — | `case %s: { %s break; }` | ✔ have |
 | `caseStrAnd` | statement | %s | — | `case %s:` |  |
-| `continue` | end/stop | — | — | `continue;` |  |
-| `defaultSwitch` | container | — | — | `default: { %s break; }` |  |
+| `continue` | end/stop | — | — | `continue;` | ✔ have |
+| `defaultSwitch` | container | — | — | `default: { %s break; }` | ✔ have |
 | `forever` | container | — | — | `while(true) { %s }` | ✔ have |
 | `if` | container | %b | — | `if (%s) { %s }` | ✔ have |
 | `ifElse` | if-else | %b | — | `if (%s) { %s } else { %s }` | ✔ have |
@@ -108,12 +108,12 @@ Params use the app's slot tokens: `%s` text, `%d` number, `%b` boolean, `%m.x` p
 | `returnNumber` | statement | %d | — | `return (%s);` |  |
 | `returnString` | statement | %s | — | `return (%s);` |  |
 | `returnView` | statement | %m.view | — | `return %s;` |  |
-| `switchNum` | container | %d | — | `switch((int)%s) { %s }` |  |
-| `switchStr` | container | %s | — | `switch(%s) { %s }` |  |
-| `ternaryNumber` | number value | %b %d %d | — | `%s ? (int)%s : (int)%s` |  |
-| `ternaryString` | text value | %b %s %s | — | `%s ? %s : %s` |  |
-| `tryCatch` | if-else | — | — | `try { %s } catch (Exception e) { %s }` |  |
-| `whileLoop` | container | %b | — | `while(%s) { %s }` |  |
+| `switchNum` | container | %d | — | `switch((int)%s) { %s }` | ✔ have |
+| `switchStr` | container | %s | — | `switch(%s) { %s }` | ✔ have |
+| `ternaryNumber` | number value | %b %d %d | — | `%s ? (int)%s : (int)%s` | ✔ have |
+| `ternaryString` | text value | %b %s %s | — | `%s ? %s : %s` | ✔ have |
+| `tryCatch` | if-else | — | — | `try { %s } catch (Exception e) { %s }` | ✔ have |
+| `whileLoop` | container | %b | — | `while(%s) { %s }` | ✔ have |
 
 ## Operator (49)
 
@@ -249,31 +249,31 @@ Params use the app's slot tokens: `%s` text, `%d` number, `%b` boolean, `%m.x` p
 | `EditTextdiableSuggestion` | statement | %m.edittext | — | `%s.setInputType(InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);` | ✔ have |
 | `EdittextGetselectionEnd` | number value | %m.edittext | — | `%s.getSelectionEnd()` | ✔ have |
 | `EdittextGetselectionStart` | number value | %m.edittext | — | `%s.getSelectionStart()` | ✔ have |
-| `ListViewAddFooter` | statement | %m.listview %m.view %s %b | widget:ListView | `%s.addFooterView(%s,%s,%s);` |  |
-| `ListViewAddHeader` | statement | %m.listview %m.view %s %b | widget:ListView | `%s.addHeaderView(%s,%s,%s);` |  |
-| `ViewPagerNotifyOnDtatChange` | statement | %m.viewpager | widget:ViewPager | `((PagerAdapter)%s.getAdapter()).notifyDataSetChanged();` |  |
+| `ListViewAddFooter` | statement | %m.listview %m.view %s %b | widget:ListView | `%s.addFooterView(%s,%s,%s);` | ✔ have |
+| `ListViewAddHeader` | statement | %m.listview %m.view %s %b | widget:ListView | `%s.addHeaderView(%s,%s,%s);` | ✔ have |
+| `ViewPagerNotifyOnDtatChange` | statement | %m.viewpager | widget:ViewPager | `((PagerAdapter)%s.getAdapter()).notifyDataSetChanged();` | ✔ have |
 | `YTPVLifecycle` | statement | %m.youtubeview | widget:YoutubePlayerView | `getLifecycle().addObserver(%1$s);` |  |
 | `YTPVSetListener` | container | %m.youtubeview %s | widget:YoutubePlayerView | `%1$s.addYouTubePlayerListener(new AbstractYouTubePlayerListener() { @Override public void ` |  |
-| `addTab` | statement | %m.tablayout %s | widget:TabLayout | `%1$s.addTab(%1$s.newTab().setText(%2$s));` |  |
+| `addTab` | statement | %m.tablayout %s | widget:TabLayout | `%1$s.addTab(%1$s.newTab().setText(%2$s));` | ✔ have |
 | `addView` | statement | %m.view %m.view | — | `%s.addView(%s);` | ✔ have |
 | `addViews` | statement | %m.view %m.view %d | — | `%s.addView(%s, %s);` | ✔ have |
 | `autoComSetData` | statement | %m.actv %m.listStr | — | `%s.setAdapter(new ArrayAdapter<String>(getBaseContext(), android.R.layout.simple_list_item` | ✔ have |
 | `bannerAdViewLoadAd` | statement | %m.adview | widget: | `{ AdRequest adRequest = new AdRequest.Builder().build(); %1$s.loadAd(adRequest); }` |  |
-| `bottomMenuAddItem` | statement | %m.bottomnavigation %d %s %m.resource | widget:BottomNavigationView | `%s.getMenu().add(0, %s, 0, %s).setIcon(R.drawable.%s);` |  |
-| `calendarViewSetDate` | statement | %m.calendarview %d | widget:CalendarView | `app logic: %s.setDate((long)(%s), true, true);` |  |
-| `calendarViewSetMinDate` | statement | %m.calendarview %d | widget:CalendarView | `app logic: %s.setMinDate((long)(%s));` |  |
-| `calnedarViewSetMaxDate` | statement | %m.calendarview %d | widget:CalendarView | `app logic: %s.setMaxDate((long)(%s));` |  |
+| `bottomMenuAddItem` | statement | %m.bottomnavigation %d %s %m.resource | widget:BottomNavigationView | `%s.getMenu().add(0, %s, 0, %s).setIcon(R.drawable.%s);` | ✔ have |
+| `calendarViewSetDate` | statement | %m.calendarview %d | widget:CalendarView | `app logic: %s.setDate((long)(%s), true, true);` | ✔ have |
+| `calendarViewSetMinDate` | statement | %m.calendarview %d | widget:CalendarView | `app logic: %s.setMinDate((long)(%s));` | ✔ have |
+| `calnedarViewSetMaxDate` | statement | %m.calendarview %d | widget:CalendarView | `app logic: %s.setMaxDate((long)(%s));` | ✔ have |
 | `checkViewVisibility` | boolean value | %m.view %m.visible | — | `%s.getVisibility() == View.%s` |  |
 | `closeDrawer` | statement | — | widget: | `app logic: binding.Drawer.closeDrawer(GravityCompat.START);` | ✔ have |
-| `codeviewApply` | statement | %m.codeview | widget:CodeView | `%s.apply();` |  |
-| `codeviewSetCode` | statement | %m.codeview %s | widget:CodeView | `%s.setCode(%s);` |  |
-| `codeviewSetLanguage` | statement | %m.codeview %m.cv | widget:CodeView | `%s.setLanguage(Language.%s);` |  |
-| `codeviewSetTheme` | statement | %m.codeview %m.cv | widget:CodeView | `%s.setTheme(Theme.%s);` |  |
+| `codeviewApply` | statement | %m.codeview | widget:CodeView | `%s.apply();` | ✔ have |
+| `codeviewSetCode` | statement | %m.codeview %s | widget:CodeView | `%s.setCode(%s);` | ✔ have |
+| `codeviewSetLanguage` | statement | %m.codeview %m.cv | widget:CodeView | `%s.setLanguage(Language.%s);` | ✔ have |
+| `codeviewSetTheme` | statement | %m.codeview %m.cv | widget:CodeView | `%s.setTheme(Theme.%s);` | ✔ have |
 | `fabIcon` | statement | %m.resource | widget: | `app logic: \.9` |  |
 | `fabSize` | statement | %m.fabsize | widget: | `app logic: %s.setSize(FloatingActionButton.SIZE_%s);` |  |
 | `fabVisibility` | statement | %m.fabvisible | widget: | `app logic: %s.%s();` |  |
 | `getAlpha` | number value | %m.view | — | `%s.getAlpha()` | ✔ have |
-| `getBadgeCount` | number value | %m.badgeview | widget:BadgeView | `%s.getBadgeCount();` |  |
+| `getBadgeCount` | number value | %m.badgeview | widget:BadgeView | `%s.getBadgeCount();` | ✔ have |
 | `getChecked` | boolean value | %m.checkbox | — | `%s.isChecked()` | ✔ have |
 | `getEnable` | boolean value | %m.view | — | `%s.isEnabled()` | ✔ have |
 | `getHeight` | number value | %m.view | — | `%s.getHeight()` | ✔ have |
@@ -287,69 +287,69 @@ Params use the app's slot tokens: `%s` text, `%d` number, `%b` boolean, `%m.x` p
 | `getTranslationX` | number value | %m.view | — | `%s.getTranslationX()` | ✔ have |
 | `getTranslationY` | number value | %m.view | — | `%s.getTranslationY()` | ✔ have |
 | `getWidth` | number value | %m.view | — | `%s.getWidth()` | ✔ have |
-| `gridSetColumnWidth` | statement | %m.gridview %d | widget:GridView/GridView | `%s.setColumnWidth((int)%s);` |  |
+| `gridSetColumnWidth` | statement | %m.gridview %d | widget:GridView/GridView | `%s.setColumnWidth((int)%s);` | ✔ have |
 | `gridSetCustomViewData` | statement | %m.gridview %m.listMap | widget:GridView/GridView | `app logic: binding.` |  |
-| `gridSetHorizontalSpacing` | statement | %m.gridview %d | widget:GridView/GridView | `%s.setHorizontalSpacing((int)%s);` |  |
-| `gridSetNumColumns` | statement | %m.gridview %d | widget:GridView/GridView | `%s.setNumColumns((int)%s);` |  |
-| `gridSetStretchMode` | statement | %m.gridview %m.gridstretchmode | widget:GridView/GridView | `%s.setStretchMode(GridView.%s);` |  |
-| `gridSetVerticalSpacing` | statement | %m.gridview %d | widget:GridView/GridView | `%s.setVerticalSpacing((int)%s);` |  |
-| `isDrawerOpen` | boolean value | — | widget: | `app logic: binding.Drawer.isDrawerOpen(GravityCompat.START)` |  |
-| `listRefresh` | statement | %m.listview | widget:ListView | `app logic: ((BaseAdapter)%s.getAdapter()).notifyDataSetChanged();` |  |
+| `gridSetHorizontalSpacing` | statement | %m.gridview %d | widget:GridView/GridView | `%s.setHorizontalSpacing((int)%s);` | ✔ have |
+| `gridSetNumColumns` | statement | %m.gridview %d | widget:GridView/GridView | `%s.setNumColumns((int)%s);` | ✔ have |
+| `gridSetStretchMode` | statement | %m.gridview %m.gridstretchmode | widget:GridView/GridView | `%s.setStretchMode(GridView.%s);` | ✔ have |
+| `gridSetVerticalSpacing` | statement | %m.gridview %d | widget:GridView/GridView | `%s.setVerticalSpacing((int)%s);` | ✔ have |
+| `isDrawerOpen` | boolean value | — | widget: | `app logic: binding.Drawer.isDrawerOpen(GravityCompat.START)` | ✔ have |
+| `listRefresh` | statement | %m.listview | widget:ListView | `app logic: ((BaseAdapter)%s.getAdapter()).notifyDataSetChanged();` | ✔ have |
 | `listSetCustomViewData` | statement | %m.listview %m.listMap | widget:ListView | `app generator case (dynamic)` |  |
 | `listSetData` | statement | %m.listview %m.listStr | widget:ListView | `app logic: %s.setAdapter(new ArrayAdapter<String>(getBaseContext(), android.R.lay` | ✔ have |
-| `listSetStackFromBottom` | statement | %m.listview %b | widget:ListView | `%s.setStackFromBottom(%s);` |  |
-| `listSetTranscriptMode` | statement | %m.listview %m.transcriptmode | widget:ListView | `%s.setTranscriptMode(ListView.%s);` |  |
-| `listSmoothScrollTo` | statement | %m.listview %d | widget:ListView | `app logic: %s.smoothScrollToPosition((int)(%s));` |  |
-| `listViewRemoveFooter` | statement | %m.listview %m.view | widget:ListView | `%s.removeFooterView(%s);` |  |
-| `listViewRemoveHeader` | statement | %m.listview %m.view | widget:ListView | `%s.removeHeaderView(%s);` |  |
-| `listViewSetSelection` | statement | %m.listview %d | widget:ListView | `%s.setSelection((int)%s);` |  |
-| `lottieSetAnimationFromAsset` | statement | %m.lottie %s | widget:LottieAnimationView | `%s.setAnimation(%s);` |  |
-| `lottieSetAnimationFromJson` | statement | %m.lottie %s | widget:LottieAnimationView | `%s.setAnimationFromJson(%s);` |  |
-| `lottieSetAnimationFromUrl` | statement | %m.lottie %s | widget:LottieAnimationView | `%s.setAnimationFromUrl(%s);` |  |
-| `lottieSetRepeatCount` | statement | %m.lottie %d | widget:LottieAnimationView | `%s.setRepeatCount((int)%s);` |  |
-| `lottieSetSpeed` | statement | %m.lottie %d | widget:LottieAnimationView | `%s.setSpeed((float)%s);` |  |
-| `mapViewAddMarker` | statement | %m.mapview %s %d %d | widget:MapView | `app logic: _%s_controller.addMarker(%s, %s, %s);` |  |
-| `mapViewMoveCamera` | statement | %m.mapview %d %d | widget:MapView | `app logic: _%s_controller.moveCamera(%s, %s);` |  |
-| `mapViewSetMapType` | statement | %m.mapview %m.mapType | widget:MapView | `app logic: _%s_controller.setMapType(GoogleMap.%s);` |  |
+| `listSetStackFromBottom` | statement | %m.listview %b | widget:ListView | `%s.setStackFromBottom(%s);` | ✔ have |
+| `listSetTranscriptMode` | statement | %m.listview %m.transcriptmode | widget:ListView | `%s.setTranscriptMode(ListView.%s);` | ✔ have |
+| `listSmoothScrollTo` | statement | %m.listview %d | widget:ListView | `app logic: %s.smoothScrollToPosition((int)(%s));` | ✔ have |
+| `listViewRemoveFooter` | statement | %m.listview %m.view | widget:ListView | `%s.removeFooterView(%s);` | ✔ have |
+| `listViewRemoveHeader` | statement | %m.listview %m.view | widget:ListView | `%s.removeHeaderView(%s);` | ✔ have |
+| `listViewSetSelection` | statement | %m.listview %d | widget:ListView | `%s.setSelection((int)%s);` | ✔ have |
+| `lottieSetAnimationFromAsset` | statement | %m.lottie %s | widget:LottieAnimationView | `%s.setAnimation(%s);` | ✔ have |
+| `lottieSetAnimationFromJson` | statement | %m.lottie %s | widget:LottieAnimationView | `%s.setAnimationFromJson(%s);` | ✔ have |
+| `lottieSetAnimationFromUrl` | statement | %m.lottie %s | widget:LottieAnimationView | `%s.setAnimationFromUrl(%s);` | ✔ have |
+| `lottieSetRepeatCount` | statement | %m.lottie %d | widget:LottieAnimationView | `%s.setRepeatCount((int)%s);` | ✔ have |
+| `lottieSetSpeed` | statement | %m.lottie %d | widget:LottieAnimationView | `%s.setSpeed((float)%s);` | ✔ have |
+| `mapViewAddMarker` | statement | %m.mapview %s %d %d | widget:MapView | `app logic: _%s_controller.addMarker(%s, %s, %s);` | ✔ have |
+| `mapViewMoveCamera` | statement | %m.mapview %d %d | widget:MapView | `app logic: _%s_controller.moveCamera(%s, %s);` | ✔ have |
+| `mapViewSetMapType` | statement | %m.mapview %m.mapType | widget:MapView | `app logic: _%s_controller.setMapType(GoogleMap.%s);` | ✔ have |
 | `mapViewSetMarkerColor` | statement | %m.mapview %s %m.markerColor %d | widget:MapView | `app logic: _%s_controller.setMarkerColor(%s, BitmapDescriptorFactory.%s, %s);` |  |
 | `mapViewSetMarkerIcon` | statement | %m.mapview %s %m.resource | widget:MapView | `app logic: .9` |  |
-| `mapViewSetMarkerInfo` | statement | %m.mapview %s %s %s | widget:MapView | `app logic: _%s_controller.setMarkerInfo(%s, %s, %s);` |  |
-| `mapViewSetMarkerPosition` | statement | %m.mapview %s %d %d | widget:MapView | `app logic: _%s_controller.setMarkerPosition(%s, %s, %s);` |  |
-| `mapViewSetMarkerVisible` | statement | %m.mapview %s %b | widget:MapView | `app logic: _%s_controller.setMarkerVisible(%s, %s);` |  |
-| `mapViewZoomIn` | statement | %m.mapview | widget:MapView | `app logic: _%s_controller.zoomIn();` |  |
-| `mapViewZoomOut` | statement | %m.mapview | widget:MapView | `app logic: _%s_controller.zoomOut();` |  |
-| `mapViewZoomTo` | statement | %m.mapview %d | widget:MapView | `app logic: _%s_controller.zoomTo(%s);` |  |
+| `mapViewSetMarkerInfo` | statement | %m.mapview %s %s %s | widget:MapView | `app logic: _%s_controller.setMarkerInfo(%s, %s, %s);` | ✔ have |
+| `mapViewSetMarkerPosition` | statement | %m.mapview %s %d %d | widget:MapView | `app logic: _%s_controller.setMarkerPosition(%s, %s, %s);` | ✔ have |
+| `mapViewSetMarkerVisible` | statement | %m.mapview %s %b | widget:MapView | `app logic: _%s_controller.setMarkerVisible(%s, %s);` | ✔ have |
+| `mapViewZoomIn` | statement | %m.mapview | widget:MapView | `app logic: _%s_controller.zoomIn();` | ✔ have |
+| `mapViewZoomOut` | statement | %m.mapview | widget:MapView | `app logic: _%s_controller.zoomOut();` | ✔ have |
+| `mapViewZoomTo` | statement | %m.mapview %d | widget:MapView | `app logic: _%s_controller.zoomTo(%s);` | ✔ have |
 | `multiAutoComSetData` | statement | %m.mactv %m.listStr | — | `%s.setAdapter(new ArrayAdapter<String>(getBaseContext(), android.R.layout.simple_list_item` | ✔ have |
 | `onSwipeRefreshLayout` | container | %m.swiperefreshlayout | widget:SwipeRefreshLayout | `%s.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() { @Override public void` |  |
 | `openDrawer` | statement | — | widget: | `app logic: binding.Drawer.openDrawer(GravityCompat.START);` | ✔ have |
-| `otpViewGetOTPText` | text value | %m.otpview | widget:OTPView | `%1$s.getOTPText()` |  |
-| `otpViewSetFieldCount` | statement | %m.otpview %d | widget:OTPView | `%1$s.setFieldCount(%2$s);` |  |
+| `otpViewGetOTPText` | text value | %m.otpview | widget:OTPView | `%1$s.getOTPText()` | ✔ have |
+| `otpViewSetFieldCount` | statement | %m.otpview %d | widget:OTPView | `%1$s.setFieldCount(%2$s);` | ✔ have |
 | `otpViewSetOTPListener` | container | %m.otpview | widget:OTPView | `%1$s.setOTPListener(new OTPListener() { public void onOTPEntered(String _otp) { %2$s } });` |  |
-| `otpViewSetOTPText` | statement | %m.otpview %s | widget:OTPView | `%1$s.setOTPText(%2$s);` |  |
+| `otpViewSetOTPText` | statement | %m.otpview %s | widget:OTPView | `%1$s.setOTPText(%2$s);` | ✔ have |
 | `pagerGetCurrentItem` | number value | %m.viewpager | widget:ViewPager | `%s.getCurrentItem()` | ✔ have |
-| `pagerGetOffscreenPageLimit` | number value | %m.viewpager | widget:ViewPager | `%s.getOffscreenPageLimit()` |  |
-| `pagerSetCurrentItem` | statement | %m.viewpager %d | widget:ViewPager | `%s.setCurrentItem((int)%s);` |  |
+| `pagerGetOffscreenPageLimit` | number value | %m.viewpager | widget:ViewPager | `%s.getOffscreenPageLimit()` | ✔ have |
+| `pagerSetCurrentItem` | statement | %m.viewpager %d | widget:ViewPager | `%s.setCurrentItem((int)%s);` | ✔ have |
 | `pagerSetCustomViewData` | statement | %m.viewpager %m.listMap | widget:ViewPager | `app generator case (dynamic)` |  |
 | `pagerSetFragmentAdapter` | statement | %m.viewpager %m.fragmentAdapter %d | widget:ViewPager | `%2$s.setTabCount(%3$s); %1$s.setAdapter(%2$s);` |  |
-| `pagerSetOffscreenPageLimit` | statement | %m.viewpager %d | widget:ViewPager | `%s.setOffscreenPageLimit((int)%s);` |  |
-| `patternLockClear` | statement | %m.patternview | widget:PatternLockView | `%s.clearPattern();` |  |
-| `patternSetCorrectStateColor` | statement | %m.patternview %m.color | widget:PatternLockView | `%s.setCorrectStateColor(%s);` |  |
-| `patternSetDotCount` | statement | %m.patternview %d | widget:PatternLockView | `%s.setDotCount((int)%s);` |  |
-| `patternSetNormalStateColor` | statement | %m.patternview %m.color | widget:PatternLockView | `%s.setNormalStateColor(%s);` |  |
-| `patternSetViewMode` | statement | %m.patternview %m.patternviewmode | widget:PatternLockView | `%s.setViewMode(PatternLockView.PatternViewMode.%s);` |  |
-| `patternSetWrongStateColor` | statement | %m.patternview %m.color | widget:PatternLockView | `%s.setWrongStateColor(%s);` |  |
+| `pagerSetOffscreenPageLimit` | statement | %m.viewpager %d | widget:ViewPager | `%s.setOffscreenPageLimit((int)%s);` | ✔ have |
+| `patternLockClear` | statement | %m.patternview | widget:PatternLockView | `%s.clearPattern();` | ✔ have |
+| `patternSetCorrectStateColor` | statement | %m.patternview %m.color | widget:PatternLockView | `%s.setCorrectStateColor(%s);` | ✔ have |
+| `patternSetDotCount` | statement | %m.patternview %d | widget:PatternLockView | `%s.setDotCount((int)%s);` | ✔ have |
+| `patternSetNormalStateColor` | statement | %m.patternview %m.color | widget:PatternLockView | `%s.setNormalStateColor(%s);` | ✔ have |
+| `patternSetViewMode` | statement | %m.patternview %m.patternviewmode | widget:PatternLockView | `%s.setViewMode(PatternLockView.PatternViewMode.%s);` | ✔ have |
+| `patternSetWrongStateColor` | statement | %m.patternview %m.color | widget:PatternLockView | `%s.setWrongStateColor(%s);` | ✔ have |
 | `patternToMD5` | text value | %m.patternview %m.listStr | widget:PatternLockView | `PatternLockUtils.patternToMD5(%s, %s)` |  |
 | `patternToSha1` | text value | %m.patternview %m.listStr | widget:PatternLockView | `PatternLockUtils.patternToSha1(%s, %s)` |  |
 | `patternToString` | text value | %m.patternview %m.listStr | widget:PatternLockView | `PatternLockUtils.patternToString(%s, %s)` |  |
 | `performClick` | statement | %m.view | — | `%s.performClick();` | ✔ have |
 | `progressBarSetIndeterminate` | statement | %m.progressbar %b | — | `app logic: %s.setIndeterminate(%s);` | ✔ have |
-| `recyclerScrollToPositionWithOffset` | statement | %m.recyclerview %d %d | widget:RecyclerView | `((LinearLayoutManager) %s.getLayoutManager()).scrollToPositionWithOffset((int)%s, (int)%s)` |  |
+| `recyclerScrollToPositionWithOffset` | statement | %m.recyclerview %d %d | widget:RecyclerView | `((LinearLayoutManager) %s.getLayoutManager()).scrollToPositionWithOffset((int)%s, (int)%s)` | ✔ have |
 | `recyclerSetCustomViewData` | statement | %m.recyclerview %m.listMap | widget:RecyclerView | `app generator case (dynamic)` |  |
-| `recyclerSetHasFixedSize` | statement | %m.recyclerview %b | widget:RecyclerView | `%s.setHasFixedSize(%s);` |  |
-| `recyclerSetLayoutManager` | statement | %m.recyclerview | widget:RecyclerView | `%s.setLayoutManager(new LinearLayoutManager(this));` |  |
-| `recyclerSetLayoutManagerHorizontal` | statement | %m.recyclerview | widget:RecyclerView | `%s.setLayoutManager(new LinearLayoutManager(this,LinearLayoutManager.HORIZONTAL, false));` |  |
-| `recyclerSmoothScrollToPosition` | statement | %m.recyclerview %d | widget:RecyclerView | `%s.smoothScrollToPosition((int)%s);` |  |
-| `refreshingList` | statement | %m.listview | widget:ListView | `%s.invalidateViews();` |  |
+| `recyclerSetHasFixedSize` | statement | %m.recyclerview %b | widget:RecyclerView | `%s.setHasFixedSize(%s);` | ✔ have |
+| `recyclerSetLayoutManager` | statement | %m.recyclerview | widget:RecyclerView | `%s.setLayoutManager(new LinearLayoutManager(this));` | ✔ have |
+| `recyclerSetLayoutManagerHorizontal` | statement | %m.recyclerview | widget:RecyclerView | `%s.setLayoutManager(new LinearLayoutManager(this,LinearLayoutManager.HORIZONTAL, false));` | ✔ have |
+| `recyclerSmoothScrollToPosition` | statement | %m.recyclerview %d | widget:RecyclerView | `%s.smoothScrollToPosition((int)%s);` | ✔ have |
+| `refreshingList` | statement | %m.listview | widget:ListView | `%s.invalidateViews();` | ✔ have |
 | `removeView` | statement | %m.view %m.view | — | `%s.removeView(%s);` | ✔ have |
 | `removeViews` | statement | %m.view | — | `%s.removeAllViews();` | ✔ have |
 | `requestFocus` | statement | %m.view | — | `app logic: %s.requestFocus();` | ✔ have |
@@ -358,11 +358,11 @@ Params use the app's slot tokens: `%s` text, `%d` number, `%b` boolean, `%m.x` p
 | `seekBarSetMax` | statement | %m.seekbar %d | — | `app logic: %s.setMax((int)%s);` | ✔ have |
 | `seekBarSetProgress` | statement | %m.seekbar %d | — | `app logic: %s.setProgress((int)%s);` | ✔ have |
 | `setAlpha` | statement | %m.view %d | — | `app logic: %s.setAlpha((float)(%s));` | ✔ have |
-| `setBadgeBackground` | statement | %m.badgeview %m.color | widget:BadgeView | `%s.setBadgeBackground(%s);` |  |
-| `setBadgeNumber` | statement | %m.badgeview %d | widget:BadgeView | `%s.setBadgeCount(%s);` |  |
-| `setBadgeString` | statement | %m.badgeview %s | widget:BadgeView | `%s.setBadgeCount(%s);` |  |
-| `setBadgeTextColor` | statement | %m.badgeview %m.color | widget:BadgeView | `%s.setTextColor(%s);` |  |
-| `setBadgeTextSize` | statement | %m.badgeview %d | widget:BadgeView | `%s.setTextSize((int)%s);` |  |
+| `setBadgeBackground` | statement | %m.badgeview %m.color | widget:BadgeView | `%s.setBadgeBackground(%s);` | ✔ have |
+| `setBadgeNumber` | statement | %m.badgeview %d | widget:BadgeView | `%s.setBadgeCount(%s);` | ✔ have |
+| `setBadgeString` | statement | %m.badgeview %s | widget:BadgeView | `%s.setBadgeCount(%s);` | ✔ have |
+| `setBadgeTextColor` | statement | %m.badgeview %m.color | widget:BadgeView | `%s.setTextColor(%s);` | ✔ have |
+| `setBadgeTextSize` | statement | %m.badgeview %d | widget:BadgeView | `%s.setTextSize((int)%s);` | ✔ have |
 | `setBgColor` | statement | %m.view %m.color | — | `app logic: %s.setBackgroundColor(%s);` | ✔ have |
 | `setBgDrawable` | statement | %m.view %m.drawable | — | `%s.setBackgroundDrawable(getResources().getDrawable(R.drawable.%s));` | ✔ have |
 | `setBgResource` | statement | %m.view %m.resource_bg | — | `app logic: NONE` | ✔ have |
@@ -373,9 +373,9 @@ Params use the app's slot tokens: `%s` text, `%d` number, `%b` boolean, `%m.x` p
 | `setBubbleCornerRadius` | statement | %m.view %d | widget:BubbleLayout | `%s.setCornersRadius((float)%s);` |  |
 | `setBubbleStrokeColor` | statement | %m.view %m.color | widget:BubbleLayout | `%s.setStrokeColor(%s);` |  |
 | `setBubbleStrokeWidth` | statement | %m.view %d | widget:BubbleLayout | `%s.setStrokeWidth((float)%s);` |  |
-| `setCardBackgroundColor` | statement | %m.cardview %m.color | widget:CardView | `%s.setCardBackgroundColor(%s);` |  |
-| `setCardElevation` | statement | %m.cardview %d | widget:CardView | `%s.setCardElevation((float)%s);` |  |
-| `setCardRadius` | statement | %m.cardview %d | widget:CardView | `%s.setRadius((float)%s);` |  |
+| `setCardBackgroundColor` | statement | %m.cardview %m.color | widget:CardView | `%s.setCardBackgroundColor(%s);` | ✔ have |
+| `setCardElevation` | statement | %m.cardview %d | widget:CardView | `%s.setCardElevation((float)%s);` | ✔ have |
+| `setCardRadius` | statement | %m.cardview %d | widget:CardView | `%s.setRadius((float)%s);` | ✔ have |
 | `setChecked` | statement | %m.checkbox %b | — | `app logic: %s.setChecked(%s);` | ✔ have |
 | `setColorFilter` | statement | %m.imageview %m.color | — | `app logic: %s.setColorFilter(%s, PorterDuff.Mode.MULTIPLY);` | ✔ have |
 | `setColorFilterView` | statement | %m.view %m.color %m.porterduff | — | `%s.getBackground().setColorFilter(%s, PorterDuff.Mode.%s);` |  |
@@ -392,22 +392,22 @@ Params use the app's slot tokens: `%s` text, `%d` number, `%b` boolean, `%m.x` p
 | `setImageFilePath` | statement | %m.imageview %s | — | `app logic: ""` | ✔ have |
 | `setImageIdentifier` | statement | %m.imageview %s | — | `%s.setImageResource(getResources().getIdentifier(%s, drawable, getPackageName()));` | ✔ have |
 | `setImageUrl` | statement | %m.imageview %s | — | `app logic: ""` | ✔ have |
-| `setInlineLabel` | statement | %m.tablayout %b | widget:TabLayout | `%s.setInlineLabel(%s);` |  |
+| `setInlineLabel` | statement | %m.tablayout %b | widget:TabLayout | `%s.setInlineLabel(%s);` | ✔ have |
 | `setNumStars` | statement | %m.ratingbar %d | — | `%s.setNumStars((int)%s);` | ✔ have |
-| `setPreventCornerOverlap` | statement | %m.cardview %b | widget:CardView | `%s.setPreventCornerOverlap(%s);` |  |
+| `setPreventCornerOverlap` | statement | %m.cardview %b | widget:CardView | `%s.setPreventCornerOverlap(%s);` | ✔ have |
 | `setRadiusAndStrokeView` | statement | %m.view %d %d %m.color %m.color | — | `%s.setBackground(new GradientDrawable() { public GradientDrawable getIns(int a, int b, int` | ✔ have |
 | `setRating` | statement | %m.ratingbar %d | — | `%s.setRating((float)%s);` | ✔ have |
 | `setRecyclerViewLayoutParams` | statement | %m.LayoutParam %m.LayoutParam | — | `RecyclerView.LayoutParams _lp = new RecyclerView.LayoutParams(ViewGroup.LayoutParams.%s, V` |  |
-| `setRefreshing` | statement | %m.swiperefreshlayout %b | widget:SwipeRefreshLayout | `%s.setRefreshing(%s);` |  |
+| `setRefreshing` | statement | %m.swiperefreshlayout %b | widget:SwipeRefreshLayout | `%s.setRefreshing(%s);` | ✔ have |
 | `setRotate` | statement | %m.view %d | — | `app logic: %s.setRotation((float)(%s));` | ✔ have |
 | `setScaleX` | statement | %m.view %d | — | `app logic: %s.setScaleX((float)(%s));` | ✔ have |
 | `setScaleY` | statement | %m.view %d | — | `app logic: %s.setScaleY((float)(%s));` | ✔ have |
-| `setSelectedTabIndicatorColor` | statement | %m.tablayout %m.color | widget:TabLayout | `%s.setSelectedTabIndicatorColor(%s);` |  |
-| `setSelectedTabIndicatorHeight` | statement | %m.tablayout %d | widget:TabLayout | `%s.setSelectedTabIndicatorHeight(%s);` |  |
+| `setSelectedTabIndicatorColor` | statement | %m.tablayout %m.color | widget:TabLayout | `%s.setSelectedTabIndicatorColor(%s);` | ✔ have |
+| `setSelectedTabIndicatorHeight` | statement | %m.tablayout %d | widget:TabLayout | `%s.setSelectedTabIndicatorHeight(%s);` | ✔ have |
 | `setStepSize` | statement | %m.ratingbar %d | — | `%s.setStepSize((float)%s);` | ✔ have |
 | `setStrokeView` | statement | %m.view %d %m.color %m.color | — | `%s.setBackground(new GradientDrawable() { public GradientDrawable getIns(int a, int b, int` | ✔ have |
-| `setTabRippleColor` | statement | %m.tablayout %m.color | widget:TabLayout | `%s.setTabRippleColor(new android.content.res.ColorStateList(new int[][]{new int[]{android.` |  |
-| `setTabTextColors` | statement | %m.tablayout %m.color %m.color | widget:TabLayout | `%s.setTabTextColors(%s, %s);` |  |
+| `setTabRippleColor` | statement | %m.tablayout %m.color | widget:TabLayout | `%s.setTabRippleColor(new android.content.res.ColorStateList(new int[][]{new int[]{android.` | ✔ have |
+| `setTabTextColors` | statement | %m.tablayout %m.color %m.color | widget:TabLayout | `%s.setTabTextColors(%s, %s);` | ✔ have |
 | `setText` | statement | %m.textview %s | — | `app logic: %s.setText(%s);` | ✔ have |
 | `setTextColor` | statement | %m.textview %m.color | — | `app logic: %s.setTextColor(%s);` | ✔ have |
 | `setTextSize` | statement | %m.textview %d | — | `%s.setTextSize((int)%s);` | ✔ have |
@@ -416,31 +416,31 @@ Params use the app's slot tokens: `%s` text, `%d` number, `%b` boolean, `%m.x` p
 | `setTranslationX` | statement | %m.view %d | — | `app logic: %s.setTranslationX((float)(%s));` | ✔ have |
 | `setTranslationY` | statement | %m.view %d | — | `app logic: %s.setTranslationY((float)(%s));` | ✔ have |
 | `setTypeface` | statement | %m.textview %m.font %m.typeface | — | `app logic: property_text_style` |  |
-| `setUseCompatPadding` | statement | %m.cardview %b | widget:CardView | `%s.setUseCompatPadding(%s);` |  |
+| `setUseCompatPadding` | statement | %m.cardview %b | widget:CardView | `%s.setUseCompatPadding(%s);` | ✔ have |
 | `setVisible` | statement | %m.view %m.visible | — | `app logic: %s.setVisibility(View.%s);` | ✔ have |
-| `setupWithViewPager` | statement | %m.tablayout %m.viewpager | widget:TabLayout | `%s.setupWithViewPager(%s);` |  |
+| `setupWithViewPager` | statement | %m.tablayout %m.viewpager | widget:TabLayout | `%s.setupWithViewPager(%s);` | ✔ have |
 | `showSnackbar` | container | %m.view %s %s | — | `com.google.android.material.snackbar.Snackbar.make(%s, %s, com.google.android.material.sna` |  |
 | `signInButtonSetColorScheme` | statement | %m.signinbutton %m.SignButtonColor | widget:SignInButton | `%1$s.setColorScheme(SignInButton.%2$s);` |  |
 | `signInButtonSetSize` | statement | %m.signinbutton %m.SignButtonSize | widget:SignInButton | `%1$s.setSize(SignInButton.%2$s);` |  |
 | `spnGetSelection` | number value | %m.spinner | widget:Spinner | `%s.getSelectedItemPosition()` | ✔ have |
-| `spnRefresh` | statement | %m.spinner | widget:Spinner | `app logic: ((ArrayAdapter)%s.getAdapter()).notifyDataSetChanged();` |  |
+| `spnRefresh` | statement | %m.spinner | widget:Spinner | `app logic: ((ArrayAdapter)%s.getAdapter()).notifyDataSetChanged();` | ✔ have |
 | `spnSetCustomViewData` | statement | %m.spinner %m.listMap | widget:Spinner | `app generator case (dynamic)` |  |
-| `spnSetData` | statement | %m.spinner %m.listStr | widget:Spinner | `app logic: %s.setAdapter(new ArrayAdapter<String>(getBaseContext(), android.R.lay` |  |
-| `spnSetSelection` | statement | %m.spinner %d | widget:Spinner | `app logic: %s.setSelection((int)(%s));` |  |
-| `tilGetCounterMaxLength` | number value | %m.textinputlayout | widget:TextInputLayout/TextInputLayout | `%s.getCounterMaxLength()` |  |
-| `tilSetBoxBgColor` | statement | %m.textinputlayout %m.color | widget:TextInputLayout/TextInputLayout | `%s.setBoxBackgroundColor(%s);` |  |
-| `tilSetBoxBgMode` | statement | %m.textinputlayout %m.til | widget:TextInputLayout/TextInputLayout | `%s.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_%s);` |  |
-| `tilSetBoxCornerRadii` | statement | %m.textinputlayout %d %d %d %d | widget:TextInputLayout/TextInputLayout | `%s.setBoxCornerRadii((float)%s, (float)%s, (float)%s, (float)%s);` |  |
-| `tilSetBoxStrokeColor` | statement | %m.textinputlayout %m.color | widget:TextInputLayout/TextInputLayout | `%s.setBoxStrokeColor(%s);` |  |
-| `tilSetCounterEnabled` | statement | %m.textinputlayout %b | widget:TextInputLayout/TextInputLayout | `%s.setCounterEnabled(%s);` |  |
-| `tilSetCounterMaxLength` | statement | %m.textinputlayout %d | widget:TextInputLayout/TextInputLayout | `%s.setCounterMaxLength(%s);` |  |
-| `tilSetError` | statement | %m.textinputlayout %s | widget:TextInputLayout/TextInputLayout | `%s.setError(%s);` |  |
-| `tilSetErrorEnabled` | statement | %m.textinputlayout %b | widget:TextInputLayout/TextInputLayout | `%s.setErrorEnabled(%s);` |  |
+| `spnSetData` | statement | %m.spinner %m.listStr | widget:Spinner | `app logic: %s.setAdapter(new ArrayAdapter<String>(getBaseContext(), android.R.lay` | ✔ have |
+| `spnSetSelection` | statement | %m.spinner %d | widget:Spinner | `app logic: %s.setSelection((int)(%s));` | ✔ have |
+| `tilGetCounterMaxLength` | number value | %m.textinputlayout | widget:TextInputLayout/TextInputLayout | `%s.getCounterMaxLength()` | ✔ have |
+| `tilSetBoxBgColor` | statement | %m.textinputlayout %m.color | widget:TextInputLayout/TextInputLayout | `%s.setBoxBackgroundColor(%s);` | ✔ have |
+| `tilSetBoxBgMode` | statement | %m.textinputlayout %m.til | widget:TextInputLayout/TextInputLayout | `%s.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_%s);` | ✔ have |
+| `tilSetBoxCornerRadii` | statement | %m.textinputlayout %d %d %d %d | widget:TextInputLayout/TextInputLayout | `%s.setBoxCornerRadii((float)%s, (float)%s, (float)%s, (float)%s);` | ✔ have |
+| `tilSetBoxStrokeColor` | statement | %m.textinputlayout %m.color | widget:TextInputLayout/TextInputLayout | `%s.setBoxStrokeColor(%s);` | ✔ have |
+| `tilSetCounterEnabled` | statement | %m.textinputlayout %b | widget:TextInputLayout/TextInputLayout | `%s.setCounterEnabled(%s);` | ✔ have |
+| `tilSetCounterMaxLength` | statement | %m.textinputlayout %d | widget:TextInputLayout/TextInputLayout | `%s.setCounterMaxLength(%s);` | ✔ have |
+| `tilSetError` | statement | %m.textinputlayout %s | widget:TextInputLayout/TextInputLayout | `%s.setError(%s);` | ✔ have |
+| `tilSetErrorEnabled` | statement | %m.textinputlayout %b | widget:TextInputLayout/TextInputLayout | `%s.setErrorEnabled(%s);` | ✔ have |
 | `timepickerSetCurrentHour` | statement | %m.timepicker %d | widget:TimePicker | `%s.setCurrentHour((int)%s);` |  |
 | `timepickerSetCurrentMinute` | statement | %m.timepicker %d | widget:TimePicker | `%s.setCurrentMinute((int)%s);` |  |
-| `timepickerSetHour` | statement | %m.timepicker %d | widget:TimePicker | `%s.setHour((int)%s);` |  |
-| `timepickerSetIs24Hour` | statement | %m.timepicker %b | widget:TimePicker | `%s.setIs24HourView(%s);` |  |
-| `timepickerSetMinute` | statement | %m.timepicker %d | widget:TimePicker | `%s.setMinute((int)%s);` |  |
+| `timepickerSetHour` | statement | %m.timepicker %d | widget:TimePicker | `%s.setHour((int)%s);` | ✔ have |
+| `timepickerSetIs24Hour` | statement | %m.timepicker %b | widget:TimePicker | `%s.setIs24HourView(%s);` | ✔ have |
+| `timepickerSetMinute` | statement | %m.timepicker %d | widget:TimePicker | `%s.setMinute((int)%s);` | ✔ have |
 | `videoviewCanPause` | boolean value | %m.videoview | — | `%s.canPause()` |  |
 | `videoviewCanSeekBackward` | boolean value | %m.videoview | — | `%s.canSeekBackward()` |  |
 | `videoviewCanSeekForward` | boolean value | %m.videoview | — | `%s.canSeekForward()` |  |
@@ -695,7 +695,7 @@ Params use the app's slot tokens: `%s` text, `%d` number, `%b` boolean, `%m.x` p
   `addCustomVariable`, `addInitializer`, `CommandBlockJava/XML` inject free Java —
   the same reason user-defined custom blocks come last, after the stock set is known.
 
-## Agent coverage after wave 8 (228 of 584 opCodes referenced by the agent)
+## Agent coverage after wave 9 (328 of 584 opCodes referenced by the agent)
 
 Variable 15/26 · List 27/33 · Control 5/28 · Operator 39/49 · Math 24/24 ·
 File 18/33 · View 92/228 · Component 7/140 · Events 0/11 · More 0/7 ·

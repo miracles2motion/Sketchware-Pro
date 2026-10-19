@@ -924,3 +924,13 @@ Device test findings (SportyNivida / Sporty Bet):
   text size, backgrounds, gradient/stroke corners, gravity, focus,
   add/remove child views, video/web controls, autocomplete data...).
   Agent-known opCodes 121 → 228 of 584.
+- 2026-10-19 wave 9 (stock teaching): Control containers whileLoop,
+  switchNum/switchStr with case/default chains, tryCatch, continue,
+  ternary reporters, drawer_open; plus the widget-gated View families
+  via the registry (ListView, Spinner, ViewPager, RecyclerView,
+  GridView, TabLayout, CardView, TimePicker, CalendarView,
+  TextInputLayout, BadgeView, PatternLockView, OTPView, Lottie,
+  CodeView, MapView, SwipeRefreshLayout, BottomNavigationView) and
+  their reporters. Agent-known opCodes 228 → 328 of 584. Deliberately
+  still out: custom-view data binding blocks (adapter mechanism),
+  listener containers, FAB's widget-less blocks, bitmap-file ops.
