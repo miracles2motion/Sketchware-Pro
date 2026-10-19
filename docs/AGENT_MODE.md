@@ -1039,3 +1039,19 @@ Device test findings (SportyNivida / Sporty Bet):
   reopens the same journal entry and continues it.
 - The project card settles into a compact chip once a project is
   chosen.
+
+## Wave 17 — chat persistence; the task follows the work
+
+- Device test: after creating a project and closing the app at the
+  next approval card, the new project had a style brief but an empty
+  task log, and the chat was gone. Causes: the create step was
+  journaled under the previous project, tasks were only written when
+  the first change landed, and the chat was never persisted at all.
+- Tasks are now written when a turn starts (a finished turn with no
+  steps was conversation and leaves no entry); a created project's
+  steps journal under itself; at bind time the task and any agreed
+  style brief carry into the new project.
+- Conversations persist per project (ai/AgentChatLog,
+  chats/<scId>.json — user/assistant text only, capped at 100) and
+  return when the project is picked again; the conversation that
+  creates a project follows it.
