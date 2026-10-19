@@ -1038,6 +1038,8 @@ ACTION_VIEW
     <string name="agent_task_dismiss">Hide this</string>
     <string name="agent_task_working">Working on “%1$s”…</string>
     <string name="agent_task_resume_message">Please continue the unfinished task. First re-check the project’s current state with your tools, then pick up at the next step — don’t redo anything already done.</string>
+    <string name="agent_history_title">Conversations</string>
+    <string name="agent_history_empty">No saved conversations yet. Each project keeps its own chat — pick a project and talk, and its conversation will be here to come back to.</string>
     <string name="agent_action_save">Save</string>
     <string name="agent_action_close">Close</string>
     <string name="agent_action_clear">Clear</string>

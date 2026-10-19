@@ -1055,3 +1055,16 @@ Device test findings (SportyNivida / Sporty Bet):
   chats/<scId>.json — user/assistant text only, capped at 100) and
   return when the project is picked again; the conversation that
   creates a project follows it.
+
+## Wave 18 — History means conversations
+
+- Device test: the top-bar history icon opened the same task log as
+  the in-box button — a duplicate. Task log stays where it is (the
+  record of work); the history icon now opens Conversations: the
+  projects that have a saved chat, and picking one binds the project
+  and brings its conversation back.
+- Companion fix from the same round of testing: a style brief agreed
+  in the turn that creates a project now moves to that project (it
+  was filed under whichever project was selected when the style was
+  agreed, then filed again in the new one). Briefs record when they
+  were saved, and only a brief from that same turn moves.

@@ -75,6 +75,11 @@ public final class AgentChatLog {
         }
     }
 
+    /** True when a project has a stored conversation to come back to. */
+    public static synchronized boolean hasChat(String scId) {
+        return !load(scId).isEmpty();
+    }
+
     /** The stored conversation for a project (empty when none). */
     public static synchronized List<ChatMessage> load(String scId) {
         List<ChatMessage> messages = new ArrayList<>();

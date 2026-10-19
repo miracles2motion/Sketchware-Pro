@@ -161,9 +161,10 @@ public class AgentFragment extends qA {
         binding.chooseModelButton.setOnClickListener(v -> openSettings());
         binding.settingsButton.setOnClickListener(v -> openSettings());
         binding.modelPickerArea.setOnClickListener(v -> showModelPicker());
-        // History is the project's task log: what was asked, what
-        // landed, and where an unfinished task stopped.
-        binding.historyButton.setOnClickListener(v -> showTaskLogDialog());
+        // History is conversations: the projects that have a saved
+        // chat, each one a door back into that conversation. (What
+        // was done in a project lives in its task log, in the box.)
+        binding.historyButton.setOnClickListener(v -> showChatHistoryDialog());
         binding.planButton.setOnClickListener(v -> showStyleBriefDialog());
         binding.taskLogButton.setOnClickListener(v -> showTaskLogDialog());
         binding.taskStripResume.setOnClickListener(v -> resumeTask());
@@ -741,7 +742,63 @@ public class AgentFragment extends qA {
                 .show();
     }
 
-    /** The Task log button (and History icon): the recorded work. */
+    /**
+     * The History icon: projects with a saved conversation. Picking
+     * one binds it as the working project and brings its chat back —
+     * the same thing picking it on the project card does, found from
+     * the conversation side.
+     */
+    private void showChatHistoryDialog() {
+        io.execute(() -> {
+            List<SketchwareProjects.ProjectInfo> withChats =
+                    new ArrayList<>();
+            for (SketchwareProjects.ProjectInfo project
+                    : SketchwareProjects.listProjects()) {
+                if (AgentChatLog.hasChat(project.scId)) {
+                    withChats.add(project);
+                }
+            }
+            runOnUi(() -> {
+                if (binding == null) {
+                    return;
+                }
+                if (withChats.isEmpty()) {
+                    new MaterialAlertDialogBuilder(requireContext())
+                            .setTitle(R.string.agent_history_title)
+                            .setMessage(R.string.agent_history_empty)
+                            .setNegativeButton(
+                                    R.string.agent_action_close, null)
+                            .show();
+                    return;
+                }
+                String currentId = providerConfig.workingProjectId();
+                String[] labels = new String[withChats.size()];
+                for (int i = 0; i < withChats.size(); i++) {
+                    SketchwareProjects.ProjectInfo project =
+                            withChats.get(i);
+                    labels[i] = project.name
+                            + (project.scId.equals(currentId)
+                                    ? " · " + getString(
+                                            R.string.agent_key_in_use)
+                                    : "");
+                }
+                new MaterialAlertDialogBuilder(requireContext())
+                        .setTitle(R.string.agent_history_title)
+                        .setItems(labels, (dialog, which) -> {
+                            SketchwareProjects.ProjectInfo chosen =
+                                    withChats.get(which);
+                            if (!chosen.scId.equals(
+                                    providerConfig.workingProjectId())) {
+                                chooseProject(chosen.scId, chosen.name);
+                            }
+                        })
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+            });
+        });
+    }
+
+    /** The Task log button: the recorded work. */
     private void showTaskLogDialog() {
         String scId = workingProjectOrToast();
         if (scId.isEmpty()) {
