@@ -72,6 +72,10 @@ public class AgentFragment extends qA {
     /** The colour pick the user is currently making, if any. */
     private volatile CountDownLatch colorLatch;
     private volatile com.google.gson.JsonObject pickedColor;
+    /** The option the user tapped in the agent's question, if any. */
+    private volatile String pickedChoice;
+    /** Lets the waiting turn know a question was answered. */
+    private volatile CountDownLatch choiceLatch;
     /** Tokens that arrived but are not in the list yet. */
     /** Tokens that have arrived but are not on screen yet. */
     private final StringBuilder pendingReveal = new StringBuilder();
@@ -454,6 +458,12 @@ public class AgentFragment extends qA {
                     public com.google.gson.JsonObject onPickColor(
                             String question, String initialHex) {
                         return awaitColorPick(question, initialHex);
+                    }
+
+                    @Override
+                    public String onAskChoice(String question,
+                                              java.util.List<String> options) {
+                        return awaitChoice(question, options);
                     }
 
                     @Override
@@ -1353,6 +1363,61 @@ public class AgentFragment extends qA {
         }
         colorLatch = null;
         return answered ? pickedColor : null;
+    }
+
+    /**
+     * The agent's brainstorming question, answered on the spot: the
+     * options it named, one tap each. Blocking, like the colour picker
+     * — the turn waits for the answer it is going to build from.
+     */
+    private String awaitChoice(String question,
+                               java.util.List<String> options) {
+        if (!isAdded() || getActivity() == null || options == null
+                || options.isEmpty()) {
+            return null;
+        }
+        pickedChoice = null;
+        CountDownLatch latch = new CountDownLatch(1);
+        choiceLatch = latch;
+        showChoiceQuestion(question, options, latch);
+        try {
+            if (!latch.await(10, TimeUnit.MINUTES)) {
+                return null;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } finally {
+            choiceLatch = null;
+        }
+        return pickedChoice;
+    }
+
+    /** The question as a list the user taps. */
+    private void showChoiceQuestion(String question,
+                                    java.util.List<String> options,
+                                    CountDownLatch latch) {
+        runOnUi(() -> {
+            android.app.Activity activity = getActivity();
+            if (activity == null || binding == null) {
+                latch.countDown();
+                return;
+            }
+            String[] items = options.toArray(new String[0]);
+            com.google.android.material.dialog.MaterialAlertDialogBuilder
+                    dialog = new com.google.android.material.dialog
+                            .MaterialAlertDialogBuilder(activity);
+            dialog.setTitle(question.isEmpty()
+                    ? "Choose one" : question);
+            dialog.setItems(items, (which, ignored) -> {
+                pickedChoice = items[which];
+                latch.countDown();
+            });
+            dialog.setOnCancelListener(dialogInterface -> latch.countDown());
+            dialog.setNegativeButton(android.R.string.cancel,
+                    (dialogInterface, which) -> latch.countDown());
+            dialog.show();
+        });
     }
 
     /**

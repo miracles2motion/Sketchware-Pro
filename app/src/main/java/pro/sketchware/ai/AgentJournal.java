@@ -731,6 +731,27 @@ public final class AgentJournal {
     private static String draftPlanTitle = "";
     private static String draftPlanSteps = "";
 
+    /**
+     * Whether a style direction has been agreed for this work: saved
+     * on the project, or held as a draft for a project that does not
+     * exist yet. This is what the "design before you build" gate asks —
+     * a builder must not start an app the user has never been shown a
+     * look for.
+     */
+    public static synchronized boolean hasStyleBriefOrDraft(String scId) {
+        return !draftStyleBrief.isEmpty()
+                || !styleBrief(scId == null ? "" : scId).trim().isEmpty();
+    }
+
+    /**
+     * Whether an implementation plan has been agreed for this work:
+     * saved on the project, or held as a draft.
+     */
+    public static synchronized boolean hasPlanOrDraft(String scId) {
+        return !draftPlanSteps.isEmpty()
+                || hasPlan(scId == null ? "" : scId);
+    }
+
     /** Remembers a style agreed before any project was chosen. */
     public static synchronized void setDraftStyleBrief(String brief) {
         draftStyleBrief = brief == null ? "" : brief.trim();

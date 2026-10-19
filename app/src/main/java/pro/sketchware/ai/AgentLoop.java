@@ -38,7 +38,33 @@ public class AgentLoop {
     private static final int MAX_SEGMENTS = 6;
 
     private static final String AGENT_GUIDANCE =
-            "\n\nYou are connected to the user's Sketchware Pro app and can "
+            // Design first — and it is first in the brief for a reason:
+            // told politely further down, it was skipped every time.
+            "\n\nDESIGN BEFORE YOU BUILD (the most important rule here). "
+                    + "When the user asks for an app, a screen, or any "
+                    + "substantial feature, do NOT start creating — the "
+                    + "tools will refuse. First: (1) ask how it should "
+                    + "look with ask_choice, offering two to four WHOLE "
+                    + "directions in the user's own terms (each one a "
+                    + "complete look: colours, type, shapes, mood — not a "
+                    + "label like “modern”); (2) save the agreed look with "
+                    + "set_style_brief as headed lines — Audience; Mood; "
+                    + "Colours (with hex); Text sizes (title/body/button "
+                    + "sp); Buttons and cards (height, corner roundness); "
+                    + "Spacing; Do; Avoid; (3) write the implementation "
+                    + "plan — the screens by name, what is on each, what "
+                    + "data it keeps and where, what each button does, "
+                    + "the order you will build it — save it with "
+                    + "set_plan, then tell the user the plan in chat and "
+                    + "let them change it; (4) only then create the "
+                    + "project and build. If the user says “you decide” "
+                    + "or does not answer, choose yourself, say which you "
+                    + "chose and why in one line, save it, and carry on — "
+                    + "never stall repeating a question, and never build "
+                    + "an app the user has never seen a description of. "
+                    + "A saved style and plan are reused, not re-asked; a "
+                    + "small one-off change needs neither."
+                    + "\n\nYou are connected to the user's Sketchware Pro app and can "
                     + "look at the project they are working on with your "
                     + "tools. Use the tools when a question is about their "
                     + "project instead of guessing. You can also create "
@@ -257,6 +283,14 @@ public class AgentLoop {
          * optionally "name": "..."}, or null when no colour was picked.
          */
         JsonObject onPickColor(String question, String initialHex);
+
+        /**
+         * The agent asks the user to choose between named options.
+         * Called on the loop thread and expected to block until the
+         * user picks or dismisses it. Returns the option they chose,
+         * or null when they dismissed it.
+         */
+        String onAskChoice(String question, java.util.List<String> options);
 
         /** The decision was acted on; the card can show the outcome. */
         void onApprovalResolved(AgentProposal proposal, JsonObject result);
@@ -524,6 +558,10 @@ public class AgentLoop {
                         dispatch(listener,
                                 () -> listener.onWorkingProjectChanged(bound));
                     }
+                } else if ("ask_choice".equals(call.name)) {
+                    String label = AgentTools.labelFor(call.name, call.arguments);
+                    dispatch(listener, () -> listener.onToolNote(label));
+                    result = askChoice(call, listener);
                 } else if (AgentTools.isInteractive(call.name)) {
                     String label = AgentTools.labelFor(call.name, call.arguments);
                     dispatch(listener, () -> listener.onToolNote(label));
@@ -698,6 +736,63 @@ public class AgentLoop {
                         + "the change on an approval card right away — the "
                         + "card is the confirmation, so do not ask again "
                         + "in chat first.");
+        return result;
+    }
+
+    /**
+     * The brainstorming question: named options, answered by the user.
+     * A dismissed question is not a refusal to answer — the model is
+     * told to propose one itself and carry on, because a conversation
+     * that stops to repeat the question is worse than a decided one.
+     */
+    private JsonObject askChoice(AiChatService.ToolCallData call,
+                                 Listener listener) {
+        JsonObject args = new JsonObject();
+        try {
+            args = com.google.gson.JsonParser.parseString(
+                    call.arguments == null ? "{}" : call.arguments)
+                    .getAsJsonObject();
+        } catch (Exception ignored) {
+            // An unparseable call still gets the question, unfilled.
+        }
+        String question = args.has("question")
+                ? args.get("question").getAsString() : "";
+        java.util.List<String> options = new java.util.ArrayList<>();
+        if (args.has("options") && args.get("options").isJsonArray()) {
+            for (JsonElement element : args.getAsJsonArray("options")) {
+                String option = element.isJsonPrimitive()
+                        ? element.getAsString() : "";
+                if (!option.trim().isEmpty()) {
+                    options.add(option.trim());
+                }
+            }
+        }
+        JsonObject result = new JsonObject();
+        if (question.isEmpty() || options.size() < 2) {
+            result.addProperty("error", "E_BAD_ARGS");
+            result.addProperty("message",
+                    "ask_choice needs a \"question\" and at least two "
+                            + "\"options\", each a whole direction in one "
+                            + "sentence.");
+            return result;
+        }
+        String picked = listener.onAskChoice(question, options);
+        if (picked == null || picked.trim().isEmpty()) {
+            result.addProperty("cancelled", true);
+            result.addProperty("message",
+                    "The user did not choose. Pick the option you would "
+                            + "stand behind, say in one line why, save it "
+                            + "with set_style_brief or set_plan, and carry "
+                            + "on — do not ask the same question again in "
+                            + "chat.");
+            return result;
+        }
+        result.addProperty("chosen", picked);
+        result.addProperty("message",
+                "The user chose this themselves: “" + picked
+                        + "”. Save what was agreed (set_style_brief for a "
+                        + "look, set_plan for a plan) and follow it "
+                        + "exactly. Do not ask the same question again.");
         return result;
     }
 

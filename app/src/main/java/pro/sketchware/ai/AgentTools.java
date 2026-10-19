@@ -130,6 +130,7 @@ public final class AgentTools {
         register(new GetScreen());
         register(new GetProjectSetup());
         register(new AskColor());
+        register(new AskChoice());
         register(new SetStyleBrief());
         register(new SetPlan());
         register(new GetTaskLog());
@@ -3223,6 +3224,65 @@ public final class AgentTools {
         }
     }
 
+    /**
+     * ask_choice: a real question with named options, answered by the
+     * user. Design decisions have taste in them, and a model guessing
+     * at taste is how an app ends up looking like nothing the user
+     * wanted. This is the brainstorming step: two to four whole
+     * directions, and the user picks one.
+     */
+    private static final class AskChoice implements Tool {
+        @Override
+        public String name() {
+            return "ask_choice";
+        }
+
+        @Override
+        public String description() {
+            return "Asks the user to choose between two to four options "
+                    + "you name, and pauses until they answer. Use it for "
+                    + "any decision that is theirs to make: how the app "
+                    + "should look, which way data should be kept, which "
+                    + "flow to build. Each option must be a whole, "
+                    + "specific direction — “sunny and playful: big "
+                    + "rounded cards, orange #FF8A3D, cream background” "
+                    + "— not a bare word like “modern”. You get their "
+                    + "answer back as text; then save what was agreed "
+                    + "(set_style_brief for a look, set_plan for a plan) "
+                    + "and carry on. Never use it for something you can "
+                    + "decide yourself, and never ask more than one "
+                    + "question at a time in chat — ask here instead.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("question", stringSchema(
+                    "The question, in the user's words, e.g. “How "
+                            + "should the notes app look?”"));
+            JsonObject options = new JsonObject();
+            options.addProperty("type", "array");
+            options.addProperty("description",
+                    "Two to four options, each a whole direction in one "
+                            + "sentence");
+            JsonObject item = new JsonObject();
+            item.addProperty("type", "string");
+            options.add("items", item);
+            properties.add("options", options);
+            return AgentTools.parameters(properties, "question", "options");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Asked you to choose";
+        }
+
+        @Override
+        public boolean interactive() {
+            return true;
+        }
+    }
+
     /** set_style_brief: remembers the agreed style direction. */
     private static final class SetStyleBrief implements Tool {
         @Override
@@ -3273,6 +3333,22 @@ public final class AgentTools {
             if (brief.isEmpty()) {
                 throw new ToolException("E_BAD_ARGS",
                         "Pass the agreed style direction in \"brief\".");
+            }
+            // Half a sentence is not a style: it is what makes every
+            // screen afterwards look accidental. Require the detail the
+            // builder is going to follow.
+            if (brief.trim().length() < 140) {
+                throw new ToolException("E_STYLE_TOO_THIN",
+                        "That style is too thin to build from. A real one "
+                                + "is headed lines: Audience; Mood; "
+                                + "Colours (name each with its hex, e.g. "
+                                + "primary #FF8A3D, background #FFF8F0, "
+                                + "text #2B2B2B); Text sizes (title/body/"
+                                + "button in sp); Buttons and cards "
+                                + "(height, corner roundness); Spacing "
+                                + "(screen padding, gaps); Do; Avoid. "
+                                + "Write it in full — it is what the whole "
+                                + "app is built to.");
             }
             JsonObject result = new JsonObject();
             if (session.workingProjectId == null
@@ -3368,6 +3444,26 @@ public final class AgentTools {
             if (steps.isEmpty()) {
                 throw new ToolException("E_BAD_ARGS",
                         "Pass the agreed steps in \"steps\", one per line.");
+            }
+            // A plan of two lines is not a plan: it is the reason a
+            // build goes sideways. Refuse it while the model is still
+            // at the planning table rather than after the screens exist.
+            int stepCount = 0;
+            for (String line : steps.split("\n")) {
+                if (line.trim().length() >= 8) {
+                    stepCount++;
+                }
+            }
+            if (stepCount < 3 || steps.trim().length() < 80) {
+                throw new ToolException("E_PLAN_TOO_THIN",
+                        "That plan is too thin to build from — a real one "
+                                + "has at least three concrete steps (80+ "
+                                + "characters) and names: every screen it "
+                                + "will create, what is on each screen, "
+                                + "what data is kept and where, what each "
+                                + "button does, and the order the work "
+                                + "happens in. Write that, show it to the "
+                                + "user in chat, then save it.");
             }
             int done = Math.max(0, intArg(args, "done_steps"));
             int current = Math.max(0, intArg(args, "current_step"));
@@ -3510,6 +3606,15 @@ public final class AgentTools {
                 throw new ToolException("E_BAD_NAME",
                         "A project needs a name of 1 to 60 characters.");
             }
+            // Nothing is built before it has been designed. Asking the
+            // model nicely did not work: it went straight to creating
+            // the project with no look agreed and no plan, and the user
+            // was left with a blank app and no say in it. So the gate is
+            // the tool itself — the style and the plan have to exist
+            // before this can even be proposed.
+            requireDesign(session.workingProjectId == null
+                    ? "" : session.workingProjectId, name, "app", true,
+                    true);
             String pkg = stringArg(args, "package_name");
             if (!pkg.isEmpty() && (pkg.length() > 120
                     || !PACKAGE_PATTERN.matcher(pkg).matches())) {
@@ -3551,6 +3656,65 @@ public final class AgentTools {
                                 + String.valueOf(e.getMessage()));
             }
         }
+    }
+
+    /**
+     * The design gate: a build starts with an agreed look and an agreed
+     * plan, never with a blank project.
+     *
+     * <p>What is missing decides the message — being told "save a style"
+     * when the plan is the thing that is missing sends the model off
+     * doing the wrong work.
+     */
+    private static void requireDesign(String scId, String what,
+                                      String kind, boolean newProject,
+                                      boolean styleToo)
+            throws ToolException {
+        boolean hasStyle = !styleToo
+                || AgentJournal.hasStyleBriefOrDraft(scId);
+        boolean hasPlan = AgentJournal.hasPlanOrDraft(scId);
+        if (hasStyle && hasPlan) {
+            return;
+        }
+        StringBuilder message = new StringBuilder(
+                "Nothing is built before it has been designed. ");
+        if (!hasStyle) {
+            message.append("There is no style yet, so first agree how “")
+                    .append(what)
+                    .append("” should look. Ask the user with ask_choice "
+                            + "(two to four real directions, each one a "
+                            + "whole look: “sunny and playful: big rounded "
+                            + "cards, orange #FF8A3D, cream background” / "
+                            + "“calm and minimal: thin type, one accent, lots "
+                            + "of white space”). If they would rather you "
+                            + "chose, say which you picked and why in one "
+                            + "line. Then save it with set_style_brief as "
+                            + "headed lines: Audience; Mood; Colours (with "
+                            + "hex); Text sizes (title/body/button sp); "
+                            + "Buttons and cards (height, corner roundness); "
+                            + "Spacing; Do; Avoid. ");
+        }
+        if (!hasPlan) {
+            message.append("There is no plan yet, so next write the "
+                            + "implementation plan for this ")
+                    .append(kind)
+                    .append(" and save it with set_plan: the screens by "
+                            + "name, what is on each one, what data it "
+                            + "keeps and where, what each button does, and "
+                            + "the order you will build it in — steps a "
+                            + "person could follow. Then tell the user the "
+                            + "plan in chat and let them change it before "
+                            + "you build. ");
+        }
+        if (newProject) {
+            message.append("Do not create the project until both are "
+                    + "saved; come back and create it as the first step of "
+                    + "building.");
+        } else {
+            message.append("Do not add the screen until the plan is "
+                    + "saved.");
+        }
+        throw new ToolException("E_DESIGN_FIRST", message.toString());
     }
 
     /** create_activity: one new empty screen in the working project. */
@@ -3595,6 +3759,9 @@ public final class AgentTools {
                 throws ToolException {
             String scId = requiredProject(session.workingProjectId);
             String asked = stringArg(args, "activity");
+            // A new screen is real work: it is planned before it is
+            // added, so the user sees where it fits before it exists.
+            requireDesign(scId, asked, "screen", false, false);
             String fileName = fileNameFor(asked);
             if (!NAME_PATTERN.matcher(fileName).matches()) {
                 throw new ToolException("E_BAD_NAME",

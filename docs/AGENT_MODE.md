@@ -1367,3 +1367,36 @@ refused, and every failure with its arguments and error), `environment`
 So: "did it save the note?" is now checkable — `save_pref` either
 appears in `operations_asked_for` and lands in `applied`, or it appears
 in `operations_refused` with the reason.
+
+### Wave 30: design before you build
+
+"Create a project" produced a blank project. No questions, no look, no
+plan — the user was handed an empty app and no say in it. The guidance
+already said "style first, plan second, building third"; it sat in the
+middle of a 200-line brief and was advice, so a tool-calling model
+under pressure walked straight past it to `create_project`.
+
+Advice that can be skipped is not a rule. Three changes:
+
+**1. The gate is the tool, not the prompt.** `create_project` refuses
+with `E_DESIGN_FIRST` until a style brief AND a plan exist (saved on
+the project, or held as a draft for a project not yet created);
+`create_activity` refuses until a plan exists. The refusal says exactly
+what is missing and what to do about it — it never sends the model to
+write a style when the plan is the thing it lacks.
+
+**2. Brainstorming needs somewhere to happen.** New interactive tool
+`ask_choice`: the agent names two to four whole directions and the user
+taps one (a blocking dialog, exactly like the colour picker). A
+dismissed question is not a loop — the model is told to choose itself,
+say why in one line, save it and carry on.
+
+**3. Thin designs are refused, not accepted.** `set_style_brief` under
+140 characters is rejected with the headings it must have (Colours with
+hex, Text sizes, Buttons and cards, Spacing, Do, Avoid). `set_plan`
+with fewer than three real steps is rejected with what a plan must
+name: every screen, what is on it, what data is kept where, what each
+button does, the order of work.
+
+And the rule moved to the top of the brief — `DESIGN BEFORE YOU BUILD`
+is the first thing the model reads, not the fourteenth.
