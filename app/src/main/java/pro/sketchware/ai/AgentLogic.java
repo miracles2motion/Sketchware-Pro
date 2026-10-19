@@ -74,6 +74,196 @@ public final class AgentLogic {
             "TextView", "Button", "MaterialButton", "EditText",
             "AutoCompleteTextView", "CheckBox", "RadioButton", "Switch");
 
+    /**
+     * One widget-action block from the View palette, taught from the
+     * app's own tables (see docs/STOCK_BLOCK_KNOWLEDGE.md): the model
+     * kind, the editor opCode, the widget family the palette requires
+     * ("" = any widget), the argument slots after the widget slot
+     * (d number, s text, b flag, c colour, r drawable name, g gravity
+     * constant, m settings constant, l list-of-text name, w child
+     * widget), a fragment the generated code must contain, and the
+     * approval sentence ({t} = widget, {1}.. = argument values).
+     */
+    private static final class WA {
+        final String opCode;
+        final String widget;
+        final String args;
+        final String expect;
+        final String sentence;
+
+        WA(String opCode, String widget, String args, String expect,
+           String sentence) {
+            this.opCode = opCode;
+            this.widget = widget;
+            this.args = args;
+            this.expect = expect;
+            this.sentence = sentence;
+        }
+    }
+
+    private static final Map<String, WA> WIDGET_ACTIONS = new HashMap<>();
+
+    static {
+        WIDGET_ACTIONS.put("set_lines", new WA("EditTextLines",
+                "edittext", "d", ".setLines(",
+                "Set {t} to show {1} lines"));
+        WIDGET_ACTIONS.put("select_all_text", new WA(
+                "EditTextSelectAll", "edittext", "", ".selectAll(",
+                "Select all the text in {t}"));
+        WIDGET_ACTIONS.put("set_max_lines", new WA("EditTextSetMaxLines",
+                "edittext", "d", ".setMaxLines(",
+                "Set {t} to show at most {1} lines"));
+        WIDGET_ACTIONS.put("set_selection", new WA("EditTextSetSelection",
+                "edittext", "dd", ".setSelection(",
+                "Select text in {t} from {1} to {2}"));
+        WIDGET_ACTIONS.put("show_error", new WA("EditTextShowError",
+                "edittext", "s", ".setError(",
+                "Show the error “{1}” on {t}"));
+        WIDGET_ACTIONS.put("set_single_line", new WA("EditTextSingleLine",
+                "edittext", "b", ".setSingleLine(",
+                "Set {t} single-line to {1}"));
+        WIDGET_ACTIONS.put("disable_suggestions", new WA(
+                "EditTextdiableSuggestion", "edittext", "",
+                ".setInputType(", "Turn off text suggestions in {t}"));
+        WIDGET_ACTIONS.put("set_text_size", new WA("setTextSize",
+                "textview", "d", ".setTextSize(",
+                "Set {t} text size to {1}"));
+        WIDGET_ACTIONS.put("set_hint_color", new WA("setHintTextColor",
+                "edittext", "c", ".setHintTextColor(",
+                "Set {t} hint colour to {1}"));
+        WIDGET_ACTIONS.put("set_background_color", new WA("setBgColor",
+                "", "c", ".setBackgroundColor(",
+                "Set {t} background colour to {1}"));
+        WIDGET_ACTIONS.put("set_background_image", new WA("setBgDrawable",
+                "", "r", ".setBackgroundDrawable(",
+                "Set {t} background image to {1}"));
+        WIDGET_ACTIONS.put("set_background_resource", new WA(
+                "setBgResource", "", "r", ".setBackgroundResource(",
+                "Set {t} background to the image {1}"));
+        WIDGET_ACTIONS.put("set_image_resource", new WA(
+                "setImageCustomRes", "imageview", "r",
+                ".setImageResource(", "Set {t} image to {1}"));
+        WIDGET_ACTIONS.put("set_image_by_name", new WA(
+                "setImageIdentifier", "imageview", "s",
+                ".setImageResource(", "Set {t} image to the one "
+                + "named “{1}”"));
+        WIDGET_ACTIONS.put("set_image_file", new WA("setImageFilePath",
+                "imageview", "s", ".setImageBitmap(",
+                "Set {t} image from the file at “{1}”"));
+        WIDGET_ACTIONS.put("set_color_filter", new WA("setColorFilter",
+                "imageview", "c", ".setColorFilter(",
+                "Tint {t} with {1}"));
+        WIDGET_ACTIONS.put("set_elevation", new WA("setElevation",
+                "", "d", ".setElevation(", "Set {t} elevation to {1}"));
+        WIDGET_ACTIONS.put("set_alpha", new WA("setAlpha",
+                "", "d", ".setAlpha(", "Set {t} opacity to {1}"));
+        WIDGET_ACTIONS.put("set_rotation", new WA("setRotate",
+                "", "d", ".setRotation(", "Rotate {t} to {1} degrees"));
+        WIDGET_ACTIONS.put("set_scale_x", new WA("setScaleX",
+                "", "d", ".setScaleX(", "Set {t} horizontal scale "
+                + "to {1}"));
+        WIDGET_ACTIONS.put("set_scale_y", new WA("setScaleY",
+                "", "d", ".setScaleY(", "Set {t} vertical scale "
+                + "to {1}"));
+        WIDGET_ACTIONS.put("set_translation_x", new WA("setTranslationX",
+                "", "d", ".setTranslationX(",
+                "Move {t} horizontally by {1}"));
+        WIDGET_ACTIONS.put("set_translation_y", new WA("setTranslationY",
+                "", "d", ".setTranslationY(",
+                "Move {t} vertically by {1}"));
+        WIDGET_ACTIONS.put("set_corner_radius", new WA(
+                "setCornerRadiusView", "", "dc",
+                ".setBackground(new GradientDrawable()",
+                "Give {t} rounded corners of {1} in {2}"));
+        WIDGET_ACTIONS.put("set_stroke", new WA("setStrokeView",
+                "", "dcc", ".setBackground(new GradientDrawable()",
+                "Give {t} a {1} outline in {2} on {3}"));
+        WIDGET_ACTIONS.put("set_gradient", new WA("setGradientBackground",
+                "", "cc", "GradientDrawable.Orientation",
+                "Give {t} a gradient background from {1} to {2}"));
+        WIDGET_ACTIONS.put("set_radius_and_stroke", new WA(
+                "setRadiusAndStrokeView", "", "ddcc",
+                ".setBackground(new GradientDrawable()",
+                "Give {t} corners of {1} and a {2} outline in {3} "
+                + "on {4}"));
+        WIDGET_ACTIONS.put("set_gravity", new WA("setGravity",
+                "", "gg", ".setGravity(Gravity.",
+                "Set {t} gravity to {1} and {2}"));
+        WIDGET_ACTIONS.put("request_focus", new WA("requestFocus",
+                "", "", ".requestFocus(", "Move the focus to {t}"));
+        WIDGET_ACTIONS.put("perform_click", new WA("performClick",
+                "", "", ".performClick(", "Tap {t} from code"));
+        WIDGET_ACTIONS.put("remove_all_views", new WA("removeViews",
+                "", "", ".removeAllViews(",
+                "Remove everything inside {t}"));
+        WIDGET_ACTIONS.put("add_view", new WA("addView",
+                "", "w", ".addView(", "Put {1} inside {t}"));
+        WIDGET_ACTIONS.put("add_view_at", new WA("addViews",
+                "", "wd", ".addView(", "Put {1} inside {t} at "
+                + "position {2}"));
+        WIDGET_ACTIONS.put("remove_view", new WA("removeView",
+                "", "w", ".removeView(", "Take {1} out of {t}"));
+        WIDGET_ACTIONS.put("set_checked", new WA("setChecked",
+                "checkbox", "b", ".setChecked(",
+                "Set {t} checked to {1}"));
+        WIDGET_ACTIONS.put("set_max", new WA("seekBarSetMax",
+                "seekbar", "d", ".setMax(", "Set {t} maximum to {1}"));
+        WIDGET_ACTIONS.put("set_indeterminate", new WA(
+                "progressBarSetIndeterminate", "progressbar", "b",
+                ".setIndeterminate(", "Set {t} indeterminate to {1}"));
+        WIDGET_ACTIONS.put("set_num_stars", new WA("setNumStars",
+                "ratingbar", "d", ".setNumStars(",
+                "Set {t} to have {1} stars"));
+        WIDGET_ACTIONS.put("set_rating", new WA("setRating",
+                "ratingbar", "d", ".setRating(",
+                "Set {t} rating to {1}"));
+        WIDGET_ACTIONS.put("set_step_size", new WA("setStepSize",
+                "ratingbar", "d", ".setStepSize(",
+                "Set {t} rating step to {1}"));
+        WIDGET_ACTIONS.put("play_video", new WA("videoviewStart",
+                "videoview", "", ".start(", "Start the video in {t}"));
+        WIDGET_ACTIONS.put("pause_video", new WA("videoviewPause",
+                "videoview", "", ".pause(", "Pause the video in {t}"));
+        WIDGET_ACTIONS.put("stop_video", new WA("videoviewStop",
+                "videoview", "", ".stopPlayback(",
+                "Stop the video in {t}"));
+        WIDGET_ACTIONS.put("set_video_url", new WA("videoviewSetVideoUri",
+                "videoview", "s", ".setVideoURI(",
+                "Load the video at “{1}” into {t}"));
+        WIDGET_ACTIONS.put("web_go_back", new WA("webViewGoBack",
+                "webview", "", ".goBack(", "Go back in {t}"));
+        WIDGET_ACTIONS.put("web_go_forward", new WA("webViewGoForward",
+                "webview", "", ".goForward(", "Go forward in {t}"));
+        WIDGET_ACTIONS.put("web_clear_cache", new WA("webViewClearCache",
+                "webview", "", ".clearCache(", "Clear the cache of "
+                + "{t}"));
+        WIDGET_ACTIONS.put("web_clear_history", new WA(
+                "webViewClearHistory", "webview", "", ".clearHistory(",
+                "Clear the history of {t}"));
+        WIDGET_ACTIONS.put("web_stop_loading", new WA("webViewStopLoading",
+                "webview", "", ".stopLoading(", "Stop {t} loading"));
+        WIDGET_ACTIONS.put("web_zoom_in", new WA("webViewZoomIn",
+                "webview", "", ".zoomIn(", "Zoom in on {t}"));
+        WIDGET_ACTIONS.put("web_zoom_out", new WA("webViewZoomOut",
+                "webview", "", ".zoomOut(", "Zoom out on {t}"));
+        WIDGET_ACTIONS.put("set_cache_mode", new WA("webViewSetCacheMode",
+                "webview", "m", "WebSettings.",
+                "Set {t} cache mode to {1}"));
+        WIDGET_ACTIONS.put("set_autocomplete_data", new WA("autoComSetData",
+                "actv", "l", ".setAdapter(new ArrayAdapter",
+                "Fill {t} suggestions from list “{1}”"));
+        WIDGET_ACTIONS.put("set_multiautocomplete_data", new WA(
+                "multiAutoComSetData", "mactv", "l",
+                ".setAdapter(new ArrayAdapter",
+                "Fill {t} suggestions from list “{1}”"));
+        WIDGET_ACTIONS.put("set_threshold", new WA("setThreshold",
+                "mactv", "d", ".setThreshold(",
+                "Set {t} to suggest after {1} characters"));
+        WIDGET_ACTIONS.put("set_tokenizer", new WA("setTokenizer",
+                "mactv", "", ".setTokenizer(",
+                "Set {t} to separate entries with commas"));
+    }
+
     private AgentLogic() {
     }
 
@@ -860,6 +1050,32 @@ public final class AgentLogic {
                 bean.parameters.add(key);
                 return "@" + bean.id;
             }
+            if (object.has("json_of_map") || object.has("json_of_list")) {
+                // JSON text of a map or list (Operator page):
+                // mapToStr / GsonListTojsonString, one slot each.
+                if (slot != 's') {
+                    throw badValue(what, "JSON text does not fit here");
+                }
+                if (object.has("json_of_map")) {
+                    String name = stringOf(object, "json_of_map");
+                    Integer kind = variables.get(name);
+                    if (kind == null || kind != 3) {
+                        throw badValue(what, "“" + name + "” is not a "
+                                + "map variable on this screen");
+                    }
+                    BlockBean bean = newBean("mapToStr", "s");
+                    bean.parameters.add(name);
+                    return "@" + bean.id;
+                }
+                String list = stringOf(object, "json_of_list");
+                if (!lists.containsKey(list)) {
+                    throw badValue(what, "there is no list called "
+                            + list + " on this screen");
+                }
+                BlockBean bean = newBean("GsonListTojsonString", "s");
+                bean.parameters.add(list);
+                return "@" + bean.id;
+            }
             if (object.has("file_exists") || object.has("is_file")
                     || object.has("is_folder") || object.has("read_file")
                     || object.has("file_length")) {
@@ -1085,6 +1301,130 @@ public final class AgentLogic {
                                 'd', what));
                         return "@" + bean.id;
                     }
+                    case "sin", "cos", "tan", "asin", "acos", "atan",
+                            "exp", "log", "log10", "to_degrees",
+                            "to_radians", "dip" -> {
+                        if (slot != 'd') {
+                            throw badValue(what, fn + " gives a "
+                                    + "number and does not fit here");
+                        }
+                        String opCode = switch (fn) {
+                            case "sin" -> "mathSin";
+                            case "cos" -> "mathCos";
+                            case "tan" -> "mathTan";
+                            case "asin" -> "mathAsin";
+                            case "acos" -> "mathAcos";
+                            case "atan" -> "mathAtan";
+                            case "exp" -> "mathExp";
+                            case "log" -> "mathLog";
+                            case "log10" -> "mathLog10";
+                            case "to_degrees" -> "mathToDegree";
+                            case "to_radians" -> "mathToRadian";
+                            default -> "mathGetDip";
+                        };
+                        BlockBean bean = newBean(opCode, "d");
+                        bean.parameters.add(expr(object.get("a"),
+                                'd', what));
+                        return "@" + bean.id;
+                    }
+                    case "e", "display_width", "display_height" -> {
+                        if (slot != 'd') {
+                            throw badValue(what, fn + " is a number "
+                                    + "and does not fit here");
+                        }
+                        BlockBean bean = newBean(
+                                "e".equals(fn) ? "mathE"
+                                        : "display_width".equals(fn)
+                                        ? "mathGetDisplayWidth"
+                                        : "mathGetDisplayHeight", "d");
+                        return "@" + bean.id;
+                    }
+                    case "replace", "replace_first" -> {
+                        if (slot != 's') {
+                            throw badValue(what, "replaced text does "
+                                    + "not fit here");
+                        }
+                        BlockBean bean = newBean(
+                                "replace".equals(fn) ? "stringReplace"
+                                        : "stringReplaceFirst", "s");
+                        bean.parameters.add(expr(object.get("a"),
+                                's', what));
+                        bean.parameters.add(expr(object.get("b"),
+                                's', what));
+                        bean.parameters.add(expr(object.get("c"),
+                                's', what));
+                        return "@" + bean.id;
+                    }
+                    case "index_in", "last_index_in" -> {
+                        if (slot != 'd') {
+                            throw badValue(what, "a position is a "
+                                    + "number and does not fit here");
+                        }
+                        BlockBean bean = newBean(
+                                "index_in".equals(fn) ? "stringIndex"
+                                        : "stringLastIndex", "d");
+                        bean.parameters.add(expr(object.get("a"),
+                                's', what));
+                        bean.parameters.add(expr(object.get("b"),
+                                's', what));
+                        return "@" + bean.id;
+                    }
+                    case "matches" -> {
+                        if (slot != 'b') {
+                            throw badValue(what, "whether text "
+                                    + "matches a pattern is true/false "
+                                    + "and does not fit here");
+                        }
+                        BlockBean bean = newBean("stringMatches", "b");
+                        bean.parameters.add(expr(object.get("a"),
+                                's', what));
+                        bean.parameters.add(expr(object.get("b"),
+                                's', what));
+                        return "@" + bean.id;
+                    }
+                    case "reverse_text", "is_empty", "parse_int" -> {
+                        char needed = "reverse_text".equals(fn) ? 's'
+                                : "is_empty".equals(fn) ? 'b' : 'd';
+                        if (slot != needed) {
+                            throw badValue(what, "that value does not "
+                                    + "fit here");
+                        }
+                        BlockBean bean = newBean(
+                                "reverse_text".equals(fn) ? "reverse"
+                                        : "is_empty".equals(fn)
+                                        ? "isEmpty" : "strParseInteger",
+                                String.valueOf(needed));
+                        bean.parameters.add(expr(object.get("a"),
+                                's', what));
+                        return "@" + bean.id;
+                    }
+                    case "format_number" -> {
+                        if (slot != 's') {
+                            throw badValue(what, "formatted text "
+                                    + "does not fit here");
+                        }
+                        // toStringFormat: number slot first, the
+                        // DecimalFormat pattern second (Fx swaps).
+                        BlockBean bean = newBean("toStringFormat", "s");
+                        bean.parameters.add(expr(object.get("a"),
+                                'd', what));
+                        bean.parameters.add(expr(object.get("b"),
+                                's', what));
+                        return "@" + bean.id;
+                    }
+                    case "substring_from" -> {
+                        if (slot != 's') {
+                            throw badValue(what, "part of a text "
+                                    + "does not fit here");
+                        }
+                        BlockBean bean = newBean("stringSubSingle",
+                                "s");
+                        bean.parameters.add(expr(object.get("a"),
+                                's', what));
+                        bean.parameters.add(expr(object.get("from"),
+                                'd', what));
+                        return "@" + bean.id;
+                    }
                     case "starts_with", "ends_with" -> {
                         if (slot != 'b') {
                             throw badValue(what, "whether text starts "
@@ -1129,9 +1469,15 @@ public final class AgentLogic {
                             + "floor, round, sqrt, pow, max, min, "
                             + "random, pi, len, concat, contains, "
                             + "upper, lower, trim, substring, "
-                            + "to_number, to_text, starts_with, "
-                            + "ends_with, last_segment, external_dir, "
-                            + "app_dir)");
+                            + "substring_from, to_number, to_text, "
+                            + "starts_with, ends_with, last_segment, "
+                            + "external_dir, app_dir, sin, cos, tan, "
+                            + "asin, acos, atan, exp, log, log10, "
+                            + "to_degrees, to_radians, dip, e, "
+                            + "display_width, display_height, replace, "
+                            + "replace_first, index_in, last_index_in, "
+                            + "matches, reverse_text, is_empty, "
+                            + "parse_int, format_number)");
                 }
             }
             if (object.has("extra")) {
@@ -1149,6 +1495,148 @@ public final class AgentLogic {
                 }
                 BlockBean bean = newBean("intentGetString", "s");
                 bean.parameters.add(key);
+                return "@" + bean.id;
+            }
+            if (object.has("width_of") || object.has("height_of")
+                    || object.has("alpha_of") || object.has("rotation_of")
+                    || object.has("scale_x_of")
+                    || object.has("scale_y_of")
+                    || object.has("translation_x_of")
+                    || object.has("translation_y_of")
+                    || object.has("rating_of") || object.has("max_of")
+                    || object.has("page_of") || object.has("selection_of")
+                    || object.has("selection_start_of")
+                    || object.has("selection_end_of")
+                    || object.has("video_position_of")
+                    || object.has("video_duration_of")
+                    || object.has("video_playing")
+                    || object.has("web_progress_of")
+                    || object.has("can_go_back")
+                    || object.has("can_go_forward")) {
+                // Widget geometry/state reporters (View page):
+                // getWidth/getHeight/getAlpha/getRotation/getScaleX/
+                // getScaleY/getTranslationX/getTranslationY for any
+                // widget, plus per-family getters — every opCode and
+                // single-widget slot checked against the palette
+                // table and Fx.
+                String key = null;
+                for (String candidate : new String[]{"width_of",
+                        "height_of", "alpha_of", "rotation_of",
+                        "scale_x_of", "scale_y_of", "translation_x_of",
+                        "translation_y_of", "rating_of", "max_of",
+                        "page_of", "selection_of", "selection_start_of",
+                        "selection_end_of", "video_position_of",
+                        "video_duration_of", "video_playing",
+                        "web_progress_of", "can_go_back",
+                        "can_go_forward"}) {
+                    if (object.has(candidate)) {
+                        key = candidate;
+                        break;
+                    }
+                }
+                String id = stringOf(object, key);
+                ViewBean widget = findWidget(byId, id);
+                if (widget == null) {
+                    throw badValue(what, "there is no widget called "
+                            + id + " on this screen");
+                }
+                String typeName = AgentEdits.typeName(widget.type);
+                char needed = "video_playing".equals(key)
+                        || "can_go_back".equals(key)
+                        || "can_go_forward".equals(key) ? 'b' : 'd';
+                if (slot != needed) {
+                    throw badValue(what, "that value does not fit here");
+                }
+                String opCode;
+                String family = switch (key) {
+                    case "width_of" -> {
+                        opCode = "getWidth";
+                        yield "";
+                    }
+                    case "height_of" -> {
+                        opCode = "getHeight";
+                        yield "";
+                    }
+                    case "alpha_of" -> {
+                        opCode = "getAlpha";
+                        yield "";
+                    }
+                    case "rotation_of" -> {
+                        opCode = "getRotate";
+                        yield "";
+                    }
+                    case "scale_x_of" -> {
+                        opCode = "getScaleX";
+                        yield "";
+                    }
+                    case "scale_y_of" -> {
+                        opCode = "getScaleY";
+                        yield "";
+                    }
+                    case "translation_x_of" -> {
+                        opCode = "getTranslationX";
+                        yield "";
+                    }
+                    case "translation_y_of" -> {
+                        opCode = "getTranslationY";
+                        yield "";
+                    }
+                    case "rating_of" -> {
+                        opCode = "getRating";
+                        yield "RatingBar";
+                    }
+                    case "max_of" -> {
+                        opCode = "seekBarGetMax";
+                        yield "SeekBar";
+                    }
+                    case "page_of" -> {
+                        opCode = "pagerGetCurrentItem";
+                        yield "ViewPager";
+                    }
+                    case "selection_of" -> {
+                        opCode = "spnGetSelection";
+                        yield "Spinner";
+                    }
+                    case "selection_start_of" -> {
+                        opCode = "EdittextGetselectionStart";
+                        yield "EditText";
+                    }
+                    case "selection_end_of" -> {
+                        opCode = "EdittextGetselectionEnd";
+                        yield "EditText";
+                    }
+                    case "video_position_of" -> {
+                        opCode = "videoviewGetCurrentPosition";
+                        yield "VideoView";
+                    }
+                    case "video_duration_of" -> {
+                        opCode = "videoviewGetDuration";
+                        yield "VideoView";
+                    }
+                    case "video_playing" -> {
+                        opCode = "videoviewIsPlaying";
+                        yield "VideoView";
+                    }
+                    case "web_progress_of" -> {
+                        opCode = "webviewGetProgress";
+                        yield "WebView";
+                    }
+                    case "can_go_back" -> {
+                        opCode = "webViewCanGoBack";
+                        yield "WebView";
+                    }
+                    default -> {
+                        opCode = "webViewCanGoForward";
+                        yield "WebView";
+                    }
+                };
+                if (!family.isEmpty() && !family.equals(typeName)) {
+                    throw badValue(what, widget.id + " is a "
+                            + typeName + ", not a " + family);
+                }
+                BlockBean bean = newBean(opCode,
+                        String.valueOf(needed));
+                bean.parameters.add(widget.id);
                 return "@" + bean.id;
             }
             if (object.has("text_of") || object.has("url_of")
@@ -1374,6 +1862,40 @@ public final class AgentLogic {
                             + describeExpr(object.get("a"));
                     case "external_dir" -> "the device storage folder";
                     case "app_dir" -> "the app's private folder";
+                    case "replace" -> describeExpr(object.get("a"))
+                            + " with "
+                            + describeExpr(object.get("b"))
+                            + " replaced by "
+                            + describeExpr(object.get("c"));
+                    case "replace_first" -> describeExpr(object.get("a"))
+                            + " with the first "
+                            + describeExpr(object.get("b"))
+                            + " replaced by "
+                            + describeExpr(object.get("c"));
+                    case "index_in" -> "the position of "
+                            + describeExpr(object.get("b")) + " in "
+                            + describeExpr(object.get("a"));
+                    case "last_index_in" -> "the last position of "
+                            + describeExpr(object.get("b")) + " in "
+                            + describeExpr(object.get("a"));
+                    case "matches" -> describeExpr(object.get("a"))
+                            + " matches the pattern "
+                            + describeExpr(object.get("b"));
+                    case "reverse_text" -> describeExpr(object.get("a"))
+                            + " reversed";
+                    case "is_empty" -> describeExpr(object.get("a"))
+                            + " is empty";
+                    case "parse_int" -> "the whole number in "
+                            + describeExpr(object.get("a"));
+                    case "format_number" -> describeExpr(object.get("a"))
+                            + " formatted as "
+                            + describeExpr(object.get("b"));
+                    case "substring_from" -> "part of "
+                            + describeExpr(object.get("a")) + " from "
+                            + describeExpr(object.get("from"));
+                    case "display_width" -> "the screen width";
+                    case "display_height" -> "the screen height";
+                    case "e" -> "e (2.718…)";
                     default -> fn + " of "
                             + describeExpr(object.get("a"))
                             + (object.has("b") ? " and "
@@ -1424,6 +1946,14 @@ public final class AgentLogic {
                         + describeExpr(object.get("value")) + " in "
                         + stringOf(object, "index_of");
             }
+            if (object.has("json_of_map")) {
+                return "map " + stringOf(object, "json_of_map")
+                        + " as JSON text";
+            }
+            if (object.has("json_of_list")) {
+                return "list " + stringOf(object, "json_of_list")
+                        + " as JSON text";
+            }
             if (object.has("file_exists")) {
                 return "the file at "
                         + describeExpr(object.get("file_exists"))
@@ -1444,6 +1974,42 @@ public final class AgentLogic {
             if (object.has("file_length")) {
                 return "the size of the file at "
                         + describeExpr(object.get("file_length"));
+            }
+            for (String key : new String[]{"width_of", "height_of",
+                    "alpha_of", "rotation_of", "scale_x_of",
+                    "scale_y_of", "translation_x_of",
+                    "translation_y_of", "rating_of", "max_of",
+                    "page_of", "selection_of", "selection_start_of",
+                    "selection_end_of", "video_position_of",
+                    "video_duration_of", "video_playing",
+                    "web_progress_of", "can_go_back",
+                    "can_go_forward"}) {
+                if (object.has(key)) {
+                    String label = switch (key) {
+                        case "width_of" -> "width";
+                        case "height_of" -> "height";
+                        case "alpha_of" -> "opacity";
+                        case "rotation_of" -> "rotation";
+                        case "scale_x_of" -> "horizontal scale";
+                        case "scale_y_of" -> "vertical scale";
+                        case "translation_x_of" -> "horizontal offset";
+                        case "translation_y_of" -> "vertical offset";
+                        case "rating_of" -> "rating";
+                        case "max_of" -> "maximum";
+                        case "page_of" -> "current page";
+                        case "selection_of" -> "selected position";
+                        case "selection_start_of" -> "selection start";
+                        case "selection_end_of" -> "selection end";
+                        case "video_position_of" -> "playback position";
+                        case "video_duration_of" -> "duration";
+                        case "video_playing" -> "playing state";
+                        case "web_progress_of" -> "loading progress";
+                        case "can_go_back" -> "can-go-back state";
+                        default -> "can-go-forward state";
+                    };
+                    return "the " + label + " of "
+                            + stringOf(object, key);
+                }
             }
             if (object.has("text_of")) {
                 return "text of " + stringOf(object, "text_of");
@@ -1513,14 +2079,18 @@ public final class AgentLogic {
                     || object.has("bool") || object.has("file_exists")
                     || object.has("is_file") || object.has("is_folder")
                     || object.has("map_empty")
-                    || object.has("map_has_value")) {
+                    || object.has("map_has_value")
+                    || object.has("video_playing")
+                    || object.has("can_go_back")
+                    || object.has("can_go_forward")) {
                 return true;
             }
             if (object.has("fn")) {
                 String fn = stringOf(object, "fn")
                         .toLowerCase(Locale.ROOT);
                 return "contains".equals(fn) || "starts_with".equals(fn)
-                        || "ends_with".equals(fn);
+                        || "ends_with".equals(fn) || "matches".equals(fn)
+                        || "is_empty".equals(fn);
             }
             if (object.has("var")) {
                 Integer kind = variables.get(stringOf(object, "var"));
@@ -2707,7 +3277,57 @@ public final class AgentLogic {
                     stmt.expectCode = list + ".get((int)";
                 }
             }
-            default -> throw new AgentTools.ToolException("E_BAD_BLOCK",
+            case "map_from_json", "list_from_json" -> {
+                // The Gson conversion statements: text slot first,
+                // then the map/list it fills (Fx-verified orders).
+                String text = stringOf(op, "text");
+                String fromVariable = stringOf(op, "from_variable");
+                String shown;
+                if (!fromVariable.isEmpty()) {
+                    requireVariable(variables, fromVariable);
+                    requireVariableKind(variables, fromVariable, 2,
+                            "JSON text can only come from a string "
+                                    + "variable.");
+                    text = "@var:" + fromVariable;
+                    shown = "the JSON in “" + fromVariable + "”";
+                } else if (text.isEmpty()) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            kind + " needs the JSON \"text\" (or "
+                                    + "\"from_variable\").");
+                } else {
+                    shown = "“" + text + "”";
+                }
+                stmt.type = " ";
+                stmt.params.add(text);
+                if ("map_from_json".equals(kind)) {
+                    String name = stringOf(op, "variable");
+                    requireVariable(variables, name);
+                    requireVariableKind(variables, name, 3,
+                            "map_from_json fills a map variable.");
+                    stmt.opCode = "strToMap";
+                    stmt.params.add(name);
+                    stmt.sentence = "Fill map “" + name + "” from "
+                            + shown;
+                    stmt.expectCode = name + " = new Gson().fromJson(";
+                } else {
+                    String list = requireList(op, lists);
+                    Integer listKind = lists.get(list);
+                    stmt.opCode = listKind == 2
+                            ? "GsonStringToListString"
+                            : listKind == 1 ? "GsonStringToListNumber"
+                            : "strToListMap";
+                    stmt.params.add(list);
+                    stmt.sentence = "Fill list “" + list + "” from "
+                            + shown;
+                    stmt.expectCode = list + " = new Gson().fromJson(";
+                }
+            }
+            default -> {
+                WA action = WIDGET_ACTIONS.get(kind);
+                if (action != null) {
+                    buildWidgetAction(op, byId, lists, action, stmt);
+                } else {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
                     (kind.isEmpty()
                             ? "A block arrived with no \"block\" name: "
                                     + abbrev(op.toString()) + " "
@@ -2726,7 +3346,13 @@ public final class AgentLogic {
                             + "remove_map_key, map_keys_to_list, "
                             + "get_map_from_list, add_map_to_list, "
                             + "insert_map_to_list, add_map_entry, "
-                            + "insert_map_entry, set_map_entry.");
+                            + "insert_map_entry, set_map_entry, "
+                            + "map_from_json, list_from_json, and the "
+                            + "widget actions (set_text_size, "
+                            + "set_background_color, web_go_back, "
+                            + "play_video, set_rating, and kin).");
+                }
+            }
         }
         // The app's own slot table is the shape authority: what the
         // editor would store for this block has exactly these slots.
@@ -2858,6 +3484,181 @@ public final class AgentLogic {
             text = stringOf(op, "value");
         }
         return text;
+    }
+
+    /** A colour argument in the editor's stored form, by field. */
+    private static String colourField(JsonObject op, String field)
+            throws AgentTools.ToolException {
+        String colour = stringOf(op, field);
+        if (colour.isEmpty()
+                || !colour.matches("(?i)#([0-9a-f]{6}|[0-9a-f]{8})")) {
+            throw new AgentTools.ToolException("E_BAD_BLOCK",
+                    "This block needs \"" + field + "\" as #RRGGBB or "
+                            + "#AARRGGBB.");
+        }
+        String hex = colour.substring(1).toUpperCase(Locale.ROOT);
+        if (hex.length() == 6) hex = "FF" + hex;
+        return "0x" + hex;
+    }
+
+    /**
+     * Builds one registry widget action (see {@link #WIDGET_ACTIONS}):
+     * the target widget first, then the declared argument slots, each
+     * validated the way the palette itself constrains it.
+     */
+    private static void buildWidgetAction(JsonObject op,
+                                          Map<String, ViewBean> byId,
+                                          Map<String, Integer> lists,
+                                          WA action, Stmt stmt)
+            throws AgentTools.ToolException {
+        ViewBean widget = requireWidget(op, byId);
+        String typeName = AgentEdits.typeName(widget.type);
+        boolean familyOk = switch (action.widget) {
+            case "" -> true;
+            case "edittext" -> "EditText".equals(typeName);
+            case "textview" -> TEXT_TYPES.contains(typeName);
+            case "webview" -> "WebView".equals(typeName);
+            case "seekbar" -> "SeekBar".equals(typeName);
+            case "ratingbar" -> "RatingBar".equals(typeName);
+            case "checkbox" -> "CheckBox".equals(typeName);
+            case "imageview" -> "ImageView".equals(typeName)
+                    || "CircleImageView".equals(typeName);
+            case "progressbar" -> "ProgressBar".equals(typeName);
+            case "actv" -> "AutoCompleteTextView".equals(typeName);
+            case "mactv" -> "MultiAutoCompleteTextView".equals(typeName);
+            case "videoview" -> "VideoView".equals(typeName);
+            default -> false;
+        };
+        if (!familyOk) {
+            throw new AgentTools.ToolException("E_BAD_BLOCK",
+                    widget.id + " is a " + typeName + ", and this "
+                            + "block needs a " + action.widget
+                            + " widget.");
+        }
+        stmt.opCode = action.opCode;
+        stmt.type = " ";
+        stmt.params.add(widget.id);
+        String sentence = action.sentence.replace("{t}", widget.id);
+        int numberField = 0;
+        int colourField = 0;
+        for (int i = 0; i < action.args.length(); i++) {
+            char arg = action.args.charAt(i);
+            String shown;
+            switch (arg) {
+                case 'd' -> {
+                    String field = numberField++ == 0 ? "value"
+                            : "value2";
+                    String value = stringOf(op, field);
+                    try {
+                        Double.parseDouble(value);
+                    } catch (Exception e) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "This block needs a numeric \"" + field
+                                        + "\".");
+                    }
+                    stmt.params.add(value);
+                    shown = value;
+                }
+                case 's' -> {
+                    String text = stringOf(op, "text");
+                    if (text.isEmpty()) {
+                        text = stringOf(op, "url");
+                    }
+                    stmt.params.add(text);
+                    shown = text;
+                }
+                case 'b' -> {
+                    boolean flag = op.has("flag")
+                            ? boolOf(op, "flag", true)
+                            : boolOf(op, "enabled", true);
+                    stmt.params.add(String.valueOf(flag));
+                    shown = String.valueOf(flag);
+                }
+                case 'c' -> {
+                    String field = colourField++ == 0 ? "color"
+                            : "color2";
+                    String stored = colourField(op, field);
+                    stmt.params.add(stored);
+                    shown = stringOf(op, field);
+                }
+                case 'r' -> {
+                    String image = stringOf(op, "image");
+                    if (!image.matches("(?i)[a-z0-9_]+")) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "This block needs \"image\": the name "
+                                        + "of an image in the project "
+                                        + "(letters, digits, _).");
+                    }
+                    stmt.params.add(image.toLowerCase(Locale.ROOT));
+                    shown = image;
+                }
+                case 'g' -> {
+                    String field = stmt.params.size() == 2 ? "gravity2"
+                            : "gravity";
+                    String gravity = stringOf(op, field)
+                            .toUpperCase(Locale.ROOT);
+                    if (!gravity.matches("[A-Z0-9_]+")) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "This block needs \"" + field + "\" "
+                                        + "as a gravity constant like "
+                                        + "CENTER, LEFT, TOP, BOTTOM, "
+                                        + "CENTER_VERTICAL or "
+                                        + "CENTER_HORIZONTAL.");
+                    }
+                    stmt.params.add(gravity);
+                    shown = gravity;
+                }
+                case 'm' -> {
+                    String mode = stringOf(op, "mode")
+                            .toUpperCase(Locale.ROOT);
+                    if (!mode.matches("[A-Z0-9_]+")) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "This block needs \"mode\" as a "
+                                        + "constant like LOAD_DEFAULT, "
+                                        + "LOAD_NO_CACHE or "
+                                        + "LOAD_CACHE_ELSE_NETWORK.");
+                    }
+                    stmt.params.add(mode);
+                    shown = mode;
+                }
+                case 'l' -> {
+                    String list = stringOf(op, "list");
+                    Integer listKind = lists.get(list);
+                    if (listKind == null || listKind != 2) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "This block fills suggestions from a "
+                                        + "list of text; “" + list
+                                        + "” is not one on this "
+                                        + "screen.");
+                    }
+                    stmt.params.add(list);
+                    shown = list;
+                }
+                case 'w' -> {
+                    String childId = stringOf(op, "child");
+                    ViewBean child = findWidget(byId, childId);
+                    if (child == null) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "There is no widget called " + childId
+                                        + " on this screen to use as "
+                                        + "\"child\".");
+                    }
+                    stmt.params.add(child.id);
+                    shown = child.id;
+                }
+                default -> throw new AgentTools.ToolException(
+                        "E_INTERNAL", "Bad widget-action slot " + arg);
+            }
+            sentence = sentence.replace("{" + (i + 1) + "}", shown);
+        }
+        stmt.sentence = sentence;
+        stmt.expectCode = widget.id + action.expect;
     }
 
     // -- stored-shape helpers ----------------------------------------------

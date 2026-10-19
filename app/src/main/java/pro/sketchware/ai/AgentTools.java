@@ -1068,7 +1068,50 @@ public final class AgentTools {
                     + "list,index}, add_map_entry {list,key,text}, "
                     + "insert_map_entry {list,index,key,text}, "
                     + "set_map_entry {list,index,key,text} (these four "
-                    + "need a list of maps), write_file {text|"
+                    + "need a list of maps), map_from_json {variable,"
+                    + "text|from_variable} and list_from_json {list,"
+                    + "text|from_variable} (fill a map or list from "
+                    + "JSON text), widget actions on a target widget: "
+                    + "set_text_size {target,value}, set_background_color "
+                    + "{target,color}, set_background_image {target,"
+                    + "image} (a drawable name), set_elevation/set_alpha/"
+                    + "set_rotation/set_scale_x/set_scale_y/"
+                    + "set_translation_x/set_translation_y {target,"
+                    + "value}, set_corner_radius {target,value,color}, "
+                    + "set_stroke {target,value,color,color2}, "
+                    + "set_gradient {target,color,color2}, "
+                    + "set_radius_and_stroke {target,value,value2,color,"
+                    + "color2}, set_gravity {target,gravity,gravity2} "
+                    + "(constants like CENTER, LEFT, CENTER_VERTICAL), "
+                    + "request_focus {target}, perform_click {target}, "
+                    + "remove_all_views {target}, add_view {target,child}, "
+                    + "add_view_at {target,child,value}, remove_view "
+                    + "{target,child}, set_checked {target,flag} "
+                    + "(a CheckBox), set_max {target,value} (a SeekBar), "
+                    + "set_indeterminate {target,flag} (a ProgressBar), "
+                    + "set_num_stars/set_rating/set_step_size {target,"
+                    + "value} (a RatingBar), set_lines/set_max_lines "
+                    + "{target,value}, set_selection {target,value,"
+                    + "value2}, select_all_text {target}, show_error "
+                    + "{target,text}, set_single_line {target,flag}, "
+                    + "disable_suggestions {target}, set_hint_color "
+                    + "{target,color} (EditText blocks), play_video/"
+                    + "pause_video/stop_video {target}, set_video_url "
+                    + "{target,text} (a VideoView), web_go_back/"
+                    + "web_go_forward/web_clear_cache/web_clear_history/"
+                    + "web_stop_loading/web_zoom_in/web_zoom_out "
+                    + "{target}, set_cache_mode {target,mode} (a WebView; "
+                    + "LOAD_DEFAULT, LOAD_NO_CACHE...), "
+                    + "set_autocomplete_data {target,list} (an "
+                    + "AutoCompleteTextView fed by a list of text), "
+                    + "set_multiautocomplete_data {target,list}, "
+                    + "set_threshold {target,value}, set_tokenizer "
+                    + "{target} (MultiAutoCompleteTextView blocks), "
+                    + "set_image_resource {target,image}, "
+                    + "set_image_by_name {target,text}, set_image_file "
+                    + "{target,text} (an ImageView from a file path), "
+                    + "set_color_filter {target,color} (tint an "
+                    + "ImageView), write_file {text|"
                     + "from_variable,path|path_from_variable} (write "
                     + "text to a file, replacing it), delete_file "
                     + "{path}, make_folder {path}, copy_file {from,to}, "
@@ -1126,7 +1169,27 @@ public final class AgentTools {
                     + "{\"index_of\":\"items\",\"value\":...} (an item's "
                     + "position in a list, as a number), "
                     + "{\"map_size\":\"info\"}, {\"map_empty\":\"info\"}, "
-                    + "{\"map_has_value\":\"info\",\"value\":\"x\"}; "
+                    + "{\"map_has_value\":\"info\",\"value\":\"x\"}, "
+                    + "{\"json_of_map\":\"info\"}, {\"json_of_list\":"
+                    + "\"items\"} (JSON text of a map or list), "
+                    + "trigonometry and more functions (sin, cos, tan, "
+                    + "asin, acos, atan, exp, log, log10, to_degrees, "
+                    + "to_radians, dip, e, display_width, "
+                    + "display_height, replace, replace_first, "
+                    + "index_in, last_index_in, matches, reverse_text, "
+                    + "is_empty, parse_int, format_number with a "
+                    + "pattern like \"0.00\", substring_from), and "
+                    + "widget values {\"width_of\":\"view1\"} (also "
+                    + "height_of, alpha_of, rotation_of, scale_x_of, "
+                    + "scale_y_of, translation_x_of, translation_y_of "
+                    + "for any widget), {\"rating_of\":\"ratingbar1\"}, "
+                    + "{\"max_of\":\"seekbar1\"}, {\"page_of\":"
+                    + "\"viewpager1\"}, {\"selection_of\":\"spinner1\"}, "
+                    + "{\"selection_start_of\":\"edittext1\"}, "
+                    + "{\"video_position_of\":\"videoview1\"}, "
+                    + "{\"video_playing\":\"videoview1\"}, "
+                    + "{\"web_progress_of\":\"webview1\"}, "
+                    + "{\"can_go_back\":\"webview1\"}; "
                     + "= between texts "
                     + "compares their text. At most "
                     + "8 blocks per list and 24 blocks total per handler. "
@@ -1186,6 +1249,29 @@ public final class AgentTools {
                     "get_map_from_list", "add_map_to_list",
                     "insert_map_to_list", "add_map_entry",
                     "insert_map_entry", "set_map_entry",
+                    "map_from_json", "list_from_json",
+                    "set_lines", "select_all_text", "set_max_lines",
+                    "set_selection", "show_error", "set_single_line",
+                    "disable_suggestions", "set_text_size",
+                    "set_hint_color", "set_background_color",
+                    "set_background_image", "set_background_resource",
+                    "set_image_resource", "set_image_by_name",
+                    "set_image_file", "set_color_filter", "set_elevation",
+                    "set_alpha", "set_rotation", "set_scale_x",
+                    "set_scale_y", "set_translation_x",
+                    "set_translation_y", "set_corner_radius",
+                    "set_stroke", "set_gradient", "set_radius_and_stroke",
+                    "set_gravity", "request_focus", "perform_click",
+                    "remove_all_views", "add_view", "add_view_at",
+                    "remove_view", "set_checked", "set_max",
+                    "set_indeterminate", "set_num_stars", "set_rating",
+                    "set_step_size", "play_video", "pause_video",
+                    "stop_video", "set_video_url", "web_go_back",
+                    "web_go_forward", "web_clear_cache",
+                    "web_clear_history", "web_stop_loading",
+                    "web_zoom_in", "web_zoom_out", "set_cache_mode",
+                    "set_autocomplete_data", "set_multiautocomplete_data",
+                    "set_threshold", "set_tokenizer",
                     "if", "if_else", "repeat", "forever", "break"}) {
                 kinds.add(kind);
             }

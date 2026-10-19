@@ -273,7 +273,7 @@
  },
  "EditTextLines": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setLines(%s);",
@@ -292,7 +292,7 @@
  },
  "EditTextSelectAll": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "((EditText)%s).selectAll();",
@@ -310,7 +310,7 @@
  },
  "EditTextSetMaxLines": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "((EditText)%s).setMaxLines((int)%s);",
@@ -329,7 +329,7 @@
  },
  "EditTextSetSelection": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "((EditText)%s).setSelection((int)%s, (int)%s);",
@@ -349,7 +349,7 @@
  },
  "EditTextShowError": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "((EditText)%s).setError(%s);",
@@ -368,7 +368,7 @@
  },
  "EditTextSingleLine": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setSingleLine(%2$s);",
@@ -387,7 +387,7 @@
  },
  "EditTextdiableSuggestion": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setInputType(InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);",
@@ -405,7 +405,7 @@
  },
  "EdittextGetselectionEnd": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.getSelectionEnd()",
@@ -423,7 +423,7 @@
  },
  "EdittextGetselectionStart": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.getSelectionStart()",
@@ -441,7 +441,7 @@
  },
  "GsonListTojsonString": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Operator",
   "code": "new Gson().toJson(%s)",
@@ -458,7 +458,7 @@
  },
  "GsonStringToListNumber": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Operator",
   "code": "%2$s = new Gson().fromJson(%1$s, new TypeToken<ArrayList<Double>>(){}.getType());",
@@ -476,7 +476,7 @@
  },
  "GsonStringToListString": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Operator",
   "code": "%2$s = new Gson().fromJson(%1$s, new TypeToken<ArrayList<String>>(){}.getType());",
@@ -813,7 +813,7 @@
  },
  "addView": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.addView(%s);",
@@ -832,7 +832,7 @@
  },
  "addViews": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.addView(%s, %s);",
@@ -903,7 +903,7 @@
  },
  "autoComSetData": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setAdapter(new ArrayAdapter<String>(getBaseContext(), android.R.layout.simple_list_item_1, %s));",
@@ -3369,7 +3369,7 @@
  },
  "getAlpha": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "%s.getAlpha()",
@@ -3564,7 +3564,7 @@
  },
  "getHeight": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.getHeight()",
@@ -3752,7 +3752,7 @@
  },
  "getRating": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.getRating()",
@@ -3808,7 +3808,7 @@
  },
  "getRotate": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "%s.getRotation()",
@@ -3831,7 +3831,7 @@
  },
  "getScaleX": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "%s.getScaleX()",
@@ -3854,7 +3854,7 @@
  },
  "getScaleY": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "%s.getScaleY()",
@@ -3900,7 +3900,7 @@
  },
  "getTranslationX": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "%s.getTranslationX()",
@@ -3923,7 +3923,7 @@
  },
  "getTranslationY": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "%s.getTranslationY()",
@@ -3946,7 +3946,7 @@
  },
  "getWidth": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.getWidth()",
@@ -4942,7 +4942,7 @@
  },
  "isEmpty": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Control",
   "code": "%s.isEmpty()",
@@ -5623,7 +5623,7 @@
  },
  "mapToStr": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Operator",
   "emission": "new Gson().toJson(%s)",
@@ -5945,7 +5945,7 @@
  },
  "mathAcos": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Math",
   "emission": "Math.acos(%s)",
@@ -5967,7 +5967,7 @@
  },
  "mathAsin": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Math",
   "emission": "Math.asin(%s)",
@@ -5989,7 +5989,7 @@
  },
  "mathAtan": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Math",
   "emission": "Math.atan(%s)",
@@ -6033,7 +6033,7 @@
  },
  "mathCos": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Math",
   "emission": "Math.cos(%s)",
@@ -6055,7 +6055,7 @@
  },
  "mathE": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Math",
   "emission": "app logic: Math.E",
@@ -6075,7 +6075,7 @@
  },
  "mathExp": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Math",
   "emission": "Math.exp(%s)",
@@ -6119,7 +6119,7 @@
  },
  "mathGetDip": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Math",
   "emission": "SketchwareUtil.getDip(getApplicationContext(), (int)(%s))",
@@ -6141,7 +6141,7 @@
  },
  "mathGetDisplayHeight": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Math",
   "emission": "app logic: SketchwareUtil.getDisplayHeightPixels(getApplicationContext())",
@@ -6161,7 +6161,7 @@
  },
  "mathGetDisplayWidth": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Math",
   "emission": "app logic: SketchwareUtil.getDisplayWidthPixels(getApplicationContext())",
@@ -6181,7 +6181,7 @@
  },
  "mathLog": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Math",
   "emission": "Math.log(%s)",
@@ -6203,7 +6203,7 @@
  },
  "mathLog10": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Math",
   "emission": "Math.log10(%s)",
@@ -6336,7 +6336,7 @@
  },
  "mathSin": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Math",
   "emission": "Math.sin(%s)",
@@ -6380,7 +6380,7 @@
  },
  "mathTan": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Math",
   "emission": "Math.tan(%s)",
@@ -6402,7 +6402,7 @@
  },
  "mathToDegree": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Math",
   "emission": "Math.toDegrees(%s)",
@@ -6424,7 +6424,7 @@
  },
  "mathToRadian": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Math",
   "emission": "Math.toRadians(%s)",
@@ -6798,7 +6798,7 @@
  },
  "multiAutoComSetData": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setAdapter(new ArrayAdapter<String>(getBaseContext(), android.R.layout.simple_list_item_1, %s));",
@@ -7250,7 +7250,7 @@
  },
  "pagerGetCurrentItem": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.getCurrentItem()",
@@ -7558,7 +7558,7 @@
  },
  "performClick": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.performClick();",
@@ -7576,7 +7576,7 @@
  },
  "progressBarSetIndeterminate": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.setIndeterminate(%s);",
@@ -8002,7 +8002,7 @@
  },
  "removeView": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.removeView(%s);",
@@ -8021,7 +8021,7 @@
  },
  "removeViews": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.removeAllViews();",
@@ -8097,7 +8097,7 @@
  },
  "requestFocus": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.requestFocus();",
@@ -8457,7 +8457,7 @@
  },
  "reverse": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Operator",
   "code": "new StringBuilder(%s).reverse().toString()",
@@ -8582,7 +8582,7 @@
  },
  "seekBarGetMax": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "%s.getMax()",
@@ -8628,7 +8628,7 @@
  },
  "seekBarSetMax": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.setMax((int)%s);",
@@ -8694,7 +8694,7 @@
  },
  "setAlpha": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.setAlpha((float)(%s));",
@@ -8851,7 +8851,7 @@
  },
  "setBgColor": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.setBackgroundColor(%s);",
@@ -8875,7 +8875,7 @@
  },
  "setBgDrawable": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setBackgroundDrawable(getResources().getDrawable(R.drawable.%s));",
@@ -8894,7 +8894,7 @@
  },
  "setBgResource": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: NONE",
@@ -9190,7 +9190,7 @@
  },
  "setChecked": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.setChecked(%s);",
@@ -9214,7 +9214,7 @@
  },
  "setColorFilter": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.setColorFilter(%s, PorterDuff.Mode.MULTIPLY);",
@@ -9258,7 +9258,7 @@
  },
  "setCornerRadiusView": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setBackground(new GradientDrawable() { public GradientDrawable getIns(int a, int b) { this.setCornerRadius(a); this.setColor(b); return this; } }.getIns((int)%s, %s));",
@@ -9297,7 +9297,7 @@
  },
  "setElevation": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setElevation((float)%s);",
@@ -9340,7 +9340,7 @@
  },
  "setGradientBackground": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setBackground(new GradientDrawable(GradientDrawable.Orientation.BR_TL, new int[] {%s,%s}));",
@@ -9360,7 +9360,7 @@
  },
  "setGravity": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setGravity(Gravity.%s | Gravity.%s);",
@@ -9405,7 +9405,7 @@
  },
  "setHintTextColor": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: \"\"",
@@ -9455,7 +9455,7 @@
  },
  "setImageCustomRes": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setImageResource(R.drawable.%s);",
@@ -9474,7 +9474,7 @@
  },
  "setImageFilePath": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: \"\"",
@@ -9499,7 +9499,7 @@
  },
  "setImageIdentifier": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setImageResource(getResources().getIdentifier(%s, drawable, getPackageName()));",
@@ -9609,7 +9609,7 @@
  },
  "setNumStars": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setNumStars((int)%s);",
@@ -9647,7 +9647,7 @@
  },
  "setRadiusAndStrokeView": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setBackground(new GradientDrawable() { public GradientDrawable getIns(int a, int b, int c, int d) { this.setCornerRadius(a); this.setStroke(b, c); this.setColor(d); return this; } }.getIns((int)%s, (int)%s, %s, %s));",
@@ -9669,7 +9669,7 @@
  },
  "setRating": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setRating((float)%s);",
@@ -9726,7 +9726,7 @@
  },
  "setRotate": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.setRotation((float)(%s));",
@@ -9750,7 +9750,7 @@
  },
  "setScaleX": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.setScaleX((float)(%s));",
@@ -9774,7 +9774,7 @@
  },
  "setScaleY": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.setScaleY((float)(%s));",
@@ -9836,7 +9836,7 @@
  },
  "setStepSize": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setStepSize((float)%s);",
@@ -9855,7 +9855,7 @@
  },
  "setStrokeView": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setBackground(new GradientDrawable() { public GradientDrawable getIns(int a, int b, int c) { this.setStroke(a, b); this.setColor(c); return this; } }.getIns((int)%s, %s, %s));",
@@ -9963,7 +9963,7 @@
  },
  "setTextSize": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setTextSize((int)%s);",
@@ -9982,7 +9982,7 @@
  },
  "setThreshold": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setThreshold(%s);",
@@ -10024,7 +10024,7 @@
  },
  "setTokenizer": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setTokenizer(new MultiAutoCompleteTextView.CommaTokenizer());",
@@ -10042,7 +10042,7 @@
  },
  "setTranslationX": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.setTranslationX((float)(%s));",
@@ -10066,7 +10066,7 @@
  },
  "setTranslationY": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.setTranslationY((float)(%s));",
@@ -10604,7 +10604,7 @@
  },
  "spnGetSelection": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "%s.getSelectedItemPosition()",
@@ -10805,7 +10805,7 @@
  },
  "strParseInteger": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Operator",
   "code": "Integer.parseInt(%s)",
@@ -10822,7 +10822,7 @@
  },
  "strToListMap": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Operator",
   "emission": "app logic: %s = new Gson().fromJson(%s, new TypeToken<ArrayList<HashMap<String, O",
@@ -10849,7 +10849,7 @@
  },
  "strToMap": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Operator",
   "emission": "app logic: %s = new Gson().fromJson(%s, new TypeToken<HashMap<String, Object>>(){",
@@ -10918,7 +10918,7 @@
  },
  "stringIndex": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Operator",
   "emission": "%s.indexOf(%s)",
@@ -10964,7 +10964,7 @@
  },
  "stringLastIndex": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Operator",
   "emission": "%s.lastIndexOf(%s)",
@@ -11009,7 +11009,7 @@
  },
  "stringMatches": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Operator",
   "code": "%s.matches(%s)",
@@ -11027,7 +11027,7 @@
  },
  "stringReplace": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Operator",
   "emission": "%s.replace(%s, %s)",
@@ -11078,7 +11078,7 @@
  },
  "stringReplaceFirst": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Operator",
   "code": "%s.replaceFirst(%s, %s)",
@@ -11148,7 +11148,7 @@
  },
  "stringSubSingle": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "Operator",
   "code": "%1$s.substring(%2$s)",
@@ -11880,7 +11880,7 @@
  },
  "toStringFormat": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "Operator",
   "emission": "new DecimalFormat(%s).format(%s)",
@@ -12086,7 +12086,7 @@
  },
  "videoviewGetCurrentPosition": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.getCurrentPosition()",
@@ -12104,7 +12104,7 @@
  },
  "videoviewGetDuration": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.getDuration()",
@@ -12122,7 +12122,7 @@
  },
  "videoviewIsPlaying": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.isPlaying()",
@@ -12140,7 +12140,7 @@
  },
  "videoviewPause": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.pause();",
@@ -12158,7 +12158,7 @@
  },
  "videoviewSetVideoUri": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.setVideoURI(Uri.parse(%s));",
@@ -12177,7 +12177,7 @@
  },
  "videoviewStart": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.start();",
@@ -12195,7 +12195,7 @@
  },
  "videoviewStop": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%s.stopPlayback();",
@@ -12294,7 +12294,7 @@
  },
  "webViewCanGoBack": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "%s.canGoBack()",
@@ -12317,7 +12317,7 @@
  },
  "webViewCanGoForward": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "%s.canGoForward()",
@@ -12340,7 +12340,7 @@
  },
  "webViewClearCache": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.clearCache(true);",
@@ -12363,7 +12363,7 @@
  },
  "webViewClearHistory": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.clearHistory();",
@@ -12409,7 +12409,7 @@
  },
  "webViewGoBack": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.goBack();",
@@ -12432,7 +12432,7 @@
  },
  "webViewGoForward": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.goForward();",
@@ -12479,7 +12479,7 @@
  },
  "webViewSetCacheMode": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.getSettings().setCacheMode(WebSettings.%s);",
@@ -12503,7 +12503,7 @@
  },
  "webViewStopLoading": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.stopLoading();",
@@ -12526,7 +12526,7 @@
  },
  "webViewZoomIn": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.zoomIn();",
@@ -12549,7 +12549,7 @@
  },
  "webViewZoomOut": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": false,
   "category": "View",
   "emission": "app logic: %s.zoomOut();",
@@ -12572,7 +12572,7 @@
  },
  "webviewGetProgress": {
   "agent": "",
-  "agent_known": false,
+  "agent_known": true,
   "builtin": true,
   "category": "View",
   "code": "%1$s.getProgress()",

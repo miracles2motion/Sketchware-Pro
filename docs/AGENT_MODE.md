@@ -914,3 +914,13 @@ Device test findings (SportyNivida / Sporty Bet):
   keys-to-list/size/empty/has-value, index_of. Agent-known opCodes
   79 → 121 of 584. translate() slot validation now falls back to the
   xB spec tokens for Pro-defined blocks (editor's own shape source).
+- 2026-10-19 wave 8 (stock teaching): all remaining Math reporters
+  (trig/log/exp/degrees/dip/display size), string functions (replace,
+  index_in, matches, reverse_text, is_empty, parse_int, format_number,
+  substring_from), JSON conversions (map/list from/to JSON), widget
+  value reporters (geometry for any widget + RatingBar/SeekBar/
+  ViewPager/Spinner/EditText-selection/VideoView/WebView getters),
+  and a registry-driven widget-action family (57 View statements:
+  text size, backgrounds, gradient/stroke corners, gravity, focus,
+  add/remove child views, video/web controls, autocomplete data...).
+  Agent-known opCodes 121 → 228 of 584.
