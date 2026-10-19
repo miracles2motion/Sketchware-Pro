@@ -1400,3 +1400,22 @@ button does, the order of work.
 
 And the rule moved to the top of the brief — `DESIGN BEFORE YOU BUILD`
 is the first thing the model reads, not the fourteenth.
+
+### Wave 30b: the cuts
+
+The user noticed the style brief being cut short no matter how long it
+was, and asked whether the plan was cut too. Both were:
+
+| what | was | now |
+|---|---|---|
+| style brief | 600 characters | 4000 |
+| each plan step | 140 characters | 400 |
+| steps in a plan | 24 | 40 |
+| task-log detail line | 200 characters | 400 |
+| `block_activity` failure arguments in the export | 600 | 1500 |
+
+600 characters cut every real brief in half mid-sentence — a style with
+its headings, hexes and sizes is longer than that, and a cut-off style
+is one the builder cannot follow. 140 per step is what turned a
+detailed plan into a list of stubs. The truncation appends "…", so
+what the user saw was a sentence that simply stopped.

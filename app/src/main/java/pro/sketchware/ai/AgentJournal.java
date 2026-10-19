@@ -209,8 +209,11 @@ public final class AgentJournal {
         step.addProperty("label", truncate(
                 label == null ? "" : label, 140));
         step.addProperty("outcome", outcome);
+        // The full text of a refusal lives in the timeline; the task
+        // log line only has to be long enough to be readable, and 200
+        // cut every validation message mid-sentence.
         step.addProperty("detail", truncate(
-                detail == null ? "" : detail, 200));
+                detail == null ? "" : detail, 400));
         if (fingerprint != null && !fingerprint.isEmpty()) {
             step.addProperty("fp", fingerprint);
         }
@@ -469,8 +472,12 @@ public final class AgentJournal {
             return;
         }
         JsonObject root = load(scId);
+        // The cap is generous on purpose. It used to be 600 characters,
+        // which cut every real brief in half mid-sentence — a style
+        // with its headings, hexes and sizes is longer than that, and a
+        // cut-off style is a style the builder cannot follow.
         root.addProperty("styleBrief",
-                truncate(brief == null ? "" : brief.trim(), 600));
+                truncate(brief == null ? "" : brief.trim(), 4000));
         root.addProperty("styleBriefAt", System.currentTimeMillis());
         save(scId, root);
     }
@@ -539,8 +546,13 @@ public final class AgentJournal {
         if (stepsText != null) {
             for (String line : stepsText.split("\\n")) {
                 String text = line.trim();
-                if (!text.isEmpty() && incoming.size() < 24) {
-                    incoming.add(truncate(text, 140));
+                // Steps used to be cut at 140 characters and the plan
+                // stopped at 24 of them, which is exactly what turned a
+                // detailed plan into a list of stubs. A step that names
+                // a screen, its widgets, its data and its behaviour is
+                // longer than 140 characters.
+                if (!text.isEmpty() && incoming.size() < 40) {
+                    incoming.add(truncate(text, 400));
                 }
             }
         }

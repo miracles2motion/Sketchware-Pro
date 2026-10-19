@@ -294,8 +294,9 @@ public final class AgentExport {
                 failure.addProperty("message", entry.has("error_message")
                         ? entry.get("error_message").getAsString() : "");
                 failure.addProperty("arguments",
-                        arguments.length() > 600
-                                ? arguments.substring(0, 600) : arguments);
+                        arguments.length() > 1500
+                                ? arguments.substring(0, 1500) + " …"
+                                : arguments);
                 failures.add(failure);
             }
         }
