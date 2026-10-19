@@ -860,6 +860,150 @@ public final class AgentLogic {
                 bean.parameters.add(key);
                 return "@" + bean.id;
             }
+            if (object.has("fn")) {
+                // Function reporters (Math/Operator pages): one
+                // shape, {"fn":"abs","a":...} — every opCode and
+                // emission checked against Fx.
+                String fn = stringOf(object, "fn")
+                        .toLowerCase(Locale.ROOT);
+                switch (fn) {
+                    case "abs", "ceil", "floor", "round", "sqrt" -> {
+                        if (slot != 'd') {
+                            throw badValue(what, fn + " gives a "
+                                    + "number and does not fit here");
+                        }
+                        String opCode = switch (fn) {
+                            case "abs" -> "mathAbs";
+                            case "ceil" -> "mathCeil";
+                            case "floor" -> "mathFloor";
+                            case "round" -> "mathRound";
+                            default -> "mathSqrt";
+                        };
+                        BlockBean bean = newBean(opCode, "d");
+                        bean.parameters.add(expr(object.get("a"),
+                                'd', what));
+                        return "@" + bean.id;
+                    }
+                    case "pow", "max", "min", "random" -> {
+                        if (slot != 'd') {
+                            throw badValue(what, fn + " gives a "
+                                    + "number and does not fit here");
+                        }
+                        String opCode = switch (fn) {
+                            case "pow" -> "mathPow";
+                            case "max" -> "mathMax";
+                            case "min" -> "mathMin";
+                            default -> "random";
+                        };
+                        BlockBean bean = newBean(opCode, "d");
+                        bean.parameters.add(expr(object.get("a"),
+                                'd', what));
+                        bean.parameters.add(expr(object.get("b"),
+                                'd', what));
+                        return "@" + bean.id;
+                    }
+                    case "pi" -> {
+                        if (slot != 'd') {
+                            throw badValue(what, "pi is a number "
+                                    + "and does not fit here");
+                        }
+                        BlockBean bean = newBean("mathPi", "d");
+                        return "@" + bean.id;
+                    }
+                    case "len" -> {
+                        if (slot != 'd') {
+                            throw badValue(what, "a length is a "
+                                    + "number and does not fit here");
+                        }
+                        BlockBean bean = newBean("stringLength", "d");
+                        bean.parameters.add(expr(object.get("a"),
+                                's', what));
+                        return "@" + bean.id;
+                    }
+                    case "concat" -> {
+                        if (slot != 's') {
+                            throw badValue(what, "joined text does "
+                                    + "not fit here");
+                        }
+                        BlockBean bean = newBean("stringJoin", "s");
+                        bean.parameters.add(expr(object.get("a"),
+                                's', what));
+                        bean.parameters.add(expr(object.get("b"),
+                                's', what));
+                        return "@" + bean.id;
+                    }
+                    case "contains" -> {
+                        if (slot != 'b') {
+                            throw badValue(what, "whether text "
+                                    + "contains text is true/false "
+                                    + "and does not fit here");
+                        }
+                        BlockBean bean = newBean("stringContains",
+                                "b");
+                        bean.parameters.add(expr(object.get("a"),
+                                's', what));
+                        bean.parameters.add(expr(object.get("b"),
+                                's', what));
+                        return "@" + bean.id;
+                    }
+                    case "upper", "lower", "trim" -> {
+                        if (slot != 's') {
+                            throw badValue(what, fn + " gives text "
+                                    + "and does not fit here");
+                        }
+                        String opCode = switch (fn) {
+                            case "upper" -> "toUpperCase";
+                            case "lower" -> "toLowerCase";
+                            default -> "trim";
+                        };
+                        BlockBean bean = newBean(opCode, "s");
+                        bean.parameters.add(expr(object.get("a"),
+                                's', what));
+                        return "@" + bean.id;
+                    }
+                    case "to_number" -> {
+                        if (slot != 'd') {
+                            throw badValue(what, "a converted "
+                                    + "number does not fit here");
+                        }
+                        BlockBean bean = newBean("toNumber", "d");
+                        bean.parameters.add(expr(object.get("a"),
+                                's', what));
+                        return "@" + bean.id;
+                    }
+                    case "to_text" -> {
+                        if (slot != 's') {
+                            throw badValue(what, "converted text "
+                                    + "does not fit here");
+                        }
+                        BlockBean bean = newBean(
+                                "toStringWithDecimal", "s");
+                        bean.parameters.add(expr(object.get("a"),
+                                'd', what));
+                        return "@" + bean.id;
+                    }
+                    case "substring" -> {
+                        if (slot != 's') {
+                            throw badValue(what, "part of a text "
+                                    + "does not fit here");
+                        }
+                        BlockBean bean = newBean("stringSub", "s");
+                        bean.parameters.add(expr(object.get("a"),
+                                's', what));
+                        bean.parameters.add(expr(object.get("from"),
+                                'd', what));
+                        bean.parameters.add(expr(object.get("to"),
+                                'd', what));
+                        return "@" + bean.id;
+                    }
+                    default -> throw badValue(what, "unknown "
+                            + "function \\"" + fn + "\\" (abs, ceil, "
+                            + "floor, round, sqrt, pow, max, min, "
+                            + "random, pi, len, concat, contains, "
+                            + "upper, lower, trim, substring, "
+                            + "to_number, to_text)");
+                }
+            }
             if (object.has("extra")) {
                 // The value another screen passed when it opened
                 // this one: the editor's intentGetString reporter
@@ -1067,6 +1211,36 @@ public final class AgentLogic {
                 return "?";
             }
             JsonObject object = element.getAsJsonObject();
+            if (object.has("fn")) {
+                String fn = stringOf(object, "fn")
+                        .toLowerCase(Locale.ROOT);
+                return switch (fn) {
+                    case "len" -> "length of "
+                            + describeExpr(object.get("a"));
+                    case "concat" -> describeExpr(object.get("a"))
+                            + " joined with "
+                            + describeExpr(object.get("b"));
+                    case "contains" -> describeExpr(object.get("a"))
+                            + " contains "
+                            + describeExpr(object.get("b"));
+                    case "substring" -> "part of "
+                            + describeExpr(object.get("a")) + " from "
+                            + describeExpr(object.get("from")) + " to "
+                            + describeExpr(object.get("to"));
+                    case "pow" -> describeExpr(object.get("a"))
+                            + " to the power of "
+                            + describeExpr(object.get("b"));
+                    case "random" -> "a random number from "
+                            + describeExpr(object.get("a")) + " to "
+                            + describeExpr(object.get("b"));
+                    case "pi" -> "pi";
+                    default -> fn + " of "
+                            + describeExpr(object.get("a"))
+                            + (object.has("b") ? " and "
+                                    + describeExpr(object.get("b"))
+                                    : "");
+                };
+            }
             if (object.has("extra")) {
                 return "extra \u201C" + stringOf(object, "extra")
                         + "\u201D";
@@ -1160,6 +1334,10 @@ public final class AgentLogic {
                     || object.has("bool")) {
                 return true;
             }
+            if (object.has("fn")) {
+                return "contains".equals(stringOf(object, "fn")
+                        .toLowerCase(Locale.ROOT));
+            }
             if (object.has("var")) {
                 Integer kind = variables.get(stringOf(object, "var"));
                 return kind != null && kind == 0;
@@ -1188,6 +1366,14 @@ public final class AgentLogic {
             if (object.has("text_of") || object.has("url_of")
                     || object.has("text")) {
                 return true;
+            }
+            if (object.has("fn")) {
+                String fn = stringOf(object, "fn")
+                        .toLowerCase(Locale.ROOT);
+                return fn.equals("concat") || fn.equals("upper")
+                        || fn.equals("lower") || fn.equals("trim")
+                        || fn.equals("to_text")
+                        || fn.equals("substring");
             }
             if (object.has("var")) {
                 Integer kind = variables.get(stringOf(object, "var"));

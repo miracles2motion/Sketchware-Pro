@@ -898,3 +898,10 @@ Device test findings (SportyNivida / Sporty Bet):
   COMPONENT_TYPE_INTENT, name), name defaulting to the next
   free intentN across all namespaces, verified by read-back.
   Honest scope in the description: Intent only.
+- Function expressions wave (2026-10-19): {"fn":name,"a":...,
+  "b":...} reporters, all Fx-verified - mathAbs/Ceil/Floor/
+  Round/Sqrt/Pow/Max/Min, random, mathPi, stringLength,
+  stringJoin (concat), stringContains, toUpperCase/toLowerCase/
+  trim, stringSub (from/to), toNumber, toStringWithDecimal
+  (to_text). fn return kinds feed the "=" text/boolean routing;
+  card text reads "length of …", "… joined with …", etc.
