@@ -1626,3 +1626,43 @@ success. `unreadInputs` now reports any EditText no block reads:
 
 Both checks join the audit after every applied change, and appear in
 the export as `unused_variables`.
+
+## Wave 32c: onCreate and initializeLogic are two different things
+
+The user corrected me here, and the correction is right. I had written
+that the model "keeps calling `onCreate`; Sketchware calls it
+`initializeLogic`" — as if it were a rename. It is not.
+
+The generated activity has both (see `Jx`, the code generator):
+
+```java
+@Override
+protected void onCreate(Bundle _savedInstanceState) {
+    super.onCreate(_savedInstanceState);
+    … setContentView, view binding, permissions …
+    initialize(_savedInstanceState);   // wires the views
+    initializeLogic();                 // runs the blocks you wired
+}
+
+private void initializeLogic() { … your blocks … }
+```
+
+`onCreate` is the real Android lifecycle method, and it still exists.
+Sketchware Pro's generator keeps it to framework work and calls
+`initializeLogic()` — a separate private method that holds the blocks
+the user wires in the editor. The split exists so the generated
+onCreate stays readable instead of crowded with user logic, which is
+exactly the reason the user gave.
+
+So "onCreate" and "initializeLogic" describe the same *moment* — when
+the screen is created — but only `initializeLogic` is an event blocks
+can attach to.
+
+**The bug this exposed:** the near-miss mapping (`onCreate` →
+`initializeLogic`) existed on the *write* path but not on the *read*
+path. `set_event_handler` quietly accepted it; `get_event_logic`
+refused it with `E_BAD_EVENT`. So a model that put its blocks under
+onCreate could not read them back. Both `E_BAD_EVENT` failures in the
+MagicalNotes export are this. `probeEvent` now uses the same alias,
+and the error text explains the difference instead of just listing
+names.

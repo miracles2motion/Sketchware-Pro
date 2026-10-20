@@ -1152,8 +1152,9 @@ public final class AgentLogic {
             if (!Arrays.asList(oq.getAllActivityEvents())
                     .contains(plan.eventName)) {
                 // Models name screen events the Android way; accept
-                // the near-miss instead of refusing it. "onCreate" is
-                // this app's initializeLogic.
+                // the near-miss instead of refusing it. onCreate is
+                // the generated lifecycle method; initializeLogic is
+                // the block event Pro added inside it.
                 String alias = activityEventAlias(plan.eventName);
                 if (alias == null
                         || !Arrays.asList(oq.getAllActivityEvents())
@@ -7393,9 +7394,23 @@ public final class AgentLogic {
 
     /**
      * The activity event a model means, even when it names it the
-     * Android way. Sketchware's own screen-created event is
-     * {@code initializeLogic}; models say {@code onCreate} almost
-     * every time, and a bare refusal just makes them try again.
+     * Android way.
+     *
+     * <p>{@code onCreate} is not a rename of {@code initializeLogic} —
+     * they are two different things that both exist. The generated
+     * activity really does have {@code protected void onCreate(Bundle)},
+     * and it really is the lifecycle method; Sketchware Pro's code
+     * generator (Jx) makes onCreate do the framework work —
+     * setContentView, view binding, permission handling — and then call
+     * {@code initializeLogic()}, which is a separate private method
+     * holding the blocks the user wired in the editor. The split keeps
+     * the generated onCreate readable instead of crowded with user
+     * logic.
+     *
+     * <p>So a model saying "onCreate" means the same moment in time:
+     * when the screen is created. Its blocks belong in
+     * initializeLogic, which runs inside onCreate. Say so rather than
+     * refusing, because a refusal just makes the model try again.
      * Returns null when the name is not a near-miss of one.
      */
     private static String activityEventAlias(String asked) {
@@ -8634,11 +8649,28 @@ public final class AgentLogic {
             plan.targetId = plan.eventName;
             if (!Arrays.asList(oq.getAllActivityEvents())
                     .contains(plan.eventName)) {
-                throw new AgentTools.ToolException("E_BAD_EVENT",
-                        "\"" + plan.eventName + "\" is not an "
-                                + "activity event. Activity events are: "
-                                + String.join(", ",
-                                        oq.getAllActivityEvents()) + ".");
+                // Reading accepts the same near-misses writing does.
+                // Before this, get_event_logic refused "onCreate" while
+                // set_event_handler quietly mapped it — so a model that
+                // wrote its blocks under onCreate could not read them
+                // back, which is exactly what the MagicalNotes run hit.
+                String alias = activityEventAlias(plan.eventName);
+                if (alias == null
+                        || !Arrays.asList(oq.getAllActivityEvents())
+                                .contains(alias)) {
+                    throw new AgentTools.ToolException("E_BAD_EVENT",
+                            "\"" + plan.eventName + "\" is not an "
+                                    + "activity event. Activity events are: "
+                                    + String.join(", ",
+                                            oq.getAllActivityEvents())
+                                    + ". (\"onCreate\" is the generated "
+                                    + "Java lifecycle method; the event "
+                                    + "your blocks attach to is "
+                                    + "initializeLogic, which runs inside "
+                                    + "it.)");
+                }
+                plan.eventName = alias;
+                plan.targetId = alias;
             }
             plan.header = "When " + SketchwareProjects.activityName(activity)
                     + " runs " + plan.eventName + ":";
