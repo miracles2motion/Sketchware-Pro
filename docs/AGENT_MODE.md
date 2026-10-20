@@ -1666,3 +1666,41 @@ onCreate could not read them back. Both `E_BAD_EVENT` failures in the
 MagicalNotes export are this. `probeEvent` now uses the same alias,
 and the error text explains the difference instead of just listing
 names.
+
+## Wave 32d: the save_pref message, and the export's missing block tree
+
+**A block that needs a component now says which one.** The old
+message was:
+
+> This block acts on a component and none was named. This screen has:
+> file1, intent1.
+
+It listed the ids without saying which kind `save_pref` needed, so the
+model guessed — and in MagicalNotes one refusal cost five retries of a
+four-block handler, which is how duplicate and dead blocks got in.
+Now:
+
+> This block works on a SharedPreferences component, and none was
+> named. Name one of this screen's SharedPreferences components:
+> file1.
+
+or, when the screen has none:
+
+> This screen has no SharedPreferences component yet — add one with
+> create_component {type: "shared_preferences"}, then name it here. Its
+> components are: intent1 — none of them is a SharedPreferences.
+
+The keyword comes from `create_component`'s own `TYPES` table, so the
+two tools cannot disagree.
+
+**The export writes the block tree.** `events` was being written as
+`logic.events` — an int. A screen with one event exported `events: 1`,
+throwing away the only record of what the agent actually wired, which
+is the first thing needed when a generated screen misbehaves. It now
+exports each event's numbered statements, keyed by its header:
+
+```json
+"events": {
+  "When save_btn (…) onClick:": "1. set noteText to \"\"\n2. Finish Activity\n…"
+}
+```

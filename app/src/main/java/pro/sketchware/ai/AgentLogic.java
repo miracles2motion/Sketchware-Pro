@@ -7092,17 +7092,58 @@ public final class AgentLogic {
             componentId = stringOf(op, "component");
             Integer type = components.get(componentId);
             if (type == null) {
-                String correction = describe("This screen has: ",
-                        "It has no components yet — add one with "
-                                + "create_component.",
-                        components.keySet());
+                // Say which kind of component this block needs, and
+                // name one on this screen that would do — the old
+                // message ("acts on a component and none was named.
+                // This screen has: file1, intent1") listed ids without
+                // saying which was the right kind, so the model guessed
+                // again and again. In MagicalNotes that one message
+                // cost five retries of a four-block handler.
+                String wanted = ComponentBean.getComponentName(null,
+                        action.componentType);
+                ArrayList<String> matching = new ArrayList<>();
+                for (java.util.Map.Entry<String, Integer> entry
+                        : components.entrySet()) {
+                    if (entry.getValue() != null
+                            && entry.getValue() == action.componentType) {
+                        matching.add(entry.getKey());
+                    }
+                }
+                StringBuilder message = new StringBuilder();
+                if (componentId.isEmpty()) {
+                    message.append("This block works on a ").append(wanted)
+                            .append(" component, and none was named. ");
+                } else {
+                    message.append("There is no ").append(wanted)
+                            .append(" called \"").append(componentId)
+                            .append("\" on this screen. ");
+                }
+                if (!matching.isEmpty()) {
+                    message.append("Name one of this screen's ")
+                            .append(wanted).append(" components: ")
+                            .append(String.join(", ", matching))
+                            .append(".");
+                } else {
+                    String keyword = AgentTools.componentTypeKeyword(
+                            action.componentType);
+                    message.append("This screen has no ").append(wanted)
+                            .append(" component yet — add one with "
+                                    + "create_component");
+                    if (!keyword.isEmpty()) {
+                        message.append(" {type: \"").append(keyword)
+                                .append("\"}");
+                    }
+                    message.append(", then name it here.");
+                    if (!components.isEmpty()) {
+                        message.append(" Its components are: ")
+                                .append(String.join(", ",
+                                        components.keySet()))
+                                .append(" — none of them is a ")
+                                .append(wanted).append(".");
+                    }
+                }
                 throw new AgentTools.ToolException("E_BAD_BLOCK",
-                        (componentId.isEmpty()
-                                ? "This block acts on a component and "
-                                        + "none was named. "
-                                : "There is no component called "
-                                        + componentId + " on this screen. ")
-                                + correction);
+                        message.toString());
             }
             if (type != action.componentType) {
                 throw new AgentTools.ToolException("E_BAD_BLOCK",

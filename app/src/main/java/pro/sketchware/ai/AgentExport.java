@@ -410,7 +410,52 @@ public final class AgentExport {
                     components.add(name);
                 }
                 screen.add("components", components);
-                screen.addProperty("events", logic.events);
+                // The block tree, not a count. This used to write the
+                // number of events (a bare 1 for a screen with one),
+                // which threw away the only record of what the agent
+                // actually wired — the first thing anyone needs when a
+                // generated screen misbehaves.
+                JsonObject eventLogic = new JsonObject();
+                try {
+                    a.a.a.eC eventStore = a.a.a.jC.a(scId);
+                    java.util.ArrayList<com.besome.sketch.beans.EventBean>
+                            wired =
+                            eventStore.g(activity.getJavaName());
+                    if (wired != null) {
+                        for (com.besome.sketch.beans.EventBean event
+                                : wired) {
+                            if (event.targetId == null
+                                    || event.eventName == null) {
+                                continue;
+                            }
+                            // An activity event is stored under its own
+                            // name as the target; a widget event under
+                            // the widget's id.
+                            boolean activityEvent =
+                                    event.targetId.equals(event.eventName);
+                            try {
+                                AgentLogic.EditPlan plan =
+                                        AgentLogic.describeEvent(scId,
+                                                activity,
+                                                activityEvent ? "activity"
+                                                        : event.targetId,
+                                                event.eventName);
+                                if (plan == null
+                                        || plan.existingCount <= 0) {
+                                    continue;
+                                }
+                                eventLogic.addProperty(plan.header,
+                                        plan.eventRendering);
+                            } catch (Exception ignored) {
+                                // One unreadable event must not lose
+                                // the others.
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {
+                    // Unreadable events read as "none wired".
+                }
+                screen.add("events", eventLogic);
                 JsonArray widgets = new JsonArray();
                 for (ViewBean bean
                         : SketchwareProjects.screenBeans(scId, activity)) {

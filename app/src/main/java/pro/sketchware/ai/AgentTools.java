@@ -2533,6 +2533,22 @@ public final class AgentTools {
     }
 
 
+    /**
+     * The create_component keyword for a ComponentBean type, or "" if
+     * the type is not one the tool can add. Used to tell a model not
+     * just that a block needs a component, but which kind and how to
+     * add one.
+     */
+    public static String componentTypeKeyword(int componentType) {
+        for (Object[] row : CreateComponent.TYPES) {
+            if (row[1] instanceof Integer number
+                    && number == componentType) {
+                return String.valueOf(row[0]);
+            }
+        }
+        return "";
+    }
+
     /** create_component: add a component of any stock kind. */
     private static final class CreateComponent implements Tool {
         private static final Pattern NAME_PATTERN =
