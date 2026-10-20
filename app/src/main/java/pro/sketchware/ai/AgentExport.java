@@ -467,6 +467,9 @@ public final class AgentExport {
             for (String finding : AgentLogic.unusedVariables(scId)) {
                 unused.add(finding);
             }
+            for (String finding : AgentLogic.unreadInputs(scId)) {
+                unused.add(finding);
+            }
         } catch (Exception ignored) {
             // Never let the check stop the export.
         }

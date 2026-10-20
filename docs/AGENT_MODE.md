@@ -1594,3 +1594,35 @@ Three changes:
 
 The principle: a variable is not a declaration of intent, it is
 clutter in the user's project until something reads it.
+
+## Wave 32b: finish ends the event
+
+The four lines the user read off the generated Java of one button:
+
+```java
+noteText = "";
+finish();
+file1.edit().putString("magical_note", noteText).commit();
+SketchwareUtil.showMessage(getApplicationContext(), "… Note saved …");
+```
+
+Two failures in four lines.
+
+**1. `finish()` was second.** Everything after it is dead code, and in
+the block editor those blocks sit *under* Finish Activity, which is
+what looked wrong on screen. `checkTerminators` now refuses a
+terminator that is not last (`E_AFTER_FINISH`), naming the blocks that
+would be dead, and refuses appending to an event that already ends
+with Finish Activity. Repeat copies are refused the same way — the
+MagicalNotes event had two.
+
+**2. The note was never read.** `noteText` is set to `""` and then
+saved, while `note_input` — the box the user actually typed in — is
+not named by any block. The app ran, saved nothing, and announced
+success. `unreadInputs` now reports any EditText no block reads:
+
+> note_input is a text box, but no block on that screen reads what is
+> typed in it — whatever the user types is thrown away.
+
+Both checks join the audit after every applied change, and appear in
+the export as `unused_variables`.

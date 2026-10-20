@@ -985,6 +985,7 @@ public class AgentLoop {
             // to reject four more by hand. Say so while they are cheap
             // to delete.
             List<String> unused = AgentLogic.unusedVariables(journal);
+            unused.addAll(AgentLogic.unreadInputs(journal));
             if (!unused.isEmpty()) {
                 result.add("unusedVariables", jsonList(unused));
                 StringBuilder text = new StringBuilder();
@@ -993,9 +994,9 @@ public class AgentLoop {
                 } else {
                     text.append("Applied.");
                 }
-                text.append("\n\nDeclared but unused — nothing reads or "
-                        + "writes these. Wire them up or remove them "
-                        + "with remove_variable:");
+                text.append("\n\nWorth a look — nothing uses these yet. "
+                        + "Wire them up, or remove a variable with "
+                        + "remove_variable:");
                 for (String finding : unused) {
                     text.append("\n• ").append(finding);
                 }

@@ -1254,6 +1254,20 @@ public final class AgentLogic {
         plan.existingCount = existing.size();
         int nextId = nextFreeId(existing);
 
+        // A screen that closes cannot do anything afterwards. This is
+        // not a style rule: in MagicalNotes the agent put Finish
+        // Activity second, and the four generated lines were
+        //
+        //     noteText = "";
+        //     finish();
+        //     file1.edit().putString("magical_note", noteText).commit();
+        //     SketchwareUtil.showMessage(... "Note saved");
+        //
+        // so the save and the confirmation never ran, and the user saw
+        // a block sitting under Finish Activity in the editor. Nothing
+        // may follow a terminator, and a second one is a copy.
+        checkTerminators(blocks, existing, plan.eventName, plan.targetId);
+
         // Inside onBindCustomView, blocks address the item layout's
         // widgets (the editor swaps its widget menus to that layout);
         // the screen's own ids keep priority on a clash.
@@ -1282,6 +1296,68 @@ public final class AgentLogic {
                 }
             }
         }
+
+    /** Blocks that end the event: nothing can run after them. */
+    private static final java.util.Set<String> TERMINATORS =
+            java.util.Set.of("finish", "finish_activity", "finishactivity");
+
+    /**
+     * Refuses a terminator that is not last, and a second copy of one.
+     * Nothing after {@code finish()} runs, so a block there is dead
+     * code that also looks wrong in the editor.
+     */
+    private static void checkTerminators(JsonArray blocks,
+                                         ArrayList<BlockBean> existing,
+                                         String eventName, String targetId)
+            throws AgentTools.ToolException {
+        if (blocks == null) {
+            return;
+        }
+        int last = -1;
+        for (int i = 0; i < blocks.size(); i++) {
+            JsonElement element = blocks.get(i);
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            String kind = stringOf(element.getAsJsonObject(), "block");
+            if (TERMINATORS.contains(kind.toLowerCase(
+                    java.util.Locale.ROOT))) {
+                last = i;
+            }
+        }
+        if (last < 0) {
+            return;
+        }
+        if (last < blocks.size() - 1) {
+            StringBuilder names = new StringBuilder();
+            for (int i = last + 1; i < blocks.size(); i++) {
+                JsonElement element = blocks.get(i);
+                if (!element.isJsonObject()) {
+                    continue;
+                }
+                if (names.length() > 0) {
+                    names.append(", ");
+                }
+                names.append(stringOf(element.getAsJsonObject(),
+                        "block"));
+            }
+            throw new AgentTools.ToolException("E_AFTER_FINISH",
+                    "Finish ends the event — nothing after it ever runs. "
+                            + "These blocks are after it and would be "
+                            + "dead code: " + names + ". Put finish last, "
+                            + "after everything else, or take it out.");
+        }
+        for (BlockBean bean : existing) {
+            if (bean != null && "finishActivity".equals(bean.opCode)) {
+                throw new AgentTools.ToolException("E_AFTER_FINISH",
+                        targetId + " " + eventName
+                                + " already ends with Finish Activity, "
+                                + "so nothing can be added after it. "
+                                + "Remove that block with edit_event_block "
+                                + "first, then add these.");
+            }
+        }
+    }
 
         Builder builder = new Builder(context, builderWidgets,
                 variables, nextId);
@@ -8063,6 +8139,79 @@ public final class AgentLogic {
             return "a block on this screen may name it";
         }
         return null;
+    }
+
+    /**
+     * Text inputs whose contents no block ever reads. In MagicalNotes
+     * the save button stored {@code noteText} — which the agent had
+     * just set to "" — while the EditText the user actually typed in
+     * was never named by any block. The app ran, saved nothing, and
+     * reported success.
+     */
+    public static List<String> unreadInputs(String scId) {
+        ArrayList<String> findings = new ArrayList<>();
+        if (scId == null || scId.isEmpty()) {
+            return findings;
+        }
+        try {
+            for (ProjectFileBean activity
+                    : SketchwareProjects.activities(scId)) {
+                if (activity.fileType
+                        != ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
+                    continue;
+                }
+                ArrayList<String> inputs = new ArrayList<>();
+                for (ViewBean bean
+                        : SketchwareProjects.screenBeans(scId, activity)) {
+                    if (bean != null && bean.id != null
+                            && bean.type
+                                    == ViewBean.VIEW_TYPE_WIDGET_EDITTEXT) {
+                        inputs.add(bean.id);
+                    }
+                }
+                if (inputs.isEmpty()) {
+                    continue;
+                }
+                String javaName = activity.getJavaName();
+                eC store = jC.a(scId);
+                java.util.Set<String> named = new java.util.HashSet<>();
+                ArrayList<EventBean> events = store.g(javaName);
+                if (events != null) {
+                    for (EventBean event : events) {
+                        ArrayList<BlockBean> blocks = store.a(javaName,
+                                event.targetId + "_" + event.eventName);
+                        if (blocks == null) {
+                            continue;
+                        }
+                        for (BlockBean bean : blocks) {
+                            if (bean.parameters == null) {
+                                continue;
+                            }
+                            for (String parameter : bean.parameters) {
+                                if (parameter != null) {
+                                    named.add(parameter);
+                                }
+                            }
+                        }
+                    }
+                }
+                for (String id : inputs) {
+                    if (named.contains(id)) {
+                        continue;
+                    }
+                    findings.add(SketchwareProjects.activityName(activity)
+                            + ": " + id + " is a text box, but no block on "
+                            + "that screen reads what is typed in it — "
+                            + "whatever the user types is thrown away. "
+                            + "Read it with a block that takes its text "
+                            + "(set a variable from " + id + ", or use it "
+                            + "directly where the value is needed).");
+                }
+            }
+        } catch (Throwable ignored) {
+            // A check must never stop the work it is checking.
+        }
+        return findings;
     }
 
     /**
