@@ -1297,68 +1297,6 @@ public final class AgentLogic {
             }
         }
 
-    /** Blocks that end the event: nothing can run after them. */
-    private static final java.util.Set<String> TERMINATORS =
-            java.util.Set.of("finish", "finish_activity", "finishactivity");
-
-    /**
-     * Refuses a terminator that is not last, and a second copy of one.
-     * Nothing after {@code finish()} runs, so a block there is dead
-     * code that also looks wrong in the editor.
-     */
-    private static void checkTerminators(JsonArray blocks,
-                                         ArrayList<BlockBean> existing,
-                                         String eventName, String targetId)
-            throws AgentTools.ToolException {
-        if (blocks == null) {
-            return;
-        }
-        int last = -1;
-        for (int i = 0; i < blocks.size(); i++) {
-            JsonElement element = blocks.get(i);
-            if (!element.isJsonObject()) {
-                continue;
-            }
-            String kind = stringOf(element.getAsJsonObject(), "block");
-            if (TERMINATORS.contains(kind.toLowerCase(
-                    java.util.Locale.ROOT))) {
-                last = i;
-            }
-        }
-        if (last < 0) {
-            return;
-        }
-        if (last < blocks.size() - 1) {
-            StringBuilder names = new StringBuilder();
-            for (int i = last + 1; i < blocks.size(); i++) {
-                JsonElement element = blocks.get(i);
-                if (!element.isJsonObject()) {
-                    continue;
-                }
-                if (names.length() > 0) {
-                    names.append(", ");
-                }
-                names.append(stringOf(element.getAsJsonObject(),
-                        "block"));
-            }
-            throw new AgentTools.ToolException("E_AFTER_FINISH",
-                    "Finish ends the event — nothing after it ever runs. "
-                            + "These blocks are after it and would be "
-                            + "dead code: " + names + ". Put finish last, "
-                            + "after everything else, or take it out.");
-        }
-        for (BlockBean bean : existing) {
-            if (bean != null && "finishActivity".equals(bean.opCode)) {
-                throw new AgentTools.ToolException("E_AFTER_FINISH",
-                        targetId + " " + eventName
-                                + " already ends with Finish Activity, "
-                                + "so nothing can be added after it. "
-                                + "Remove that block with edit_event_block "
-                                + "first, then add these.");
-            }
-        }
-    }
-
         Builder builder = new Builder(context, builderWidgets,
                 variables, nextId);
         builder.lists = listsOf(store, javaName);
@@ -8139,6 +8077,68 @@ public final class AgentLogic {
             return "a block on this screen may name it";
         }
         return null;
+    }
+
+    /** Blocks that end the event: nothing can run after them. */
+    private static final java.util.Set<String> TERMINATORS =
+            java.util.Set.of("finish", "finish_activity", "finishactivity");
+
+    /**
+     * Refuses a terminator that is not last, and a second copy of one.
+     * Nothing after {@code finish()} runs, so a block there is dead
+     * code that also looks wrong in the editor.
+     */
+    private static void checkTerminators(JsonArray blocks,
+                                         ArrayList<BlockBean> existing,
+                                         String eventName, String targetId)
+            throws AgentTools.ToolException {
+        if (blocks == null) {
+            return;
+        }
+        int last = -1;
+        for (int i = 0; i < blocks.size(); i++) {
+            JsonElement element = blocks.get(i);
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            String kind = stringOf(element.getAsJsonObject(), "block");
+            if (TERMINATORS.contains(kind.toLowerCase(
+                    java.util.Locale.ROOT))) {
+                last = i;
+            }
+        }
+        if (last < 0) {
+            return;
+        }
+        if (last < blocks.size() - 1) {
+            StringBuilder names = new StringBuilder();
+            for (int i = last + 1; i < blocks.size(); i++) {
+                JsonElement element = blocks.get(i);
+                if (!element.isJsonObject()) {
+                    continue;
+                }
+                if (names.length() > 0) {
+                    names.append(", ");
+                }
+                names.append(stringOf(element.getAsJsonObject(),
+                        "block"));
+            }
+            throw new AgentTools.ToolException("E_AFTER_FINISH",
+                    "Finish ends the event — nothing after it ever runs. "
+                            + "These blocks are after it and would be "
+                            + "dead code: " + names + ". Put finish last, "
+                            + "after everything else, or take it out.");
+        }
+        for (BlockBean bean : existing) {
+            if (bean != null && "finishActivity".equals(bean.opCode)) {
+                throw new AgentTools.ToolException("E_AFTER_FINISH",
+                        targetId + " " + eventName
+                                + " already ends with Finish Activity, "
+                                + "so nothing can be added after it. "
+                                + "Remove that block with edit_event_block "
+                                + "first, then add these.");
+            }
+        }
     }
 
     /**
