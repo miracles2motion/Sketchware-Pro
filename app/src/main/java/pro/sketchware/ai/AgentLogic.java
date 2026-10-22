@@ -5245,14 +5245,18 @@ public final class AgentLogic {
                     break;
                 }
                 if (op.has("text") && op.get("text").isJsonObject()) {
-                    throw new AgentTools.ToolException("E_BAD_BLOCK",
-                            "set_text takes plain text here. To show "
-                                    + "a value — an event's "
-                                    + "{\"arg\":...}, a map entry, a "
-                                    + "widget's text — first put it in "
-                                    + "a string variable with "
-                                    + "set_variable, then set_text "
-                                    + "{from_variable}.");
+                    // A reporter in the text slot — a variable's value,
+                    // a widget's text, a list's JSON. Sketchware's own
+                    // setText block takes one, so refusing it here
+                    // (which is what this used to do) forced a pointless
+                    // two-step: copy into a variable, then set_text.
+                    String param = expr(op.get("text"), 's',
+                            "set_text needs the text to show");
+                    stmt.params.add(param);
+                    stmt.sentence = "Set " + widget.id + " text to "
+                            + describeExpr(op.get("text"));
+                    stmt.expectCode = widget.id + ".setText(";
+                    break;
                 }
                 String text = stringOf(op, "text");
                 stmt.params.add(text);
@@ -6175,7 +6179,14 @@ public final class AgentLogic {
                 String text = stringOf(op, "text");
                 String fromVariable = stringOf(op, "from_variable");
                 String shown;
-                if (!fromVariable.isEmpty()) {
+                if (op.has("text") && op.get("text").isJsonObject()) {
+                    // The JSON can be any expression — most usefully a
+                    // saved preference: read the pref, parse it, fill
+                    // the list, in one block instead of two.
+                    text = expr(op.get("text"), 's',
+                            kind + " needs the JSON text");
+                    shown = describeExpr(op.get("text"));
+                } else if (!fromVariable.isEmpty()) {
                     requireVariable(variables, fromVariable);
                     requireVariableKind(variables, fromVariable, 2,
                             "JSON text can only come from a string "
@@ -6949,7 +6960,7 @@ public final class AgentLogic {
      * the target widget first, then the declared argument slots, each
      * validated the way the palette itself constrains it.
      */
-    private static void buildWidgetAction(JsonObject op,
+    private void buildWidgetAction(JsonObject op,
                                           Map<String, ViewBean> byId,
                                           Map<String, Integer> lists,
                                           WA action, Stmt stmt)
@@ -7017,13 +7028,19 @@ public final class AgentLogic {
                     String field = fields[Math.min(numberField++,
                             fields.length - 1)];
                     String value = stringOf(op, field);
-                    try {
-                        Double.parseDouble(value);
-                    } catch (Exception e) {
-                        throw new AgentTools.ToolException(
-                                "E_BAD_BLOCK",
-                                "This block needs a numeric \"" + field
-                                        + "\".");
+                    JsonElement number = op.get(field);
+                    if (number != null && number.isJsonObject()) {
+                        value = expr(number, 'd',
+                                "the \"" + field + "\" of this block");
+                    } else {
+                        try {
+                            Double.parseDouble(value);
+                        } catch (Exception e) {
+                            throw new AgentTools.ToolException(
+                                    "E_BAD_BLOCK",
+                                    "This block needs a numeric \"" + field
+                                            + "\".");
+                        }
                     }
                     stmt.params.add(value);
                     shown = value;
@@ -7035,6 +7052,26 @@ public final class AgentLogic {
                     String text = stringOf(op, field);
                     if (text.isEmpty() && "text".equals(field)) {
                         text = stringOf(op, "url");
+                    }
+                    // A computed value in this slot — a variable, a
+                    // widget's live text, a list turned into JSON.
+                    // These slots took literal text only, which is why a
+                    // model trying to save a list had nothing to reach
+                    // for but its own invented JSON-in-text notation.
+                    // Sketchware's blocks take a reporter here, so ours
+                    // do too.
+                    JsonElement raw = op.get(field);
+                    if (raw != null && raw.isJsonObject()) {
+                        text = expr(raw, 's',
+                                "the \"" + field + "\" of this block");
+                    } else if (raw != null && raw.isJsonPrimitive()
+                            && raw.getAsJsonPrimitive().isString()) {
+                        JsonObject decoded = expressionFromText(
+                                raw.getAsString());
+                        if (decoded != null) {
+                            text = expr(decoded, 's',
+                                    "the \"" + field + "\" of this block");
+                        }
                     }
                     stmt.params.add(text);
                     shown = text;
@@ -7149,14 +7186,29 @@ public final class AgentLogic {
      * compile, and the model can convert with
      * {@code {"fn":"to_text","a":{"var":"n"}}}.
      */
-    private static String textSlotValue(JsonObject op, String field,
-                                        Map<String, Integer> variables,
-                                        String opCode)
+    private String textSlotValue(JsonObject op, String field,
+                                 Map<String, Integer> variables,
+                                 String opCode)
             throws AgentTools.ToolException {
         if (!op.has(field) || !op.get(field).isJsonObject()) {
-            return stringOf(op, field);
+            String plain = stringOf(op, field);
+            // The model quoted its expression: {"json_of_list":…} as
+            // text. Read it as the expression it meant, not as letters.
+            JsonObject decoded = expressionFromText(plain);
+            if (decoded != null) {
+                return expr(decoded, 's',
+                        "the \"" + field + "\" of " + opCode);
+            }
+            return plain;
         }
         JsonObject value = op.get(field).getAsJsonObject();
+        if (!(value.size() == 1 && value.has("var"))) {
+            // Anything else — a list turned into JSON, a saved
+            // preference, a widget's live text — is a reporter block
+            // in this slot, exactly as Sketchware draws it.
+            return expr(value, 's',
+                    "the \"" + field + "\" of " + opCode);
+        }
         String name = stringOf(value, "var");
         if (name.isEmpty()) {
             throw new AgentTools.ToolException("E_BAD_BLOCK",
@@ -7207,7 +7259,7 @@ public final class AgentLogic {
      * against the screen's component list and its type), then the
      * declared argument slots.
      */
-    private static void buildComponentAction(JsonObject op,
+    private void buildComponentAction(JsonObject op,
                                              Map<String, ViewBean> byId,
                                              Map<String, Integer> variables,
                                              Map<String, Integer> lists,
@@ -7336,13 +7388,19 @@ public final class AgentLogic {
                     String field = fields[Math.min(numberField++,
                             fields.length - 1)];
                     String value = stringOf(op, field);
-                    try {
-                        Double.parseDouble(value);
-                    } catch (Exception e) {
-                        throw new AgentTools.ToolException(
-                                "E_BAD_BLOCK",
-                                "This block needs a numeric \"" + field
-                                        + "\".");
+                    JsonElement number = op.get(field);
+                    if (number != null && number.isJsonObject()) {
+                        value = expr(number, 'd',
+                                "the \"" + field + "\" of this block");
+                    } else {
+                        try {
+                            Double.parseDouble(value);
+                        } catch (Exception e) {
+                            throw new AgentTools.ToolException(
+                                    "E_BAD_BLOCK",
+                                    "This block needs a numeric \"" + field
+                                            + "\".");
+                        }
                     }
                     stmt.params.add(value);
                     shown = value;

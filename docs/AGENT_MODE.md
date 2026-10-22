@@ -1769,3 +1769,60 @@ is used — and the approval card says so:
 > SharedPreferences component, file1)
 
 Zero or several are still refused, with the list.
+
+## Wave 34: values are blocks, not text
+
+The user asked the question directly: *"why am I not able to set
+review.setText(Box), where Box is a block under the variable that calls
+the value of the Box variable? Why is it just writing JSON strings
+that mean nothing instead of using the block under the variable I
+created?"*
+
+The answer was not the model. It was four places in my code where a
+value slot accepted **literal text only**:
+
+1. **`set_text` explicitly refused an expression** — "set_text takes
+   plain text here. To show a value … first put it in a string
+   variable with set_variable, then set_text {from_variable}."
+   Sketchware's own `setText` block takes a reporter directly. My
+   refusal forced a pointless two-step copy.
+2. **`buildWidgetAction`'s `s`/`d` slots** read `stringOf(op, field)`.
+3. **`buildComponentAction`'s slots** the same — which is why
+   `save_pref` could not store a list turned into JSON.
+4. **`textSlotValue`** accepted exactly one expression shape,
+   `{"var":"name"}`, and nothing else.
+
+So the model, wanting "the value of Box" or "this list as JSON", had
+**nothing to reach for but text** — and invented `{"var":"Box"}` as a
+string. It was working around my limitation, not being stupid. The
+compiler accepted the result, the build reported success, and the app
+stored and displayed raw JSON.
+
+**All four now take expressions.** Widget and component value slots
+route through `expr()` when given an object; `set_text` takes a
+reporter; `list_from_json` takes any expression for its JSON; and
+`textSlotValue` handles every expression shape, not just `var`.
+`buildWidgetAction`, `buildComponentAction` and `textSlotValue` became
+instance methods so they can reach `expr()` — that is also the bug I
+made two waves ago in reverse, and checked for here.
+
+**And the shapes are documented** in `set_event_handler`, read off the
+code rather than remembered (numeric functions are `{"fn":"random",
+"a":0,"b":5}`, not `{"op":...}`):
+
+| what | write |
+|---|---|
+| a variable's value | `{"var":"Box"}` |
+| what is typed in a box | `{"text_of":"note_input"}` |
+| a saved preference | `{"pref_get":"file1","key":"magical_note"}` |
+| a list as JSON | `{"json_of_list":"allNotes"}` |
+| a random number | `{"fn":"random","a":0,"b":5}` |
+
+A quoted string is still a literal — but a string that parses as one
+of these objects is now read as the expression it meant, and the model
+is told.
+
+**The lesson, in the user's own framing:** the blocks were taught. The
+agent still could not use them, because the *slots* they plug into
+were wired for text. Teaching the inventory is not the same as wiring
+the sockets.
