@@ -5131,7 +5131,7 @@ public final class AgentTools {
                         stringArg(fp.args, "file_name"));
                 clean.addProperty("fragment_mode", true);
                 return new AgentProposal(name(), clean, scId,
-                        fp.title, fp.summary, fp.details);
+                        fp.title, fp.body, fp.details);
             }
             // A new screen is real work: it is planned before it is
             // added, so the user sees where it fits before it exists.
