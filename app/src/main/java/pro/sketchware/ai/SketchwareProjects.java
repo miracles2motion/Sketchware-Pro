@@ -228,6 +228,9 @@ public final class SketchwareProjects {
             for (android.util.Pair<String, String> moreBlock
                     : store.i(javaName)) {
                 summary.moreBlocks.add(moreBlock.first);
+                summary.moreBlockSpecs.put(moreBlock.first,
+                        moreBlock.second == null ? moreBlock.first
+                                : moreBlock.second);
             }
             summary.events = store.g(javaName).size();
         } catch (Exception ignored) {
@@ -256,8 +259,9 @@ public final class SketchwareProjects {
 
     /**
      * The events an activity already has, as "widgetId eventName" lines,
-     * through the data manager's own event list ({@code eC.g}).
-     * Activities only; custom views have no logic.
+     * through the data manager's own event list ({@code eC.g}) plus
+     * declared MoreBlocks ({@code eC.i}). Activities only; custom views
+     * have no logic.
      */
     public static List<String> eventLines(String scId,
                                           ProjectFileBean activity) {
@@ -288,6 +292,27 @@ public final class SketchwareProjects {
                     break;
                 }
             }
+            for (android.util.Pair<String, String> mb
+                    : store.i(activity.getJavaName())) {
+                if (lines.size() >= 60 || mb == null
+                        || mb.first == null) {
+                    break;
+                }
+                String line = "moreBlock "
+                        + AgentLogic.describeMoreBlockSignature(
+                                mb.first, mb.second);
+                try {
+                    java.util.ArrayList<com.besome.sketch.beans.BlockBean>
+                            blocks = store.a(activity.getJavaName(),
+                                    mb.first + "_moreBlock");
+                    int n = blocks == null ? 0 : blocks.size();
+                    line += " (" + n + " block" + (n == 1 ? "" : "s")
+                            + ")";
+                } catch (Exception ignored) {
+                    // Keep the signature line.
+                }
+                lines.add(line);
+            }
         } catch (Exception ignored) {
             // Unreadable events read as "none wired".
         }
@@ -314,6 +339,8 @@ public final class SketchwareProjects {
         public final java.util.LinkedHashMap<String, String> listTypes =
                 new java.util.LinkedHashMap<>();
         public final List<String> moreBlocks = new ArrayList<>();
+        public final java.util.LinkedHashMap<String, String> moreBlockSpecs =
+                new java.util.LinkedHashMap<>();
         public int events;
     }
 

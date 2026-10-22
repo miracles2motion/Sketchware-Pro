@@ -147,6 +147,8 @@ public final class AgentTools {
         register(new EditEventBlock());
         register(new CreateVariable());
         register(new RemoveVariable());
+        register(new CreateMoreBlock());
+        register(new RemoveMoreBlock());
         register(new CreateComponent());
         register(new EditProjectTheme());
         register(new BuildProject());
@@ -829,7 +831,10 @@ public final class AgentTools {
                 if (!summary.moreBlocks.isEmpty()) {
                     JsonArray moreBlocks = new JsonArray();
                     for (String name : summary.moreBlocks) {
-                        moreBlocks.add(name);
+                        moreBlocks.add(
+                                AgentLogic.describeMoreBlockSignature(
+                                        name,
+                                        summary.moreBlockSpecs.get(name)));
                     }
                     result.add("more_blocks", moreBlocks);
                 }
@@ -1786,9 +1791,32 @@ public final class AgentTools {
                     + "\"block\":\"toast\",\"message\":\"Saved\"},{\"block\":"
                     + "\"set_text\",\"target\":\"textview1\",\"text\":"
                     + "\"Done\"}]}. Use target \"activity\" with an "
-                    + "activity event (onCreate, onResume, ...) for "
-                    + "things that happen when the screen starts. The "
-                    + "user must approve before anything changes.";
+                    + "activity event (initializeLogic, onResume, "
+                    + "Import, ...) for screen-level behaviour, or "
+                    + "target \"<moreBlockName>\" with event "
+                    + "\"moreBlock\" to wire a More Block declared with "
+                    + "create_more_block. MORE BLOCKS & RAW JAVA: call "
+                    + "a void More Block as {\"block\":\"call_more_block\","
+                    + "\"name\":\"refreshUi\",\"args\":[...]}, call a "
+                    + "returning More Block inside any matching value "
+                    + "slot as {\"call_more_block\":\"formatNote\","
+                    + "\"args\":[...]}, read More Block parameters inside "
+                    + "its body with {\"arg\":\"paramName\"} (or the "
+                    + "parameter name directly for list/map/widget/"
+                    + "component parameters), and finish a returning "
+                    + "More Block with {\"block\":\"return_value\","
+                    + "\"value\":...}. For custom Java statements use "
+                    + "{\"block\":\"add_source_directly\",\"code\":\"...\"} "
+                    + "(inside a More Block or event, parameters are "
+                    + "prefixed with '_' like _title or _position, and "
+                    + "More Block methods are _<name>(...)), for inline "
+                    + "Java expressions in any value slot use "
+                    + "{\"java_expr\":\"...\"}, and for extra Java "
+                    + "imports use {\"block\":\"custom_import\",\"import\":"
+                    + "\"org.json.JSONArray\"} in target \"activity\", "
+                    + "event \"Import\" (or write fully-qualified class "
+                    + "names). The user must approve before anything "
+                    + "changes.";
         }
 
         @Override
@@ -1798,13 +1826,15 @@ public final class AgentTools {
                     "The screen, e.g. MainActivity"));
             properties.add("target", stringSchema(
                     "The widget id from get_screen, a component's id "
-                            + "(e.g. firebase1) for that component's "
-                            + "events, or \"activity\" for the screen's "
-                            + "own events"));
+                            + "(e.g. firebase1), \"activity\" for the "
+                            + "screen's own events (initializeLogic, "
+                            + "onResume, Import, ...), or a More Block's "
+                            + "name (with event \"moreBlock\")"));
             properties.add("event", stringSchema(
-                    "The event, e.g. onClick for a tap, onCreate for "
-                            + "when an activity-targeted screen starts, "
-                            + "onChildAdded for a Firebase component"));
+                    "The event, e.g. onClick for a tap, initializeLogic "
+                            + "when an activity starts, Import for "
+                            + "custom_import, onChildAdded for Firebase, "
+                            + "or \"moreBlock\" when wiring a More Block"));
             JsonObject blocksSchema = new JsonObject();
             blocksSchema.addProperty("type", "array");
             blocksSchema.addProperty("description",
@@ -1972,7 +2002,12 @@ public final class AgentTools {
                     "list_checked_positions_to_list",
                     "refresh_adapter", "notify_data_changed",
                     "when_clicked", "when_long_clicked",
-                    "when_checked_changed", "when_swipe_refresh"}) {
+                    "when_checked_changed", "when_swipe_refresh",
+                    "call_more_block", "more_block", "return_value",
+                    "return", "return_number", "return_boolean",
+                    "return_map", "return_list", "return_view",
+                    "add_source_directly", "raw_java", "custom_import",
+                    "add_custom_variable", "add_initializer"}) {
                 kinds.add(kind);
             }
             blockProp.add("enum", kinds);
@@ -2312,6 +2347,11 @@ public final class AgentTools {
                         }
                     }
                 }
+                if (AgentLogic.moreBlocksOf(store, javaName)
+                        .containsKey(name)) {
+                    return "\"" + name + "\" is already a More Block "
+                            + "on this screen.";
+                }
             } catch (Exception ignored) {
                 // An unreadable logic side simply defers to the
                 // pattern and keyword checks above.
@@ -2594,6 +2634,405 @@ public final class AgentTools {
                 out.append(pair.second);
             }
             return out.length() == 0 ? "none" : out.toString();
+        }
+    }
+
+    /** create_more_block: declare (and optionally wire) one More Block. */
+    private static final class CreateMoreBlock implements Tool {
+        @Override
+        public String name() {
+            return "create_more_block";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes creating a reusable More Block (custom "
+                    + "function) on one activity screen — matching "
+                    + "Sketchware Pro's Make Block dialog and "
+                    + "ReturnMoreblockManager. Supports typed "
+                    + "parameters (string, number, boolean, map, "
+                    + "list_string, list_number, list_map, view, or "
+                    + "widget/component types like textview, edittext, "
+                    + "listview, intent, shared_preferences) and the 8 "
+                    + "Sketchware Pro return types (void, string, "
+                    + "number, boolean, map, list_string, list_map, "
+                    + "view). You may also pass \"blocks\" directly to "
+                    + "create the More Block and wire its body in one "
+                    + "step (non-void More Blocks must finish with "
+                    + "{\"block\":\"return_value\",\"value\":...}), or "
+                    + "wire/update its body afterwards with "
+                    + "set_event_handler (target: \"<name>\", event: "
+                    + "\"moreBlock\"). Call void More Blocks as "
+                    + "{\"block\":\"call_more_block\",\"name\":\"...\","
+                    + "\"args\":[...]} and returning More Blocks inside "
+                    + "value slots as {\"call_more_block\":\"...\","
+                    + "\"args\":[...]}.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("activity", stringSchema(
+                    "The activity screen, e.g. MainActivity"));
+            properties.add("name", stringSchema(
+                    "The More Block's Java identifier name, e.g. "
+                            + "saveNote or formatTimestamp"));
+            JsonObject paramsSchema = new JsonObject();
+            paramsSchema.addProperty("type", "array");
+            paramsSchema.addProperty("description",
+                    "Optional parameters in order, each {\"name\":"
+                            + "\"title\",\"type\":\"string\"} (types: "
+                            + "string, number, boolean, map, "
+                            + "list_string, list_number, list_map, "
+                            + "view, textview, edittext, button, "
+                            + "imageview, listview, intent, "
+                            + "shared_preferences, calendar, etc., "
+                            + "plus optional \"label\" words)");
+            JsonObject paramItem = new JsonObject();
+            paramItem.addProperty("type", "object");
+            JsonObject paramProps = new JsonObject();
+            paramProps.add("name", stringSchema(
+                    "Parameter identifier, e.g. title"));
+            paramProps.add("type", stringSchema(
+                    "Parameter type, e.g. string, number, boolean, "
+                            + "map, list_string, list_number, "
+                            + "list_map, view"));
+            paramProps.add("label", stringSchema(
+                    "Optional display word(s) shown before this slot "
+                            + "on the purple block"));
+            paramItem.add("properties", paramProps);
+            paramsSchema.add("items", paramItem);
+            properties.add("parameters", paramsSchema);
+            JsonObject retSchema = stringSchema(
+                    "Optional return type: void (default), string, "
+                            + "number, boolean, map, list_string, "
+                            + "list_map, or view");
+            JsonArray retEnum = new JsonArray();
+            for (String r : new String[]{"void", "string", "number",
+                    "boolean", "map", "list_string", "list_map",
+                    "view"}) {
+                retEnum.add(r);
+            }
+            retSchema.add("enum", retEnum);
+            properties.add("return_type", retSchema);
+            JsonObject blocksSchema = new JsonObject();
+            blocksSchema.addProperty("type", "array");
+            blocksSchema.addProperty("description",
+                    "Optional initial body blocks for this More Block "
+                            + "(same block objects set_event_handler "
+                            + "accepts)");
+            JsonObject blockItem = new JsonObject();
+            blockItem.addProperty("type", "object");
+            blocksSchema.add("items", blockItem);
+            properties.add("blocks", blocksSchema);
+            return AgentTools.parameters(properties, "activity", "name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to create More Block "
+                    + stringArg(args, "name") + " on "
+                    + stringArg(args, "activity");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String asked = stringArg(args, "activity");
+            ProjectFileBean activity =
+                    SketchwareProjects.findActivity(scId, asked);
+            if (activity == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "There is no activity named \"" + asked
+                                + "\" in the working project.");
+            }
+            JsonArray rawParams = args.has("parameters")
+                    && args.get("parameters").isJsonArray()
+                    ? args.getAsJsonArray("parameters") : null;
+            String rawReturn = stringArg(args, "return_type");
+            AgentLogic.MoreBlockDef def =
+                    AgentLogic.buildMoreBlockSpec(scId, activity,
+                            stringArg(args, "name"), rawParams,
+                            rawReturn);
+            JsonArray blocks = args.has("blocks")
+                    && args.get("blocks").isJsonArray()
+                    && !args.getAsJsonArray("blocks").isEmpty()
+                    ? args.getAsJsonArray("blocks") : null;
+            AgentLogic.Plan bodyPlan = blocks != null
+                    ? AgentLogic.planMoreBlock(session.context, scId,
+                            activity, def, blocks, true)
+                    : null;
+
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("activity", activity.fileName);
+            clean.addProperty("name", def.bareName);
+            if (rawParams != null) {
+                clean.add("parameters", rawParams);
+            }
+            clean.addProperty("return_type", def.humanReturnType());
+            if (blocks != null) {
+                clean.add("blocks", blocks);
+            }
+
+            StringBuilder body = new StringBuilder("New More Block: ")
+                    .append(def.signature());
+            if (bodyPlan != null) {
+                for (String line : bodyPlan.lines) {
+                    body.append("\n• ").append(line);
+                }
+            }
+            String details = "Sketchware spec: " + def.second
+                    + (blocks == null ? ""
+                            : "\nExact blocks:\n"
+                                    + new com.google.gson.GsonBuilder()
+                                            .setPrettyPrinting()
+                                            .create().toJson(blocks));
+            return new AgentProposal(name(), clean, scId,
+                    "Add More Block to "
+                            + SketchwareProjects.activityName(activity)
+                            + " in " + project.name,
+                    body.toString(), details);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            if (!scId.equals(session.workingProjectId)) {
+                throw new ToolException("E_PROJECT_CHANGED",
+                        "The working project changed since this More "
+                                + "Block was proposed, so it was not "
+                                + "created.");
+            }
+            ProjectFileBean activity = SketchwareProjects.findActivity(
+                    scId, stringArg(proposal.args, "activity"));
+            if (activity == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "That activity no longer exists.");
+            }
+            JsonArray rawParams = proposal.args.has("parameters")
+                    && proposal.args.get("parameters").isJsonArray()
+                    ? proposal.args.getAsJsonArray("parameters") : null;
+            String rawReturn = stringArg(proposal.args, "return_type");
+            AgentLogic.MoreBlockDef def =
+                    AgentLogic.buildMoreBlockSpec(scId, activity,
+                            stringArg(proposal.args, "name"), rawParams,
+                            rawReturn);
+            JsonArray blocks = proposal.args.has("blocks")
+                    && proposal.args.get("blocks").isJsonArray()
+                    && !proposal.args.getAsJsonArray("blocks").isEmpty()
+                    ? proposal.args.getAsJsonArray("blocks") : null;
+            AgentLogic.Plan bodyPlan = blocks != null
+                    ? AgentLogic.planMoreBlock(session.context, scId,
+                            activity, def, blocks, true)
+                    : null;
+
+            String javaName = activity.getJavaName();
+            eC store = a.a.a.jC.a(scId);
+            SketchwareActions.backupProjectOnce(scId);
+            store.a(javaName, def.first, def.second);
+            try {
+                if (bodyPlan != null) {
+                    AgentLogic.apply(session.context, bodyPlan);
+                } else {
+                    SketchwareActions.commitProject(scId);
+                }
+            } catch (Exception e) {
+                try {
+                    store.n(javaName, def.first);
+                    SketchwareActions.commitProject(scId);
+                } catch (Exception ignored) {
+                    // Best-effort rollback.
+                }
+                if (e instanceof ToolException te) {
+                    throw te;
+                }
+                throw new ToolException("E_APPLY_FAILED",
+                        "Creating More Block \"" + def.bareName
+                                + "\" failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+            if (!AgentLogic.moreBlocksOf(store, javaName)
+                    .containsKey(def.bareName)) {
+                throw new ToolException("E_APPLY_FAILED",
+                        "More Block \"" + def.bareName
+                                + "\" did not read back after saving.");
+            }
+            JsonObject result = new JsonObject();
+            result.addProperty("created", true);
+            result.addProperty("activity",
+                    SketchwareProjects.activityName(activity));
+            result.addProperty("name", def.bareName);
+            result.addProperty("key", def.first);
+            result.addProperty("signature", def.signature());
+            result.addProperty("return_type", def.humanReturnType());
+            result.addProperty("wired_blocks",
+                    bodyPlan == null ? 0 : blocks.size());
+            result.addProperty("verified",
+                    "Created More Block " + def.signature() + " on "
+                            + SketchwareProjects.activityName(activity)
+                            + (bodyPlan == null ? ""
+                                    : " and wired its blocks")
+                            + " (read back and checked).");
+            return result;
+        }
+    }
+
+    /** remove_more_block: delete an unused More Block from a screen. */
+    private static final class RemoveMoreBlock implements Tool {
+        @Override
+        public String name() {
+            return "remove_more_block";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes deleting one More Block from one activity "
+                    + "screen — the same deletion Sketchware's Logic "
+                    + "Editor performs. Refuses when any event or other "
+                    + "More Block on that screen still calls it.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("activity", stringSchema(
+                    "The activity screen, e.g. MainActivity"));
+            properties.add("name", stringSchema(
+                    "The More Block name to remove, e.g. saveNote"));
+            return AgentTools.parameters(properties, "activity", "name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to remove More Block "
+                    + stringArg(args, "name");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String asked = stringArg(args, "activity");
+            ProjectFileBean activity =
+                    SketchwareProjects.findActivity(scId, asked);
+            if (activity == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "There is no activity named \"" + asked
+                                + "\" in the working project.");
+            }
+            String rawName = mod.hey.studios.moreblock
+                    .ReturnMoreblockManager.getMbName(
+                            stringArg(args, "name"));
+            String javaName = activity.getJavaName();
+            eC store = a.a.a.jC.a(scId);
+            java.util.LinkedHashMap<String, AgentLogic.MoreBlockDef> all =
+                    AgentLogic.moreBlocksOf(store, javaName);
+            AgentLogic.MoreBlockDef def = all.get(rawName);
+            if (def == null) {
+                throw new ToolException("E_NO_MORE_BLOCK",
+                        "\"" + rawName + "\" is not a More Block on "
+                                + SketchwareProjects.activityName(activity)
+                                + "."
+                                + (all.isEmpty() ? ""
+                                        : " Its More Blocks are: "
+                                                + String.join(", ",
+                                                        all.keySet())
+                                                + "."));
+            }
+            String callers = AgentLogic.moreBlockCallSites(scId,
+                    javaName, def);
+            if (callers != null) {
+                throw new ToolException("E_MORE_BLOCK_IN_USE",
+                        "More Block \"" + def.bareName
+                                + "\" is still called in " + callers
+                                + ". Remove or update those calls first "
+                                + "so the project stays buildable.");
+            }
+            JsonObject clean = new JsonObject();
+            clean.addProperty("activity", activity.fileName);
+            clean.addProperty("name", def.bareName);
+            return new AgentProposal(name(), clean, scId,
+                    "Remove More Block from "
+                            + SketchwareProjects.activityName(activity)
+                            + " in "
+                            + SketchwareProjects.project(scId).name,
+                    "Remove More Block " + def.signature()
+                            + " — nothing on that screen calls it",
+                    "Deletes the More Block and its blocks, matching "
+                            + "Sketchware's Logic Editor deletion.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            if (!scId.equals(session.workingProjectId)) {
+                throw new ToolException("E_PROJECT_CHANGED",
+                        "The working project changed since this was "
+                                + "proposed, so nothing was removed.");
+            }
+            ProjectFileBean activity = SketchwareProjects.findActivity(
+                    scId, stringArg(proposal.args, "activity"));
+            if (activity == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "That activity no longer exists.");
+            }
+            String rawName = mod.hey.studios.moreblock
+                    .ReturnMoreblockManager.getMbName(
+                            stringArg(proposal.args, "name"));
+            String javaName = activity.getJavaName();
+            eC store = a.a.a.jC.a(scId);
+            AgentLogic.MoreBlockDef def =
+                    AgentLogic.moreBlocksOf(store, javaName).get(rawName);
+            if (def == null) {
+                throw new ToolException("E_NO_MORE_BLOCK",
+                        "More Block \"" + rawName
+                                + "\" is already gone.");
+            }
+            String callers = AgentLogic.moreBlockCallSites(scId,
+                    javaName, def);
+            if (callers != null) {
+                throw new ToolException("E_MORE_BLOCK_IN_USE",
+                        "More Block \"" + def.bareName
+                                + "\" is now called in " + callers
+                                + "; nothing was removed.");
+            }
+            try {
+                SketchwareActions.backupProjectOnce(scId);
+                store.n(javaName, def.first);
+                SketchwareActions.commitProject(scId);
+            } catch (Exception e) {
+                throw new ToolException("E_APPLY_FAILED",
+                        "Removing More Block failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+            if (AgentLogic.moreBlocksOf(store, javaName)
+                    .containsKey(def.bareName)) {
+                throw new ToolException("E_APPLY_FAILED",
+                        "The More Block was still present after removal.");
+            }
+            JsonObject result = new JsonObject();
+            result.addProperty("removed", def.bareName);
+            result.addProperty("verified",
+                    SketchwareProjects.activityName(activity)
+                            + " no longer declares More Block "
+                            + def.signature()
+                            + " (read back and checked).");
+            return result;
         }
     }
 
@@ -3145,11 +3584,13 @@ public final class AgentTools {
             properties.add("activity", stringSchema(
                     "The screen, e.g. MainActivity"));
             properties.add("target", stringSchema(
-                    "The widget id from get_screen, a component's id "
-                            + "for that component's events, or "
-                            + "\"activity\" for the screen's own events"));
+                    "The widget id from get_screen, a component's id, "
+                            + "\"activity\" for the screen's own events, "
+                            + "or a More Block's name (with event "
+                            + "\"moreBlock\")"));
             properties.add("event", stringSchema(
-                    "The event, e.g. onClick"));
+                    "The event, e.g. onClick, initializeLogic, Import, "
+                            + "or \"moreBlock\""));
             return AgentTools.parameters(properties,
                     "activity", "target", "event");
         }
@@ -3215,16 +3656,18 @@ public final class AgentTools {
         @Override
         public String description() {
             return "Changes or removes one statement that is already "
-                    + "wired into an event — the fix for pile-ups like "
-                    + "two set_text blocks saying the same thing. "
-                    + "Read the event with get_event_logic first, then "
-                    + "pass block_path (the statement's numbers, e.g. "
-                    + "[2], or [1,2] inside a container). To change a "
-                    + "value, pass replace_with {text|text2|message|"
-                    + "value|number|flag: the new value or expression "
+                    + "wired into an event or More Block — the fix for "
+                    + "pile-ups like two set_text blocks saying the "
+                    + "same thing. Read the event or More Block with "
+                    + "get_event_logic first, then pass block_path (the "
+                    + "statement's numbers, e.g. [2], or [1,2] inside a "
+                    + "container). To change a value, pass replace_with "
+                    + "{text|text2|message|value|number|flag|code|"
+                    + "import|<paramName>: the new value or expression "
                     + "object, e.g. {\"text\":{\"text_of\":\"note_input\"}}} "
-                    + "— any value slot of the block can be rewritten "
-                    + "with a literal or an expression. "
+                    + "— any value slot of the block (including "
+                    + "add_source_directly code, custom_import path, and "
+                    + "call_more_block arguments) can be rewritten. "
                     + "To remove the statement (including position [1]), "
                     + "pass remove: true. The user approves "
                     + "first; if the event changed since the card, the "
@@ -3238,9 +3681,11 @@ public final class AgentTools {
             properties.add("activity", stringSchema(
                     "The screen, e.g. MainActivity"));
             properties.add("target", stringSchema(
-                    "The widget id, or \"activity\" for the screen's "
-                            + "own events"));
-            properties.add("event", stringSchema("The event name"));
+                    "The widget id, component id, \"activity\", or a "
+                            + "More Block's name (with event "
+                            + "\"moreBlock\")"));
+            properties.add("event", stringSchema(
+                    "The event name, or \"moreBlock\""));
             JsonObject path = new JsonObject();
             path.addProperty("type", "array");
             path.addProperty("description",

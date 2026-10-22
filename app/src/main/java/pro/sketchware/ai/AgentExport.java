@@ -410,6 +410,13 @@ public final class AgentExport {
                     components.add(name);
                 }
                 screen.add("components", components);
+                JsonObject moreBlocks = new JsonObject();
+                for (String key : logic.moreBlocks) {
+                    moreBlocks.addProperty(key,
+                            AgentLogic.describeMoreBlockSignature(
+                                    key, logic.moreBlockSpecs.get(key)));
+                }
+                screen.add("more_blocks", moreBlocks);
                 // The block tree, not a count. This used to write the
                 // number of events (a bare 1 for a screen with one),
                 // which threw away the only record of what the agent
@@ -428,9 +435,6 @@ public final class AgentExport {
                                     || event.eventName == null) {
                                 continue;
                             }
-                            // An activity event is stored under its own
-                            // name as the target; a widget event under
-                            // the widget's id.
                             boolean activityEvent =
                                     event.targetId.equals(event.eventName);
                             try {
@@ -449,6 +453,29 @@ public final class AgentExport {
                             } catch (Exception ignored) {
                                 // One unreadable event must not lose
                                 // the others.
+                            }
+                        }
+                    }
+                    java.util.ArrayList<android.util.Pair<String, String>>
+                            mbs = eventStore.i(activity.getJavaName());
+                    if (mbs != null) {
+                        for (android.util.Pair<String, String> mb : mbs) {
+                            if (mb == null || mb.first == null) {
+                                continue;
+                            }
+                            try {
+                                AgentLogic.EditPlan plan =
+                                        AgentLogic.describeEvent(scId,
+                                                activity, mb.first,
+                                                "moreBlock");
+                                if (plan == null
+                                        || plan.existingCount <= 0) {
+                                    continue;
+                                }
+                                eventLogic.addProperty(plan.header,
+                                        plan.eventRendering);
+                            } catch (Exception ignored) {
+                                // Keep exporting remaining MoreBlocks.
                             }
                         }
                     }

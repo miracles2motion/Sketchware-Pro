@@ -1900,3 +1900,15 @@ logs exposed the rest of the same class:
      screen name; underscored and extended-widget custom attributes
      validate cleanly in `AgentEdits`.
 
+## Wave 36 — More Blocks & `addSourceDirectly`
+
+1. **Full More Block lifecycle (`create_more_block` / `remove_more_block` / `call_more_block` / `return_value`)**:
+   - Validated against `MoreblockValidator`, `uq.b`/`uq.a()`, screen identifiers (`eC.a`), `ReturnMoreblockManager` (the 8 supported return types: `void`, `string`, `number`, `boolean`, `map`, `list_string`, `list_map`, `view`), and `mq` parameter subtypes (`%s`, `%d`, `%b`, `%m.<subType>`, plus label words).
+   - `create_more_block` can either declare the signature first or create and wire `<first>_moreBlock` in one approval card; `set_event_handler`, `get_event_logic`, and `edit_event_block` address More Blocks natively (`target: "<name>", event: "moreBlock"`).
+   - Inside a More Block body, primitive parameters emit `getArg` via `{"arg":"p"}` or `{"var":"p"}`, `%m.*` parameters (lists, maps, widgets, components) automatically rewrite into typed `getArg` reporters (`_p`), and non-void More Blocks enforce and emit `BlocksHandler`'s `returnString`/`returnNumber`/`returnBoolean`/`returnMap`/`returnListStr`/`returnListMap`/`returnView` terminator blocks.
+   - Void More Blocks emit statement `definedFunc` (`type = " "`); returning More Blocks emit value-reporter `definedFunc` inside `expr()` and reference slots (`{"call_more_block":"...","args":[...]}`).
+2. **`addSourceDirectly`, inline Java reporters, and `"Import"` event**:
+   - Statement `add_source_directly` (`addSourceDirectly`), inline value-slot reporters `{"java_expr":"..."}` (`asdString` / `asdNumber` / `asdBoolean`), `custom_import` (`customImport` in `target: "activity", event: "Import"`), `add_custom_variable` (`addCustomVariable`), and `add_initializer` (`addInitializer`), with `LogicEditorActivity`'s leading-space guard when raw code starts with `'@'` and plain-sentence approval previews (full code behind **Details** and in diagnostic exports).
+   - Project audits (`danglingWidgetReferences`, `unusedVariables`, `variableUse`, `unreadInputs`), `get_screen`, and `AgentExport` inspect More Blocks (`eC.i`), `getVar` specs, and raw-Java identifier tokens.
+
+

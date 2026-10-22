@@ -20,15 +20,20 @@ import java.util.Locale;
 import java.util.Map;
 
 import mod.agus.jcoderz.beans.ViewBeans;
+import mod.hey.studios.moreblock.ReturnMoreblockManager;
 
+import a.a.a.FB;
 import a.a.a.Fx;
+import a.a.a.Gx;
 import a.a.a.eC;
 import a.a.a.jC;
 import a.a.a.lC;
 import a.a.a.jq;
 import a.a.a.kq;
 import a.a.a.lq;
+import a.a.a.mq;
 import a.a.a.oq;
+import a.a.a.uq;
 import a.a.a.xB;
 
 /**
@@ -79,6 +84,9 @@ public final class AgentLogic {
             "alpha_of",
             "anim_running",
             "arg",
+            "asd_boolean",
+            "asd_number",
+            "asd_string",
             "asset_text",
             "badge_count_of",
             "bool",
@@ -88,6 +96,7 @@ public final class AgentLogic {
             "calendar_diff",
             "calendar_millis",
             "calendar_text",
+            "call_more_block",
             "can_go_back",
             "can_go_forward",
             "can_pause",
@@ -111,6 +120,7 @@ public final class AgentLogic {
             "is_file",
             "is_folder",
             "item_of",
+            "java_expr",
             "jpeg_rotation",
             "json_of_list",
             "json_of_list_map",
@@ -131,6 +141,7 @@ public final class AgentLogic {
             "map_has_value",
             "map_size",
             "max_of",
+            "more_block",
             "mp_duration_of",
             "mp_looping",
             "mp_playing",
@@ -175,7 +186,8 @@ public final class AgentLogic {
     /** Keys that only denote an expression when they stand alone. */
     private static final java.util.Set<String> SINGLE_KEY_EXPRESSIONS =
             java.util.Set.of("text", "number", "bool", "var", "arg",
-                    "checked", "enabled", "extra");
+                    "checked", "enabled", "extra", "java_expr",
+                    "asd_string", "asd_number", "asd_boolean");
 
     /**
      * Strips stray inner quotes around JSON keys (MagicalNotes saw
@@ -370,7 +382,7 @@ public final class AgentLogic {
 
     /** Slot token separators, for finding editable values. */
     private static final java.util.regex.Pattern SLOT_PATTERN =
-            java.util.regex.Pattern.compile("%[a-zA-Z]+(?:\\.[a-zA-Z]+)?");
+            java.util.regex.Pattern.compile("%\\w+(?:\\.\\w+)*");
 
     /** Widget kinds whose generated field has a setText method. */
     private static final List<String> TEXT_TYPES = Arrays.asList(
@@ -1279,6 +1291,607 @@ public final class AgentLogic {
         String expectCode;
     }
 
+    /** One typed parameter in a MoreBlock signature. */
+    public static final class MoreBlockParam {
+        public final char kind;
+        public final String subType;
+        public final String name;
+
+        MoreBlockParam(char kind, String subType, String name) {
+            this.kind = kind;
+            this.subType = subType == null ? "" : subType;
+            this.name = name;
+        }
+
+        public String humanType() {
+            return switch (kind) {
+                case 'b' -> "boolean";
+                case 'd' -> "number";
+                case 's' -> "string";
+                default -> switch (subType) {
+                    case "varMap" -> "map";
+                    case "listInt" -> "list_number";
+                    case "listStr" -> "list_string";
+                    case "listMap" -> "list_map";
+                    case "view" -> "view";
+                    case "file" -> "shared_preferences";
+                    default -> subType;
+                };
+            };
+        }
+    }
+
+    /** Parsed MoreBlock definition matching {@code eC.i(javaName)}. */
+    public static final class MoreBlockDef {
+        public final String first;
+        public final String second;
+        public final String bareName;
+        public final String cleanSpec;
+        public final String typeChar;
+        public final String callType;
+        public final String callTypeName;
+        public final ArrayList<MoreBlockParam> params =
+                new ArrayList<>();
+
+        MoreBlockDef(String first, String second, String bareName,
+                     String cleanSpec, String typeChar, String callType,
+                     String callTypeName) {
+            this.first = first;
+            this.second = second;
+            this.bareName = bareName;
+            this.cleanSpec = cleanSpec;
+            this.typeChar = typeChar;
+            this.callType = callType;
+            this.callTypeName = callTypeName;
+        }
+
+        public boolean isVoid() {
+            return " ".equals(typeChar);
+        }
+
+        public String humanReturnType() {
+            return switch (typeChar) {
+                case " " -> "void";
+                case "s" -> "string";
+                case "d" -> "number";
+                case "b" -> "boolean";
+                case "a|Map" -> "map";
+                case "l|List String" -> "list_string";
+                case "l|List Map" -> "list_map";
+                case "v|View" -> "view";
+                default -> typeChar;
+            };
+        }
+
+        public String signature() {
+            StringBuilder out = new StringBuilder(bareName).append('(');
+            for (int i = 0; i < params.size(); i++) {
+                if (i > 0) {
+                    out.append(", ");
+                }
+                MoreBlockParam param = params.get(i);
+                out.append(param.name).append(": ")
+                        .append(param.humanType());
+            }
+            out.append(')');
+            if (!isVoid()) {
+                out.append(" -> ").append(humanReturnType());
+            }
+            return out.toString();
+        }
+
+        public static MoreBlockDef parse(String first, String second) {
+            String safeFirst = first == null ? "" : first;
+            String safeSecond = second == null || second.isEmpty()
+                    ? safeFirst : second;
+            String bare = ReturnMoreblockManager.getMbName(safeFirst);
+            String clean = ReturnMoreblockManager.getMbName(safeSecond);
+            String typeChar =
+                    ReturnMoreblockManager.getMoreblockChar(safeSecond);
+            String callType = typeChar.contains("|")
+                    ? typeChar.split("\\|", 2)[0] : typeChar;
+            String callTypeName = typeChar.contains("|")
+                    ? typeChar.split("\\|", 2)[1] : "";
+            MoreBlockDef def = new MoreBlockDef(safeFirst, safeSecond,
+                    bare, clean, typeChar, callType, callTypeName);
+            List<String> tokens = specTokens(clean);
+            for (int i = 1; i < tokens.size(); i++) {
+                String part = tokens.get(i);
+                if (part == null || !part.startsWith("%")
+                        || part.length() < 4) {
+                    continue;
+                }
+                char firstChar = part.charAt(1);
+                if ((firstChar == 'b' || firstChar == 'd'
+                        || firstChar == 's') && part.charAt(2) == '.') {
+                    def.params.add(new MoreBlockParam(firstChar, "",
+                            part.substring(3)));
+                } else if (firstChar == 'm' && part.charAt(2) == '.') {
+                    int lastDot = part.lastIndexOf('.');
+                    if (lastDot > 3 && lastDot + 1 < part.length()) {
+                        def.params.add(new MoreBlockParam('m',
+                                part.substring(3, lastDot),
+                                part.substring(lastDot + 1)));
+                    }
+                }
+            }
+            return def;
+        }
+    }
+
+    private static List<String> specTokens(String cleanSpec) {
+        if (cleanSpec == null || cleanSpec.trim().isEmpty()) {
+            return new ArrayList<>();
+        }
+        try {
+            ArrayList<String> tokens = FB.c(cleanSpec);
+            if (tokens != null) {
+                return tokens;
+            }
+        } catch (Throwable ignored) {
+            // Fall back to plain whitespace splitting.
+        }
+        return Arrays.asList(cleanSpec.trim().split("\\s+"));
+    }
+
+    /** Human-readable signature for {@code get_screen} and exports. */
+    public static String describeMoreBlockSignature(String first,
+                                                    String second) {
+        return MoreBlockDef.parse(first, second).signature();
+    }
+
+    /** All MoreBlocks declared on {@code javaName}, keyed by bare name. */
+    static LinkedHashMap<String, MoreBlockDef> moreBlocksOf(
+            eC store, String javaName) {
+        LinkedHashMap<String, MoreBlockDef> map = new LinkedHashMap<>();
+        try {
+            ArrayList<android.util.Pair<String, String>> list =
+                    store.i(javaName);
+            if (list != null) {
+                for (android.util.Pair<String, String> pair : list) {
+                    if (pair != null && pair.first != null) {
+                        MoreBlockDef def = MoreBlockDef.parse(
+                                pair.first, pair.second);
+                        map.put(def.bareName, def);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // Unreadable MoreBlocks read as empty.
+        }
+        return map;
+    }
+
+    /**
+     * Resolves {@code (target, event)} to a MoreBlock when the caller
+     * addresses one ({@code target: "<name>", event: "moreBlock"},
+     * {@code target: "moreBlock", event: "<name>"}, or
+     * {@code target: "activity", event: "<name>"} when {@code <name>}
+     * is a declared MoreBlock). Returns null when the call is not
+     * addressing a MoreBlock; throws {@code E_NO_MORE_BLOCK} when the
+     * caller explicitly asked for {@code moreBlock} by an unknown name.
+     */
+    private static MoreBlockDef findMoreBlock(
+            eC store, String javaName, String target, String event)
+            throws AgentTools.ToolException {
+        String t = target == null ? "" : target.trim();
+        String e = event == null ? "" : event.trim();
+        boolean explicitMoreTarget = "moreBlock".equalsIgnoreCase(t)
+                || "more_block".equalsIgnoreCase(t);
+        boolean explicitMoreEvent = "moreBlock".equalsIgnoreCase(e)
+                || "more_block".equalsIgnoreCase(e);
+        LinkedHashMap<String, MoreBlockDef> all =
+                moreBlocksOf(store, javaName);
+        if (explicitMoreTarget || explicitMoreEvent) {
+            String candidate = explicitMoreTarget ? e : t;
+            String bare = ReturnMoreblockManager.getMbName(candidate);
+            MoreBlockDef found = all.get(bare);
+            if (found != null) {
+                return found;
+            }
+            for (MoreBlockDef def : all.values()) {
+                if (def.first.equals(candidate)) {
+                    return def;
+                }
+            }
+            throw new AgentTools.ToolException("E_NO_MORE_BLOCK",
+                    "This screen has no More Block named \"" + candidate
+                            + "\"."
+                            + (all.isEmpty()
+                                    ? " Create one first with "
+                                            + "create_more_block."
+                                    : " Its More Blocks are: "
+                                            + String.join(", ",
+                                                    all.keySet())
+                                            + "."));
+        }
+        if ("activity".equalsIgnoreCase(t) && !e.isEmpty()) {
+            String bare = ReturnMoreblockManager.getMbName(e);
+            MoreBlockDef found = all.get(bare);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static final java.util.regex.Pattern MB_ID_PATTERN =
+            java.util.regex.Pattern.compile(
+                    "^[a-zA-Z][a-zA-Z0-9_]{0,59}$");
+
+    private static boolean isReservedIdentifier(String name) {
+        for (String keyword : uq.b) {
+            if (keyword.equals(name)) {
+                return true;
+            }
+        }
+        try {
+            String[] extra = uq.a();
+            if (extra != null) {
+                for (String word : extra) {
+                    if (name.equals(word)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // uq.b already covers Java keywords.
+        }
+        return false;
+    }
+
+    /**
+     * Validates a MoreBlock name, parameter list, and return type
+     * against Sketchware Pro's {@code MoreblockValidator},
+     * {@code ReturnMoreblockManager}, and {@code mq} parameter tables,
+     * returning the exact {@code (first, second)} pair {@code eC.a}
+     * expects.
+     */
+    public static MoreBlockDef buildMoreBlockSpec(
+            String scId, ProjectFileBean activity, String rawName,
+            JsonArray rawParams, String rawReturnType)
+            throws AgentTools.ToolException {
+        if (activity == null || activity.fileType
+                != ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
+            throw new AgentTools.ToolException("E_NOT_ACTIVITY",
+                    "Custom views have no More Blocks. Pick an activity "
+                            + "screen instead.");
+        }
+        String name = rawName == null ? "" : rawName.trim();
+        if (!MB_ID_PATTERN.matcher(name).matches()) {
+            throw new AgentTools.ToolException("E_BAD_NAME",
+                    "A More Block name must start with a letter, use "
+                            + "only letters, digits or underscores, and "
+                            + "be at most 60 characters (got \"" + name
+                            + "\").");
+        }
+        if (isReservedIdentifier(name)) {
+            throw new AgentTools.ToolException("E_NAME_TAKEN",
+                    "\"" + name + "\" is a reserved Java/Sketchware "
+                            + "word and cannot be a More Block name.");
+        }
+        eC store = jC.a(scId);
+        String javaName = activity.getJavaName();
+        java.util.Set<String> screenIds = new java.util.HashSet<>();
+        try {
+            ArrayList<String> taken = store.a(activity);
+            if (taken != null) {
+                screenIds.addAll(taken);
+            }
+        } catch (Throwable ignored) {
+            // Explicit checks below cover every table.
+        }
+        for (ViewBean view : SketchwareProjects.screenBeans(scId,
+                activity)) {
+            if (view != null && view.id != null) {
+                screenIds.add(view.id);
+            }
+        }
+        screenIds.addAll(variablesOf(store, javaName).keySet());
+        screenIds.addAll(listsOf(store, javaName).keySet());
+        screenIds.addAll(componentsOf(store, javaName).keySet());
+        LinkedHashMap<String, MoreBlockDef> existingMbs =
+                moreBlocksOf(store, javaName);
+        if (existingMbs.containsKey(name)) {
+            throw new AgentTools.ToolException("E_NAME_TAKEN",
+                    "More Block \"" + name + "\" already exists on "
+                            + SketchwareProjects.activityName(activity)
+                            + " (" + existingMbs.get(name).signature()
+                            + "). Wire or update its blocks with "
+                            + "set_event_handler (target \"" + name
+                            + "\", event \"moreBlock\"), or call it "
+                            + "with call_more_block.");
+        }
+        if (screenIds.contains(name)) {
+            throw new AgentTools.ToolException("E_NAME_TAKEN",
+                    "\"" + name + "\" is already used by a widget, "
+                            + "variable, list or component on "
+                            + SketchwareProjects.activityName(activity)
+                            + ". Pick a distinct More Block name.");
+        }
+
+        String retKey = rawReturnType == null ? ""
+                : rawReturnType.trim().toLowerCase(Locale.ROOT)
+                        .replace('-', '_');
+        String typeChar = switch (retKey) {
+            case "", "void", "none" -> " ";
+            case "string", "text", "s" -> "s";
+            case "number", "double", "int", "integer", "float", "d" ->
+                    "d";
+            case "boolean", "bool", "flag", "b" -> "b";
+            case "map", "hashmap", "varmap", "a|map" -> "a|Map";
+            case "list_string", "string_list", "liststr",
+                    "l|list string" -> "l|List String";
+            case "list_map", "map_list", "listmap", "l|list map" ->
+                    "l|List Map";
+            case "view", "widget", "v|view" -> "v|View";
+            default -> throw new AgentTools.ToolException(
+                    "E_BAD_RETURN_TYPE",
+                    "Unsupported More Block return_type \""
+                            + rawReturnType + "\". Sketchware Pro "
+                            + "supports these 8 return types: void, "
+                            + "string, number, boolean, map, "
+                            + "list_string, list_map, view. (To fill "
+                            + "a list_number, pass it as a parameter "
+                            + "to a void More Block.)");
+        };
+
+        StringBuilder specBuilder = new StringBuilder(name);
+        java.util.Set<String> seenParams = new java.util.HashSet<>();
+        if (rawParams != null) {
+            for (JsonElement elem : rawParams) {
+                if (elem == null || elem.isJsonNull()) {
+                    continue;
+                }
+                if (elem.isJsonPrimitive()
+                        && elem.getAsJsonPrimitive().isString()) {
+                    String label = elem.getAsString().trim();
+                    if (!label.isEmpty()) {
+                        validateMoreBlockLabel(label);
+                        specBuilder.append(' ').append(label);
+                    }
+                    continue;
+                }
+                if (!elem.isJsonObject()) {
+                    throw new AgentTools.ToolException("E_BAD_PARAM",
+                            "Each entry in \"parameters\" must be an "
+                                    + "object like {\"name\":\"title\","
+                                    + "\"type\":\"string\"}.");
+                }
+                JsonObject paramObj = elem.getAsJsonObject();
+                String label = stringOf(paramObj, "label");
+                if (!label.isEmpty() && stringOf(paramObj, "name")
+                        .isEmpty()) {
+                    validateMoreBlockLabel(label);
+                    specBuilder.append(' ').append(label);
+                    continue;
+                }
+                if (!label.isEmpty()) {
+                    validateMoreBlockLabel(label);
+                    specBuilder.append(' ').append(label);
+                }
+                String paramName = stringOf(paramObj, "name");
+                if (!MB_ID_PATTERN.matcher(paramName).matches()) {
+                    throw new AgentTools.ToolException("E_BAD_PARAM",
+                            "Parameter name \"" + paramName
+                                    + "\" must start with a letter, use "
+                                    + "only letters, digits or "
+                                    + "underscores, and be at most 60 "
+                                    + "characters.");
+                }
+                if (isReservedIdentifier(paramName)) {
+                    throw new AgentTools.ToolException("E_BAD_PARAM",
+                            "Parameter \"" + paramName
+                                    + "\" is a reserved word.");
+                }
+                if (!seenParams.add(paramName)) {
+                    throw new AgentTools.ToolException("E_BAD_PARAM",
+                            "Duplicate parameter name \"" + paramName
+                                    + "\" in More Block \"" + name
+                                    + "\".");
+                }
+                if (screenIds.contains(paramName)
+                        || name.equals(paramName)) {
+                    throw new AgentTools.ToolException("E_BAD_PARAM",
+                            "Parameter \"" + paramName + "\" collides "
+                                    + "with an existing name on this "
+                                    + "screen; pick a distinct "
+                                    + "parameter name.");
+                }
+                String rawType = stringOf(paramObj, "type");
+                if (rawType.isEmpty()) {
+                    rawType = stringOf(paramObj, "kind");
+                }
+                specBuilder.append(' ').append(encodeMoreBlockParam(
+                        paramName, rawType));
+            }
+        }
+
+        String first = ReturnMoreblockManager.injectMbType(
+                name, name, typeChar);
+        String second = ReturnMoreblockManager.injectMbType(
+                specBuilder.toString(), name, typeChar);
+        return MoreBlockDef.parse(first, second);
+    }
+
+    private static void validateMoreBlockLabel(String label)
+            throws AgentTools.ToolException {
+        if (!label.matches("[A-Za-z0-9_ ]+")) {
+            throw new AgentTools.ToolException("E_BAD_PARAM",
+                    "A More Block label word may only contain letters, "
+                            + "digits, underscores, and spaces (got \""
+                            + label + "\").");
+        }
+    }
+
+    private static String encodeMoreBlockParam(String paramName,
+                                               String rawType)
+            throws AgentTools.ToolException {
+        String key = rawType == null ? ""
+                : rawType.trim().toLowerCase(Locale.ROOT)
+                        .replace('-', '_').replace(" ", "_");
+        return switch (key) {
+            case "string", "text", "s" -> "%s." + paramName;
+            case "number", "double", "int", "integer", "float", "d" ->
+                    "%d." + paramName;
+            case "boolean", "bool", "flag", "b" -> "%b." + paramName;
+            case "map", "hashmap", "varmap" -> "%m.varMap." + paramName;
+            case "list_string", "string_list", "liststr" ->
+                    "%m.listStr." + paramName;
+            case "list_number", "number_list", "listint" ->
+                    "%m.listInt." + paramName;
+            case "list_map", "map_list", "listmap" ->
+                    "%m.listMap." + paramName;
+            case "view", "widget" -> "%m.view." + paramName;
+            case "textview", "text_view" -> "%m.textview." + paramName;
+            case "edittext", "edit_text" -> "%m.edittext." + paramName;
+            case "button" -> "%m.button." + paramName;
+            case "imageview", "image_view" ->
+                    "%m.imageview." + paramName;
+            case "checkbox", "check_box" -> "%m.checkbox." + paramName;
+            case "switch" -> "%m.switch." + paramName;
+            case "listview", "list_view" -> "%m.listview." + paramName;
+            case "recyclerview", "recycler_view" ->
+                    "%m.recyclerview." + paramName;
+            case "spinner" -> "%m.spinner." + paramName;
+            case "webview", "web_view" -> "%m.webview." + paramName;
+            case "progressbar", "progress_bar" ->
+                    "%m.progressbar." + paramName;
+            case "seekbar", "seek_bar" -> "%m.seekbar." + paramName;
+            case "linearlayout", "linear_layout", "linear" ->
+                    "%m.linear." + paramName;
+            case "cardview", "card_view" -> "%m.cardview." + paramName;
+            case "intent" -> "%m.intent." + paramName;
+            case "shared_preferences", "sharedpreferences", "sp",
+                    "file" -> "%m.file." + paramName;
+            case "calendar" -> "%m.calendar." + paramName;
+            case "vibrator" -> "%m.vibrator." + paramName;
+            case "timer" -> "%m.timer." + paramName;
+            case "dialog" -> "%m.dialog." + paramName;
+            case "firebase", "firebase_db" ->
+                    "%m.firebase." + paramName;
+            case "firebase_auth", "firebaseauth" ->
+                    "%m.firebaseauth." + paramName;
+            case "firebase_storage", "firebasestorage" ->
+                    "%m.firebasestorage." + paramName;
+            case "request_network", "requestnetwork" ->
+                    "%m.requestnetwork." + paramName;
+            case "mediaplayer", "media_player" ->
+                    "%m.mediaplayer." + paramName;
+            case "soundpool", "sound_pool" ->
+                    "%m.soundpool." + paramName;
+            case "objectanimator", "object_animator" ->
+                    "%m.objectanimator." + paramName;
+            default -> {
+                try {
+                    String mapped = mq.b(rawType == null ? ""
+                            : rawType.trim());
+                    if (mapped != null && !mapped.isEmpty()
+                            && !mq.e(mapped).isEmpty()) {
+                        yield "%m." + rawType.trim() + "." + paramName;
+                    }
+                } catch (Throwable ignored) {
+                    // Fall through to error message.
+                }
+                throw new AgentTools.ToolException("E_BAD_PARAM",
+                        "Unsupported parameter type \"" + rawType
+                                + "\" for \"" + paramName + "\". Use "
+                                + "string, number, boolean, map, "
+                                + "list_string, list_number, list_map, "
+                                + "view, or a widget/component type "
+                                + "(textview, edittext, button, "
+                                + "imageview, listview, intent, "
+                                + "shared_preferences, calendar, etc.).");
+            }
+        };
+    }
+
+    /**
+     * Where a MoreBlock is still called on {@code javaName}, or null
+     * when nothing references it and {@code eC.n} can safely delete it.
+     */
+    public static String moreBlockCallSites(String scId, String javaName,
+                                            MoreBlockDef def) {
+        if (scId == null || javaName == null || def == null) {
+            return null;
+        }
+        try {
+            eC store = jC.a(scId);
+            ArrayList<String> callers = new ArrayList<>();
+            for (Map.Entry<String, ArrayList<BlockBean>> entry
+                    : allActivityBlocks(store, javaName).entrySet()) {
+                if ((def.first + "_moreBlock").equals(entry.getKey())) {
+                    // Self-recursion inside the MoreBlock being removed
+                    // vanishes with the MoreBlock itself.
+                    continue;
+                }
+                for (BlockBean bean : entry.getValue()) {
+                    if (bean == null
+                            || !"definedFunc".equals(bean.opCode)) {
+                        continue;
+                    }
+                    String calledSpec = bean.spec == null ? ""
+                            : bean.spec.trim();
+                    int space = calledSpec.indexOf(' ');
+                    String calledName = space < 0 ? calledSpec
+                            : calledSpec.substring(0, space);
+                    if (def.bareName.equals(calledName)) {
+                        callers.add(entry.getKey());
+                        break;
+                    }
+                }
+            }
+            if (!callers.isEmpty()) {
+                return String.join(", ", callers);
+            }
+            if (store.f(javaName, def.first)) {
+                return "another block on this screen";
+            }
+        } catch (Throwable ignored) {
+            return "another block on this screen";
+        }
+        return null;
+    }
+
+    /** Every event and MoreBlock block-list on {@code javaName}. */
+    private static LinkedHashMap<String, ArrayList<BlockBean>>
+            allActivityBlocks(eC store, String javaName) {
+        LinkedHashMap<String, ArrayList<BlockBean>> out =
+                new LinkedHashMap<>();
+        ArrayList<EventBean> events = store.g(javaName);
+        if (events != null) {
+            for (EventBean event : events) {
+                if (event == null) {
+                    continue;
+                }
+                String key = event.targetId + "_" + event.eventName;
+                ArrayList<BlockBean> list = store.a(javaName, key);
+                if (list != null) {
+                    out.put(event.targetId + " " + event.eventName,
+                            list);
+                }
+            }
+        }
+        ArrayList<android.util.Pair<String, String>> mbs =
+                store.i(javaName);
+        if (mbs != null) {
+            for (android.util.Pair<String, String> pair : mbs) {
+                if (pair == null || pair.first == null) {
+                    continue;
+                }
+                ArrayList<BlockBean> list = store.a(javaName,
+                        pair.first + "_moreBlock");
+                if (list != null) {
+                    out.put("moreBlock "
+                                    + ReturnMoreblockManager.getMbName(
+                                            pair.first),
+                            list);
+                }
+            }
+        }
+        return out;
+    }
+
     /** A validated handler change; also the frozen proposal payload. */
     public static final class Plan {
         public String scId;
@@ -1288,6 +1901,10 @@ public final class AgentLogic {
         public boolean activityEvent;
         /** True when the target is a component, not a widget. */
         public boolean componentEvent;
+        /** True when wiring a MoreBlock body (<first>_moreBlock). */
+        public boolean moreBlockEvent;
+        /** Parsed signature when {@link #moreBlockEvent} is true. */
+        public MoreBlockDef moreBlockDef;
         /** The component's editor type code (component targets). */
         public int componentType;
         /** Values this event passes, name to editor slot letter. */
@@ -1426,10 +2043,268 @@ public final class AgentLogic {
                 false);
     }
 
+    private static int viewTypeForParamSubType(String subType) {
+        return switch (subType == null ? "" : subType) {
+            case "textview" -> ViewBean.VIEW_TYPE_WIDGET_TEXTVIEW;
+            case "edittext" -> ViewBean.VIEW_TYPE_WIDGET_EDITTEXT;
+            case "button" -> ViewBean.VIEW_TYPE_WIDGET_BUTTON;
+            case "imageview" -> ViewBean.VIEW_TYPE_WIDGET_IMAGEVIEW;
+            case "checkbox" -> ViewBean.VIEW_TYPE_WIDGET_CHECKBOX;
+            case "switch" -> ViewBean.VIEW_TYPE_WIDGET_SWITCH;
+            case "listview" -> ViewBean.VIEW_TYPE_WIDGET_LISTVIEW;
+            case "spinner" -> ViewBean.VIEW_TYPE_WIDGET_SPINNER;
+            case "webview" -> ViewBean.VIEW_TYPE_WIDGET_WEBVIEW;
+            case "progressbar" -> ViewBean.VIEW_TYPE_WIDGET_PROGRESSBAR;
+            case "seekbar" -> ViewBean.VIEW_TYPE_WIDGET_SEEKBAR;
+            case "calendarview" ->
+                    ViewBean.VIEW_TYPE_WIDGET_CALENDARVIEW;
+            case "fab" -> ViewBean.VIEW_TYPE_WIDGET_FAB;
+            case "recyclerview" ->
+                    ViewBeans.VIEW_TYPE_WIDGET_RECYCLERVIEW;
+            case "cardview" -> ViewBeans.VIEW_TYPE_LAYOUT_CARDVIEW;
+            default -> ViewBean.VIEW_TYPE_LAYOUT_LINEAR;
+        };
+    }
+
+    private static Integer componentTypeForParamSubType(String subType) {
+        return switch (subType == null ? "" : subType) {
+            case "intent" -> ComponentBean.COMPONENT_TYPE_INTENT;
+            case "file" -> ComponentBean.COMPONENT_TYPE_SHAREDPREF;
+            case "calendar" -> ComponentBean.COMPONENT_TYPE_CALENDAR;
+            case "vibrator" -> ComponentBean.COMPONENT_TYPE_VIBRATOR;
+            case "timer" -> ComponentBean.COMPONENT_TYPE_TIMERTASK;
+            case "dialog" -> ComponentBean.COMPONENT_TYPE_DIALOG;
+            case "mediaplayer" ->
+                    ComponentBean.COMPONENT_TYPE_MEDIAPLAYER;
+            case "soundpool" -> ComponentBean.COMPONENT_TYPE_SOUNDPOOL;
+            case "objectanimator" ->
+                    ComponentBean.COMPONENT_TYPE_OBJECTANIMATOR;
+            case "firebase" -> ComponentBean.COMPONENT_TYPE_FIREBASE;
+            case "firebaseauth" ->
+                    ComponentBean.COMPONENT_TYPE_FIREBASE_AUTH;
+            case "firebasestorage" ->
+                    ComponentBean.COMPONENT_TYPE_FIREBASE_STORAGE;
+            case "gyroscope" -> ComponentBean.COMPONENT_TYPE_GYROSCOPE;
+            case "requestnetwork" ->
+                    ComponentBean.COMPONENT_TYPE_REQUEST_NETWORK;
+            default -> null;
+        };
+    }
+
+    /**
+     * Populates {@code eventArgs} and synthetic screen bindings for a
+     * MoreBlock's parameters so every block and expression slot works on
+     * MoreBlock parameters without special cases; {@code refParams}
+     * records {@code %m.*} parameters that {@link #resolveMoreBlockRefParams}
+     * rewrites into {@code getArg} reporter beans.
+     */
+    private static void bindMoreBlockParams(
+            MoreBlockDef def, Map<String, ViewBean> builderWidgets,
+            Map<String, Integer> variables, Map<String, Integer> lists,
+            Map<String, Integer> components,
+            LinkedHashMap<String, Character> eventArgs,
+            LinkedHashMap<String, String> refParams) {
+        if (def == null) {
+            return;
+        }
+        for (MoreBlockParam param : def.params) {
+            if (param.kind == 'b' || param.kind == 'd'
+                    || param.kind == 's') {
+                eventArgs.put(param.name, param.kind);
+            } else if (param.kind == 'm') {
+                switch (param.subType) {
+                    case "varMap" -> {
+                        eventArgs.put(param.name, 'a');
+                        if (!variables.containsKey(param.name)) {
+                            variables.put(param.name, 3);
+                            refParams.put(param.name, "varMap");
+                        }
+                    }
+                    case "listInt" -> {
+                        if (!lists.containsKey(param.name)) {
+                            lists.put(param.name, 1);
+                            refParams.put(param.name, "listInt");
+                        }
+                    }
+                    case "listStr" -> {
+                        if (!lists.containsKey(param.name)) {
+                            lists.put(param.name, 2);
+                            refParams.put(param.name, "listStr");
+                        }
+                    }
+                    case "listMap" -> {
+                        if (!lists.containsKey(param.name)) {
+                            lists.put(param.name, 3);
+                            refParams.put(param.name, "listMap");
+                        }
+                    }
+                    default -> {
+                        Integer compType =
+                                componentTypeForParamSubType(
+                                        param.subType);
+                        if (compType != null) {
+                            if (!components.containsKey(param.name)) {
+                                components.put(param.name, compType);
+                                refParams.put(param.name, param.subType);
+                            }
+                        } else if (!builderWidgets
+                                .containsKey(param.name)) {
+                            builderWidgets.put(param.name,
+                                    new ViewBean(param.name,
+                                            viewTypeForParamSubType(
+                                                    param.subType)));
+                            refParams.put(param.name, param.subType);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Rewrites {@code %m.*} / {@code %v} slots that name a MoreBlock
+     * reference parameter into {@code @id} references to {@code getArg}
+     * reporter beans ({@code Fx} emits {@code _paramName}).
+     */
+    private static int resolveMoreBlockRefParams(
+            ArrayList<BlockBean> created,
+            LinkedHashMap<String, String> refParams,
+            ArrayList<BlockBean> sink, int nextId) {
+        if (refParams == null || refParams.isEmpty()) {
+            return nextId;
+        }
+        for (BlockBean bean : created) {
+            if (bean == null || bean.parameters == null
+                    || "getVar".equals(bean.opCode)
+                    || "getArg".equals(bean.opCode)) {
+                continue;
+            }
+            List<String> slots = slotsOf(bean.spec);
+            int limit = Math.min(slots.size(), bean.parameters.size());
+            for (int i = 0; i < limit; i++) {
+                String slot = slots.get(i);
+                if (slot == null || !(slot.startsWith("%m.")
+                        || "%v".equals(slot))) {
+                    continue;
+                }
+                String val = bean.parameters.get(i);
+                if (val == null || val.startsWith("@")) {
+                    continue;
+                }
+                String subType = refParams.get(val);
+                if (subType == null) {
+                    continue;
+                }
+                String argType = "m";
+                String argTypeName = "";
+                try {
+                    argType = kq.a(subType);
+                    argTypeName = kq.b(subType);
+                } catch (Throwable ignored) {
+                    // Defaults stand.
+                }
+                BlockBean argBean = new BlockBean(
+                        String.valueOf(nextId), val, argType,
+                        argTypeName, "getArg");
+                try {
+                    argBean.color = kq.a("getArg", argType);
+                } catch (Exception ignored) {
+                    // Display-only.
+                }
+                sink.add(argBean);
+                bean.parameters.set(i, "@" + nextId);
+                nextId++;
+            }
+        }
+        return nextId;
+    }
+
+    private static boolean matchesExpectCode(
+            String generated, String expectCode,
+            LinkedHashMap<String, String> refParams) {
+        if (generated == null) {
+            return false;
+        }
+        if (generated.contains(expectCode)) {
+            return true;
+        }
+        if (refParams != null && !refParams.isEmpty()) {
+            for (String paramName : refParams.keySet()) {
+                String alt = expectCode.replace("(" + paramName,
+                        "(_" + paramName);
+                if (!alt.equals(expectCode) && generated.contains(alt)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasReturnBlock(ArrayList<BlockBean> beans) {
+        if (beans == null) {
+            return false;
+        }
+        for (BlockBean bean : beans) {
+            if (bean == null || bean.opCode == null) {
+                continue;
+            }
+            switch (bean.opCode) {
+                case "returnString", "returnNumber", "returnBoolean",
+                        "returnMap", "returnListStr", "returnListMap",
+                        "returnView" -> {
+                    return true;
+                }
+                case "addSourceDirectly" -> {
+                    if (bean.parameters != null
+                            && !bean.parameters.isEmpty()
+                            && bean.parameters.get(0) != null
+                            && bean.parameters.get(0).contains("return ")) {
+                        return true;
+                    }
+                }
+                default -> {
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Validates a handler request and builds the beans it would add.
+     * Pure: reads the project, changes nothing.
+     */
+    public static Plan plan(Context context, String scId,
+                            ProjectFileBean activity, String target,
+                            String event, JsonArray blocks)
+            throws AgentTools.ToolException {
+        return plan(context, scId, activity, target, event, blocks,
+                false);
+    }
+
     public static Plan plan(Context context, String scId,
                             ProjectFileBean activity, String target,
                             String event, JsonArray blocks,
                             boolean replace)
+            throws AgentTools.ToolException {
+        return planInternal(context, scId, activity, target, event,
+                blocks, replace, null);
+    }
+
+    /** Plans the body of a MoreBlock (existing or pending creation). */
+    public static Plan planMoreBlock(Context context, String scId,
+                                     ProjectFileBean activity,
+                                     MoreBlockDef def, JsonArray blocks,
+                                     boolean replace)
+            throws AgentTools.ToolException {
+        return planInternal(context, scId, activity, def.first,
+                "moreBlock", blocks, replace, def);
+    }
+
+    private static Plan planInternal(Context context, String scId,
+                                     ProjectFileBean activity,
+                                     String target, String event,
+                                     JsonArray blocks, boolean replace,
+                                     MoreBlockDef pendingMoreBlock)
             throws AgentTools.ToolException {
         if (activity.fileType != ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
             throw new AgentTools.ToolException("E_NOT_ACTIVITY",
@@ -1465,8 +2340,25 @@ public final class AgentLogic {
         // component blocks are checked against it.
         LinkedHashMap<String, Integer> components =
                 componentsOf(store, javaName);
+        LinkedHashMap<String, Integer> lists = listsOf(store, javaName);
+        LinkedHashMap<String, MoreBlockDef> moreBlocks =
+                moreBlocksOf(store, javaName);
+        if (pendingMoreBlock != null) {
+            moreBlocks.put(pendingMoreBlock.bareName, pendingMoreBlock);
+        }
 
-        if ("activity".equalsIgnoreCase(target)) {
+        MoreBlockDef resolvedMb = pendingMoreBlock != null
+                ? pendingMoreBlock
+                : findMoreBlock(store, javaName, target, event);
+        if (resolvedMb != null) {
+            plan.moreBlockEvent = true;
+            plan.moreBlockDef = resolvedMb;
+            plan.targetId = resolvedMb.first;
+            plan.eventName = "moreBlock";
+            plan.header = "More Block " + resolvedMb.signature()
+                    + " on " + SketchwareProjects.activityName(activity)
+                    + ":";
+        } else if ("activity".equalsIgnoreCase(target)) {
             plan.activityEvent = true;
             plan.targetId = plan.eventName;
             if (!Arrays.asList(oq.getAllActivityEvents())
@@ -1495,43 +2387,59 @@ public final class AgentLogic {
             ViewBean widget = findWidget(byId, target);
             if (widget == null) {
                 String wanted = target == null ? "" : target.trim();
-                if (Arrays.asList(oq.getAllActivityEvents())
-                        .contains(wanted)) {
-                    throw new AgentTools.ToolException("E_BAD_TARGET",
-                            "\"" + wanted + "\" is an activity event, "
-                                    + "not a widget. For screen-level "
-                                    + "behaviour, call again with target "
-                                    + "\"activity\" and event \"" + wanted
-                                    + "\".");
+                if (moreBlocks.containsKey(
+                        ReturnMoreblockManager.getMbName(wanted))) {
+                    MoreBlockDef mb = moreBlocks.get(
+                            ReturnMoreblockManager.getMbName(wanted));
+                    plan.moreBlockEvent = true;
+                    plan.moreBlockDef = mb;
+                    plan.targetId = mb.first;
+                    plan.eventName = "moreBlock";
+                    plan.header = "More Block " + mb.signature()
+                            + " on "
+                            + SketchwareProjects.activityName(activity)
+                            + ":";
+                } else {
+                    if (Arrays.asList(oq.getAllActivityEvents())
+                            .contains(wanted)) {
+                        throw new AgentTools.ToolException("E_BAD_TARGET",
+                                "\"" + wanted + "\" is an activity event, "
+                                        + "not a widget. For screen-level "
+                                        + "behaviour, call again with target "
+                                        + "\"activity\" and event \"" + wanted
+                                        + "\".");
+                    }
+                    Integer componentType = components.get(wanted);
+                    if (componentType == null) {
+                        throw new AgentTools.ToolException("E_NO_WIDGET",
+                                "There is no widget, component or More "
+                                        + "Block named \"" + target
+                                        + "\" on this screen. Use "
+                                        + "get_screen to see available "
+                                        + "ids and More Blocks.");
+                    }
+                    // A component target: its events come from the same
+                    // table the editor's Add Event screen lists, and it
+                    // registers exactly the way AddEventActivity does.
+                    plan.componentEvent = true;
+                    plan.componentType = componentType;
+                    plan.targetId = wanted;
+                    String[] events = oq.getComponentEventsForClass(
+                            new ComponentBean(componentType).getClassInfo());
+                    if (events == null || !Arrays.asList(events)
+                            .contains(plan.eventName)) {
+                        throw new AgentTools.ToolException("E_BAD_EVENT",
+                                wanted + " (" + ComponentBean
+                                        .getComponentName(null, componentType)
+                                        + ") has no \"" + plan.eventName
+                                        + "\" event. Its events are: "
+                                        + (events == null ? "none"
+                                                : String.join(", ", events))
+                                        + ".");
+                    }
+                    plan.header = "When " + wanted + " "
+                            + plan.eventName + ":";
                 }
-                Integer componentType = components.get(wanted);
-                if (componentType == null) {
-                    throw new AgentTools.ToolException("E_NO_WIDGET",
-                            "There is no widget or component with id \""
-                                    + target + "\" on this screen. Use "
-                                    + "get_screen to see the widget ids.");
-                }
-                // A component target: its events come from the same
-                // table the editor's Add Event screen lists, and it
-                // registers exactly the way AddEventActivity does.
-                plan.componentEvent = true;
-                plan.componentType = componentType;
-                plan.targetId = wanted;
-                String[] events = oq.getComponentEventsForClass(
-                        new ComponentBean(componentType).getClassInfo());
-                if (events == null || !Arrays.asList(events)
-                        .contains(plan.eventName)) {
-                    throw new AgentTools.ToolException("E_BAD_EVENT",
-                            wanted + " (" + ComponentBean
-                                    .getComponentName(null, componentType)
-                                    + ") has no \"" + plan.eventName
-                                    + "\" event. Its events are: "
-                                    + (events == null ? "none"
-                                            : String.join(", ", events))
-                                    + ".");
-                }
-                plan.header = "When " + wanted + " "
-                        + plan.eventName + ":";
             } else {
                 plan.targetId = widget.id;
                 String[] events = oq.getEventsForClass(new ViewBean(
@@ -1570,40 +2478,33 @@ public final class AgentLogic {
         plan.eventArgs.putAll(eventArgsOf(plan.eventName));
 
         // The event this handler appends to (or replaces), and what it
-        // already does.
-        plan.eventExists = eventRegistered(store, javaName, plan);
-        ArrayList<BlockBean> existing = readBlocks(store, javaName, plan);
+        // already does. MoreBlocks live in eC.i(javaName) rather than
+        // eC.g(javaName), so eventExists is always true for them.
+        plan.eventExists = plan.moreBlockEvent
+                || eventRegistered(store, javaName, plan);
+        ArrayList<BlockBean> existing = pendingMoreBlock != null
+                ? new ArrayList<>()
+                : readBlocks(store, javaName, plan);
         plan.existingCount = existing.size();
         plan.replace = replace;
         int nextId = replace ? nextFreeId(new ArrayList<>())
                 : nextFreeId(existing);
 
-        // A screen that closes cannot do anything afterwards. This is
-        // not a style rule: in MagicalNotes the agent put Finish
-        // Activity second, and the four generated lines were
-        //
-        //     noteText = "";
-        //     finish();
-        //     file1.edit().putString("magical_note", noteText).commit();
-        //     SketchwareUtil.showMessage(... "Note saved");
-        //
-        // so the save and the confirmation never ran, and the user saw
-        // a block sitting under Finish Activity in the editor. Nothing
-        // may follow a terminator, and a second one is a copy.
+        // A screen that closes cannot do anything afterwards.
         checkTerminators(blocks, replace ? new ArrayList<>() : existing,
                 plan.eventName, plan.targetId);
 
         // Inside onBindCustomView, blocks address the item layout's
         // widgets (the editor swaps its widget menus to that layout);
         // the screen's own ids keep priority on a clash.
-        Map<String, ViewBean> builderWidgets = byId;
+        Map<String, ViewBean> builderWidgets = new LinkedHashMap<>(byId);
         if ("onBindCustomView".equals(plan.eventName)
-                && !plan.activityEvent && !plan.componentEvent) {
+                && !plan.activityEvent && !plan.componentEvent
+                && !plan.moreBlockEvent) {
             ViewBean host = byId.get(plan.targetId);
             if (host != null && host.customView != null
                     && !host.customView.isEmpty()
                     && !"none".equals(host.customView)) {
-                builderWidgets = new LinkedHashMap<>(byId);
                 try {
                     ArrayList<ViewBean> itemViews = store.d(
                             ProjectFileBean.getXmlName(host.customView));
@@ -1622,10 +2523,20 @@ public final class AgentLogic {
             }
         }
 
+        LinkedHashMap<String, String> refParams = new LinkedHashMap<>();
+        if (plan.moreBlockEvent && plan.moreBlockDef != null) {
+            bindMoreBlockParams(plan.moreBlockDef, builderWidgets,
+                    variables, lists, components, plan.eventArgs,
+                    refParams);
+        }
+
         Builder builder = new Builder(context, builderWidgets,
                 variables, nextId);
-        builder.lists = listsOf(store, javaName);
+        builder.lists = lists;
         builder.components = components;
+        builder.moreBlocks = moreBlocks;
+        builder.moreBlockDef = plan.moreBlockDef;
+        builder.moreBlockRefParams.putAll(refParams);
         builder.scId = scId;
         builder.activityName = SketchwareProjects.activityName(activity);
         builder.eventArgs.putAll(plan.eventArgs);
@@ -1691,14 +2602,14 @@ public final class AgentLogic {
         plan.statements.addAll(builder.stmts);
         plan.lines.addAll(builder.lines);
         nextId = builder.nextId;
+        // Resolve MoreBlock %m.* reference parameters to getArg beans
+        // before the @var: pass so screen variables keep getVar.
+        nextId = resolveMoreBlockRefParams(builder.created, refParams,
+                plan.fresh, nextId);
         // Resolve variable-value reporters: each "@var:" placeholder
         // in a bean's parameters becomes an "@id" reference to a
         // getVar bean (spec = the variable name, the shape the editor
         // stores) appended after the statement beans, unchained.
-        // Every created bean is scanned, not just statements: a
-        // variable inside a comparison lives in the comparison's own
-        // reporter bean, and an unresolved "@var:" written to disk
-        // makes the logic editor crash parsing it as a block id.
         for (BlockBean bean : builder.created) {
             for (int i = 0; i < bean.parameters.size(); i++) {
                 String param = bean.parameters.get(i);
@@ -1706,9 +2617,6 @@ public final class AgentLogic {
                     continue;
                 }
                 String name = param.substring("@var:".length());
-                // A name the activity never declared can only be a
-                // repeat_index loop variable in scope there; Fx
-                // emits the getVar spec as the identifier itself.
                 String reporterType = variables.containsKey(name)
                         ? variableTypeLetter(variables.get(name)) : "d";
                 BlockBean reporter = new BlockBean(
@@ -1736,6 +2644,20 @@ public final class AgentLogic {
                 }
             }
         }
+        // Non-void MoreBlocks must return a value or javac fails with
+        // "missing return statement".
+        if (plan.moreBlockEvent && plan.moreBlockDef != null
+                && !plan.moreBlockDef.isVoid()
+                && (replace || existing.isEmpty())
+                && !hasReturnBlock(plan.fresh)) {
+            throw new AgentTools.ToolException("E_MISSING_RETURN",
+                    "More Block \"" + plan.moreBlockDef.bareName
+                            + "\" returns "
+                            + plan.moreBlockDef.humanReturnType()
+                            + ", so its blocks must return a value "
+                            + "with {\"block\":\"return_value\","
+                            + "\"value\":...}.");
+        }
         // The editor-load gate: nothing we add may be a shape the
         // logic editor's loader would crash on.
         ArrayList<String> loadProblems = editorLoadProblems(plan.fresh);
@@ -1752,8 +2674,6 @@ public final class AgentLogic {
             freshById.put(bean.id, bean);
         }
         for (int i = 0; i + 1 < plan.chain.size(); i++) {
-            // Link from the tail: a statement may itself be a short
-            // chain (open_screen is two blocks).
             BlockBean tail = plan.chain.get(i);
             java.util.Set<String> seen = new java.util.HashSet<>();
             while (tail.nextBlock >= 0 && seen.add(tail.id)
@@ -1766,8 +2686,6 @@ public final class AgentLogic {
 
         // Prove with the app's own code generator that the combined
         // event still generates, and that each new statement lands.
-        // The existing beans are the store's live objects, so the
-        // dry run joins clones — a proposal must not touch anything.
         ArrayList<BlockBean> dryExisting = new ArrayList<>();
         if (!replace) {
             for (BlockBean bean : existing) {
@@ -1778,21 +2696,20 @@ public final class AgentLogic {
                 joined(dryExisting, freshGenerationList(plan)));
         Stmt unproven = null;
         for (Stmt stmt : plan.statements) {
-            if (combined == null || !combined.contains(stmt.expectCode)) {
+            if (!matchesExpectCode(combined, stmt.expectCode,
+                    refParams)) {
                 unproven = stmt;
                 break;
             }
         }
         if (unproven != null) {
-            // The combined run can fail on an older broken block in
-            // this same event; prove the new blocks on their own
-            // before blaming them.
             String freshCode = generate(context, scId, activity,
                     freshGenerationList(plan));
             boolean proven = freshCode != null;
             if (proven) {
                 for (Stmt stmt : plan.statements) {
-                    if (!freshCode.contains(stmt.expectCode)) {
+                    if (!matchesExpectCode(freshCode, stmt.expectCode,
+                            refParams)) {
                         proven = false;
                         unproven = stmt;
                         break;
@@ -1838,6 +2755,13 @@ public final class AgentLogic {
         Map<String, Integer> lists = new LinkedHashMap<>();
         /** Component id to editor type code, for Intent blocks. */
         Map<String, Integer> components = new LinkedHashMap<>();
+        /** Declared MoreBlocks on this screen, keyed by bare name. */
+        Map<String, MoreBlockDef> moreBlocks = new LinkedHashMap<>();
+        /** Current MoreBlock being wired, or null for regular events. */
+        MoreBlockDef moreBlockDef;
+        /** MoreBlock %m.* parameters bound to synthetic screen entries. */
+        final LinkedHashMap<String, String> moreBlockRefParams =
+                new LinkedHashMap<>();
         /** Project id, for resolving screens an Intent opens. */
         String scId;
         /** This activity's class name, for %m.activity slots. */
@@ -2003,6 +2927,16 @@ public final class AgentLogic {
             }
             if (object.has("var")) {
                 String name = stringOf(object, "var");
+                if (!variables.containsKey(name)
+                        && eventArgs.containsKey(name)) {
+                    Character letter = eventArgs.get(name);
+                    if (letter == null || letter == 'a'
+                            || letter == 'b') {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK", what);
+                    }
+                    return letter.charValue();
+                }
                 requireVariable(variables, name);
                 int kind = variables.get(name);
                 if (kind == 1) return 'd';
@@ -2011,6 +2945,18 @@ public final class AgentLogic {
                         "A switch cannot switch on variable \"" + name
                                 + "\"'s kind of value.");
             }
+            if (object.has("call_more_block")
+                    || object.has("more_block")) {
+                String mbKey = object.has("call_more_block")
+                        ? "call_more_block" : "more_block";
+                MoreBlockDef def = resolveMoreBlockCall(
+                        stringOf(object, mbKey));
+                if ("d".equals(def.typeChar)) return 'd';
+                if ("s".equals(def.typeChar)) return 's';
+                throw new AgentTools.ToolException("E_BAD_BLOCK", what);
+            }
+            if (object.has("asd_number")) return 'd';
+            if (object.has("asd_string")) return 's';
             if (object.has("number")) return 'd';
             if (object.has("text")) return 's';
             if (object.has("op")) {
@@ -2708,32 +3654,191 @@ public final class AgentLogic {
                             + " as the page title");
                     return bean;
                 }
-                case "return_text" -> {
-                    // The last block of an AsyncTask's doInBackground:
-                    // the text handed to onPostExecute (returnString,
-                    // "return (%s);").
-                    if (!"doInBackground".equals(currentEvent)) {
+                case "return_text", "return_value", "return",
+                        "return_number", "return_boolean", "return_map",
+                        "return_list", "return_view" -> {
+                    JsonElement val = op.has("value") ? op.get("value")
+                            : op.has("text") ? op.get("text")
+                                    : op.has("number") ? op.get("number")
+                                            : op.has("flag")
+                                                    ? op.get("flag")
+                                                    : null;
+                    if ("doInBackground".equals(currentEvent)) {
+                        BlockBean bean = newBean("returnString", "f");
+                        bean.parameters.add(expr(val, 's',
+                                kind + " needs \"value\": the result "
+                                        + "text"));
+                        allStatements.add(bean);
+                        addExpect("return (",
+                                "Finish with " + describeExpr(val)
+                                        + " as the result");
+                        lines.add(indent(depth) + "Finish with "
+                                + describeExpr(val) + " as the result");
+                        return bean;
+                    }
+                    if (moreBlockDef == null) {
+                        if ("return".equals(kind) && (val == null
+                                || val.isJsonNull())) {
+                            BlockBean bean = newBean("addSourceDirectly",
+                                    " ");
+                            bean.parameters.add("return;");
+                            allStatements.add(bean);
+                            addExpect("return;",
+                                    "Stop running this event early");
+                            lines.add(indent(depth)
+                                    + "Stop running this event early");
+                            return bean;
+                        }
                         throw new AgentTools.ToolException(
                                 "E_BAD_BLOCK",
-                                "return_text only works inside an "
-                                        + "AsyncTask component's "
-                                        + "doInBackground handler — it "
-                                        + "is the result onPostExecute "
-                                        + "receives. Put it there, as "
-                                        + "the last block.");
+                                kind + " returns a value from a "
+                                        + "returning More Block (or "
+                                        + "AsyncTask doInBackground). "
+                                        + "Regular widget and activity "
+                                        + "events are void and do not "
+                                        + "return a value.");
                     }
-                    BlockBean bean = newBean("returnString", " ");
-                    bean.parameters.add(expr(op.get("value"), 's',
-                            "return_text needs \"value\": the result "
-                                    + "text"));
+                    if (moreBlockDef.isVoid()) {
+                        if (val != null && !val.isJsonNull()) {
+                            throw new AgentTools.ToolException(
+                                    "E_BAD_BLOCK",
+                                    "More Block \""
+                                            + moreBlockDef.bareName
+                                            + "\" is void and cannot "
+                                            + "return a value. Omit "
+                                            + "\"value\" for an early "
+                                            + "return, or create the "
+                                            + "More Block with a "
+                                            + "return_type.");
+                        }
+                        BlockBean bean = newBean("addSourceDirectly",
+                                " ");
+                        bean.parameters.add("return;");
+                        allStatements.add(bean);
+                        addExpect("return;",
+                                "Return early from "
+                                        + moreBlockDef.bareName);
+                        lines.add(indent(depth) + "Return early from "
+                                + moreBlockDef.bareName);
+                        return bean;
+                    }
+                    return buildMoreBlockReturn(op, val, depth);
+                }
+                case "call_more_block", "more_block" -> {
+                    String rawName = stringOf(op, "name");
+                    if (rawName.isEmpty()) {
+                        rawName = stringOf(op, "more_block");
+                    }
+                    if (rawName.isEmpty()) {
+                        rawName = stringOf(op, "call_more_block");
+                    }
+                    MoreBlockDef def = resolveMoreBlockCall(rawName);
+                    if (!def.isVoid()) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "More Block \"" + def.bareName
+                                        + "\" returns "
+                                        + def.humanReturnType()
+                                        + " — in Sketchware Pro, "
+                                        + "returning More Blocks are "
+                                        + "value blocks, not standalone "
+                                        + "statements. Use it inside a "
+                                        + "value slot as "
+                                        + "{\"call_more_block\":\""
+                                        + def.bareName
+                                        + "\",\"args\":[...]}.");
+                    }
+                    ArrayList<String> shownArgs = new ArrayList<>();
+                    ArrayList<String> callParams =
+                            buildMoreBlockCallArgs(def, op, shownArgs);
+                    BlockBean bean = new BlockBean(
+                            String.valueOf(nextId), def.cleanSpec, " ",
+                            "", "definedFunc");
+                    try {
+                        bean.color = kq.a("definedFunc", " ");
+                    } catch (Exception ignored) {
+                        bean.color = 0xff8a55d7;
+                    }
+                    bean.parameters.addAll(callParams);
+                    created.add(bean);
+                    nextId++;
                     allStatements.add(bean);
-                    addExpect("return (",
-                            "Finish with "
-                                    + describeExpr(op.get("value"))
-                                    + " as the result");
-                    lines.add(indent(depth) + "Finish with "
-                            + describeExpr(op.get("value"))
-                            + " as the result");
+                    String sentence = "Run More Block " + def.bareName
+                            + "(" + String.join(", ", shownArgs) + ")";
+                    addExpect("_" + def.bareName + "(", sentence);
+                    lines.add(indent(depth) + sentence);
+                    return bean;
+                }
+                case "add_source_directly", "raw_java", "java_code",
+                        "source_directly" -> {
+                    String code = rawJavaField(op);
+                    if (code.trim().isEmpty()) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "add_source_directly needs \"code\": "
+                                        + "the Java statement(s) to "
+                                        + "insert.");
+                    }
+                    String stored = sanitizeRawJava(code);
+                    BlockBean bean = newBean("addSourceDirectly", " ");
+                    bean.parameters.add(stored);
+                    allStatements.add(bean);
+                    String summary = "Run custom Java: "
+                            + summarizeRawJava(code);
+                    addExpect(stored, summary);
+                    lines.add(indent(depth) + summary);
+                    return bean;
+                }
+                case "custom_import", "add_import" -> {
+                    if (!"Import".equals(currentEvent)) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "custom_import only belongs in the "
+                                        + "screen's \"Import\" activity "
+                                        + "event (call set_event_handler "
+                                        + "with target \"activity\" and "
+                                        + "event \"Import\").");
+                    }
+                    String rawImport = stringOf(op, "import");
+                    if (rawImport.isEmpty()) {
+                        rawImport = stringOf(op, "path");
+                    }
+                    if (rawImport.isEmpty()) {
+                        rawImport = rawJavaField(op);
+                    }
+                    String cleanImport = normalizeImportPath(rawImport);
+                    BlockBean bean = newBean("customImport", " ");
+                    bean.parameters.add(cleanImport);
+                    allStatements.add(bean);
+                    String sentence = "Import " + cleanImport;
+                    addExpect("import " + cleanImport + ";", sentence);
+                    lines.add(indent(depth) + sentence);
+                    return bean;
+                }
+                case "add_custom_variable", "add_initializer" -> {
+                    boolean isField =
+                            "add_custom_variable".equals(kind);
+                    String code = rawJavaField(op);
+                    if (code.trim().isEmpty()) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                kind + " needs \"code\": the Java "
+                                        + (isField ? "field declaration"
+                                                : "initializer code")
+                                        + ".");
+                    }
+                    String stored = sanitizeRawJava(code);
+                    BlockBean bean = newBean(
+                            isField ? "addCustomVariable"
+                                    : "addInitializer", " ");
+                    bean.parameters.add(stored);
+                    allStatements.add(bean);
+                    String sentence = (isField
+                            ? "Declare custom Java field: "
+                            : "Run custom Java initializer: ")
+                            + summarizeRawJava(code);
+                    addExpect("", sentence);
+                    lines.add(indent(depth) + sentence);
                     return bean;
                 }
                 case "asynctask_execute" -> {
@@ -3125,6 +4230,391 @@ public final class AgentLogic {
             return bean;
         }
 
+        private MoreBlockDef resolveMoreBlockCall(String rawName)
+                throws AgentTools.ToolException {
+            String clean = ReturnMoreblockManager.getMbName(
+                    rawName == null ? "" : rawName.trim());
+            MoreBlockDef def = moreBlocks.get(clean);
+            if (def != null) {
+                return def;
+            }
+            for (MoreBlockDef candidate : moreBlocks.values()) {
+                if (candidate.first.equals(rawName)) {
+                    return candidate;
+                }
+            }
+            throw new AgentTools.ToolException("E_NO_MORE_BLOCK",
+                    (clean.isEmpty()
+                            ? "call_more_block needs \"name\": the More "
+                                    + "Block to call."
+                            : "This screen has no More Block named \""
+                                    + clean + "\".")
+                            + (moreBlocks.isEmpty()
+                                    ? " Declare one first with "
+                                            + "create_more_block."
+                                    : " Its More Blocks are: "
+                                            + String.join(", ",
+                                                    moreBlocks.keySet())
+                                            + "."));
+        }
+
+        private ArrayList<String> buildMoreBlockCallArgs(
+                MoreBlockDef def, JsonObject op,
+                ArrayList<String> shownOut)
+                throws AgentTools.ToolException {
+            ArrayList<String> result = new ArrayList<>();
+            JsonElement rawArgs = op.has("args") ? op.get("args")
+                    : op.has("arguments") ? op.get("arguments")
+                            : op.has("values") ? op.get("values") : null;
+            if (def.params.isEmpty()) {
+                if (rawArgs != null && rawArgs.isJsonArray()
+                        && !rawArgs.getAsJsonArray().isEmpty()) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "More Block \"" + def.bareName
+                                    + "\" takes no parameters.");
+                }
+                return result;
+            }
+            JsonArray posArgs = rawArgs != null && rawArgs.isJsonArray()
+                    ? rawArgs.getAsJsonArray() : null;
+            JsonObject namedArgs = rawArgs != null
+                    && rawArgs.isJsonObject()
+                    ? rawArgs.getAsJsonObject() : null;
+            if (posArgs != null
+                    && posArgs.size() != def.params.size()) {
+                throw new AgentTools.ToolException("E_BAD_BLOCK",
+                        "More Block \"" + def.signature() + "\" takes "
+                                + def.params.size() + " parameter"
+                                + (def.params.size() == 1 ? "" : "s")
+                                + ", not " + posArgs.size() + ".");
+            }
+            for (int i = 0; i < def.params.size(); i++) {
+                MoreBlockParam param = def.params.get(i);
+                JsonElement argElem = null;
+                if (posArgs != null) {
+                    argElem = posArgs.get(i);
+                } else if (namedArgs != null
+                        && namedArgs.has(param.name)) {
+                    argElem = namedArgs.get(param.name);
+                } else if (op.has(param.name)
+                        && !"block".equals(param.name)
+                        && !"name".equals(param.name)
+                        && !"args".equals(param.name)
+                        && !"more_block".equals(param.name)
+                        && !"call_more_block".equals(param.name)) {
+                    argElem = op.get(param.name);
+                }
+                if (argElem == null || argElem.isJsonNull()) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "Calling More Block \"" + def.signature()
+                                    + "\" requires argument \""
+                                    + param.name + "\" ("
+                                    + param.humanType() + ").");
+                }
+                String what = "argument \"" + param.name
+                        + "\" of More Block " + def.bareName;
+                if (param.kind == 's' || param.kind == 'd'
+                        || param.kind == 'b') {
+                    result.add(expr(argElem, param.kind, what));
+                    shownOut.add(describeExpr(argElem));
+                } else {
+                    String refVal = resolveMoreBlockRefArg(
+                            param.subType, argElem, what);
+                    result.add(refVal);
+                    shownOut.add(describeRefArg(argElem, refVal));
+                }
+            }
+            return result;
+        }
+
+        private String resolveMoreBlockRefArg(String subType,
+                                              JsonElement elem,
+                                              String what)
+                throws AgentTools.ToolException {
+            if (elem != null && elem.isJsonObject()) {
+                JsonObject obj = cleanExprObject(
+                        elem.getAsJsonObject());
+                if (obj.has("call_more_block")
+                        || obj.has("more_block")) {
+                    String expectedTypeChar = switch (subType) {
+                        case "varMap" -> "a|Map";
+                        case "listStr" -> "l|List String";
+                        case "listMap" -> "l|List Map";
+                        case "view" -> "v|View";
+                        default -> "";
+                    };
+                    if (!expectedTypeChar.isEmpty()) {
+                        return buildTypedMoreBlockReporter(obj,
+                                expectedTypeChar, what);
+                    }
+                }
+                if (obj.has("arg")) {
+                    return validateRefName(subType,
+                            stringOf(obj, "arg"), what);
+                }
+                if (obj.has("var")) {
+                    return validateRefName(subType,
+                            stringOf(obj, "var"), what);
+                }
+            }
+            if (elem != null && elem.isJsonPrimitive()
+                    && elem.getAsJsonPrimitive().isString()) {
+                return validateRefName(subType,
+                        elem.getAsString().trim(), what);
+            }
+            throw badValue(what, "expected a " + subType + " name");
+        }
+
+        private String validateRefName(String subType, String name,
+                                       String what)
+                throws AgentTools.ToolException {
+            if (name == null || name.isEmpty()) {
+                throw badValue(what, "no name was given");
+            }
+            switch (subType) {
+                case "varMap" -> {
+                    Integer kind = variables.get(name);
+                    if (kind != null && kind == 3) {
+                        return name;
+                    }
+                    Character argLetter = eventArgs.get(name);
+                    if (argLetter != null && argLetter == 'a') {
+                        BlockBean argBean = newBean("getArg", "a");
+                        argBean.spec = name;
+                        return "@" + argBean.id;
+                    }
+                    throw badValue(what, "\"" + name
+                            + "\" is not a map variable on this screen");
+                }
+                case "listInt", "listStr", "listMap" -> {
+                    int wanted = "listInt".equals(subType) ? 1
+                            : "listStr".equals(subType) ? 2 : 3;
+                    Integer kind = lists.get(name);
+                    if (kind == null || kind != wanted) {
+                        throw badValue(what, "\"" + name
+                                + "\" is not a "
+                                + SketchwareProjects.listTypeName(wanted)
+                                + " on this screen");
+                    }
+                    return name;
+                }
+                default -> {
+                    Integer wantedComp =
+                            componentTypeForParamSubType(subType);
+                    if (wantedComp != null) {
+                        Integer actual = components.get(name);
+                        if (actual == null
+                                || !actual.equals(wantedComp)) {
+                            throw badValue(what,
+                                    missingComponentMessage(name,
+                                            wantedComp));
+                        }
+                        return name;
+                    }
+                    ViewBean widget = findWidget(byId, name);
+                    if (widget == null) {
+                        throw badValue(what, "there is no widget called "
+                                + "\"" + name + "\" on this screen");
+                    }
+                    return widget.id;
+                }
+            }
+        }
+
+        private String describeRefArg(JsonElement elem,
+                                      String fallback) {
+            if (elem != null && elem.isJsonObject()) {
+                JsonObject obj = elem.getAsJsonObject();
+                if (obj.has("call_more_block")
+                        || obj.has("more_block")) {
+                    return describeExpr(elem);
+                }
+                if (obj.has("arg")) return stringOf(obj, "arg");
+                if (obj.has("var")) return stringOf(obj, "var");
+            }
+            if (elem != null && elem.isJsonPrimitive()) {
+                return elem.getAsString().trim();
+            }
+            return fallback;
+        }
+
+        private String buildTypedMoreBlockReporter(
+                JsonObject obj, String expectedTypeChar, String what)
+                throws AgentTools.ToolException {
+            String key = obj.has("call_more_block")
+                    ? "call_more_block" : "more_block";
+            MoreBlockDef def = resolveMoreBlockCall(stringOf(obj, key));
+            if (def.isVoid()) {
+                throw badValue(what, "More Block \"" + def.bareName
+                        + "\" is void and returns no value; call it as "
+                        + "a statement block instead");
+            }
+            if (!expectedTypeChar.equals(def.typeChar)) {
+                throw badValue(what, "More Block \"" + def.bareName
+                        + "\" returns " + def.humanReturnType()
+                        + ", which does not fit here");
+            }
+            ArrayList<String> shownArgs = new ArrayList<>();
+            ArrayList<String> callParams = buildMoreBlockCallArgs(def,
+                    obj, shownArgs);
+            BlockBean bean = new BlockBean(String.valueOf(nextId),
+                    def.cleanSpec, def.callType, def.callTypeName,
+                    "definedFunc");
+            try {
+                bean.color = kq.a("definedFunc", def.callType);
+            } catch (Exception ignored) {
+                bean.color = 0xff8a55d7;
+            }
+            bean.parameters.addAll(callParams);
+            created.add(bean);
+            nextId++;
+            return "@" + bean.id;
+        }
+
+        private BlockBean buildMoreBlockReturn(JsonObject op,
+                                               JsonElement val,
+                                               int depth)
+                throws AgentTools.ToolException {
+            String what = "return_value in More Block \""
+                    + moreBlockDef.bareName + "\" (returns "
+                    + moreBlockDef.humanReturnType() + ")";
+            String opCode;
+            String param;
+            String shown;
+            String expect;
+            switch (moreBlockDef.typeChar) {
+                case "s" -> {
+                    opCode = "returnString";
+                    param = expr(val, 's', what);
+                    shown = describeExpr(val);
+                    expect = "return (";
+                }
+                case "d" -> {
+                    opCode = "returnNumber";
+                    param = expr(val, 'd', what);
+                    shown = describeExpr(val);
+                    expect = "return (";
+                }
+                case "b" -> {
+                    opCode = "returnBoolean";
+                    param = expr(val, 'b', what);
+                    shown = describeExpr(val);
+                    expect = "return (";
+                }
+                case "a|Map" -> {
+                    opCode = "returnMap";
+                    JsonElement src = val != null ? val
+                            : op.get("variable");
+                    param = resolveMoreBlockRefArg("varMap", src, what);
+                    shown = describeRefArg(src, param);
+                    expect = "return ";
+                }
+                case "l|List String" -> {
+                    opCode = "returnListStr";
+                    JsonElement src = val != null ? val : op.get("list");
+                    param = resolveMoreBlockRefArg("listStr", src, what);
+                    shown = describeRefArg(src, param);
+                    expect = "return ";
+                }
+                case "l|List Map" -> {
+                    opCode = "returnListMap";
+                    JsonElement src = val != null ? val : op.get("list");
+                    param = resolveMoreBlockRefArg("listMap", src, what);
+                    shown = describeRefArg(src, param);
+                    expect = "return ";
+                }
+                case "v|View" -> {
+                    opCode = "returnView";
+                    JsonElement src = val != null ? val
+                            : op.get("target");
+                    param = resolveMoreBlockRefArg("view", src, what);
+                    shown = describeRefArg(src, param);
+                    expect = "return ";
+                }
+                default -> throw new AgentTools.ToolException(
+                        "E_BAD_BLOCK",
+                        "Unsupported return type on More Block \""
+                                + moreBlockDef.bareName + "\".");
+            }
+            BlockBean bean = newBean(opCode, "f");
+            bean.parameters.add(param);
+            allStatements.add(bean);
+            String sentence = "Return " + shown;
+            addExpect(expect, sentence);
+            lines.add(indent(depth) + sentence);
+            return bean;
+        }
+
+        private static String rawJavaField(JsonObject op) {
+            for (String key : new String[]{"code", "source", "java",
+                    "text", "value"}) {
+                if (op.has(key) && !op.get(key).isJsonNull()
+                        && op.get(key).isJsonPrimitive()) {
+                    return op.get(key).getAsString();
+                }
+            }
+            return "";
+        }
+
+        static String sanitizeRawJava(String raw) {
+            if (raw == null) {
+                return "";
+            }
+            // LogicEditorActivity and Fx treat a leading '@' on any
+            // parameter as a "@blockId" reference; LogicEditorActivity
+            // avoids that by prepending a single space whenever raw
+            // input starts with '@'.
+            if (!raw.isEmpty() && raw.charAt(0) == '@') {
+                return " " + raw;
+            }
+            return raw;
+        }
+
+        static String summarizeRawJava(String raw) {
+            if (raw == null) {
+                return "(empty)";
+            }
+            String chosen = "";
+            for (String line : raw.split("\\r?\\n")) {
+                String trimmed = line.trim();
+                if (!trimmed.isEmpty() && !trimmed.startsWith("//")
+                        && !trimmed.startsWith("/*")
+                        && !trimmed.startsWith("*")) {
+                    chosen = trimmed;
+                    break;
+                }
+            }
+            if (chosen.isEmpty()) {
+                chosen = raw.replaceAll("\\s+", " ").trim();
+            }
+            if (chosen.length() > 72) {
+                chosen = chosen.substring(0, 72).trim() + "…";
+            }
+            return chosen;
+        }
+
+        static String normalizeImportPath(String raw)
+                throws AgentTools.ToolException {
+            String trimmed = raw == null ? "" : raw.trim();
+            if (trimmed.startsWith("import ")) {
+                trimmed = trimmed.substring("import ".length()).trim();
+            }
+            while (trimmed.endsWith(";")) {
+                trimmed = trimmed.substring(0, trimmed.length() - 1)
+                        .trim();
+            }
+            if (!trimmed.matches(
+                    "(?:static\\s+)?[A-Za-z_][A-Za-z0-9_]*"
+                            + "(?:\\.[A-Za-z0-9_*]+)+")) {
+                throw new AgentTools.ToolException("E_BAD_BLOCK",
+                        "custom_import needs a valid Java import path "
+                                + "like \"org.json.JSONArray\" or "
+                                + "\"android.os.Handler\" (got \""
+                                + raw + "\").");
+            }
+            return trimmed;
+        }
+
         /** A JSON array member, or null when absent/misshapen. */
         static JsonArray arrayOf(JsonObject object, String key) {
             try {
@@ -3297,9 +4787,40 @@ public final class AgentLogic {
                 bean.spec = resName;
                 return "@" + bean.id;
             }
+            if (object.has("call_more_block")
+                    || object.has("more_block")) {
+                String expectedTypeChar = slot == 'd' ? "d"
+                        : slot == 'b' ? "b" : "s";
+                return buildTypedMoreBlockReporter(object,
+                        expectedTypeChar, what);
+            }
+            if (object.has("java_expr") || object.has("asd_string")
+                    || object.has("asd_number")
+                    || object.has("asd_boolean")) {
+                String key = object.has("java_expr") ? "java_expr"
+                        : object.has("asd_string") ? "asd_string"
+                                : object.has("asd_number")
+                                        ? "asd_number" : "asd_boolean";
+                char exprSlot = "asd_string".equals(key) ? 's'
+                        : "asd_number".equals(key) ? 'd'
+                                : "asd_boolean".equals(key) ? 'b'
+                                        : slot;
+                if (exprSlot != slot) {
+                    throw badValue(what, key + " does not fit here");
+                }
+                String rawCode = stringOf(object, key);
+                if (rawCode.isEmpty()) {
+                    throw badValue(what, key + " needs a Java "
+                            + "expression");
+                }
+                String asdOp = slot == 'd' ? "asdNumber"
+                        : slot == 'b' ? "asdBoolean" : "asdString";
+                BlockBean bean = newBean(asdOp, String.valueOf(slot));
+                bean.parameters.add(sanitizeRawJava(rawCode));
+                return "@" + bean.id;
+            }
             if (object.has("arg")) {
-                // A value the event itself passes (a Firebase child
-                // key, a sensor reading, a success flag): stored as
+                // A value the event or MoreBlock passes: stored as
                 // the editor's getArg reporter whose spec is the
                 // value's name — Fx generates "_" + name.
                 String name = stringOf(object, "arg");
@@ -3340,6 +4861,25 @@ public final class AgentLogic {
                                 + "not fit here");
                     }
                     return "@var:" + name;
+                }
+                if (!variables.containsKey(name)
+                        && eventArgs.containsKey(name)) {
+                    Character letter = eventArgs.get(name);
+                    if (letter != null && letter != 'a') {
+                        if (letter.charValue() != slot) {
+                            throw badValue(what, "the " + name
+                                    + " parameter is "
+                                    + (letter == 'd' ? "a number"
+                                            : letter == 'b'
+                                                    ? "true/false"
+                                                    : "text")
+                                    + " and does not fit here");
+                        }
+                        BlockBean bean = newBean("getArg",
+                                String.valueOf(letter.charValue()));
+                        bean.spec = name;
+                        return "@" + bean.id;
+                    }
                 }
                 requireVariable(variables, name);
                 int kind = variables.get(name);
@@ -3458,23 +4998,46 @@ public final class AgentLogic {
                 String source;
                 JsonElement mapElement = object.get(mapKey);
                 if (mapElement != null && mapElement.isJsonObject()) {
-                    String argName = stringOf(
-                            mapElement.getAsJsonObject(), "arg");
-                    Character letter = eventArgs.get(argName);
-                    if (letter == null || letter != 'a') {
-                        throw badValue(what, "\"" + argName + "\" is "
-                                + "not a set of values this event "
-                                + "passes" + eventArgsHint());
+                    JsonObject mapObj = cleanExprObject(
+                            mapElement.getAsJsonObject());
+                    if (mapObj.has("call_more_block")
+                            || mapObj.has("more_block")) {
+                        source = buildTypedMoreBlockReporter(mapObj,
+                                "a|Map", what);
+                    } else {
+                        String argName = mapObj.has("arg")
+                                ? stringOf(mapObj, "arg")
+                                : stringOf(mapObj, "var");
+                        Integer varKind = variables.get(argName);
+                        if (varKind != null && varKind == 3) {
+                            source = argName;
+                        } else {
+                            Character letter = eventArgs.get(argName);
+                            if (letter == null || letter != 'a') {
+                                throw badValue(what, "\"" + argName
+                                        + "\" is not a set of values "
+                                        + "this event passes"
+                                        + eventArgsHint());
+                            }
+                            BlockBean argBean = newBean("getArg", "a");
+                            argBean.spec = argName;
+                            source = "@" + argBean.id;
+                        }
                     }
-                    BlockBean argBean = newBean("getArg", "a");
-                    argBean.spec = argName;
-                    source = "@" + argBean.id;
                 } else {
                     source = stringOf(object, mapKey);
                     Integer kind = variables.get(source);
                     if (kind == null || kind != 3) {
-                        throw badValue(what, "\"" + source + "\" is "
-                                + "not a map variable on this screen");
+                        Character letter = eventArgs.get(source);
+                        if (letter != null && letter == 'a') {
+                            BlockBean argBean = newBean("getArg", "a");
+                            argBean.spec = source;
+                            source = "@" + argBean.id;
+                        } else {
+                            throw badValue(what, "\"" + source
+                                    + "\" is not a map variable on "
+                                    + "this screen");
+                        }
                     }
                 }
                 String key = stringOf(object, "key");
@@ -5296,6 +6859,24 @@ public final class AgentLogic {
             if (object.has("progress_of")) {
                 return "progress of " + stringOf(object, "progress_of");
             }
+            if (object.has("call_more_block")
+                    || object.has("more_block")) {
+                String key = object.has("call_more_block")
+                        ? "call_more_block" : "more_block";
+                return stringOf(object, key) + "(…)";
+            }
+            if (object.has("java_expr") || object.has("asd_string")
+                    || object.has("asd_number")
+                    || object.has("asd_boolean")) {
+                String key = object.has("java_expr") ? "java_expr"
+                        : object.has("asd_string") ? "asd_string"
+                                : object.has("asd_number")
+                                        ? "asd_number" : "asd_boolean";
+                return summarizeRawJava(stringOf(object, key));
+            }
+            if (object.has("arg")) {
+                return stringOf(object, "arg");
+            }
             if (object.has("var")) {
                 return stringOf(object, "var");
             }
@@ -5366,8 +6947,23 @@ public final class AgentLogic {
                     || object.has("ad_loaded")
                     || object.has("video_playing")
                     || object.has("can_go_back")
-                    || object.has("can_go_forward")) {
+                    || object.has("can_go_forward")
+                    || object.has("asd_boolean")) {
                 return true;
+            }
+            if (object.has("call_more_block")
+                    || object.has("more_block")) {
+                String key = object.has("call_more_block")
+                        ? "call_more_block" : "more_block";
+                MoreBlockDef def = moreBlocks.get(
+                        ReturnMoreblockManager.getMbName(
+                                stringOf(object, key)));
+                return def != null && "b".equals(def.typeChar);
+            }
+            if (object.has("arg")) {
+                Character letter = eventArgs.get(
+                        stringOf(object, "arg"));
+                return letter != null && letter == 'b';
             }
             if (object.has("fn")) {
                 String fn = stringOf(object, "fn")
@@ -5380,8 +6976,13 @@ public final class AgentLogic {
                         || "is_connected".equals(fn);
             }
             if (object.has("var")) {
-                Integer kind = variables.get(stringOf(object, "var"));
-                return kind != null && kind == 0;
+                String name = stringOf(object, "var");
+                Integer kind = variables.get(name);
+                if (kind != null) {
+                    return kind == 0;
+                }
+                Character letter = eventArgs.get(name);
+                return letter != null && letter == 'b';
             }
             if (object.has("op")) {
                 String operation = stringOf(object, "op");
@@ -5405,8 +7006,23 @@ public final class AgentLogic {
             }
             JsonObject object = element.getAsJsonObject();
             if (object.has("text_of") || object.has("url_of")
-                    || object.has("text")) {
+                    || object.has("text")
+                    || object.has("asd_string")) {
                 return true;
+            }
+            if (object.has("call_more_block")
+                    || object.has("more_block")) {
+                String key = object.has("call_more_block")
+                        ? "call_more_block" : "more_block";
+                MoreBlockDef def = moreBlocks.get(
+                        ReturnMoreblockManager.getMbName(
+                                stringOf(object, key)));
+                return def != null && "s".equals(def.typeChar);
+            }
+            if (object.has("arg")) {
+                Character letter = eventArgs.get(
+                        stringOf(object, "arg"));
+                return letter != null && letter == 's';
             }
             if (object.has("fn")) {
                 String fn = stringOf(object, "fn")
@@ -5417,8 +7033,13 @@ public final class AgentLogic {
                         || fn.equals("substring");
             }
             if (object.has("var")) {
-                Integer kind = variables.get(stringOf(object, "var"));
-                return kind != null && kind == 2;
+                String name = stringOf(object, "var");
+                Integer kind = variables.get(name);
+                if (kind != null) {
+                    return kind == 2;
+                }
+                Character letter = eventArgs.get(name);
+                return letter != null && letter == 's';
             }
             return false;
         }
@@ -5468,7 +7089,7 @@ public final class AgentLogic {
                 store.a(javaName, ComponentBean.COMPONENT_TYPE_INTENT,
                         plan.newComponentId);
             }
-            if (!plan.eventExists
+            if (!plan.moreBlockEvent && !plan.eventExists
                     && !eventRegistered(store, javaName, plan)) {
                 if (plan.activityEvent) {
                     store.a(javaName, EventBean.EVENT_TYPE_ACTIVITY, 0,
@@ -7443,8 +9064,10 @@ public final class AgentLogic {
                             + "get_map_from_list, add_map_to_list, "
                             + "insert_map_to_list, add_map_entry, "
                             + "insert_map_entry, set_map_entry, "
-                            + "map_from_json, list_from_json, and the "
-                            + "widget actions (set_text_size, "
+                            + "map_from_json, list_from_json, "
+                            + "call_more_block, return_value, "
+                            + "add_source_directly, custom_import, and "
+                            + "the widget actions (set_text_size, "
                             + "set_background_color, web_go_back, "
                             + "play_video, set_rating, and kin).");
                 }
@@ -8743,6 +10366,8 @@ public final class AgentLogic {
                 proBlocksCache = new ArrayList<>();
                 mod.hilal.saif.blocks.BlocksHandler
                         .builtInBlocks(proBlocksCache);
+                pro.sketchware.blocks.ExtraBlocks
+                        .extraBlocks(proBlocksCache);
             }
             for (HashMap<String, Object> block : proBlocksCache) {
                 if (block != null && opCode.equals(block.get("name"))) {
@@ -8945,13 +10570,9 @@ public final class AgentLogic {
                     // If the screen's names cannot be read, fall back to
                     // the widget ids alone rather than skipping the check.
                 }
-                ArrayList<EventBean> events = store.g(javaName);
-                if (events == null) {
-                    continue;
-                }
-                for (EventBean event : events) {
-                    ArrayList<BlockBean> blocks = store.a(javaName,
-                            event.targetId + "_" + event.eventName);
+                for (Map.Entry<String, ArrayList<BlockBean>> entry
+                        : allActivityBlocks(store, javaName).entrySet()) {
+                    ArrayList<BlockBean> blocks = entry.getValue();
                     if (blocks == null) {
                         continue;
                     }
@@ -8963,8 +10584,7 @@ public final class AgentLogic {
                         String finding =
                                 SketchwareProjects.activityName(activity)
                                         + ": a block in "
-                                        + event.targetId + " "
-                                        + event.eventName
+                                        + entry.getKey()
                                         + " uses the widget \""
                                         + referenced
                                         + "\", which is not on that "
@@ -8982,6 +10602,49 @@ public final class AgentLogic {
             // A check must never stop the work it is checking.
         }
         return findings;
+    }
+
+    /**
+     * Collects every identifier referenced by a block: regular
+     * parameters, {@code getVar} {@code spec}, and Java identifier
+     * tokens inside raw-Java blocks ({@code addSourceDirectly},
+     * {@code asd*}, {@code addCustomVariable}, {@code addInitializer}).
+     */
+    private static final java.util.regex.Pattern JAVA_IDENT_PATTERN =
+            java.util.regex.Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*");
+
+    private static void collectBlockIdentifiers(
+            BlockBean bean, java.util.Set<String> out) {
+        if (bean == null) {
+            return;
+        }
+        if ("getVar".equals(bean.opCode) && bean.spec != null
+                && !bean.spec.isEmpty()) {
+            out.add(bean.spec);
+        }
+        if (bean.parameters == null) {
+            return;
+        }
+        boolean rawJava = "addSourceDirectly".equals(bean.opCode)
+                || "asdString".equals(bean.opCode)
+                || "asdNumber".equals(bean.opCode)
+                || "asdBoolean".equals(bean.opCode)
+                || "addCustomVariable".equals(bean.opCode)
+                || "addInitializer".equals(bean.opCode);
+        for (String parameter : bean.parameters) {
+            if (parameter == null) {
+                continue;
+            }
+            if (rawJava) {
+                java.util.regex.Matcher matcher =
+                        JAVA_IDENT_PATTERN.matcher(parameter);
+                while (matcher.find()) {
+                    out.add(matcher.group());
+                }
+            } else {
+                out.add(parameter);
+            }
+        }
     }
 
     /**
@@ -9021,11 +10684,7 @@ public final class AgentLogic {
 
     /**
      * Variables that were declared and then never used by any block on
-     * that screen. The MagicalNotes run declared four of them
-     * (notesListText, savedNotesJson, currentNote, noteText) and only
-     * one was ever written to, never read — the user had to reject
-     * four more by hand. A variable nothing touches is clutter in the
-     * user's project, so it is reported, not ignored.
+     * that screen (across all events and MoreBlocks).
      */
     public static List<String> unusedVariables(String scId) {
         ArrayList<String> findings = new ArrayList<>();
@@ -9047,24 +10706,13 @@ public final class AgentLogic {
                 }
                 java.util.Set<String> used = new java.util.HashSet<>();
                 eC store = jC.a(scId);
-                ArrayList<EventBean> events = store.g(javaName);
-                if (events != null) {
-                    for (EventBean event : events) {
-                        ArrayList<BlockBean> blocks = store.a(javaName,
-                                event.targetId + "_" + event.eventName);
-                        if (blocks == null) {
-                            continue;
-                        }
-                        for (BlockBean bean : blocks) {
-                            if (bean.parameters == null) {
-                                continue;
-                            }
-                            for (String parameter : bean.parameters) {
-                                if (parameter != null) {
-                                    used.add(parameter);
-                                }
-                            }
-                        }
+                for (ArrayList<BlockBean> blocks
+                        : allActivityBlocks(store, javaName).values()) {
+                    if (blocks == null) {
+                        continue;
+                    }
+                    for (BlockBean bean : blocks) {
+                        collectBlockIdentifiers(bean, used);
                     }
                 }
                 for (String name : logic.variables) {
@@ -9098,25 +10746,19 @@ public final class AgentLogic {
         }
         try {
             eC store = jC.a(scId);
-            ArrayList<EventBean> events = store.g(javaName);
-            if (events == null) {
-                return null;
-            }
-            for (EventBean event : events) {
-                ArrayList<BlockBean> blocks = store.a(javaName,
-                        event.targetId + "_" + event.eventName);
+            for (Map.Entry<String, ArrayList<BlockBean>> entry
+                    : allActivityBlocks(store, javaName).entrySet()) {
+                ArrayList<BlockBean> blocks = entry.getValue();
                 if (blocks == null) {
                     continue;
                 }
                 for (BlockBean bean : blocks) {
-                    if (bean.parameters == null) {
-                        continue;
-                    }
-                    for (String parameter : bean.parameters) {
-                        if (name.equals(parameter)) {
-                            return "a block in " + event.targetId + " "
-                                    + event.eventName + " names it";
-                        }
+                    java.util.Set<String> ids =
+                            new java.util.HashSet<>();
+                    collectBlockIdentifiers(bean, ids);
+                    if (ids.contains(name)) {
+                        return "a block in " + entry.getKey()
+                                + " names it";
                     }
                 }
             }
@@ -9132,7 +10774,10 @@ public final class AgentLogic {
     private static final java.util.Set<String> TERMINATORS =
             java.util.Set.of("finish", "finish_activity", "finishactivity",
                     "finish_all", "return_title", "return_fragment",
-                    "return_text", "forever", "break", "continue");
+                    "return_text", "return_value", "return",
+                    "return_number", "return_boolean", "return_map",
+                    "return_list", "return_view", "forever", "break",
+                    "continue");
 
     /**
      * Refuses a terminator that is not last, and appending after an
@@ -9235,24 +10880,13 @@ public final class AgentLogic {
                 String javaName = activity.getJavaName();
                 eC store = jC.a(scId);
                 java.util.Set<String> named = new java.util.HashSet<>();
-                ArrayList<EventBean> events = store.g(javaName);
-                if (events != null) {
-                    for (EventBean event : events) {
-                        ArrayList<BlockBean> blocks = store.a(javaName,
-                                event.targetId + "_" + event.eventName);
-                        if (blocks == null) {
-                            continue;
-                        }
-                        for (BlockBean bean : blocks) {
-                            if (bean.parameters == null) {
-                                continue;
-                            }
-                            for (String parameter : bean.parameters) {
-                                if (parameter != null) {
-                                    named.add(parameter);
-                                }
-                            }
-                        }
+                for (ArrayList<BlockBean> blocks
+                        : allActivityBlocks(store, javaName).values()) {
+                    if (blocks == null) {
+                        continue;
+                    }
+                    for (BlockBean bean : blocks) {
+                        collectBlockIdentifiers(bean, named);
                     }
                 }
                 for (String id : inputs) {
@@ -9440,13 +11074,28 @@ public final class AgentLogic {
         }
         LinkedHashMap<String, Integer> variables =
                 variablesOf(store, javaName);
+        LinkedHashMap<String, Integer> editLists =
+                listsOf(store, javaName);
+        LinkedHashMap<String, Integer> editComponents =
+                componentsOf(store, javaName);
+        LinkedHashMap<String, String> editRefParams =
+                new LinkedHashMap<>();
+        if (probe.moreBlockEvent && probe.moreBlockDef != null) {
+            bindMoreBlockParams(probe.moreBlockDef, byId, variables,
+                    editLists, editComponents, probe.eventArgs,
+                    editRefParams);
+        }
         Builder builder = new Builder(context, byId, variables,
                 nextFreeId(blocks));
-        builder.lists = listsOf(store, javaName);
-        builder.components = componentsOf(store, javaName);
+        builder.lists = editLists;
+        builder.components = editComponents;
+        builder.moreBlocks = moreBlocksOf(store, javaName);
+        builder.moreBlockDef = probe.moreBlockDef;
+        builder.moreBlockRefParams.putAll(editRefParams);
         builder.scId = scId;
         builder.activityName = SketchwareProjects.activityName(activity);
         builder.eventArgs.putAll(eventArgsOf(plan.eventName));
+        builder.eventArgs.putAll(probe.eventArgs);
         builder.currentEvent = plan.eventName;
 
         for (EditableValue value : editable) {
@@ -9469,18 +11118,37 @@ public final class AgentLogic {
             value.rawElement = elem;
             String what = "the \"" + value.kind + "\" of "
                     + plan.blockOpCode;
-            if (value.slotChar == 'd') {
+            if (value.slotChar == 'i') {
+                String rawCode = stringOf(with, matchedKey);
+                if (rawCode.trim().isEmpty()) {
+                    throw new AgentTools.ToolException("E_BAD_EDIT",
+                            plan.blockOpCode + " needs non-empty Java "
+                                    + "code.");
+                }
+                value.newValue = Builder.sanitizeRawJava(rawCode);
+                value.shownNewValue = Builder.summarizeRawJava(rawCode);
+            } else if (value.slotChar == 'm') {
+                value.newValue = Builder.normalizeImportPath(
+                        stringOf(with, matchedKey));
+                value.shownNewValue = value.newValue;
+            } else if (value.slotChar == 'd') {
                 value.newValue = numberSlot(builder, with, matchedKey,
                         what);
+                value.shownNewValue = describeSlot(builder, with,
+                        matchedKey);
             } else if (value.slotChar == 'b') {
                 value.newValue = boolSlot(builder, with, matchedKey,
                         false, what);
+                value.shownNewValue = describeSlot(builder, with,
+                        matchedKey);
             } else {
                 value.newValue = valueSlot(builder, with, matchedKey,
                         's', what);
+                value.shownNewValue = describeSlot(builder, with,
+                        matchedKey);
             }
-            value.shownNewValue = describeSlot(builder, with, matchedKey);
-            if (value.shownNewValue.isEmpty()) {
+            if (value.shownNewValue == null
+                    || value.shownNewValue.isEmpty()) {
                 value.shownNewValue = value.newValue;
             }
             value.beanIndex = plan.targetBeanIndex;
@@ -9498,7 +11166,8 @@ public final class AgentLogic {
                             + ". Give \"replace_with\" with one of "
                             + "those keys and the new value.");
         }
-        int nextId = builder.nextId;
+        int nextId = resolveMoreBlockRefParams(builder.created,
+                editRefParams, plan.extraBeans, builder.nextId);
         for (BlockBean createdBean : builder.created) {
             for (int i = 0; i < createdBean.parameters.size(); i++) {
                 String param = createdBean.parameters.get(i);
@@ -9817,6 +11486,7 @@ public final class AgentLogic {
             // getVar stores the variable name as its spec and holds
             // no parameters; its shape is the editor's own.
             if (!"getVar".equals(bean.opCode)
+                    && !"getArg".equals(bean.opCode)
                     && bean.parameters.size() != slotCount) {
                 problems.add(who + ": it holds "
                         + bean.parameters.size() + " values but its "
@@ -9856,16 +11526,25 @@ public final class AgentLogic {
         plan.scId = scId;
         plan.activity = activity;
         plan.eventName = event == null ? "" : event.trim();
+        eC store = jC.a(scId);
+        String javaName = activity.getJavaName();
+        MoreBlockDef resolvedMb = findMoreBlock(store, javaName, target,
+                event);
+        if (resolvedMb != null) {
+            plan.moreBlockEvent = true;
+            plan.moreBlockDef = resolvedMb;
+            plan.targetId = resolvedMb.first;
+            plan.eventName = "moreBlock";
+            plan.header = "More Block " + resolvedMb.signature()
+                    + " on " + SketchwareProjects.activityName(activity)
+                    + ":";
+            return plan;
+        }
         if ("activity".equalsIgnoreCase(target)) {
             plan.activityEvent = true;
             plan.targetId = plan.eventName;
             if (!Arrays.asList(oq.getAllActivityEvents())
                     .contains(plan.eventName)) {
-                // Reading accepts the same near-misses writing does.
-                // Before this, get_event_logic refused "onCreate" while
-                // set_event_handler quietly mapped it — so a model that
-                // wrote its blocks under onCreate could not read them
-                // back, which is exactly what the MagicalNotes run hit.
                 String alias = activityEventAlias(plan.eventName);
                 if (alias == null
                         || !Arrays.asList(oq.getAllActivityEvents())
@@ -9895,6 +11574,19 @@ public final class AgentLogic {
         ViewBean widget = findWidget(byId, target);
         if (widget == null) {
             String wanted = target == null ? "" : target.trim();
+            MoreBlockDef byTarget = moreBlocksOf(store, javaName).get(
+                    ReturnMoreblockManager.getMbName(wanted));
+            if (byTarget != null) {
+                plan.moreBlockEvent = true;
+                plan.moreBlockDef = byTarget;
+                plan.targetId = byTarget.first;
+                plan.eventName = "moreBlock";
+                plan.header = "More Block " + byTarget.signature()
+                        + " on "
+                        + SketchwareProjects.activityName(activity)
+                        + ":";
+                return plan;
+            }
             if (Arrays.asList(oq.getAllActivityEvents())
                     .contains(wanted)) {
                 throw new AgentTools.ToolException("E_BAD_TARGET",
@@ -9903,13 +11595,14 @@ public final class AgentLogic {
                                 + "\"activity\" and event \"" + wanted
                                 + "\".");
             }
-            Integer componentType = componentsOf(jC.a(scId),
-                    activity.getJavaName()).get(wanted);
+            Integer componentType = componentsOf(store, javaName)
+                    .get(wanted);
             if (componentType == null) {
                 throw new AgentTools.ToolException("E_NO_WIDGET",
-                        "There is no widget or component with id \""
-                                + target + "\" on this screen. Use "
-                                + "get_screen to see the widget ids.");
+                        "There is no widget, component or More Block "
+                                + "named \"" + target + "\" on this "
+                                + "screen. Use get_screen to see "
+                                + "available ids and More Blocks.");
             }
             plan.componentEvent = true;
             plan.componentType = componentType;
@@ -10093,7 +11786,43 @@ public final class AgentLogic {
             String kind = null;
             char slotChar = 's';
             String[] aliases = new String[0];
-            if ("doToast".equals(opCode) && i == 0 && "%s".equals(slot)) {
+            if ("addSourceDirectly".equals(opCode)
+                    || "addCustomVariable".equals(opCode)
+                    || "addInitializer".equals(opCode)) {
+                kind = "code";
+                slotChar = 'i';
+                aliases = new String[]{"source", "java", "text",
+                        "value"};
+            } else if ("customImport".equals(opCode)) {
+                kind = "import";
+                slotChar = 'm';
+                aliases = new String[]{"path", "code", "text",
+                        "value"};
+            } else if ("definedFunc".equals(opCode)
+                    && slot.startsWith("%s.")) {
+                int ord = textOrdinal++;
+                kind = slot.substring(3);
+                aliases = ord == 0
+                        ? new String[]{"text", "value"}
+                        : new String[]{"text" + (ord + 1)};
+            } else if ("definedFunc".equals(opCode)
+                    && slot.startsWith("%d.")) {
+                int ord = numOrdinal++;
+                slotChar = 'd';
+                kind = slot.substring(3);
+                aliases = ord == 0
+                        ? new String[]{"value", "number"}
+                        : new String[]{"value" + (ord + 1)};
+            } else if ("definedFunc".equals(opCode)
+                    && slot.startsWith("%b.")) {
+                int ord = boolOrdinal++;
+                slotChar = 'b';
+                kind = slot.substring(3);
+                aliases = ord == 0
+                        ? new String[]{"flag", "value"}
+                        : new String[]{"flag" + (ord + 1)};
+            } else if ("doToast".equals(opCode) && i == 0
+                    && "%s".equals(slot)) {
                 kind = EDIT_MESSAGE;
                 aliases = new String[]{"text", "value"};
             } else if ("setText".equals(opCode) && i == 1
