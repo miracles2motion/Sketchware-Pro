@@ -11675,6 +11675,8 @@ public final class AgentLogic {
         public int targetBeanIndex;
         public final ArrayList<EditableValue> values = new ArrayList<>();
         final ArrayList<BlockBean> extraBeans = new ArrayList<>();
+        final ArrayList<AgentExtensibility.CustomBlockDef> pinnedCustomBlocks =
+                new ArrayList<>();
         public int existingCount;
         public String blockDescription;
         public String eventRendering;
@@ -12415,6 +12417,7 @@ public final class AgentLogic {
             }
         }
         plan.extraBeans.addAll(0, builder.created);
+        plan.pinnedCustomBlocks.addAll(builder.pinnedCustomBlocks);
 
         // Prove the after-state still generates: clone, rewrite, run
         // the app's own generator, require the fresh code to differ.
