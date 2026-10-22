@@ -2011,6 +2011,18 @@ logs exposed the rest of the same class:
 3. **Project Metadata, Pro ProjectSettings, ProGuard/R8 & StringFog (`edit_project_settings`, `configure_proguard_and_stringfog`)**:
    - Updates `my_ws_name`, `my_app_name` (and `@string/app_name` in `strings.xml`), `my_sc_pkg_name`, `sc_ver_code`, and `sc_ver_name` via `lC.b(scId, metadata)`, plus `ProjectSettings` (`min_sdk`, `target_sdk`, `app_class`, `enable_viewbinding`, `enable_bridgeless_themes`, `disable_old_methods`), `ProguardHandler` (`proguard`, `proguard-rules.pro`, `proguard_fm`), and `StringfogHandler` (`stringfog`), with full state recorded in `AgentExport`.
 
+## Wave 44 / Phase 8 — Source Inspector, Runtime Crash Logcat Reader, Collections & Release Packaging (`.aab` / Signing / `.swb`)
+
+1. **Generated Source Inspector (`AgentPackagingAndDiagnostics.inspectGeneratedSource`, `inspect_generated_source`)**:
+   - Runs Sketchware Pro's `SrcViewerActivity` pipeline (`yq.ExportType.SOURCE_CODE_VIEWING` + `ProjectBuilder.buildBuiltInLibraryInformation()`) to inspect numbered lines of generated `.java`, layout `.xml`, and `AndroidManifest.xml` files on demand without executing a full build.
+2. **Live Runtime Logcat & Crash Reader (`read_app_logs`, `SketchApplication.onCreate`)**:
+   - Registers a background ring-buffer `BroadcastReceiver` on `pro.sketchware.ACTION_NEW_DEBUG_LOG` in `SketchApplication` to capture live runtime logs and `AndroidRuntime` crash traces from installed Sketchware apps, combined with `.sketchware/logcat/<pkg>/*.txt` and `CompileErrorSaver` build logs (written automatically by `AgentBuild` on `zy` compile failures and cleared on clean builds).
+3. **Collections Manager (`list_collections`, `manage_collections`)**:
+   - Lists, saves, imports, and deletes reusable Widget Collections (`Rp.h()`), MoreBlock Collections (`Pp.h()`, auto-creating missing variables/lists and copying referenced images/sounds/fonts with `AgentAssets.resetResourceManager` guards), and Block Collections (`Mp.h()`).
+4. **Release Packaging & `.swb` Backups (`build_release_package`, `export_project_backup`)**:
+   - Builds Play Store `.aab` App Bundles (`AppBundleCompiler.createModuleMainArchive()` + `buildBundle()` + `ZipSigner` / `CustomKeySigner`) and signed release `.apk` packages (`runZipalign` + `TestkeySignBridge` or `ApkSigner.signWithKeyStore` V1+V2+V3) with ViewBinding, Kotlin, StringFog, and ProGuard/R8 support, and exports shareable `.swb` project archives via `BackupFactory`, with diagnostics and collections captured in `AgentExport`.
+
+
 
 
 

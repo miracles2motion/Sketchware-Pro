@@ -35,5 +35,6 @@ public class SketchApplication extends Application {
         });
         super.onCreate();
         ThemeManager.applyTheme(this, ThemeManager.getCurrentTheme(this));
+        pro.sketchware.ai.AgentPackagingAndDiagnostics.registerLogReceiver(this);
     }
 }

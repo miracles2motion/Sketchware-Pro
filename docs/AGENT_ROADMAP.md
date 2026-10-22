@@ -131,13 +131,13 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 ---
 
-### Phase 8 — Source Inspector, Runtime Crash Logcat Reader, Collections & Release Packaging (`.aab` / Signing / `.swb`)
+### Phase 8 (DONE) — Source Inspector, Runtime Crash Logcat Reader, Collections & Release Packaging (`.aab` / Signing / `.swb`)
 **Goal:** Self-debugging, cross-project reuse, and Play Store–ready outputs.
 1. **Generated Source Inspector (`inspect_generated_source`):**
-   - Generate and read the exact `.java`, `res/layout/*.xml`, and `AndroidManifest.xml` output (`Jx` / `SrcViewerActivity`) so the agent can pinpoint tricky `javac` or `aapt2` errors by line number.
+   - Generates and reads numbered lines of the exact `.java`, `res/layout/*.xml`, and `AndroidManifest.xml` output (`SrcViewerActivity` / `yq.ExportType.SOURCE_CODE_VIEWING`) without running a full APK build so the agent can pinpoint `javac` or `aapt2` errors by line number.
 2. **Runtime Crash & Logcat Reader (`read_app_logs`):**
-   - Read recent runtime logs / `AndroidRuntime` stack traces filtered to the project's package (`LogReaderActivity` + `CompileErrorSaver`) so when a user says *"It crashed when I tapped Save"*, the agent sees the exact stack trace and fixes it.
-3. **Collections Manager (`manage_collections`):**
-   - Save and import reusable **MoreBlock Collections**, **Widget Collections**, and **Block Collections** (`ManageCollectionActivity`, `MoreblockImporter`).
-4. **Release Packaging (`build_app_bundle`, `export_backup`):**
-   - Build Play Store `.aab` Android App Bundles (`AppBundleCompiler`), sign release builds with a user keystore (`TestkeySignBridge`), and export `.swb` project backups (`BackupFactory`).
+   - Captures live runtime logs and `AndroidRuntime` stack traces via a background ring-buffer `BroadcastReceiver` on `pro.sketchware.ACTION_NEW_DEBUG_LOG` registered in `SketchApplication.onCreate()`, plus exported `.sketchware/logcat/<pkg>/*.txt` files and `CompileErrorSaver` last-build logs.
+3. **Collections Manager (`list_collections`, `manage_collections`):**
+   - Lists, saves, imports (auto-provisioning missing variables, lists, and image/sound/font resources), and deletes reusable **Widget Collections** (`Rp`), **MoreBlock Collections** (`Pp`), and **Block Collections** (`Mp`).
+4. **Release Packaging (`build_release_package`, `export_project_backup`):**
+   - Builds and signs Play Store `.aab` Android App Bundles (`AppBundleCompiler` + `ZipSigner` / `CustomKeySigner`) and signed release `.apk` files (`runZipalign` + `TestkeySignBridge` / `ApkSigner` V1+V2+V3), and exports `.swb` project backups (`BackupFactory`).

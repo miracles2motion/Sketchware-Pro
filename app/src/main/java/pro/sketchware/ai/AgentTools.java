@@ -8,6 +8,7 @@ import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -140,6 +141,9 @@ public final class AgentTools {
         register(new InspectNativeLibs());
         register(new ListCustomDefinitions());
         register(new InspectManifestAndSettings());
+        register(new InspectGeneratedSource());
+        register(new ReadAppLogs());
+        register(new ListCollections());
         register(new AskColor());
         register(new AskChoice());
         register(new SetStyleBrief());
@@ -195,7 +199,10 @@ public final class AgentTools {
         register(new ManageLocalLibraries());
         register(new DownloadMavenLibrary());
         register(new EditProjectTheme());
+        register(new ManageCollections());
         register(new BuildProject());
+        register(new BuildReleasePackage());
+        register(new ExportProjectBackup());
     }
 
     private static void register(Tool tool) {
@@ -358,6 +365,8 @@ public final class AgentTools {
         // reported back to the model as done, whatever model sent it.
         if (!allowRepeat
                 && !"build_project".equals(name)
+                && !"build_release_package".equals(name)
+                && !"export_project_backup".equals(name)
                 && !"edit_event_block".equals(name)
                 && session.workingProjectId != null
                 && !session.workingProjectId.isEmpty()
@@ -11092,7 +11101,12 @@ public final class AgentTools {
 
         @Override
         public JsonObject parameters() {
-            return emptyObjectSchema();
+            return AgentTools.parameters(new JsonObject());
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Inspected AndroidManifest, AppCompat & project settings";
         }
 
         @Override
@@ -11163,7 +11177,12 @@ public final class AgentTools {
             p.add("replace_app_components_xml", booleanSchema(
                     "When true, replaces app_components.txt instead of "
                             + "appending."));
-            return objectSchema(p);
+            return AgentTools.parameters(p);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to update AndroidManifest configuration";
         }
 
         @Override
@@ -11259,15 +11278,17 @@ public final class AgentTools {
             if (appXml != null) {
                 details.add("<application> child XML updated");
             }
-            return new AgentProposal(name(), "Update AndroidManifest",
-                    String.join(" · ", details), details,
-                    args.deepCopy(), scId);
+            JsonObject clean = args == null ? new JsonObject() : args.deepCopy();
+            return new AgentProposal(name(), clean, scId,
+                    "Update AndroidManifest",
+                    String.join(" · ", details),
+                    String.join("\n", details));
         }
 
         @Override
         public JsonObject execute(Session session, AgentProposal proposal)
                 throws ToolException {
-            String scId = requiredProject(proposal.projectId);
+            String scId = requiredProject(proposal.workingProjectId);
             JsonObject a = proposal.args;
             String actXml = a != null && a.has("activity_components_xml")
                     && !a.get("activity_components_xml").isJsonNull()
@@ -11338,7 +11359,15 @@ public final class AgentTools {
             p.add("reset", booleanSchema(
                     "When true, restores Sketchware Pro's default AppCompat "
                             + "injections for this Activity."));
-            return objectSchema(p, "activity");
+            return AgentTools.parameters(p, "activity");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            String act = stringArg(args, "activity");
+            return act.isEmpty()
+                    ? "Wants to update AppCompat XML injection"
+                    : "Wants to update AppCompat injection on " + act;
         }
 
         @Override
@@ -11383,15 +11412,16 @@ public final class AgentTools {
             } else {
                 details.addAll(attrs);
             }
-            return new AgentProposal(name(), title,
+            JsonObject clean = args == null ? new JsonObject() : args.deepCopy();
+            return new AgentProposal(name(), clean, scId, title,
                     reset ? "Restore defaults" : attrs.size() + " attributes",
-                    details, args.deepCopy(), scId);
+                    String.join("\n", details));
         }
 
         @Override
         public JsonObject execute(Session session, AgentProposal proposal)
                 throws ToolException {
-            String scId = requiredProject(proposal.projectId);
+            String scId = requiredProject(proposal.workingProjectId);
             JsonObject a = proposal.args;
             try {
                 JsonObject res = AgentManifestAndSettings
@@ -11462,7 +11492,12 @@ public final class AgentTools {
             p.add("disable_old_methods", booleanSchema(
                     "Optional toggle to omit deprecated legacy helper "
                             + "methods in generated Activities."));
-            return objectSchema(p);
+            return AgentTools.parameters(p);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to update project metadata & settings";
         }
 
         @Override
@@ -11511,15 +11546,17 @@ public final class AgentTools {
                         "Provide at least one metadata or ProjectSettings "
                                 + "field to update.");
             }
-            return new AgentProposal(name(), "Update project settings",
-                    String.join(" · ", details), details,
-                    args.deepCopy(), scId);
+            JsonObject clean = args == null ? new JsonObject() : args.deepCopy();
+            return new AgentProposal(name(), clean, scId,
+                    "Update project settings",
+                    String.join(" · ", details),
+                    String.join("\n", details));
         }
 
         @Override
         public JsonObject execute(Session session, AgentProposal proposal)
                 throws ToolException {
-            String scId = requiredProject(proposal.projectId);
+            String scId = requiredProject(proposal.workingProjectId);
             JsonObject a = proposal.args;
             try {
                 JsonObject res = AgentManifestAndSettings
@@ -11583,7 +11620,12 @@ public final class AgentTools {
                             + "should also be shrunk in full mode."));
             p.add("stringfog_enabled", booleanSchema(
                     "Enable or disable StringFog string encryption."));
-            return objectSchema(p);
+            return AgentTools.parameters(p);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to configure ProGuard/R8 & StringFog";
         }
 
         @Override
@@ -11623,16 +11665,17 @@ public final class AgentTools {
                         "Provide at least one ProGuard/R8 or StringFog "
                                 + "option to configure.");
             }
-            return new AgentProposal(name(),
+            JsonObject clean = args == null ? new JsonObject() : args.deepCopy();
+            return new AgentProposal(name(), clean, scId,
                     "Configure ProGuard / R8 & StringFog",
-                    String.join(" · ", details), details,
-                    args.deepCopy(), scId);
+                    String.join(" · ", details),
+                    String.join("\n", details));
         }
 
         @Override
         public JsonObject execute(Session session, AgentProposal proposal)
                 throws ToolException {
-            String scId = requiredProject(proposal.projectId);
+            String scId = requiredProject(proposal.workingProjectId);
             JsonObject a = proposal.args;
             String rules = a != null && a.has("proguard_rules")
                     && !a.get("proguard_rules").isJsonNull()
@@ -11656,6 +11699,478 @@ public final class AgentTools {
                         "Failed to configure ProGuard/R8 or StringFog: "
                                 + String.valueOf(e.getMessage()));
             }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 8: Source Inspector, Runtime Crash Logcat Reader,
+    //          Collections Manager & Release Packaging (.aab / APK / .swb)
+    // ------------------------------------------------------------------
+
+    /** inspect_generated_source: read-only SrcViewerActivity source dump. */
+    private static final class InspectGeneratedSource implements Tool {
+        @Override
+        public String name() {
+            return "inspect_generated_source";
+        }
+
+        @Override
+        public String description() {
+            return "Generates and reads the exact Java, layout XML, and "
+                    + "AndroidManifest.xml source files Sketchware Pro's "
+                    + "compiler produces (without running a full build). "
+                    + "Omit file_name to list all generated files, or pass "
+                    + "file_name (e.g. MainActivity.java, main.xml, or "
+                    + "AndroidManifest.xml) with start_line / max_lines to "
+                    + "inspect numbered lines and pinpoint compile errors.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject p = new JsonObject();
+            p.add("file_name", stringSchema(
+                    "Optional generated file name or substring (e.g. "
+                            + "MainActivity.java, main.xml, AndroidManifest.xml)."));
+            p.add("start_line", intSchema(
+                    "Optional 1-based starting line number (default 1)."));
+            p.add("max_lines", intSchema(
+                    "Optional maximum lines to return (default 250, max 600)."));
+            return AgentTools.parameters(p);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            String fn = stringArg(args, "file_name");
+            return fn.isEmpty()
+                    ? "Listed generated Java & XML source files"
+                    : "Inspected generated source for " + fn;
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            return AgentPackagingAndDiagnostics.inspectGeneratedSource(
+                    session.context, scId,
+                    stringArg(args, "file_name"),
+                    intArg(args, "start_line", 1),
+                    intArg(args, "max_lines", 250));
+        }
+    }
+
+    /** read_app_logs: live runtime crash/logcat reader + last compile log. */
+    private static final class ReadAppLogs implements Tool {
+        @Override
+        public String name() {
+            return "read_app_logs";
+        }
+
+        @Override
+        public String description() {
+            return "Reads live runtime logs and AndroidRuntime crash stack "
+                    + "traces captured from the installed project app "
+                    + "(SketchLogger broadcast stream + exported logcat "
+                    + "files) as well as the last saved compile error log.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject p = new JsonObject();
+            p.add("package_name", stringSchema(
+                    "Optional package name override (defaults to the "
+                            + "working project's package name)."));
+            p.add("level", stringSchema(
+                    "Optional log level filter: E, W, I, D, V, or A."));
+            p.add("filter", stringSchema(
+                    "Optional case-insensitive text search (e.g. "
+                            + "\"Exception\" or \"MainActivity\")."));
+            p.add("limit", intSchema(
+                    "Maximum recent log entries to return (default 120)."));
+            p.add("clear", booleanSchema(
+                    "When true, clears the in-memory log buffer after reading."));
+            return AgentTools.parameters(p);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Read runtime app logs & crash traces";
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            return AgentPackagingAndDiagnostics.readAppLogs(
+                    scId,
+                    stringArg(args, "package_name"),
+                    stringArg(args, "level"),
+                    stringArg(args, "filter"),
+                    intArg(args, "limit", 120),
+                    booleanArg(args, "clear"));
+        }
+    }
+
+    /** list_collections: lists Widget, MoreBlock & Block collections. */
+    private static final class ListCollections implements Tool {
+        @Override
+        public String name() {
+            return "list_collections";
+        }
+
+        @Override
+        public String description() {
+            return "Lists all saved reusable Widget Collections, MoreBlock "
+                    + "Collections, and Block Collections stored on device.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            return AgentTools.parameters(new JsonObject());
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Listed saved Widget, MoreBlock & Block collections";
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args) {
+            return AgentPackagingAndDiagnostics.listCollections();
+        }
+    }
+
+    /** manage_collections: save/import/delete Widget, MoreBlock & Block collections. */
+    private static final class ManageCollections implements Tool {
+        @Override
+        public String name() {
+            return "manage_collections";
+        }
+
+        @Override
+        public String description() {
+            return "Saves project widgets, MoreBlocks, or event block chains "
+                    + "into Sketchware Pro Collections for cross-project "
+                    + "reuse, imports saved Widget or MoreBlock Collections "
+                    + "into the working project (auto-provisioning missing "
+                    + "variables and resources), or deletes a collection item.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject p = new JsonObject();
+            p.add("action", stringSchema(
+                    "Operation: \"save_widget\", \"import_widget\", "
+                            + "\"save_more_block\", \"import_more_block\", "
+                            + "\"save_blocks\", or \"delete\"."));
+            p.add("collection_name", stringSchema(
+                    "Name of the collection item."));
+            p.add("kind", stringSchema(
+                    "Collection kind when action=\"delete\": \"widget\", "
+                            + "\"more_block\", or \"block\"."));
+            p.add("activity", stringSchema(
+                    "Screen or custom view name (required for save/import)."));
+            p.add("widget_id", stringSchema(
+                    "Widget ID on \"activity\" to save when "
+                            + "action=\"save_widget\"."));
+            p.add("parent_id", stringSchema(
+                    "Optional parent container ID when "
+                            + "action=\"import_widget\" (default \"root\")."));
+            p.add("index", intSchema(
+                    "Optional child insertion index when "
+                            + "action=\"import_widget\" (default append)."));
+            p.add("more_block_name", stringSchema(
+                    "MoreBlock name on \"activity\" when "
+                            + "action=\"save_more_block\"."));
+            p.add("target", stringSchema(
+                    "Event target ID (or \"activity\") when "
+                            + "action=\"save_blocks\"."));
+            p.add("event", stringSchema(
+                    "Event name (e.g. onClick or initializeLogic) when "
+                            + "action=\"save_blocks\"."));
+            return AgentTools.parameters(p, "action", "collection_name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            String act = stringArg(args, "action");
+            String col = stringArg(args, "collection_name");
+            return "Wants to " + act + " collection \"" + col + "\"";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String action = stringArg(args, "action").trim().toLowerCase();
+            String colName = stringArg(args, "collection_name").trim();
+            if (colName.isEmpty()) {
+                throw new ToolException("E_MISSING_COLLECTION_NAME",
+                        "Pass non-empty \"collection_name\".");
+            }
+            String scId = "delete".equals(action)
+                    ? (session.workingProjectId == null
+                            ? "" : session.workingProjectId)
+                    : requiredProject(session.workingProjectId);
+            if (!"save_widget".equals(action)
+                    && !"import_widget".equals(action)
+                    && !"save_more_block".equals(action)
+                    && !"import_more_block".equals(action)
+                    && !"save_blocks".equals(action)
+                    && !"delete".equals(action)) {
+                throw new ToolException("E_BAD_ACTION",
+                        "Unsupported action \"" + action + "\".");
+            }
+            JsonObject clean = args == null ? new JsonObject() : args.deepCopy();
+            return new AgentProposal(name(), clean, scId,
+                    "Collection: " + action + " \"" + colName + "\"",
+                    "Perform " + action + " on collection \"" + colName + "\".",
+                    "Collection item: " + colName);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            JsonObject a = proposal.args;
+            String action = stringArg(a, "action").trim().toLowerCase();
+            String colName = stringArg(a, "collection_name").trim();
+            try {
+                JsonObject res;
+                switch (action) {
+                    case "save_widget" -> res = AgentPackagingAndDiagnostics
+                            .saveWidgetToCollection(
+                                    requiredProject(proposal.workingProjectId),
+                                    stringArg(a, "activity"),
+                                    stringArg(a, "widget_id"),
+                                    colName);
+                    case "import_widget" -> res = AgentPackagingAndDiagnostics
+                            .importWidgetFromCollection(
+                                    requiredProject(proposal.workingProjectId),
+                                    stringArg(a, "activity"),
+                                    colName,
+                                    stringArg(a, "parent_id"),
+                                    intArg(a, "index", -1));
+                    case "save_more_block" -> res = AgentPackagingAndDiagnostics
+                            .saveMoreBlockToCollection(
+                                    requiredProject(proposal.workingProjectId),
+                                    stringArg(a, "activity"),
+                                    stringArg(a, "more_block_name"),
+                                    colName);
+                    case "import_more_block" -> res =
+                            AgentPackagingAndDiagnostics
+                                    .importMoreBlockFromCollection(
+                                            requiredProject(
+                                                    proposal.workingProjectId),
+                                            stringArg(a, "activity"),
+                                            colName);
+                    case "save_blocks" -> res = AgentPackagingAndDiagnostics
+                            .saveEventBlocksToCollection(
+                                    requiredProject(proposal.workingProjectId),
+                                    stringArg(a, "activity"),
+                                    stringArg(a, "target"),
+                                    stringArg(a, "event"),
+                                    colName);
+                    case "delete" -> {
+                        AgentPackagingAndDiagnostics.deleteCollectionItem(
+                                stringArg(a, "kind"), colName);
+                        res = new JsonObject();
+                        res.addProperty("deleted", colName);
+                    }
+                    default -> throw new ToolException("E_BAD_ACTION",
+                            "Unsupported action \"" + action + "\".");
+                }
+                res.addProperty("verified",
+                        "Completed " + action + " for \"" + colName + "\".");
+                return res;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_COLLECTION_OP_FAILED",
+                        "Collection operation failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /** build_release_package: Play Store .aab or signed release .apk. */
+    private static final class BuildReleasePackage implements Tool {
+        @Override
+        public String name() {
+            return "build_release_package";
+        }
+
+        @Override
+        public String description() {
+            return "Builds and signs a Play Store Android App Bundle (.aab) "
+                    + "or a release APK (.apk) using Sketchware Pro's "
+                    + "AppBundleCompiler + ApkSigner/ZipSigner pipeline "
+                    + "(with ViewBinding, Kotlin, StringFog, and ProGuard/R8 "
+                    + "when enabled). Signs with the user's .jks/.keystore "
+                    + "when keystore_path is provided, or testkey otherwise.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject p = new JsonObject();
+            p.add("format", stringSchema(
+                    "Package format: \"aab\" (Play Store App Bundle, default) "
+                            + "or \"apk\" (signed release APK)."));
+            p.add("keystore_path", stringSchema(
+                    "Optional path to a .jks or .keystore file for release "
+                            + "signing."));
+            p.add("keystore_password", stringSchema(
+                    "Keystore password when keystore_path is provided."));
+            p.add("key_alias", stringSchema(
+                    "Key alias when keystore_path is provided."));
+            p.add("key_password", stringSchema(
+                    "Optional key password (defaults to keystore_password)."));
+            return AgentTools.parameters(p);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            String fmt = stringArg(args, "format");
+            return "apk".equalsIgnoreCase(fmt)
+                    ? "Wants to build a signed release APK"
+                    : "Wants to build a Play Store App Bundle (.aab)";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            SketchwareProjects.ProjectInfo proj =
+                    SketchwareProjects.project(scId);
+            String fmt = stringArg(args, "format").trim().toLowerCase();
+            if (fmt.isEmpty()) fmt = "aab";
+            if (!"aab".equals(fmt) && !"apk".equals(fmt)
+                    && !"bundle".equals(fmt) && !"app_bundle".equals(fmt)) {
+                throw new ToolException("E_BAD_FORMAT",
+                        "Use format=\"aab\" or format=\"apk\".");
+            }
+            boolean isBundle = !"apk".equals(fmt);
+            String ks = stringArg(args, "keystore_path").trim();
+            if (!ks.isEmpty()) {
+                if (!new File(ks).isFile()) {
+                    throw new ToolException("E_KEYSTORE_NOT_FOUND",
+                            "Keystore file not found: " + ks);
+                }
+                if (stringArg(args, "keystore_password").isEmpty()
+                        || stringArg(args, "key_alias").isEmpty()) {
+                    throw new ToolException("E_MISSING_KEYSTORE_CREDENTIALS",
+                            "Pass keystore_password and key_alias alongside "
+                                    + "keystore_path.");
+                }
+            }
+            JsonObject clean = args == null ? new JsonObject() : args.deepCopy();
+            return new AgentProposal(name(), clean, scId,
+                    "Build " + proj.name + (isBundle
+                            ? " App Bundle (.aab)" : " Release APK"),
+                    "Compile and sign “" + proj.appName + "” as a "
+                            + (isBundle ? "Play Store .aab bundle"
+                                    : "signed release .apk")
+                            + (ks.isEmpty() ? " (testkey)."
+                                    : " (custom keystore)."),
+                    isBundle ? "Output folder: /sdcard/sketchware/signed_aab/"
+                            : "Output folder: /sdcard/sketchware/signed_apk/");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            JsonObject a = proposal.args;
+            String fmt = stringArg(a, "format").isEmpty()
+                    ? "aab" : stringArg(a, "format");
+            return AgentBuild.buildReleasePackage(
+                    session.context,
+                    scId,
+                    fmt,
+                    emptyToNull(stringArg(a, "keystore_path")),
+                    emptyToNull(stringArg(a, "keystore_password")),
+                    emptyToNull(stringArg(a, "key_alias")),
+                    emptyToNull(stringArg(a, "key_password")));
+        }
+    }
+
+    /** export_project_backup: exports a .swb Sketchware Pro project archive. */
+    private static final class ExportProjectBackup implements Tool {
+        @Override
+        public String name() {
+            return "export_project_backup";
+        }
+
+        @Override
+        public String description() {
+            return "Exports a shareable .swb Sketchware Pro backup archive "
+                    + "for the working project (optionally bundling used "
+                    + "local libraries and custom blocks).";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject p = new JsonObject();
+            p.add("include_local_libraries", booleanSchema(
+                    "Include local libraries used by the project (default true)."));
+            p.add("include_custom_blocks", booleanSchema(
+                    "Include custom blocks used by the project (default true)."));
+            return AgentTools.parameters(p);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to export a .swb project backup";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            SketchwareProjects.ProjectInfo proj =
+                    SketchwareProjects.project(scId);
+            Boolean libs = optionalBooleanArg(args, "include_local_libraries");
+            Boolean cbs = optionalBooleanArg(args, "include_custom_blocks");
+            boolean incLibs = libs == null || libs;
+            boolean incCbs = cbs == null || cbs;
+            JsonObject clean = new JsonObject();
+            clean.addProperty("include_local_libraries", incLibs);
+            clean.addProperty("include_custom_blocks", incCbs);
+            return new AgentProposal(name(), clean, scId,
+                    "Export .swb backup for " + proj.name,
+                    "Create a Sketchware Pro .swb backup archive of “"
+                            + proj.appName + "”.",
+                    "Includes local libraries: " + incLibs
+                            + " · Includes custom blocks: " + incCbs);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            JsonObject a = proposal.args;
+            Boolean libs = optionalBooleanArg(a, "include_local_libraries");
+            Boolean cbs = optionalBooleanArg(a, "include_custom_blocks");
+            JsonObject res = AgentPackagingAndDiagnostics.exportProjectBackup(
+                    session.context, scId,
+                    libs == null || libs,
+                    cbs == null || cbs);
+            res.addProperty("verified",
+                    "Exported .swb backup -> "
+                            + res.get("swb_path").getAsString());
+            return res;
         }
     }
 
