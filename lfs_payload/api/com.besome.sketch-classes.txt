@@ -1,0 +1,85 @@
+# javap -public for app/libs/com.besome.sketch-classes.jar
+
+########## com.besome.sketch.editor.logic.BlockPane
+public class com.besome.sketch.editor.logic.BlockPane extends android.widget.RelativeLayout {
+  public android.content.Context a;
+  public int[] b;
+  public a.a.a.Ts c;
+  public a.a.a.Rs d;
+  public java.util.ArrayList<java.lang.Object[]> e;
+  public java.lang.Object[] f;
+  public int g;
+  public float h;
+  public com.besome.sketch.editor.logic.BlockPane(android.content.Context);
+  public a.a.a.Rs a(int);
+  public a.a.a.Rs a(a.a.a.Rs, int, int);
+  public a.a.a.Rs a(a.a.a.Rs, int, int, boolean);
+  public a.a.a.Rs a(java.lang.String);
+  public final void a();
+  public void a(a.a.a.Rs);
+  public void a(a.a.a.Rs, int);
+  public final void a(a.a.a.Rs, java.lang.String);
+  public void a(a.a.a.Rs, java.util.ArrayList<com.besome.sketch.beans.BlockBean>);
+  public final void a(a.a.a.Rs, boolean);
+  public final void a(android.content.Context);
+  public void a(com.besome.sketch.beans.BlockBean, boolean);
+  public void a(java.lang.String, java.lang.String);
+  public void a(java.lang.String, boolean, boolean, boolean, int, int);
+  public final void a(int[], android.view.View, int);
+  public final boolean a(a.a.a.Rs, android.view.View);
+  public void b();
+  public void b(a.a.a.Rs);
+  public boolean b(java.lang.String);
+  public java.lang.Object[] b(a.a.a.Rs, int, int);
+  public void c();
+  public void c(a.a.a.Rs);
+  public void c(a.a.a.Rs, int, int);
+  public boolean c(java.lang.String);
+  public void d();
+  public int getAddTargetId();
+  public java.util.ArrayList<com.besome.sketch.beans.BlockBean> getBlocks();
+  public java.lang.Object[] getNearestTarget();
+  public a.a.a.Rs getRoot();
+}
+
+########## com.besome.sketch.lib.ui.CircleImageView
+public class com.besome.sketch.lib.ui.CircleImageView extends androidx.appcompat.widget.AppCompatImageView {
+  public com.besome.sketch.lib.ui.CircleImageView(android.content.Context);
+  public com.besome.sketch.lib.ui.CircleImageView(android.content.Context, android.util.AttributeSet);
+  public android.graphics.Bitmap a(android.graphics.Bitmap);
+  public void onDraw(android.graphics.Canvas);
+}
+
+########## com.besome.sketch.lib.ui.CustomHorizontalScrollView$a
+public interface com.besome.sketch.lib.ui.CustomHorizontalScrollView$a {
+  public abstract void a(int, int, int, int);
+}
+
+########## com.besome.sketch.lib.ui.CustomHorizontalScrollView
+public class com.besome.sketch.lib.ui.CustomHorizontalScrollView extends android.widget.HorizontalScrollView {
+  public com.besome.sketch.lib.ui.CustomHorizontalScrollView$a a;
+  public boolean b;
+  public boolean c;
+  public com.besome.sketch.lib.ui.CustomHorizontalScrollView(android.content.Context);
+  public com.besome.sketch.lib.ui.CustomHorizontalScrollView(android.content.Context, android.util.AttributeSet);
+  public void a();
+  public void b();
+  public boolean onInterceptTouchEvent(android.view.MotionEvent);
+  public void onScrollChanged(int, int, int, int);
+  public boolean onTouchEvent(android.view.MotionEvent);
+  public void setOnScrollChangedListener(com.besome.sketch.lib.ui.CustomHorizontalScrollView$a);
+  public void setUseScroll(boolean);
+}
+
+########## com.besome.sketch.lib.ui.CustomScrollView
+public class com.besome.sketch.lib.ui.CustomScrollView extends android.widget.ScrollView {
+  public boolean a;
+  public boolean b;
+  public com.besome.sketch.lib.ui.CustomScrollView(android.content.Context);
+  public com.besome.sketch.lib.ui.CustomScrollView(android.content.Context, android.util.AttributeSet);
+  public void a();
+  public void b();
+  public boolean onInterceptTouchEvent(android.view.MotionEvent);
+  public boolean onTouchEvent(android.view.MotionEvent);
+  public void setUseScroll(boolean);
+}

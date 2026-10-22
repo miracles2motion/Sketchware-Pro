@@ -1,0 +1,14 @@
+lfs_payload/01_a.a.a-important-classes.jar_.bin	app/libs/a.a.a-important-classes.jar	38102
+lfs_payload/02_a.a.a-notimportant-classes.jar_.bin	app/libs/a.a.a-notimportant-classes.jar	80599
+lfs_payload/03_com.besome.sketch-classes.jar_.bin	app/libs/com.besome.sketch-classes.jar	9270
+lfs_payload/04_proguard-base-7.2.2.jar_.bin	app/libs/proguard-base-7.2.2.jar	925314
+lfs_payload/05_icon_pack.zip_.bin	app/src/main/assets/icons/icon_pack.zip	5335950
+lfs_payload/06_android.jar.zip_.bin	app/src/main/assets/libs/android.jar.zip	24149775
+lfs_payload/07_core-lambda-stubs.jar_.bin	app/src/main/assets/libs/core-lambda-stubs.jar	18159
+lfs_payload/08_dexs.zip_.bin	app/src/main/assets/libs/dexs.zip	8450422
+lfs_payload/09_libs.zip_.bin	app/src/main/assets/libs/libs.zip	26688760
+lfs_payload/10_testkey.zip_.bin	app/src/main/assets/libs/testkey.zip	2393
+lfs_payload/11_res.zip_.bin	app/src/main/assets/resource/600/res.zip	13805
+lfs_payload/12_stringfog.zip_.bin	app/src/main/assets/stringfog/stringfog.zip	2818
+lfs_payload/13_template.zip_.bin	app/src/main/assets/template.zip	915
+lfs_payload/14_gradle-wrapper.jar_.bin	gradle/wrapper/gradle-wrapper.jar	60756

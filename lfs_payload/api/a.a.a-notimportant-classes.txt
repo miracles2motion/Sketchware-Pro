@@ -1,0 +1,842 @@
+# javap -public for app/libs/a.a.a-notimportant-classes.jar
+
+########## a.a.a.By
+public class a.a.a.By extends java.lang.Exception {
+  public a.a.a.By(java.lang.String);
+}
+
+########## a.a.a.DB
+public class a.a.a.DB {
+  public android.content.SharedPreferences a;
+  public android.content.SharedPreferences$Editor b;
+  public a.a.a.DB(android.content.Context, java.lang.String);
+  public int a(java.lang.String, int);
+  public java.lang.String a(java.lang.String, java.lang.String);
+  public void a(java.lang.String, java.lang.Object);
+  public void a(java.lang.String, java.lang.Object, boolean);
+  public void a(java.lang.String, java.util.HashMap<java.lang.String, java.lang.Object>);
+  public boolean a();
+  public boolean a(java.lang.String);
+  public boolean a(java.lang.String, boolean);
+  public boolean b();
+  public boolean b(java.lang.String);
+  public java.util.HashMap<java.lang.String, java.lang.Object> c();
+  public boolean c(java.lang.String);
+  public int d(java.lang.String);
+  public long e(java.lang.String);
+  public java.lang.String f(java.lang.String);
+  public java.util.HashMap<java.lang.String, java.lang.Object> g(java.lang.String);
+}
+
+########## a.a.a.FB$a
+public class a.a.a.FB$a {
+  public java.lang.String a;
+  public int b;
+  public a.a.a.FB$a(java.lang.String);
+  public boolean a();
+  public java.lang.String b();
+  public void c();
+}
+
+########## a.a.a.FB
+public class a.a.a.FB {
+  public static int a(char);
+  public static java.lang.String a();
+  public static java.lang.String a(int);
+  public static java.lang.String a(byte[]);
+  public static void a(android.content.Context, java.lang.String, java.lang.String);
+  public static byte[] a(java.lang.String);
+  public static java.lang.String b(int);
+  public static boolean b(java.lang.String);
+  public static java.lang.String c(int);
+  public static java.util.ArrayList<java.lang.String> c(java.lang.String);
+  public static java.lang.String d(java.lang.String);
+}
+
+########## a.a.a.GB
+public class a.a.a.GB {
+  public static int a(android.content.Context);
+  public static java.lang.String a();
+  public static void a(android.content.Context, int);
+  public static boolean a(android.app.Activity);
+  public static java.lang.String b();
+  public static java.lang.String b(android.content.Context);
+  public static boolean b(android.content.Context, int);
+  public static float[] b(android.app.Activity);
+  public static long c();
+  public static java.util.ArrayList<java.lang.String> c(android.content.Context);
+  public static int[] c(android.app.Activity);
+  public static int d(android.content.Context);
+  public static java.lang.String e(android.content.Context);
+  public static int f(android.content.Context);
+  public static java.util.Locale g(android.content.Context);
+  public static boolean h(android.content.Context);
+}
+
+########## a.a.a.HB
+public final class a.a.a.HB {
+  public static java.lang.String a(android.content.Context, android.net.Uri);
+  public static java.lang.String a(android.content.Context, android.net.Uri, java.lang.String, java.lang.String[]);
+  public static boolean a(android.net.Uri);
+  public static boolean b(android.net.Uri);
+  public static boolean c(android.net.Uri);
+}
+
+########## a.a.a.Iw
+public interface a.a.a.Iw {
+  public abstract void a();
+  public abstract void a(java.lang.String, com.besome.sketch.beans.ViewBean);
+}
+
+########## a.a.a.JB
+public class a.a.a.JB {
+  public a.a.a.JB();
+  public static java.util.HashMap<java.lang.String, java.lang.Object> a(java.lang.String);
+  public static void a(java.lang.String, java.lang.String, java.lang.String);
+  public static java.util.HashMap<java.lang.String, java.lang.Object> b(java.lang.String);
+  public byte[] a(byte[]);
+  public byte[] b(byte[]);
+}
+
+########## a.a.a.Jw
+public interface a.a.a.Jw {
+  public abstract void a(java.lang.String);
+}
+
+########## a.a.a.KB
+public class a.a.a.KB {
+  public a.a.a.KB();
+  public static void a(android.content.Context, java.lang.String, java.lang.String);
+  public int a(java.lang.String, java.io.File, java.util.zip.ZipOutputStream, java.util.ArrayList<java.lang.String>);
+  public void a(java.io.InputStream, java.lang.String);
+  public void a(java.lang.String, java.lang.String);
+  public void a(java.lang.String, java.util.ArrayList<java.lang.String>, java.util.ArrayList<java.lang.String>);
+  public boolean a(java.lang.String, java.lang.String, java.util.zip.ZipOutputStream);
+  public byte[] a(java.lang.String);
+}
+
+########## a.a.a.Kw
+public interface a.a.a.Kw {
+  public abstract void a(java.lang.String, java.lang.Object);
+}
+
+########## a.a.a.Lp
+public abstract class a.a.a.Lp {
+  public java.lang.String a;
+  public java.lang.String b;
+  public a.a.a.oB c;
+  public com.google.gson.Gson d;
+  public java.util.ArrayList<com.besome.sketch.beans.CollectionBean> e;
+  public a.a.a.Lp();
+  public void a();
+  public abstract void b();
+  public void c();
+  public void d();
+  public void e();
+}
+
+########## a.a.a.Lw
+public interface a.a.a.Lw {
+  public abstract void a(com.besome.sketch.beans.ViewBean);
+}
+
+########## a.a.a.Mp
+public class a.a.a.Mp extends a.a.a.Lp {
+  public static a.a.a.Mp f;
+  public com.google.gson.Gson g;
+  public a.a.a.Mp();
+  public static a.a.a.Mp h();
+  public com.besome.sketch.beans.BlockCollectionBean a(java.lang.String);
+  public void a(java.lang.String, java.lang.String, boolean);
+  public void a(java.lang.String, java.util.ArrayList<com.besome.sketch.beans.BlockBean>, boolean);
+  public void a(java.lang.String, boolean);
+  public void b();
+  public void c();
+  public java.util.ArrayList<com.besome.sketch.beans.BlockCollectionBean> f();
+  public java.util.ArrayList<java.lang.String> g();
+  public final void i();
+}
+
+########## a.a.a.Np
+public class a.a.a.Np extends a.a.a.Lp {
+  public static a.a.a.Np f;
+  public a.a.a.Np();
+  public static a.a.a.Np g();
+  public com.besome.sketch.beans.ProjectResourceBean a(java.lang.String);
+  public void a(com.besome.sketch.beans.ProjectResourceBean, java.lang.String, boolean);
+  public void a(java.lang.String, com.besome.sketch.beans.ProjectResourceBean);
+  public void a(java.lang.String, com.besome.sketch.beans.ProjectResourceBean, boolean);
+  public void a(java.lang.String, boolean);
+  public void b();
+  public boolean b(java.lang.String);
+  public void d();
+  public java.util.ArrayList<com.besome.sketch.beans.ProjectResourceBean> f();
+}
+
+########## a.a.a.OB
+public class a.a.a.OB extends a.a.a.MB {
+  public int f;
+  public int g;
+  public a.a.a.OB(android.content.Context, com.google.android.material.textfield.TextInputLayout, int, int);
+  public void afterTextChanged(android.text.Editable);
+  public java.lang.CharSequence filter(java.lang.CharSequence, int, int, android.text.Spanned, int, int);
+  public void onTextChanged(java.lang.CharSequence, int, int, int);
+}
+
+########## a.a.a.Op
+public class a.a.a.Op extends a.a.a.Lp {
+  public static a.a.a.Op f;
+  public a.a.a.Op();
+  public static a.a.a.Op g();
+  public com.besome.sketch.beans.ProjectResourceBean a(java.lang.String);
+  public void a(com.besome.sketch.beans.ProjectResourceBean, java.lang.String, boolean);
+  public void a(java.lang.String, com.besome.sketch.beans.ProjectResourceBean);
+  public void a(java.lang.String, com.besome.sketch.beans.ProjectResourceBean, boolean);
+  public void a(java.lang.String, java.util.ArrayList<com.besome.sketch.beans.ProjectResourceBean>, boolean);
+  public void a(java.lang.String, boolean);
+  public void b();
+  public boolean b(java.lang.String);
+  public void d();
+  public java.util.ArrayList<com.besome.sketch.beans.ProjectResourceBean> f();
+}
+
+########## a.a.a.Pp
+public class a.a.a.Pp extends a.a.a.Lp {
+  public static a.a.a.Pp f;
+  public com.google.gson.Gson g;
+  public a.a.a.Pp();
+  public static a.a.a.Pp h();
+  public com.besome.sketch.beans.MoreBlockCollectionBean a(java.lang.String);
+  public void a(java.lang.String, java.lang.String, java.util.ArrayList<com.besome.sketch.beans.BlockBean>, boolean);
+  public void a(java.lang.String, java.lang.String, boolean);
+  public void a(java.lang.String, boolean);
+  public void b();
+  public void c();
+  public java.util.ArrayList<com.besome.sketch.beans.MoreBlockCollectionBean> f();
+  public java.util.ArrayList<java.lang.String> g();
+  public final void i();
+}
+
+########## a.a.a.Qp
+public class a.a.a.Qp extends a.a.a.Lp {
+  public static a.a.a.Qp f;
+  public a.a.a.Qp();
+  public static a.a.a.Qp g();
+  public com.besome.sketch.beans.ProjectResourceBean a(java.lang.String);
+  public void a(com.besome.sketch.beans.ProjectResourceBean, java.lang.String, boolean);
+  public void a(java.lang.String, com.besome.sketch.beans.ProjectResourceBean);
+  public void a(java.lang.String, com.besome.sketch.beans.ProjectResourceBean, boolean);
+  public void a(java.lang.String, boolean);
+  public void b();
+  public boolean b(java.lang.String);
+  public void d();
+  public java.util.ArrayList<com.besome.sketch.beans.ProjectResourceBean> f();
+}
+
+########## a.a.a.Qs
+public interface a.a.a.Qs {
+  public abstract void a(com.besome.sketch.beans.EventBean);
+}
+
+########## a.a.a.Rp
+public class a.a.a.Rp extends a.a.a.Lp {
+  public static a.a.a.Rp f;
+  public com.google.gson.Gson g;
+  public a.a.a.Rp();
+  public static a.a.a.Rp h();
+  public com.besome.sketch.beans.WidgetCollectionBean a(java.lang.String);
+  public void a(java.lang.String, java.lang.String, boolean);
+  public void a(java.lang.String, java.util.ArrayList<com.besome.sketch.beans.ViewBean>, boolean);
+  public void a(java.lang.String, boolean);
+  public void b();
+  public void c();
+  public java.util.ArrayList<com.besome.sketch.beans.WidgetCollectionBean> f();
+  public java.util.ArrayList<java.lang.String> g();
+  public final void i();
+}
+
+########## a.a.a.Sp
+public class a.a.a.Sp {
+  public static boolean a;
+  public static long[] b;
+  public static long a(int);
+  public static boolean b(int);
+}
+
+########## a.a.a.Ss
+public class a.a.a.Ss extends a.a.a.Ts {
+  public android.content.Context T;
+  public java.lang.Object U;
+  public android.widget.TextView V;
+  public android.widget.TextView W;
+  public int aa;
+  public int ba;
+  public int ca;
+  public int da;
+  public int ea;
+  public a.a.a.Ss(android.content.Context, java.lang.String, java.lang.String);
+  public final java.lang.String a(java.lang.String);
+  public final android.widget.TextView b(java.lang.String);
+  public final android.widget.TextView c(java.lang.String);
+  public java.lang.Object getArgValue();
+  public java.lang.String getMenuName();
+  public void setArgValue(java.lang.Object);
+}
+
+########## a.a.a.Ts
+public class a.a.a.Ts extends android.widget.RelativeLayout {
+  public int A;
+  public int B;
+  public int C;
+  public float D;
+  public a.a.a.Rs E;
+  public int F;
+  public int G;
+  public int H;
+  public int I;
+  public int J;
+  public boolean K;
+  public boolean L;
+  public android.graphics.Paint M;
+  public android.graphics.Paint N;
+  public android.graphics.Paint O;
+  public int P;
+  public int Q;
+  public int R;
+  public a.a.a.Gx S;
+  public android.content.Context a;
+  public java.lang.String b;
+  public java.lang.String c;
+  public int d;
+  public int e;
+  public android.graphics.Paint f;
+  public boolean g;
+  public int h;
+  public int i;
+  public int j;
+  public int k;
+  public int l;
+  public int m;
+  public int n;
+  public int o;
+  public int p;
+  public int q;
+  public int r;
+  public int s;
+  public int t;
+  public int u;
+  public int v;
+  public int w;
+  public int x;
+  public int y;
+  public int z;
+  public a.a.a.Ts(android.content.Context, java.lang.String, java.lang.String, boolean);
+  public a.a.a.Ts(android.content.Context, java.lang.String, boolean);
+  public void a();
+  public void a(float, float, boolean);
+  public void a(a.a.a.Ts, boolean, boolean, int);
+  public final void a(android.content.Context);
+  public final void a(android.graphics.Canvas);
+  public final void a(android.graphics.Path);
+  public final void a(android.graphics.Path, int);
+  public final void a(android.graphics.Path, int, boolean, int);
+  public final float[] a(int);
+  public final float[] a(int, int);
+  public final float[] a(int, boolean, int);
+  public final void b(android.graphics.Canvas);
+  public boolean b();
+  public final float[] b(int, int);
+  public final void c(android.graphics.Canvas);
+  public boolean c();
+  public final float[] c(int, int);
+  public int d();
+  public final void d(android.graphics.Canvas);
+  public void e();
+  public final void e(android.graphics.Canvas);
+  public int f();
+  public final void f(android.graphics.Canvas);
+  public int g();
+  public final void g(android.graphics.Canvas);
+  public a.a.a.Gx getClassInfo();
+  public int getTopH();
+  public int getTotalHeight();
+  public int getTotalWidth();
+  public int getW();
+  public final void h(android.graphics.Canvas);
+  public void onDraw(android.graphics.Canvas);
+  public void onMeasure(int, int);
+  public void setSubstack1Height(int);
+  public void setSubstack2Height(int);
+}
+
+########## a.a.a.Uu
+public interface a.a.a.Uu {
+  public abstract void a(com.besome.sketch.beans.ProjectLibraryBean);
+  public abstract java.lang.String getDocUrl();
+  public abstract boolean isValid();
+  public abstract void setData(com.besome.sketch.beans.ProjectLibraryBean);
+}
+
+########## a.a.a.Vs
+public interface a.a.a.Vs {
+  public abstract void a(int, int);
+}
+
+########## a.a.a.YA
+public interface a.a.a.YA {
+  public abstract void a(int);
+}
+
+########## a.a.a.bC
+public class a.a.a.bC {
+  public static a.a.a.bC a;
+  public java.util.Map<java.lang.String, java.lang.Integer> b;
+  public java.util.Map<java.lang.String, java.util.ArrayList<com.besome.sketch.beans.HistoryBlockBean>> c;
+  public java.lang.String d;
+  public a.a.a.bC(java.lang.String);
+  public static java.lang.String a(java.lang.String, java.lang.String, java.lang.String);
+  public static void a();
+  public static a.a.a.bC d(java.lang.String);
+  public final void a(java.lang.String);
+  public void a(java.lang.String, com.besome.sketch.beans.BlockBean, int, int, com.besome.sketch.beans.BlockBean, com.besome.sketch.beans.BlockBean);
+  public void a(java.lang.String, com.besome.sketch.beans.BlockBean, com.besome.sketch.beans.BlockBean);
+  public final void a(java.lang.String, com.besome.sketch.beans.HistoryBlockBean);
+  public void a(java.lang.String, java.util.ArrayList<com.besome.sketch.beans.BlockBean>, int, int, com.besome.sketch.beans.BlockBean, com.besome.sketch.beans.BlockBean);
+  public void a(java.lang.String, java.util.ArrayList<com.besome.sketch.beans.BlockBean>, java.util.ArrayList<com.besome.sketch.beans.BlockBean>, int, int, int, int, com.besome.sketch.beans.BlockBean, com.besome.sketch.beans.BlockBean, com.besome.sketch.beans.BlockBean, com.besome.sketch.beans.BlockBean);
+  public void b(java.lang.String);
+  public void b(java.lang.String, java.util.ArrayList<com.besome.sketch.beans.BlockBean>, int, int, com.besome.sketch.beans.BlockBean, com.besome.sketch.beans.BlockBean);
+  public final void c(java.lang.String);
+  public final void e(java.lang.String);
+  public void f(java.lang.String);
+  public boolean g(java.lang.String);
+  public boolean h(java.lang.String);
+  public com.besome.sketch.beans.HistoryBlockBean i(java.lang.String);
+  public com.besome.sketch.beans.HistoryBlockBean j(java.lang.String);
+}
+
+########## a.a.a.by
+public interface a.a.a.by {
+  public abstract void a(int, com.besome.sketch.beans.ProjectFileBean);
+}
+
+########## a.a.a.cC
+public class a.a.a.cC {
+  public static a.a.a.cC a;
+  public java.util.Map<java.lang.String, java.lang.Integer> b;
+  public java.util.Map<java.lang.String, java.util.ArrayList<com.besome.sketch.beans.HistoryViewBean>> c;
+  public java.lang.String d;
+  public a.a.a.cC(java.lang.String);
+  public static void a();
+  public static a.a.a.cC c(java.lang.String);
+  public final void a(java.lang.String);
+  public final void a(java.lang.String, com.besome.sketch.beans.HistoryViewBean);
+  public void a(java.lang.String, com.besome.sketch.beans.ViewBean);
+  public void a(java.lang.String, com.besome.sketch.beans.ViewBean, com.besome.sketch.beans.ViewBean);
+  public void a(java.lang.String, java.util.ArrayList<com.besome.sketch.beans.ViewBean>);
+  public final void b(java.lang.String);
+  public void b(java.lang.String, com.besome.sketch.beans.ViewBean);
+  public void b(java.lang.String, java.util.ArrayList<com.besome.sketch.beans.ViewBean>);
+  public final void d(java.lang.String);
+  public void e(java.lang.String);
+  public boolean f(java.lang.String);
+  public boolean g(java.lang.String);
+  public com.besome.sketch.beans.HistoryViewBean h(java.lang.String);
+  public com.besome.sketch.beans.HistoryViewBean i(java.lang.String);
+}
+
+########## a.a.a.cy
+public interface a.a.a.cy {
+  public abstract void a();
+  public abstract void a(java.lang.String);
+  public abstract void a(boolean, java.lang.String);
+}
+
+########## a.a.a.dC
+public class a.a.a.dC {
+  public static final int[] a;
+}
+
+########## a.a.a.fC
+public class a.a.a.fC {
+  public static final int[] a;
+}
+
+########## a.a.a.gC$a
+public final class a.a.a.gC$a extends java.lang.Enum<a.a.a.gC$a> {
+  public static final a.a.a.gC$a a;
+  public static final a.a.a.gC$a b;
+  public static final a.a.a.gC$a c;
+  public static final a.a.a.gC$a d;
+  public static final a.a.a.gC$a e;
+  public static final a.a.a.gC$a f;
+  public static final a.a.a.gC$a g;
+  public static final a.a.a.gC$a h;
+  public static final a.a.a.gC$a[] i;
+  public a.a.a.gC$a();
+  public static a.a.a.gC$a valueOf(java.lang.String);
+  public static a.a.a.gC$a[] values();
+}
+
+########## a.a.a.gC
+public class a.a.a.gC {
+  public final java.lang.String a;
+  public java.lang.String b;
+  public java.lang.String c;
+  public a.a.a.gC$a d;
+  public com.google.gson.Gson e;
+  public a.a.a.gC(java.lang.String);
+  public static java.util.ArrayList<com.besome.sketch.beans.BlockBean> a(com.google.gson.Gson, java.lang.String);
+  public static java.util.ArrayList<com.besome.sketch.beans.ViewBean> b(com.google.gson.Gson, java.lang.String);
+  public a.a.a.gC$a a();
+  public <T> T a(java.lang.String);
+  public java.lang.String b();
+  public java.util.ArrayList<com.besome.sketch.beans.ComponentBean> b(java.lang.String);
+  public java.lang.String c();
+  public java.util.ArrayList<com.besome.sketch.beans.EventBean> c(java.lang.String);
+  public com.besome.sketch.beans.ViewBean d(java.lang.String);
+  public java.util.ArrayList<android.util.Pair<java.lang.String, java.lang.String>> e(java.lang.String);
+  public final void f(java.lang.String);
+  public java.util.ArrayList<android.util.Pair<java.lang.Integer, java.lang.String>> g(java.lang.String);
+  public java.util.ArrayList<android.util.Pair<java.lang.Integer, java.lang.String>> h(java.lang.String);
+}
+
+########## a.a.a.hC
+public class a.a.a.hC {
+  public java.util.ArrayList<java.lang.String> a;
+  public java.util.ArrayList<java.lang.String> b;
+  public java.util.ArrayList<com.besome.sketch.beans.ProjectFileBean> c;
+  public java.util.ArrayList<com.besome.sketch.beans.ProjectFileBean> d;
+  public java.lang.String e;
+  public a.a.a.oB f;
+  public com.google.gson.Gson g;
+  public a.a.a.hC(java.lang.String);
+  public com.besome.sketch.beans.ProjectFileBean a(java.lang.String);
+  public void a();
+  public void a(int, java.lang.String);
+  public void a(a.a.a.iC);
+  public void a(com.besome.sketch.beans.ProjectFileBean);
+  public void a(java.io.BufferedReader);
+  public void a(java.lang.String, java.lang.String);
+  public final void a(java.lang.StringBuffer);
+  public void a(java.util.ArrayList<com.besome.sketch.beans.ProjectFileBean>);
+  public com.besome.sketch.beans.ProjectFileBean b(java.lang.String);
+  public java.util.ArrayList<com.besome.sketch.beans.ProjectFileBean> b();
+  public void b(int, java.lang.String);
+  public void b(java.util.ArrayList<com.besome.sketch.beans.ProjectFileBean>);
+  public java.util.ArrayList<com.besome.sketch.beans.ProjectFileBean> c();
+  public boolean c(java.lang.String);
+  public java.util.ArrayList<java.lang.String> d();
+  public boolean d(java.lang.String);
+  public java.util.ArrayList<java.lang.String> e();
+  public final void e(java.lang.String);
+  public final void f();
+  public boolean g();
+  public void h();
+  public void i();
+  public void j();
+  public void k();
+  public void l();
+  public void m();
+}
+
+########## a.a.a.hI
+public class a.a.a.hI extends java.io.OutputStream {
+  public final a.a.a.iI a;
+  public a.a.a.hI(a.a.a.iI);
+  public void write(int);
+}
+
+########## a.a.a.iB
+public class a.a.a.iB {
+  public static int a(android.graphics.BitmapFactory$Options, int, int);
+  public static int a(java.lang.String);
+  public static android.graphics.Bitmap a(android.graphics.Bitmap, int);
+  public static android.graphics.Bitmap a(android.graphics.Bitmap, int, int, int);
+  public static android.graphics.Bitmap a(java.lang.String, int);
+  public static android.graphics.Bitmap a(java.lang.String, int, int);
+  public static void a(java.lang.String, java.lang.String, int, int, int);
+}
+
+########## a.a.a.iC
+public class a.a.a.iC {
+  public java.lang.String a;
+  public a.a.a.oB b;
+  public com.besome.sketch.beans.ProjectLibraryBean c;
+  public com.besome.sketch.beans.ProjectLibraryBean d;
+  public com.besome.sketch.beans.ProjectLibraryBean e;
+  public com.besome.sketch.beans.ProjectLibraryBean f;
+  public com.google.gson.Gson g;
+  public a.a.a.iC(java.lang.String);
+  public void a();
+  public void a(com.besome.sketch.beans.ProjectLibraryBean);
+  public void a(java.io.BufferedReader);
+  public final void a(java.lang.String);
+  public void a(java.lang.String, java.lang.String);
+  public final void a(java.lang.StringBuffer);
+  public com.besome.sketch.beans.ProjectLibraryBean b();
+  public void b(com.besome.sketch.beans.ProjectLibraryBean);
+  public com.besome.sketch.beans.ProjectLibraryBean c();
+  public void c(com.besome.sketch.beans.ProjectLibraryBean);
+  public com.besome.sketch.beans.ProjectLibraryBean d();
+  public void d(com.besome.sketch.beans.ProjectLibraryBean);
+  public com.besome.sketch.beans.ProjectLibraryBean e();
+  public final void f();
+  public boolean g();
+  public void h();
+  public void i();
+  public void j();
+  public void k();
+  public void l();
+}
+
+########## a.a.a.iI
+public class a.a.a.iI {
+  public java.security.KeyStore a;
+  public java.nio.ByteBuffer b;
+  public a.a.a.iI();
+  public java.lang.String a();
+  public void a(java.io.InputStream, java.lang.String);
+  public void a(java.lang.String, java.lang.String);
+  public void a(java.lang.String, java.lang.String, int, java.lang.String, java.lang.String);
+  public final byte[] a(java.lang.String);
+  public byte[] a(java.lang.String, int, java.lang.String, java.lang.String);
+  public kellinwood.security.zipsigner.ZipSigner b(java.lang.String);
+}
+
+########## a.a.a.jB
+public final class a.a.a.jB implements java.lang.Runnable {
+  public final android.view.View a;
+  public a.a.a.jB(android.view.View);
+  public void run();
+}
+
+########## a.a.a.jv
+public class a.a.a.jv implements android.view.View$OnClickListener {
+  public final a.a.a.kv a;
+  public a.a.a.jv(a.a.a.kv);
+  public void onClick(android.view.View);
+}
+
+########## a.a.a.kC
+public class a.a.a.kC {
+  public static com.bumptech.glide.signature.StringSignature a;
+  public java.util.ArrayList<com.besome.sketch.beans.ProjectResourceBean> b;
+  public java.util.ArrayList<com.besome.sketch.beans.ProjectResourceBean> c;
+  public java.util.ArrayList<com.besome.sketch.beans.ProjectResourceBean> d;
+  public java.lang.String e;
+  public java.lang.String f;
+  public java.lang.String g;
+  public a.a.a.oB h;
+  public java.lang.String i;
+  public com.google.gson.Gson j;
+  public a.a.a.kC(java.lang.String);
+  public a.a.a.kC(java.lang.String, java.lang.String, java.lang.String, java.lang.String);
+  public static com.bumptech.glide.signature.StringSignature n();
+  public static void z();
+  public void a();
+  public void a(java.io.BufferedReader);
+  public void a(java.lang.String);
+  public void a(java.lang.String, java.lang.String);
+  public final void a(java.lang.StringBuffer);
+  public void a(java.util.ArrayList<com.besome.sketch.beans.ProjectResourceBean>);
+  public void b();
+  public void b(java.lang.String);
+  public void b(java.util.ArrayList<com.besome.sketch.beans.ProjectResourceBean>);
+  public void c();
+  public void c(java.lang.String);
+  public void c(java.util.ArrayList<com.besome.sketch.beans.ProjectResourceBean>);
+  public java.lang.String d(java.lang.String);
+  public void d();
+  public com.besome.sketch.beans.ProjectResourceBean e(java.lang.String);
+  public void e();
+  public java.lang.String f(java.lang.String);
+  public void f();
+  public com.besome.sketch.beans.ProjectResourceBean g(java.lang.String);
+  public void g();
+  public int h(java.lang.String);
+  public void h();
+  public java.lang.String i(java.lang.String);
+  public void i();
+  public com.besome.sketch.beans.ProjectResourceBean j(java.lang.String);
+  public java.lang.String j();
+  public java.util.ArrayList<java.lang.String> k();
+  public boolean k(java.lang.String);
+  public java.lang.String l();
+  public boolean l(java.lang.String);
+  public java.util.ArrayList<java.lang.String> m();
+  public boolean m(java.lang.String);
+  public java.lang.String o();
+  public java.util.ArrayList<java.lang.String> p();
+  public boolean q();
+  public void r();
+  public void s();
+  public void t();
+  public void u();
+  public void v();
+  public void w();
+  public void x();
+  public void y();
+}
+
+########## a.a.a.mB
+public class a.a.a.mB {
+  public static long a;
+  public static android.text.SpannableStringBuilder a(android.content.Context, java.lang.String);
+  public static void a(android.content.Context, android.widget.EditText);
+  public static void a(android.view.View);
+  public static void a(android.view.View, int, android.view.animation.Animation$AnimationListener);
+  public static void a(android.view.View, android.view.animation.Animation$AnimationListener);
+  public static void a(android.widget.ImageView, int);
+  public static boolean a();
+  public static android.text.SpannableStringBuilder b(android.content.Context, java.lang.String);
+  public static void b(android.view.View, android.view.animation.Animation$AnimationListener);
+}
+
+########## a.a.a.nA
+public class a.a.a.nA {
+  public a.a.a.nA();
+  public java.lang.String toString(a.a.a.nA);
+}
+
+########## a.a.a.nB
+public class a.a.a.nB {
+  public a.a.a.nB();
+  public long a();
+  public java.lang.String a(long, java.lang.String);
+  public java.lang.String a(java.lang.String);
+  public java.lang.String a(java.lang.String, java.lang.String);
+  public java.lang.String a(java.lang.String, java.lang.String, java.lang.String);
+  public long b(java.lang.String, java.lang.String);
+  public java.lang.String b(java.lang.String);
+}
+
+########## a.a.a.nv
+public interface a.a.a.nv {
+  public abstract void a();
+  public abstract void a(com.besome.sketch.beans.ProjectLibraryBean);
+  public abstract java.lang.String getDocUrl();
+  public abstract boolean isValid();
+}
+
+########## a.a.a.oB
+public class a.a.a.oB {
+  public boolean a;
+  public a.a.a.oB();
+  public a.a.a.oB(boolean);
+  public long a(android.content.Context, java.lang.String);
+  public java.lang.String a(byte[]);
+  public void a(android.content.Context, java.lang.String, java.lang.String);
+  public void a(java.io.File);
+  public void a(java.io.File, java.io.File);
+  public void a(java.io.File, boolean);
+  public void a(java.lang.String);
+  public void a(java.lang.String, java.lang.String);
+  public void a(java.lang.String, boolean);
+  public void a(java.lang.String, byte[]);
+  public java.lang.String b(android.content.Context, java.lang.String);
+  public void b(java.io.File);
+  public void b(java.lang.String);
+  public void b(java.lang.String, java.lang.String);
+  public byte[] b(byte[]);
+  public java.lang.String c(java.io.File);
+  public void c(java.lang.String);
+  public byte[] c(byte[]);
+  public byte[] d(java.lang.String);
+  public boolean e(java.lang.String);
+  public boolean f(java.lang.String);
+  public java.lang.String g(java.lang.String);
+  public byte[] h(java.lang.String);
+}
+
+########## a.a.a.ro
+public class a.a.a.ro {
+  public a.a.a.DB a;
+  public int b;
+  public int c;
+  public a.a.a.ro(android.content.Context);
+}
+
+########## a.a.a.ty
+public interface a.a.a.ty {
+  public abstract void a();
+  public abstract void setChildScrollEnabled(boolean);
+}
+
+########## a.a.a.uB
+public final class a.a.a.uB extends com.google.gson.reflect.TypeToken<java.util.HashMap<java.lang.String, java.lang.Object>> {
+  public a.a.a.uB();
+}
+
+########## a.a.a.vB
+public class a.a.a.vB {
+  public static java.lang.String a(java.util.HashMap<java.lang.String, java.lang.Object>);
+  public static java.util.HashMap<java.lang.String, java.lang.Object> a(java.lang.String);
+}
+
+########## a.a.a.vq
+public class a.a.a.vq {
+  public static final java.lang.String[] a;
+  public static final java.lang.String[] b;
+  public static java.lang.String a(int);
+}
+
+########## a.a.a.xB
+public class a.a.a.xB {
+  public static a.a.a.xB a;
+  public java.util.HashMap<java.lang.String, java.lang.String> b;
+  public java.util.HashMap<java.lang.String, java.lang.String> c;
+  public java.lang.String d;
+  public boolean e;
+  public final java.lang.String f;
+  public final java.lang.String g;
+  public a.a.a.xB();
+  public static a.a.a.xB b();
+  public java.lang.String a(android.content.Context, int);
+  public java.lang.String a(android.content.Context, int, java.lang.Object...);
+  public java.lang.String a(android.content.Context, java.lang.String);
+  public java.lang.String a(android.content.Context, java.lang.String, java.lang.String);
+  public java.lang.String a(android.content.Context, java.lang.String, java.util.ArrayList<java.lang.String>);
+  public java.lang.String a(android.content.res.Resources, int);
+  public java.lang.String a(android.content.res.Resources, int, java.lang.Object...);
+  public final java.util.HashMap<java.lang.String, java.lang.String> a(java.lang.String);
+  public java.util.HashMap<java.lang.String, java.lang.String> a(byte[]);
+  public void a();
+  public void a(android.content.Context);
+  public java.util.HashMap<java.lang.String, java.lang.String> b(java.lang.String);
+  public void b(android.content.Context, java.lang.String);
+  public boolean b(android.content.Context);
+  public void c(android.content.Context, java.lang.String);
+}
+
+########## a.a.a.yB
+public class a.a.a.yB {
+  public static int a(java.util.Map<java.lang.String, java.lang.Object>, java.lang.String, int);
+  public static java.lang.Object a(java.util.Map<java.lang.String, java.lang.Object>, java.lang.String, java.lang.Object);
+  public static boolean a(java.util.Map<java.lang.String, java.lang.Object>, java.lang.String);
+  public static boolean a(java.util.Map<java.lang.String, java.lang.Object>, java.lang.String, boolean);
+  public static int b(java.util.Map<java.lang.String, java.lang.Object>, java.lang.String);
+  public static java.lang.String c(java.util.Map<java.lang.String, java.lang.Object>, java.lang.String);
+}
+
+########## a.a.a.yy
+public class a.a.a.yy extends java.lang.Exception {
+  public java.util.ArrayList<java.lang.String> a;
+  public a.a.a.yy(java.lang.String);
+  public java.util.ArrayList<java.lang.String> a();
+  public void a(java.util.ArrayList<java.lang.String>);
+}
+
+########## a.a.a.zB
+public class a.a.a.zB {
+  public static android.graphics.Bitmap a(java.io.InputStream);
+  public static android.graphics.Bitmap a(java.lang.String);
+  public static void a(android.graphics.Bitmap, byte[]);
+  public static void a(java.io.OutputStream, int);
+  public static void a(byte[], int, int);
+  public static byte[] a(android.graphics.Bitmap);
+}
+
+########## a.a.a.zy
+public class a.a.a.zy extends java.lang.Exception {
+  public a.a.a.zy(java.lang.String);
+}
