@@ -2002,6 +2002,16 @@ logs exposed the rest of the same class:
 3. **XML & Java Command Blocks (`manage_xml_commands`, `java_command_block`)**:
    - Reads and writes `.sketchware/data/<scId>/command` (migrating legacy temp commands and enabling `ProjectSettings.SETTING_NEW_XML_COMMAND`) and emits `CommandBlockJava` (`java_command_block`) for compile-time Java/XML transformations, exported in `AgentExport`.
 
+## Wave 43 / Phase 7 — AndroidManifest Injection, AppCompat XML Injection, Pro ProjectSettings, ProGuard/R8 & StringFog
+
+1. **AndroidManifest Manager (`AgentManifestAndSettings`, `inspect_manifest_and_settings`, `manage_manifest`)**:
+   - Reads and writes `AndroidManifestInjector` files under `.sketchware/data/<scId>/Injection/androidmanifest/`: `activity_launcher.txt` (resolving screen names to `ProjectFileBean.fileName` as expected by `Ix.java:561`), `attributes.json` (`_application_attrs`, `_apply_for_all_activities`, `_application_permissions`, and per-Activity class names), `activities_components.json` (`<intent-filter>` deep links / share targets inside `<activity>`), and `app_components.txt` (`<provider>`, `<meta-data>`, `<service>`, `<receiver>` inside `<application>`), validated with `XmlPullParser`.
+2. **AppCompat XML Injection (`manage_appcompat_injection`)**:
+   - Customizes or resets `toolbar`, `appbarlayout`, `coordinatorlayout`, `drawerlayout`, and `navigationdrawer` XML attributes in `.sketchware/data/<scId>/injection/appcompat/<fileName>` and calls `AppCompatInjection.refreshInjections()` so generated layout XML picks up changes immediately.
+3. **Project Metadata, Pro ProjectSettings, ProGuard/R8 & StringFog (`edit_project_settings`, `configure_proguard_and_stringfog`)**:
+   - Updates `my_ws_name`, `my_app_name` (and `@string/app_name` in `strings.xml`), `my_sc_pkg_name`, `sc_ver_code`, and `sc_ver_name` via `lC.b(scId, metadata)`, plus `ProjectSettings` (`min_sdk`, `target_sdk`, `app_class`, `enable_viewbinding`, `enable_bridgeless_themes`, `disable_old_methods`), `ProguardHandler` (`proguard`, `proguard-rules.pro`, `proguard_fm`), and `StringfogHandler` (`stringfog`), with full state recorded in `AgentExport`.
+
+
 
 
 

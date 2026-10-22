@@ -705,6 +705,8 @@ public final class AgentExport {
                         AgentExtensibility.listCustomBlocksJson(scId));
                 state.add("xml_commands",
                         AgentExtensibility.listXmlCommandsJson(scId));
+                state.add("manifest_and_settings",
+                        AgentManifestAndSettings.inspectAll(scId));
             } catch (Exception ignored) {
             }
             java.util.HashMap<String, Object> meta = a.a.a.lC.b(scId);

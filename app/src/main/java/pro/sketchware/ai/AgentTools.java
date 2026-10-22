@@ -139,6 +139,7 @@ public final class AgentTools {
         register(new ReadAssets());
         register(new InspectNativeLibs());
         register(new ListCustomDefinitions());
+        register(new InspectManifestAndSettings());
         register(new AskColor());
         register(new AskChoice());
         register(new SetStyleBrief());
@@ -185,6 +186,10 @@ public final class AgentTools {
         register(new ManageCustomBlock());
         register(new ManageCustomComponentOrEvent());
         register(new ManageXmlCommands());
+        register(new ManageManifest());
+        register(new ManageAppCompatInjection());
+        register(new EditProjectSettings());
+        register(new ConfigureProguardAndStringFog());
         register(new ConfigureLibrary());
         register(new ManagePermissions());
         register(new ManageLocalLibraries());
@@ -4282,10 +4287,39 @@ public final class AgentTools {
     }
 
     private static int intArg(JsonObject args, String key) {
+        return intArg(args, key, -1);
+    }
+
+    private static int intArg(JsonObject args, String key, int fallback) {
         try {
+            if (args == null || !args.has(key) || args.get(key).isJsonNull()) {
+                return fallback;
+            }
             return args.get(key).getAsInt();
         } catch (Exception e) {
-            return -1;
+            return fallback;
+        }
+    }
+
+    private static Integer optionalIntArg(JsonObject args, String key) {
+        try {
+            if (args == null || !args.has(key) || args.get(key).isJsonNull()) {
+                return null;
+            }
+            return args.get(key).getAsInt();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static Boolean optionalBooleanArg(JsonObject args, String key) {
+        try {
+            if (args == null || !args.has(key) || args.get(key).isJsonNull()) {
+                return null;
+            }
+            return args.get(key).getAsBoolean();
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -11028,5 +11062,604 @@ public final class AgentTools {
                                 + String.valueOf(e.getMessage()));
             }
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 7: AndroidManifest, AppCompat Injection, ProjectSettings,
+    //          ProGuard/R8 & StringFog
+    // ------------------------------------------------------------------
+
+    /** inspect_manifest_and_settings: read-only Phase 7 state dump. */
+    private static final class InspectManifestAndSettings implements Tool {
+        @Override
+        public String name() {
+            return "inspect_manifest_and_settings";
+        }
+
+        @Override
+        public String description() {
+            return "Reads the project's AndroidManifest configuration "
+                    + "(launcher activity, <application> attributes, "
+                    + "<activity> attributes, <intent-filter> deep links, "
+                    + "and <application> XML components), per-screen "
+                    + "AppCompat XML attribute injections, project metadata "
+                    + "(project_name, app_name, package_name, version_code, "
+                    + "version_name), Pro ProjectSettings (min_sdk, "
+                    + "target_sdk, application_class, ViewBinding, "
+                    + "bridgeless themes, disable_old_methods), ProGuard/R8 "
+                    + "rules, and StringFog status.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            return emptyObjectSchema();
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            return AgentManifestAndSettings.inspectAll(scId);
+        }
+    }
+
+    /** manage_manifest: launcher override, attrs, intent-filters & components. */
+    private static final class ManageManifest implements Tool {
+        @Override
+        public String name() {
+            return "manage_manifest";
+        }
+
+        @Override
+        public String description() {
+            return "Configures AndroidManifest.xml via Sketchware Pro's "
+                    + "AndroidManifestInjector: change launcher_activity "
+                    + "(e.g. SplashActivity), inject <application> "
+                    + "attributes (e.g. android:usesCleartextTraffic=\"true\"), "
+                    + "inject attributes on one or all <activity> tags "
+                    + "(e.g. android:launchMode=\"singleTop\", "
+                    + "android:exported=\"true\", android:configChanges="
+                    + "\"orientation|screenSize\"), inject <intent-filter> "
+                    + "deep links or share targets inside an <activity> "
+                    + "(activity_components_xml), or inject <meta-data>, "
+                    + "<provider>, <service>, or <receiver> XML inside "
+                    + "<application> (app_components_xml).";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject p = new JsonObject();
+            p.add("launcher_activity", stringSchema(
+                    "Optional visual Activity screen to launch on app start "
+                            + "(e.g. SplashActivity or MainActivity)."));
+            p.add("application_attributes", stringArraySchema(
+                    "Optional <application> attribute pairs like "
+                            + "[\"android:usesCleartextTraffic=\\\"true\\\"\", "
+                            + "\"android:largeHeap=\\\"true\\\"\"]."));
+            p.add("replace_application_attributes", booleanSchema(
+                    "When true, replaces existing <application> attributes "
+                            + "instead of merging by attribute key."));
+            p.add("all_activities_attributes", stringArraySchema(
+                    "Optional attribute pairs applied to every <activity>."));
+            p.add("replace_all_activities_attributes", booleanSchema(
+                    "When true, replaces existing all-activities attributes."));
+            p.add("activity", stringSchema(
+                    "Target Activity screen (e.g. MainActivity) when setting "
+                            + "activity_attributes or activity_components_xml."));
+            p.add("activity_attributes", stringArraySchema(
+                    "Optional attribute pairs for \"activity\" (e.g. "
+                            + "[\"android:launchMode=\\\"singleTop\\\"\", "
+                            + "\"android:exported=\\\"true\\\"\"])."));
+            p.add("replace_activity_attributes", booleanSchema(
+                    "When true, replaces existing attributes on \"activity\"."));
+            p.add("activity_components_xml", stringSchema(
+                    "Optional child XML placed inside <activity> (such as "
+                            + "<intent-filter> deep links or <meta-data/>). "
+                            + "Pass empty string \"\" to clear."));
+            p.add("app_components_xml", stringSchema(
+                    "Optional child XML placed inside <application> (such as "
+                            + "<provider>, <meta-data>, <service>, or "
+                            + "<receiver>)."));
+            p.add("replace_app_components_xml", booleanSchema(
+                    "When true, replaces app_components.txt instead of "
+                            + "appending."));
+            return objectSchema(p);
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String launcher = stringArg(args, "launcher_activity");
+            List<String> appAttrs = AgentManifestAndSettings
+                    .jsonArrayStrings(args, "application_attributes");
+            List<String> allActAttrs = AgentManifestAndSettings
+                    .jsonArrayStrings(args, "all_activities_attributes");
+            String act = stringArg(args, "activity");
+            List<String> actAttrs = AgentManifestAndSettings
+                    .jsonArrayStrings(args, "activity_attributes");
+            String actXml = args != null && args.has("activity_components_xml")
+                    && !args.get("activity_components_xml").isJsonNull()
+                    ? args.get("activity_components_xml").getAsString() : null;
+            String appXml = args != null && args.has("app_components_xml")
+                    && !args.get("app_components_xml").isJsonNull()
+                    ? args.get("app_components_xml").getAsString() : null;
+
+            if (launcher.isEmpty() && appAttrs == null && allActAttrs == null
+                    && actAttrs == null && actXml == null && appXml == null) {
+                throw new ToolException("E_NOTHING_TO_CHANGE",
+                        "Provide at least one manifest setting to update "
+                                + "(launcher_activity, application_attributes, "
+                                + "activity_attributes, activity_components_xml, "
+                                + "or app_components_xml).");
+            }
+            if (!launcher.isEmpty()) {
+                ProjectFileBean bean =
+                        SketchwareProjects.findActivity(scId, launcher);
+                if (bean == null || SketchwareProjects.isFragment(bean)) {
+                    throw new ToolException("E_BAD_LAUNCHER_ACTIVITY",
+                            "Launcher activity \"" + launcher
+                                    + "\" must be an existing visual Activity.");
+                }
+            }
+            if (appAttrs != null) {
+                for (String s : appAttrs) {
+                    AgentManifestAndSettings.validateAttributePair(s);
+                }
+            }
+            if (allActAttrs != null) {
+                for (String s : allActAttrs) {
+                    AgentManifestAndSettings.validateAttributePair(s);
+                }
+            }
+            if (actAttrs != null) {
+                if (act.isEmpty()) {
+                    throw new ToolException("E_MISSING_ACTIVITY",
+                            "Pass \"activity\" alongside activity_attributes.");
+                }
+                for (String s : actAttrs) {
+                    AgentManifestAndSettings.validateAttributePair(s);
+                }
+            }
+            if (actXml != null) {
+                if (act.isEmpty()) {
+                    throw new ToolException("E_MISSING_ACTIVITY",
+                            "Pass \"activity\" alongside "
+                                    + "activity_components_xml.");
+                }
+                AgentManifestAndSettings.validateXmlSnippet(
+                        actXml, "activity_components_xml");
+            }
+            if (appXml != null) {
+                AgentManifestAndSettings.validateXmlSnippet(
+                        appXml, "app_components_xml");
+            }
+
+            List<String> details = new ArrayList<>();
+            if (!launcher.isEmpty()) {
+                details.add("Launcher activity -> " + launcher);
+            }
+            if (appAttrs != null) {
+                details.add("<application> attributes: " + appAttrs.size());
+            }
+            if (allActAttrs != null) {
+                details.add("All-activities attributes: " + allActAttrs.size());
+            }
+            if (actAttrs != null) {
+                details.add(act + " attributes: " + actAttrs.size());
+            }
+            if (actXml != null) {
+                details.add(act + " child XML updated");
+            }
+            if (appXml != null) {
+                details.add("<application> child XML updated");
+            }
+            return new AgentProposal(name(), "Update AndroidManifest",
+                    String.join(" · ", details), details,
+                    args.deepCopy(), scId);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.projectId);
+            JsonObject a = proposal.args;
+            String actXml = a != null && a.has("activity_components_xml")
+                    && !a.get("activity_components_xml").isJsonNull()
+                    ? a.get("activity_components_xml").getAsString() : null;
+            String appXml = a != null && a.has("app_components_xml")
+                    && !a.get("app_components_xml").isJsonNull()
+                    ? a.get("app_components_xml").getAsString() : null;
+            try {
+                JsonObject res = AgentManifestAndSettings.applyManifestChanges(
+                        scId,
+                        stringArg(a, "launcher_activity"),
+                        AgentManifestAndSettings.jsonArrayStrings(
+                                a, "application_attributes"),
+                        booleanArg(a, "replace_application_attributes"),
+                        AgentManifestAndSettings.jsonArrayStrings(
+                                a, "all_activities_attributes"),
+                        booleanArg(a, "replace_all_activities_attributes"),
+                        stringArg(a, "activity"),
+                        AgentManifestAndSettings.jsonArrayStrings(
+                                a, "activity_attributes"),
+                        booleanArg(a, "replace_activity_attributes"),
+                        actXml,
+                        appXml,
+                        booleanArg(a, "replace_app_components_xml"));
+                res.addProperty("verified",
+                        "Updated AndroidManifest injection settings.");
+                return res;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_MANIFEST_UPDATE_FAILED",
+                        "Failed to update AndroidManifest: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /** manage_appcompat_injection: toolbar/appbar/coordinator/drawer XML attrs. */
+    private static final class ManageAppCompatInjection implements Tool {
+        @Override
+        public String name() {
+            return "manage_appcompat_injection";
+        }
+
+        @Override
+        public String description() {
+            return "Customizes or resets AppCompat shell XML attributes on "
+                    + "an Activity screen's generated Toolbar, AppBarLayout, "
+                    + "CoordinatorLayout, DrawerLayout, or NavigationDrawer "
+                    + "(stored in injection/appcompat/<fileName>).";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject p = new JsonObject();
+            p.add("activity", stringSchema(
+                    "Target Activity screen (e.g. MainActivity)."));
+            p.add("type", stringSchema(
+                    "AppCompat shell target: \"toolbar\", \"appbarlayout\", "
+                            + "\"coordinatorlayout\", \"drawerlayout\", or "
+                            + "\"navigationdrawer\"."));
+            p.add("attributes", stringArraySchema(
+                    "XML attribute pairs like [\"app:elevation=\\\"0dp\\\"\", "
+                            + "\"android:background=\\\"?attr/colorSurface\\\"\"]"));
+            p.add("replace_type", booleanSchema(
+                    "When true, replaces all existing attributes for \"type\" "
+                            + "on this Activity instead of merging by key."));
+            p.add("reset", booleanSchema(
+                    "When true, restores Sketchware Pro's default AppCompat "
+                            + "injections for this Activity."));
+            return objectSchema(p, "activity");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String act = stringArg(args, "activity");
+            if (SketchwareProjects.findActivity(scId, act) == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "Activity \"" + act + "\" does not exist.");
+            }
+            boolean reset = booleanArg(args, "reset");
+            String type = stringArg(args, "type");
+            List<String> attrs = AgentManifestAndSettings
+                    .jsonArrayStrings(args, "attributes");
+            if (!reset) {
+                if (type.isEmpty()) {
+                    throw new ToolException("E_MISSING_TYPE",
+                            "Pass \"type\" (toolbar, appbarlayout, "
+                                    + "coordinatorlayout, drawerlayout, or "
+                                    + "navigationdrawer) or reset=true.");
+                }
+                if (attrs == null || attrs.isEmpty()) {
+                    throw new ToolException("E_EMPTY_ATTRIBUTES",
+                            "Pass \"attributes\" array or reset=true.");
+                }
+                for (String a : attrs) {
+                    AgentManifestAndSettings.validateAttributePair(a);
+                }
+            }
+            String title = reset
+                    ? "Reset AppCompat injection on " + act
+                    : "Update " + type + " injection on " + act;
+            List<String> details = new ArrayList<>();
+            if (reset) {
+                details.add("Restore default AppCompat shell XML attributes");
+            } else {
+                details.addAll(attrs);
+            }
+            return new AgentProposal(name(), title,
+                    reset ? "Restore defaults" : attrs.size() + " attributes",
+                    details, args.deepCopy(), scId);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.projectId);
+            JsonObject a = proposal.args;
+            try {
+                JsonObject res = AgentManifestAndSettings
+                        .updateAppCompatInjection(
+                                scId,
+                                stringArg(a, "activity"),
+                                booleanArg(a, "reset"),
+                                stringArg(a, "type"),
+                                AgentManifestAndSettings.jsonArrayStrings(
+                                        a, "attributes"),
+                                booleanArg(a, "replace_type"));
+                res.addProperty("verified",
+                        "Updated AppCompat XML injection and refreshed cache.");
+                return res;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_APPCOMPAT_INJECTION_FAILED",
+                        "Failed to update AppCompat injection: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /** edit_project_settings: metadata + Pro ProjectSettings. */
+    private static final class EditProjectSettings implements Tool {
+        @Override
+        public String name() {
+            return "edit_project_settings";
+        }
+
+        @Override
+        public String description() {
+            return "Updates project metadata (project_name, app_name, "
+                    + "package_name, version_code, version_name) and "
+                    + "Sketchware Pro ProjectSettings (min_sdk, target_sdk, "
+                    + "application_class, enable_viewbinding, "
+                    + "enable_bridgeless_themes, disable_old_methods).";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject p = new JsonObject();
+            p.add("project_name", stringSchema(
+                    "Optional workspace title shown inside Sketchware Pro."));
+            p.add("app_name", stringSchema(
+                    "Optional user-visible Android application label "
+                            + "(also synced to @string/app_name)."));
+            p.add("package_name", stringSchema(
+                    "Optional Android applicationId / package name "
+                            + "(e.g. com.acme.notes)."));
+            p.add("version_code", intSchema(
+                    "Optional integer Android versionCode (>= 1)."));
+            p.add("version_name", stringSchema(
+                    "Optional Android versionName string (e.g. \"1.2.0\")."));
+            p.add("min_sdk", intSchema(
+                    "Optional minimum Android SDK level (21..36)."));
+            p.add("target_sdk", intSchema(
+                    "Optional target Android SDK level (23..37)."));
+            p.add("application_class", stringSchema(
+                    "Optional android:name class for <application> "
+                            + "(default \".SketchApplication\")."));
+            p.add("enable_viewbinding", booleanSchema(
+                    "Optional toggle for Android ViewBinding generation."));
+            p.add("enable_bridgeless_themes", booleanSchema(
+                    "Optional toggle for pure MaterialComponents bridgeless "
+                            + "themes."));
+            p.add("disable_old_methods", booleanSchema(
+                    "Optional toggle to omit deprecated legacy helper "
+                            + "methods in generated Activities."));
+            return objectSchema(p);
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            List<String> details = new ArrayList<>();
+            if (!stringArg(args, "project_name").isEmpty()) {
+                details.add("Project name -> "
+                        + stringArg(args, "project_name"));
+            }
+            if (!stringArg(args, "app_name").isEmpty()) {
+                details.add("App name -> " + stringArg(args, "app_name"));
+            }
+            if (!stringArg(args, "package_name").isEmpty()) {
+                details.add("Package -> " + stringArg(args, "package_name"));
+            }
+            Integer vc = optionalIntArg(args, "version_code");
+            if (vc != null) details.add("versionCode -> " + vc);
+            if (!stringArg(args, "version_name").isEmpty()) {
+                details.add("versionName -> "
+                        + stringArg(args, "version_name"));
+            }
+            Integer minSdk = optionalIntArg(args, "min_sdk");
+            if (minSdk != null) details.add("minSdk -> " + minSdk);
+            Integer targetSdk = optionalIntArg(args, "target_sdk");
+            if (targetSdk != null) details.add("targetSdk -> " + targetSdk);
+            if (!stringArg(args, "application_class").isEmpty()) {
+                details.add("Application class -> "
+                        + stringArg(args, "application_class"));
+            }
+            Boolean vb = optionalBooleanArg(args, "enable_viewbinding");
+            if (vb != null) details.add("ViewBinding -> " + vb);
+            Boolean bt = optionalBooleanArg(args, "enable_bridgeless_themes");
+            if (bt != null) details.add("Bridgeless themes -> " + bt);
+            Boolean dom = optionalBooleanArg(args, "disable_old_methods");
+            if (dom != null) details.add("Disable old methods -> " + dom);
+
+            if (details.isEmpty()) {
+                throw new ToolException("E_NOTHING_TO_CHANGE",
+                        "Provide at least one metadata or ProjectSettings "
+                                + "field to update.");
+            }
+            return new AgentProposal(name(), "Update project settings",
+                    String.join(" · ", details), details,
+                    args.deepCopy(), scId);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.projectId);
+            JsonObject a = proposal.args;
+            try {
+                JsonObject res = AgentManifestAndSettings
+                        .updateProjectSettings(
+                                scId,
+                                emptyToNull(stringArg(a, "project_name")),
+                                emptyToNull(stringArg(a, "app_name")),
+                                emptyToNull(stringArg(a, "package_name")),
+                                optionalIntArg(a, "version_code"),
+                                emptyToNull(stringArg(a, "version_name")),
+                                optionalIntArg(a, "min_sdk"),
+                                optionalIntArg(a, "target_sdk"),
+                                emptyToNull(stringArg(a, "application_class")),
+                                optionalBooleanArg(a, "enable_viewbinding"),
+                                optionalBooleanArg(
+                                        a, "enable_bridgeless_themes"),
+                                optionalBooleanArg(
+                                        a, "disable_old_methods"));
+                res.addProperty("verified",
+                        "Saved project metadata and ProjectSettings.");
+                return res;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_PROJECT_SETTINGS_FAILED",
+                        "Failed to update project settings: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /** configure_proguard_and_stringfog: shrinking, R8, rules & StringFog. */
+    private static final class ConfigureProguardAndStringFog implements Tool {
+        @Override
+        public String name() {
+            return "configure_proguard_and_stringfog";
+        }
+
+        @Override
+        public String description() {
+            return "Configures ProGuard / R8 code shrinking, custom "
+                    + "proguard-rules.pro rules, per-local-library full "
+                    + "mode shrinking, debug mapping output, and StringFog "
+                    + "compile-time string encryption.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject p = new JsonObject();
+            p.add("proguard_enabled", booleanSchema(
+                    "Enable or disable code shrinking (ProGuard/R8)."));
+            p.add("r8_enabled", booleanSchema(
+                    "When shrinking is enabled, use R8 instead of ProGuard."));
+            p.add("debug_files_enabled", booleanSchema(
+                    "Emit seeds.txt, usage.txt, and mapping.txt during "
+                            + "shrinking."));
+            p.add("proguard_rules", stringSchema(
+                    "Custom proguard-rules.pro content (e.g. -keep rules)."));
+            p.add("full_mode_local_libs", stringArraySchema(
+                    "Optional list of local library names whose classes "
+                            + "should also be shrunk in full mode."));
+            p.add("stringfog_enabled", booleanSchema(
+                    "Enable or disable StringFog string encryption."));
+            return objectSchema(p);
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            Boolean pg = optionalBooleanArg(args, "proguard_enabled");
+            Boolean r8 = optionalBooleanArg(args, "r8_enabled");
+            Boolean dbg = optionalBooleanArg(args, "debug_files_enabled");
+            String rules = args != null && args.has("proguard_rules")
+                    && !args.get("proguard_rules").isJsonNull()
+                    ? args.get("proguard_rules").getAsString() : null;
+            List<String> fm = AgentManifestAndSettings
+                    .jsonArrayStrings(args, "full_mode_local_libs");
+            Boolean sf = optionalBooleanArg(args, "stringfog_enabled");
+
+            List<String> details = new ArrayList<>();
+            if (pg != null) details.add("Shrinking -> " + pg);
+            if (r8 != null) details.add("R8 mode -> " + r8);
+            if (dbg != null) details.add("Debug mapping files -> " + dbg);
+            if (rules != null) {
+                details.add("Custom proguard-rules.pro ("
+                        + rules.length() + " chars)");
+            }
+            if (fm != null) {
+                details.add("Full-mode local libs: " + fm.size());
+            }
+            if (sf != null) details.add("StringFog -> " + sf);
+
+            if (details.isEmpty()) {
+                throw new ToolException("E_NOTHING_TO_CHANGE",
+                        "Provide at least one ProGuard/R8 or StringFog "
+                                + "option to configure.");
+            }
+            return new AgentProposal(name(),
+                    "Configure ProGuard / R8 & StringFog",
+                    String.join(" · ", details), details,
+                    args.deepCopy(), scId);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.projectId);
+            JsonObject a = proposal.args;
+            String rules = a != null && a.has("proguard_rules")
+                    && !a.get("proguard_rules").isJsonNull()
+                    ? a.get("proguard_rules").getAsString() : null;
+            try {
+                JsonObject res = AgentManifestAndSettings
+                        .configureShrinkingAndObfuscation(
+                                scId,
+                                optionalBooleanArg(a, "proguard_enabled"),
+                                optionalBooleanArg(a, "r8_enabled"),
+                                optionalBooleanArg(a, "debug_files_enabled"),
+                                rules,
+                                AgentManifestAndSettings.jsonArrayStrings(
+                                        a, "full_mode_local_libs"),
+                                optionalBooleanArg(a, "stringfog_enabled"));
+                res.addProperty("verified",
+                        "Saved ProGuard/R8 and StringFog configuration.");
+                return res;
+            } catch (Exception e) {
+                throw new ToolException("E_SHRINKING_CONFIG_FAILED",
+                        "Failed to configure ProGuard/R8 or StringFog: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    private static String emptyToNull(String s) {
+        return s == null || s.trim().isEmpty() ? null : s.trim();
     }
 }

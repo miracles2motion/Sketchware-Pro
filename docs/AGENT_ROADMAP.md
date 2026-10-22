@@ -120,14 +120,14 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 ---
 
-### Phase 7 — AndroidManifest Injection, AppCompat XML Injection & Pro Project Settings
+### Phase 7 (DONE) — AndroidManifest Injection, AppCompat XML Injection & Pro Project Settings
 **Goal:** Everything outside individual screens that controls how Android installs, themes, and compiles the app.
-1. **AndroidManifest Manager (`manage_manifest`):**
-   - Per-Activity manifest attributes (`screenOrientation`, `windowSoftInputMode`, `configChanges`, `exported`, `launchMode`), intent-filters / deep links / share targets, `<application>` attributes, and custom `<service>`, `<receiver>`, `<provider>`, and `<meta-data>` tags (`AndroidManifestInjector`).
+1. **AndroidManifest Manager (`inspect_manifest_and_settings`, `manage_manifest`):**
+   - Launcher activity override (`activity_launcher.txt` resolved to `ProjectFileBean.fileName`), per-Activity and all-Activities manifest attributes (`screenOrientation`, `windowSoftInputMode`, `configChanges`, `exported`, `launchMode`), `<application>` attributes, `<intent-filter>` deep links / share targets (`activities_components.json`), and `<application>` `<provider>`, `<meta-data>`, `<service>`, and `<receiver>` XML (`app_components.txt`) via `AndroidManifestInjector` with `XmlPullParser` well-formedness validation.
 2. **AppCompat XML Injection (`manage_appcompat_injection`):**
-   - Read/write `.sketchware/data/<sc_id>/injection/appcompat/<screen>` (`AppCompatInjection`) to customize `CoordinatorLayout`, `AppBarLayout`, `Toolbar`, and `FloatingActionButton` XML attributes.
-3. **Pro Project Settings, ViewBinding, ProGuard/R8 & StringFog (`edit_project_settings`):**
-   - Update app name, package name, version code/name (`MyProjectSettingActivity` / `VersionDialog`), `ProjectSettings` (`min_sdk`, `target_sdk`, `custom_application`, `enable_viewbinding`, `disable_old_methods`), **ProGuard / R8** rules (`ProguardHandler`), and **StringFog** (`StringfogHandler`).
+   - Read/write/reset `.sketchware/data/<sc_id>/injection/appcompat/<fileName>` (`toolbar`, `appbarlayout`, `coordinatorlayout`, `drawerlayout`, `navigationdrawer`) with immediate `AppCompatInjection.refreshInjections()` cache reload.
+3. **Pro Project Settings, ViewBinding, ProGuard/R8 & StringFog (`edit_project_settings`, `configure_proguard_and_stringfog`):**
+   - Update `project_name`, `app_name` (synced to `@string/app_name`), `package_name`, `version_code`, and `version_name` (`lC.b(scId, metadata)`), `ProjectSettings` (`min_sdk`, `target_sdk`, `application_class`, `enable_viewbinding`, `enable_bridgeless_themes`, `disable_old_methods`), **ProGuard / R8** (`ProguardHandler`, `proguard-rules.pro`, `proguard_fm` full-mode local libs), and **StringFog** (`StringfogHandler`), exported in `AgentExport`.
 
 ---
 
