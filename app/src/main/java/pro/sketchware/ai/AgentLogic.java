@@ -7277,10 +7277,12 @@ public final class AgentLogic {
         stmt.opCode = action.opCode;
         stmt.type = " ";
         String componentId = "";
+        // Declared here, not inside the block below: it is read after
+        // that block ends, when the sentence is written.
+        boolean choseOnly = false;
         if (action.componentType != 0) {
             componentId = stringOf(op, "component");
             Integer type = components.get(componentId);
-            boolean choseOnly = false;
             if (type == null) {
                 // When the screen has exactly one component of the
                 // kind this block needs, that is the answer — not a
