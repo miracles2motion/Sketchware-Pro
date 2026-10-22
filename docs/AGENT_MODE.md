@@ -1704,3 +1704,47 @@ exports each event's numbered statements, keyed by its header:
   "When save_btn (…) onClick:": "1. set noteText to \"\"\n2. Finish Activity\n…"
 }
 ```
+
+## Wave 33: values that arrived as text
+
+The 22 October MagicalNotes export (sc_id 608) shows the worst failure
+yet, and it was mine. The model sent:
+
+```json
+{"variable":"savedNoteText","block":"set_variable",
+ "value":"{\"pref_get\":\"file1\",\"key\":\"magical_note\"}"}
+```
+
+`pref_get` **is** a real expression in the schema — so is `text_of`.
+The model had the vocabulary right. What it got wrong was quoting:
+`value` arrived as a *string*, so `op.get("value").isJsonObject()`
+was false, the expression path was skipped, and the literal text
+`{"pref_get":"file1","key":"magical_note"}` was stored as the value.
+
+The generated Java compiled fine, which is why the build reported
+success:
+
+```java
+savedNoteText = "{\"pref_get\":\"file1\",\"key\":\"magical_note\"}";
+```
+
+The app saved and displayed raw JSON instead of the note. Same for
+`{"var":"savedNoteText"}` in `add_to_list`. A compiler cannot catch
+this — the code is valid, the meaning is wrong.
+
+**Fix:** `expressionFromText` recognises a string that parses as an
+object carrying one of the 40-odd known expression keys, and `expr()`
+reads it as the expression it means. Safe because a genuine piece of
+JSON text nobody means as an expression has none of those keys and is
+still stored as text.
+
+It is **not silent**: the reply says so, so the model learns the right
+form instead of having its mistake quietly absorbed:
+
+> (a value arrived as quoted text — {"var":"noteText"} and the like —
+> so it was applied as the expression it meant, not as those letters.
+> Send values as objects, without quotes around them.)
+
+**The lesson, for the third time in a different shape:** the app must
+judge meaning, not just syntax. A string is valid input for a value
+slot; that does not make it what the model meant.

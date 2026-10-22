@@ -61,6 +61,99 @@ public final class AgentLogic {
     /** At most this many blocks per handler call. */
     public static final int MAX_BLOCKS = 8;
 
+    /**
+     * The keys that make a value an expression rather than plain text.
+     * If a model writes {\"pref_get\":\"file1\"} correctly, Gson hands
+     * us an object; if it wraps the same thing in quotes we get a
+     * string, and the value is stored as the literal text
+     * {\"pref_get\":\"file1\"} — which is what MagicalNotes did, so the
+     * app saved and displayed raw JSON instead of the saved note.
+     * These keys let that mistake be recognised and undone.
+     */
+    private static final java.util.Set<String> EXPRESSION_KEYS =
+            java.util.Set.of(
+            "ad_loaded",
+            "anim_running",
+            "arg",
+            "asset_text",
+            "bool",
+            "bt_enabled",
+            "bt_on",
+            "bt_uuid",
+            "calendar_diff",
+            "calendar_millis",
+            "calendar_text",
+            "fb_push_key",
+            "file_exists",
+            "file_length",
+            "has_extra",
+            "instance_of",
+            "is_file",
+            "is_folder",
+            "item_of",
+            "jpeg_rotation",
+            "json_of_list",
+            "json_of_list_map",
+            "json_of_map",
+            "list_has",
+            "list_length",
+            "list_map_has",
+            "list_map_value",
+            "load_sound",
+            "map_get",
+            "map_has",
+            "mp_duration_of",
+            "mp_looping",
+            "mp_playing",
+            "mp_position_of",
+            "number",
+            "pattern_md5_of",
+            "pattern_sha1_of",
+            "pattern_text_of",
+            "play_sound",
+            "pref_get",
+            "pref_has",
+            "public_dir",
+            "read_file",
+            "replace_all",
+            "text",
+            "tts_speaking",
+            "var",
+            "visibility_is"            );
+
+    /**
+     * A string that is really an expression written as text, or null.
+     * Only recognised when it parses as an object carrying a known
+     * expression key, so a genuine piece of JSON text someone wants
+     * stored is still stored as text.
+     */
+    private static JsonObject expressionFromText(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+            return null;
+        }
+        try {
+            JsonElement parsed =
+                    com.google.gson.JsonParser.parseString(trimmed);
+            if (parsed == null || !parsed.isJsonObject()) {
+                return null;
+            }
+            JsonObject object = parsed.getAsJsonObject();
+            for (String key : EXPRESSION_KEYS) {
+                if (object.has(key)) {
+                    return object;
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+
     /** Deepest container nesting in one handler. */
     private static final int MAX_DEPTH = 3;
 
@@ -1329,6 +1422,16 @@ public final class AgentLogic {
                 throw e;
             }
         }
+        if (builder.recoveredFromText) {
+            // Not silent: the model asked for one thing in a form that
+            // would have stored raw JSON, and it should know the form
+            // was wrong even though the result is right.
+            plan.lines.add("(a value arrived as quoted text — "
+                    + "{\"var\":\"noteText\"} and the like — so it was "
+                    + "applied as the expression it meant, not as those "
+                    + "letters. Send values as objects, without quotes "
+                    + "around them.)");
+        }
         if (builder.componentToCreate != null) {
             plan.newComponentId = builder.componentToCreate;
             plan.lines.add(0, "Add an Intent component ("
@@ -1468,6 +1571,11 @@ public final class AgentLogic {
         final Context context;
         final Map<String, ViewBean> byId;
         final Map<String, Integer> variables;
+        /** Set when a value arrived as quoted text and was read as the
+         * expression it meant, so the reply can say so instead of
+         * quietly doing something the model did not ask for. */
+        boolean recoveredFromText = false;
+
         final ArrayList<BlockBean> created = new ArrayList<>();
         final ArrayList<BlockBean> allStatements = new ArrayList<>();
         final ArrayList<Stmt> stmts = new ArrayList<>();
@@ -2054,6 +2162,17 @@ public final class AgentLogic {
                 }
                 case "set_variable" -> {
                     JsonElement value = op.get("value");
+                    if (value != null && value.isJsonPrimitive()
+                            && value.getAsJsonPrimitive().isString()) {
+                        // The same mistake, at the gate that decides
+                        // between "an expression" and "plain text".
+                        JsonObject decoded =
+                                expressionFromText(value.getAsString());
+                        if (decoded != null) {
+                            recoveredFromText = true;
+                            value = decoded;
+                        }
+                    }
                     if (value == null || !value.isJsonObject()) {
                         return buildTranslated(op, depth);
                     }
@@ -2697,6 +2816,17 @@ public final class AgentLogic {
          */
         String expr(JsonElement element, char slot, String what)
                 throws AgentTools.ToolException {
+            // A value wrapped in quotes: {\"var\":\"noteText\"} sent as
+            // text. Read it as the expression it means, not as letters.
+            if (element != null && element.isJsonPrimitive()
+                    && element.getAsJsonPrimitive().isString()) {
+                JsonObject decoded = expressionFromText(
+                        element.getAsString());
+                if (decoded != null) {
+                    recoveredFromText = true;
+                    element = decoded;
+                }
+            }
             if (element == null || element.isJsonNull()) {
                 throw new AgentTools.ToolException("E_BAD_VALUE",
                         what + ", e.g. {\"var\":\"taps\"}, {\"number\":3} "
