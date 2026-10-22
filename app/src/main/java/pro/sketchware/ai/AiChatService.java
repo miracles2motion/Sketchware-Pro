@@ -10,6 +10,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -136,14 +137,36 @@ public class AiChatService {
         messages.add(system);
 
         int from = Math.max(0, history.size() - MAX_HISTORY_MESSAGES);
-        for (int i = from; i < history.size(); i++) {
+        int imageTurnsRemaining = 3;
+        List<JsonObject> built = new ArrayList<>();
+        for (int i = history.size() - 1; i >= from; i--) {
             ChatMessage message = history.get(i);
-            if (message.role == ChatMessage.Role.SYSTEM || message.text.trim().isEmpty()) {
+            if (message.role == ChatMessage.Role.SYSTEM
+                    || message.role == ChatMessage.Role.APPROVAL) {
+                continue;
+            }
+            boolean hasText = message.text != null
+                    && !message.text.trim().isEmpty();
+            boolean hasImages = message.isFromUser()
+                    && message.hasAttachments();
+            if (!hasText && !hasImages) {
                 continue;
             }
             JsonObject entry = new JsonObject();
-            entry.addProperty("role", message.isFromUser() ? "user" : "assistant");
-            entry.addProperty("content", message.text.trim());
+            entry.addProperty("role",
+                    message.isFromUser() ? "user" : "assistant");
+            if (hasImages) {
+                boolean inlineBytes = imageTurnsRemaining > 0;
+                if (inlineBytes) {
+                    imageTurnsRemaining--;
+                }
+                entry.add("content", buildUserContent(message, inlineBytes));
+            } else {
+                entry.addProperty("content", message.text.trim());
+            }
+            built.add(0, entry);
+        }
+        for (JsonObject entry : built) {
             messages.add(entry);
         }
         payload.add("messages", messages);
@@ -575,6 +598,149 @@ public class AiChatService {
         mainHandler.post(() -> listener.onError(error));
     }
 
+    /**
+     * Builds the OpenAI-compatible {@code content} value for a user message:
+     * a plain string when text-only, or a multimodal {@code [text, image_url...]}
+     * array when {@code includeImageBytes} is true and readable image files exist.
+     */
+    public static JsonElement buildUserContent(ChatMessage message,
+                                               boolean includeImageBytes) {
+        String rawText = message == null || message.text == null
+                ? "" : message.text.trim();
+        if (message == null || !message.hasAttachments()) {
+            return new JsonPrimitive(rawText);
+        }
+        StringBuilder caption = new StringBuilder(rawText);
+        int idx = 1;
+        for (ChatMessage.Attachment att : message.attachments) {
+            if (att == null) {
+                continue;
+            }
+            if (caption.length() > 0) {
+                caption.append("\n");
+            }
+            caption.append("[Attached chat image ")
+                    .append(idx++)
+                    .append(": id=\"")
+                    .append(att.id == null ? "" : att.id)
+                    .append("\"");
+            if (att.width > 0 && att.height > 0) {
+                caption.append(", ")
+                        .append(att.width)
+                        .append("x")
+                        .append(att.height);
+            }
+            caption.append("]");
+        }
+        if (!includeImageBytes) {
+            return new JsonPrimitive(caption.toString());
+        }
+        JsonArray parts = new JsonArray();
+        JsonObject textPart = new JsonObject();
+        textPart.addProperty("type", "text");
+        textPart.addProperty("text", caption.length() == 0
+                ? "Inspect the attached image(s)." : caption.toString());
+        parts.add(textPart);
+        int addedImages = 0;
+        for (ChatMessage.Attachment att : message.attachments) {
+            if (att == null || att.path == null || att.path.isEmpty()) {
+                continue;
+            }
+            String dataUrl = AgentMedia.toVisionDataUrl(att.path);
+            if (dataUrl.isEmpty()) {
+                continue;
+            }
+            JsonObject imgPart = new JsonObject();
+            imgPart.addProperty("type", "image_url");
+            JsonObject urlObj = new JsonObject();
+            urlObj.addProperty("url", dataUrl);
+            imgPart.add("image_url", urlObj);
+            parts.add(imgPart);
+            addedImages++;
+        }
+        if (addedImages == 0) {
+            return new JsonPrimitive(caption.toString());
+        }
+        return parts;
+    }
+
+    private static final String PREVIEW_INSPECTION_PREFIX =
+            "[System visual render of Sketchware screen ";
+
+    /**
+     * Builds a transient multimodal user message carrying a rendered
+     * {@code preview_screen} PNG so vision models can visually verify their
+     * built layout against the user's screenshot or design system.
+     */
+    public static JsonObject buildPreviewInspectionMessage(String screenName,
+                                                           String previewPath) {
+        String dataUrl = AgentMedia.toVisionDataUrl(previewPath);
+        if (dataUrl.isEmpty()) {
+            return null;
+        }
+        JsonObject entry = new JsonObject();
+        entry.addProperty("role", "user");
+        JsonArray parts = new JsonArray();
+        JsonObject textPart = new JsonObject();
+        textPart.addProperty("type", "text");
+        textPart.addProperty("text",
+                PREVIEW_INSPECTION_PREFIX + "\""
+                        + screenName
+                        + "\" produced by preview_screen. Inspect alignment, "
+                        + "spacing, colours, contrast, text clipping, and "
+                        + "match against the design system or reference "
+                        + "screenshot, then continue.]");
+        parts.add(textPart);
+        JsonObject imgPart = new JsonObject();
+        imgPart.addProperty("type", "image_url");
+        JsonObject urlObj = new JsonObject();
+        urlObj.addProperty("url", dataUrl);
+        imgPart.add("image_url", urlObj);
+        parts.add(imgPart);
+        entry.add("content", parts);
+        return entry;
+    }
+
+    /** True when {@code message} is a transient {@code preview_screen} image turn. */
+    public static boolean isPreviewInspectionMessage(JsonObject message) {
+        if (message == null || !message.has("role")
+                || !"user".equals(message.get("role").getAsString())
+                || !message.has("content")
+                || !message.get("content").isJsonArray()) {
+            return false;
+        }
+        JsonArray content = message.getAsJsonArray("content");
+        if (content.size() == 0 || !content.get(0).isJsonObject()) {
+            return false;
+        }
+        JsonObject first = content.get(0).getAsJsonObject();
+        return first.has("text") && first.get("text").isJsonPrimitive()
+                && first.get("text").getAsString()
+                        .startsWith(PREVIEW_INSPECTION_PREFIX);
+    }
+
+    /** True when the provider rejected multimodal {@code image_url} input. */
+    public static boolean isVisionUnsupported(AiError error) {
+        if (error == null || error.message == null) {
+            return false;
+        }
+        String m = error.message.toLowerCase(java.util.Locale.ROOT);
+        boolean mentionsVision = m.contains("image")
+                || m.contains("vision")
+                || m.contains("multimodal")
+                || m.contains("image_url")
+                || m.contains("modality");
+        boolean mentionsRejection = error.kind == ErrorKind.UNSUPPORTED
+                || m.contains("not support")
+                || m.contains("unsupported")
+                || m.contains("no endpoints")
+                || m.contains("only supported")
+                || m.contains("cannot")
+                || m.contains("invalid content")
+                || m.contains("expected string");
+        return mentionsVision && mentionsRejection;
+    }
+
     /** Turns an HTTP failure into the kind the UI should act on. */
     static AiError classify(int httpCode, String body) {
         String message = extractMessage(body);
@@ -583,12 +749,25 @@ public class AiChatService {
         }
         ErrorKind kind;
         String lowered = message.toLowerCase(java.util.Locale.ROOT);
+        boolean visionUnsupported = (lowered.contains("image")
+                || lowered.contains("vision")
+                || lowered.contains("multimodal")
+                || lowered.contains("image_url")
+                || lowered.contains("modality"))
+                && (lowered.contains("not support")
+                        || lowered.contains("unsupported")
+                        || lowered.contains("no endpoints")
+                        || lowered.contains("only supported")
+                        || lowered.contains("invalid content")
+                        || lowered.contains("expected string"));
         if (httpCode == 401 || httpCode == 403) {
             kind = ErrorKind.AUTH;
         } else if (httpCode == 402 || httpCode == 429
                 || lowered.contains("quota") || lowered.contains("insufficient")
                 || lowered.contains("resource_exhausted") || lowered.contains("rate limit")) {
             kind = ErrorKind.QUOTA;
+        } else if (visionUnsupported) {
+            kind = ErrorKind.UNSUPPORTED;
         } else if (httpCode == 404 || lowered.contains("no longer available")
                 || (lowered.contains("not found") && lowered.contains("model"))) {
             kind = ErrorKind.MODEL_GONE;

@@ -206,6 +206,39 @@ public class AgentLoop {
             + "download_maven_library (group:artifact:version) to "
             + "download, dex, and enable external Maven/AndroidX "
             + "libraries on the device."
+            + "\n\nVISUALS, SCREENSHOT-TO-SCREEN, ICONS, DRAWABLES & "
+            + "PREVIEW: the user can attach screenshots, UI mockups, "
+            + "wireframes, or logos in chat (shown with [Attached chat "
+            + "image N: id=\"att_...\"]). When the user attaches a "
+            + "screenshot or mockup to recreate as a screen or app, do "
+            + "NOT ask generic style-quiz questions unless they asked "
+            + "for variations — the screenshot IS the visual direction: "
+            + "inspect its exact background/surface/accent/text hex "
+            + "colours, typography scale, spacing, radii, icons, and "
+            + "layout hierarchy, then save them directly with "
+            + "set_style_brief, set_design_system, and set_plan before "
+            + "creating screens. Use search_builtin_icons and "
+            + "import_builtin_icon to search and import crisp tinted "
+            + "Material icons from Sketchware Pro's built-in 2,000+ "
+            + "icon pack (styles: round, outline, baseline, sharp, "
+            + "twotone; batch multiple icons in one call). Use "
+            + "manage_drawable to create custom Android XML drawables "
+            + "(<shape>, <vector>, <ripple>, <selector>, <layer-list>) "
+            + "for pill buttons, gradients, custom strokes, or custom "
+            + "vector paths, then apply them via set_image or "
+            + "set_background_image. Use import_chat_image to add an "
+            + "attached chat image (by attachment_id) into Project "
+            + "Image Manager for ImageViews, and use set_app_icon to "
+            + "generate standard + Android Adaptive Launcher Icons "
+            + "across all mipmap densities from an attached image, a "
+            + "built-in Material icon, or monogram initials. After "
+            + "building or significantly editing a complex screen (and "
+            + "always when recreating a screenshot), call preview_screen "
+            + "to render it offscreen with Sketchware's real ViewPane, "
+            + "check measured dp bounds and any 0dp/clipping warnings, "
+            + "visually compare the rendered preview against the "
+            + "reference design, and fix any layout defects before "
+            + "finishing."
             + "\n\nKEEPING DATA (so it is still there after the app "
             + "closes): add ONE shared_preferences component to the "
             + "screen with create_component — it is named file1, file2 "
@@ -381,9 +414,17 @@ public class AgentLoop {
         // from the user's message and closed wherever the turn ends,
         // so an interrupted task is paused — never silently lost.
         String lastUserText = "";
+        ChatMessage lastUserMessage = null;
         for (int i = history.size() - 1; i >= 0; i--) {
             if (history.get(i).role == ChatMessage.Role.USER) {
-                lastUserText = history.get(i).text;
+                lastUserMessage = history.get(i);
+                lastUserText = lastUserMessage.text == null
+                        ? "" : lastUserMessage.text.trim();
+                if (lastUserText.isEmpty()
+                        && lastUserMessage.hasAttachments()) {
+                    lastUserText = "Attached image ("
+                            + lastUserMessage.attachments.size() + ")";
+                }
                 break;
             }
         }
@@ -401,14 +442,33 @@ public class AgentLoop {
                     ? "" : baseUrl);
             asked.addProperty("history_messages", history.size());
             asked.addProperty("allow_modify", allowModify);
+            int attachmentCount = lastUserMessage == null
+                    ? 0 : lastUserMessage.attachments.size();
+            asked.addProperty("attachment_count", attachmentCount);
+            if (attachmentCount > 0) {
+                JsonArray attSummary = new JsonArray();
+                for (ChatMessage.Attachment att
+                        : lastUserMessage.attachments) {
+                    JsonObject one = new JsonObject();
+                    one.addProperty("id", att.id);
+                    one.addProperty("mime", att.mimeType);
+                    one.addProperty("width", att.width);
+                    one.addProperty("height", att.height);
+                    one.addProperty("bytes", att.bytes);
+                    attSummary.add(one);
+                }
+                asked.add("attachments", attSummary);
+            }
             AgentJournal.record(workingProjectId, "user_message", asked);
         }
         final long turnStartedAt = System.currentTimeMillis();
         final String[] journalProject = {workingProjectId};
         final boolean[] taskClosed = {false};
+        final boolean[] previewVisionDisabled = {false};
         List<JsonObject> messages = new ArrayList<>();
         messages.add(systemMessage(workingProjectId));
         int kept = 0;
+        int imageTurnsRemaining = 3;
         for (int i = history.size() - 1; i >= 0 && kept < 40; i--) {
             ChatMessage message = history.get(i);
             if (message.state == ChatMessage.State.STREAMING
@@ -416,14 +476,26 @@ public class AgentLoop {
                     || message.role == ChatMessage.Role.APPROVAL) {
                 continue;
             }
-            if (message.role == ChatMessage.Role.ASSISTANT
-                    && message.text.trim().isEmpty()) {
+            boolean hasText = message.text != null
+                    && !message.text.trim().isEmpty();
+            boolean hasImages = message.role == ChatMessage.Role.USER
+                    && message.hasAttachments();
+            if (!hasText && !hasImages) {
                 continue;
             }
             JsonObject entry = new JsonObject();
             entry.addProperty("role",
                     message.role == ChatMessage.Role.USER ? "user" : "assistant");
-            entry.addProperty("content", message.text);
+            if (hasImages) {
+                boolean inlineBytes = imageTurnsRemaining > 0;
+                if (inlineBytes) {
+                    imageTurnsRemaining--;
+                }
+                entry.add("content",
+                        AiChatService.buildUserContent(message, inlineBytes));
+            } else {
+                entry.addProperty("content", message.text);
+            }
             messages.add(1, entry);
             kept++;
         }
@@ -447,6 +519,12 @@ public class AgentLoop {
                             messages, AgentTools.definitions());
                     break;
                 } catch (AiChatService.AgentRequestException e) {
+                    if (!cancelled && !previewVisionDisabled[0]
+                            && AiChatService.isVisionUnsupported(e.error)
+                            && removePreviewInspectionMessages(messages)) {
+                        previewVisionDisabled[0] = true;
+                        continue;
+                    }
                     int code = e.error.httpCode;
                     boolean transientFailure = !cancelled && attempt < 2
                             && (e.error.kind
@@ -562,6 +640,8 @@ public class AgentLoop {
             if (reply.rawMessage != null) {
                 messages.add(reply.rawMessage);
             }
+            String pendingPreviewScreen = "";
+            String pendingPreviewPath = "";
             for (AiChatService.ToolCallData call : reply.toolCalls) {
                 if (cancelled) {
                     closeTask(journalProject[0], false, "you stopped it",
@@ -745,11 +825,28 @@ public class AgentLoop {
                     lastFailedCall = "";
                     sameFailure = 0;
                 }
+                if (result.has("_attach_preview_image")) {
+                    pendingPreviewPath = result.get("_attach_preview_image")
+                            .getAsString();
+                    result.remove("_attach_preview_image");
+                    pendingPreviewScreen = result.has("screen")
+                            ? result.get("screen").getAsString() : "screen";
+                }
                 JsonObject toolMessage = new JsonObject();
                 toolMessage.addProperty("role", "tool");
                 toolMessage.addProperty("tool_call_id", call.id);
                 toolMessage.addProperty("content", result.toString());
                 messages.add(toolMessage);
+            }
+            if (!pendingPreviewPath.isEmpty() && !previewVisionDisabled[0]
+                    && !rollover[0]) {
+                JsonObject previewTurn =
+                        AiChatService.buildPreviewInspectionMessage(
+                                pendingPreviewScreen, pendingPreviewPath);
+                if (previewTurn != null) {
+                    removePreviewInspectionMessages(messages);
+                    messages.add(previewTurn);
+                }
             }
             if (rollover[0]) {
                 // The seam between two parts of the same task: the
@@ -769,6 +866,12 @@ public class AgentLoop {
         // The loop only falls through here when the turn was stopped.
         closeTask(journalProject[0], false, "you stopped it", taskClosed,
                 listener);
+    }
+
+    /** Removes any transient preview-screen vision messages, returning true if at least one was removed. */
+    private static boolean removePreviewInspectionMessages(
+            List<JsonObject> messages) {
+        return messages.removeIf(AiChatService::isPreviewInspectionMessage);
     }
 
     /** Closes the open task in the project journal, once per turn. */

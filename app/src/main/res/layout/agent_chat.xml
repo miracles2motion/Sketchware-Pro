@@ -256,6 +256,25 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
+                <HorizontalScrollView
+                    android:id="@+id/attachment_strip_scroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none"
+                    android:visibility="gone"
+                    tools:visibility="visible">
+
+                    <LinearLayout
+                        android:id="@+id/attachment_strip"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="14dp"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="2dp" />
+                </HorizontalScrollView>
+
                 <EditText
                     android:id="@+id/chat_input"
                     android:layout_width="match_parent"
@@ -278,55 +297,75 @@
                     android:layout_height="wrap_content"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
-                    android:paddingStart="8dp"
+                    android:paddingStart="6dp"
                     android:paddingEnd="8dp"
                     android:paddingBottom="6dp">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/style_button"
-                        style="@style/Widget.Material3.Button.TextButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="40dp"
-                        android:text="@string/agent_style_button"
-                        app:icon="@drawable/ic_mtrl_palette"
-                        app:iconPadding="4dp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/design_system_button"
-                        style="@style/Widget.Material3.Button.TextButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="40dp"
-                        android:text="@string/agent_design_system_button"
-                        app:iconPadding="4dp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/plan_button"
-                        style="@style/Widget.Material3.Button.TextButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="40dp"
-                        android:text="@string/agent_plan_button"
-                        app:icon="@drawable/ic_mtrl_checklist"
-                        app:iconPadding="4dp" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/task_log_button"
-                        style="@style/Widget.Material3.Button.TextButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="40dp"
-                        android:text="@string/agent_task_log_button"
-                        app:icon="@drawable/ic_mtrl_history"
-                        app:iconPadding="4dp" />
-
-                    <View
+                    <HorizontalScrollView
                         android:layout_width="0dp"
-                        android:layout_height="1dp"
-                        android:layout_weight="1" />
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:fadingEdgeLength="12dp"
+                        android:requiresFadingEdge="horizontal"
+                        android:scrollbars="none">
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/attach_button"
+                                style="@style/Widget.Material3.Button.IconButton"
+                                android:layout_width="40dp"
+                                android:layout_height="40dp"
+                                android:contentDescription="@string/agent_action_attach_image"
+                                app:icon="@drawable/ic_mtrl_image" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/style_button"
+                                style="@style/Widget.Material3.Button.TextButton"
+                                android:layout_width="wrap_content"
+                                android:layout_height="40dp"
+                                android:text="@string/agent_style_button"
+                                app:icon="@drawable/ic_mtrl_palette"
+                                app:iconPadding="4dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/design_system_button"
+                                style="@style/Widget.Material3.Button.TextButton"
+                                android:layout_width="wrap_content"
+                                android:layout_height="40dp"
+                                android:text="@string/agent_design_system_button"
+                                app:iconPadding="4dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/plan_button"
+                                style="@style/Widget.Material3.Button.TextButton"
+                                android:layout_width="wrap_content"
+                                android:layout_height="40dp"
+                                android:text="@string/agent_plan_button"
+                                app:icon="@drawable/ic_mtrl_checklist"
+                                app:iconPadding="4dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/task_log_button"
+                                style="@style/Widget.Material3.Button.TextButton"
+                                android:layout_width="wrap_content"
+                                android:layout_height="40dp"
+                                android:text="@string/agent_task_log_button"
+                                app:icon="@drawable/ic_mtrl_history"
+                                app:iconPadding="4dp" />
+                        </LinearLayout>
+                    </HorizontalScrollView>
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/send_button"
                         style="@style/Widget.Material3.Button.IconButton.Filled"
                         android:layout_width="44dp"
                         android:layout_height="44dp"
+                        android:layout_marginStart="4dp"
                         android:contentDescription="@string/agent_action_send"
                         android:enabled="false"
                         app:icon="@drawable/agent_ic_send" />

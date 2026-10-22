@@ -259,6 +259,11 @@ public final class SketchwareProjects {
         } catch (Exception ignored) {
             // Unreadable resources read as "none".
         }
+        try {
+            resources.customDrawables.addAll(
+                    AgentAssets.listCustomDrawables(scId));
+        } catch (Exception ignored) {
+        }
         return resources;
     }
 
@@ -332,9 +337,10 @@ public final class SketchwareProjects {
         return lines;
     }
 
-    /** A project's image, sound and font names. */
+    /** A project's image, custom XML drawable, sound and font names. */
     public static final class Resources {
         public final List<String> images = new ArrayList<>();
+        public final List<String> customDrawables = new ArrayList<>();
         public final List<String> sounds = new ArrayList<>();
         public final List<String> fonts = new ArrayList<>();
     }

@@ -631,7 +631,8 @@ public class ViewPane extends RelativeLayout {
                             }
                         } else {
                             VectorDrawableLoader vectorDrawableLoader = new VectorDrawableLoader();
-                            vectorDrawableLoader.setImageVectorFromFile((ImageView) view, vectorDrawableLoader.getVectorFullPath(DesignActivity.sc_id, viewBean.image.resName));
+                            String vectorScId = this.sc_id != null && !this.sc_id.isEmpty() ? this.sc_id : DesignActivity.sc_id;
+                            vectorDrawableLoader.setImageVectorFromFile((ImageView) view, vectorDrawableLoader.getVectorFullPath(vectorScId, viewBean.image.resName));
                         }
                     } catch (Exception unused2) {
                         Log.w("ViewPane", "Failed to load image: " + viewBean.image.resName, unused2);

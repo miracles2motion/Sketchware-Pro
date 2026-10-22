@@ -2,12 +2,19 @@ package pro.sketchware.ai;
 
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.drawable.GradientDrawable;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
+
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -189,10 +196,89 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
 
         @Override
         void bind(ChatMessage message) {
-            binding.messageText.setText(message.text);
+            boolean hasText = message.text != null
+                    && !message.text.trim().isEmpty();
+            binding.messageText.setText(hasText ? message.text : "");
+            binding.messageText.setVisibility(
+                    hasText ? View.VISIBLE : View.GONE);
+
+            binding.messageImages.removeAllViews();
+            if (message.hasAttachments()) {
+                Context ctx = itemView.getContext();
+                float density = ctx.getResources().getDisplayMetrics().density;
+                int padH = Math.round(8f * density);
+                int padTop = Math.round(8f * density);
+                int padBot = hasText
+                        ? Math.round(2f * density)
+                        : Math.round(8f * density);
+                binding.messageImages.setPadding(padH, padTop, padH, padBot);
+                boolean single = message.attachments.size() == 1;
+                int cardW = Math.round((single ? 176f : 112f) * density);
+                int cardH = Math.round((single ? 176f : 112f) * density);
+                int gap = Math.round(6f * density);
+                float radius = 12f * density;
+                int idx = 0;
+                for (ChatMessage.Attachment att : message.attachments) {
+                    if (att == null || att.path == null
+                            || att.path.isEmpty()) {
+                        continue;
+                    }
+                    ImageView iv = new ImageView(ctx);
+                    LinearLayout.LayoutParams lp =
+                            new LinearLayout.LayoutParams(cardW, cardH);
+                    if (idx > 0) {
+                        lp.leftMargin = gap;
+                    }
+                    iv.setLayoutParams(lp);
+                    iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                    GradientDrawable clipShape = new GradientDrawable();
+                    clipShape.setCornerRadius(radius);
+                    clipShape.setColor(0x22000000);
+                    iv.setBackground(clipShape);
+                    iv.setClipToOutline(true);
+                    Bitmap thumb = AgentMedia.decodeThumbnail(
+                            att.path, Math.round(220f * density));
+                    if (thumb != null) {
+                        iv.setImageBitmap(thumb);
+                    } else {
+                        iv.setImageResource(R.drawable.ic_mtrl_image);
+                    }
+                    final String previewPath = att.path;
+                    iv.setOnClickListener(
+                            v -> showImagePreview(v.getContext(), previewPath));
+                    binding.messageImages.addView(iv);
+                    idx++;
+                }
+                binding.messageImagesScroll.setVisibility(
+                        idx > 0 ? View.VISIBLE : View.GONE);
+            } else {
+                binding.messageImagesScroll.setVisibility(View.GONE);
+            }
+
             if (owner != null) {
                 owner.attachClicks(this, itemView, binding.messageText);
             }
+        }
+
+        private static void showImagePreview(Context context, String path) {
+            if (context == null || path == null || path.isEmpty()) {
+                return;
+            }
+            Bitmap full = AgentMedia.decodeThumbnail(path, 1280);
+            if (full == null) {
+                return;
+            }
+            ImageView preview = new ImageView(context);
+            int pad = Math.round(
+                    12f * context.getResources().getDisplayMetrics().density);
+            preview.setPadding(pad, pad, pad, pad);
+            preview.setAdjustViewBounds(true);
+            preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            preview.setImageBitmap(full);
+            new MaterialAlertDialogBuilder(context)
+                    .setView(preview)
+                    .setPositiveButton(R.string.agent_action_close, null)
+                    .show();
         }
     }
 

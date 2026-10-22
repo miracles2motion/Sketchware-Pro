@@ -1938,6 +1938,22 @@ logs exposed the rest of the same class:
    - `list_local_libraries` & `manage_local_libraries`: inspects and toggles downloaded local libraries (`.sketchware/data/<sc_id>/local_library`) and Excluded Built-in Libraries (`.sketchware/data/<sc_id>/excluded_library`).
    - `download_maven_library`: downloads, unzips, D8-dexes, and enables external `group:artifact:version` Maven dependencies via Sketchware Pro's `DependencyResolver`.
 
+## Wave 38 / Phase 2 — Multimodal Vision, Screenshot-to-Screen, Icons, Drawables, Adaptive App Icons & Offscreen `ViewPane` Preview
+
+1. **Multimodal Vision Chat & Image Attachments (`AgentMedia`, `ChatMessage`, `AgentChatLog`, `ChatAdapter`, `AgentFragment`, `AiChatService`, `AgentLoop`)**:
+   - Users can attach up to 4 images per message (`GetMultipleContents`, removable composer strip, image-only or text+image messages, inline bubble thumbnails with tap-to-zoom preview, persisted in `AgentChatLog` and exported as metadata in `AgentExport`).
+   - `AgentMedia` normalizes EXIF rotation, preserves PNG alpha (or stores opaque screenshots/photos as JPEG at max 1280px), and caches 1024px base64 `data:image/...` vision payloads (`LruCache`).
+   - `AiChatService` serializes standard OpenAI-compatible `content` arrays (`text` + `image_url`), classifies non-vision model rejections (`ErrorKind.UNSUPPORTED` + `isVisionUnsupported`) with a one-tap **Switch model** retry flow in `AgentFragment`, and keeps message objects strictly free of non-standard JSON fields.
+2. **Screenshot-to-Screen workflow & Phase 2 Asset Engine (`AgentAssets`, `AgentTools`, `AgentEdits`)**:
+   - Screenshot-driven recreations extract palette, typography, spacing, radii, and icons directly from the attached image (`AGENT_GUIDANCE` + `requireDesign` without redundant `ask_choice`).
+   - `search_builtin_icons` & `import_builtin_icon`: extracts and searches Sketchware Pro's built-in Material Icon Pack (`icons/icon_pack.zip`) across `round`, `outline`, `baseline`, `sharp`, and `twotone` styles and imports single or batch tinted `<vector>` XML drawables via `SvgUtils.convert` into `jC.d(scId)`, resetting `jC` cleanly around `commitProject`'s `h()` temp-dir cleanup.
+   - `import_chat_image`: saves any user-attached chat image (`attachment_id` or `"latest"`) into `jC.d(scId)` as a PNG drawable with read-back verification.
+   - `manage_drawable`: validates (`XmlPullParser` + auto `xmlns:android`), upserts, inspects (`list_resources.inspect_drawable`), and safely deletes custom XML drawables (`<shape>`, `<vector>`, `<ripple>`, `<selector>`, `<layer-list>`) in `files/resource/drawable/*.xml`; `AgentEdits` verifies drawable existence upfront on `set_image`, `set_background_image`, and `set_fab`.
+   - `set_app_icon`: generates standard legacy (`48..192px`), Android 8+ Adaptive (`108..432px` foreground + solid/gradient background), and Android 13+ Monochrome launcher icons across all 5 `mipmap-*` folders, `icon.png`, `files/app-icon/{app_icon.png,data.json}`, and `lC` metadata from a Material icon, chat image, or monogram, refreshing `AgentFragment`'s working-on card icon immediately.
+3. **Closed-loop Offscreen `ViewPane` Preview (`AgentPreview`, `ViewPane`, `preview_screen`)**:
+   - Fixed `ViewPane.java:634` (`this.sc_id` fallback before static `DesignActivity.sc_id`) and built `AgentPreview.renderScreen` to inflate deep-copied `ViewBean` trees offscreen on the main looper under `Theme.SketchwarePro.ProjectPreview`, synchronously hydrate SVG/vector/`<shape>`/`onCreate_initializeLogic` visual styling, save rendered PNGs to `.sketchware/ai/previews/`, report dp bounds + `0dp`/overflow/truncation warnings, and inject transient post-tool-batch vision turns in `AgentLoop` (with automatic fallback for text-only models).
+
+
 
 
 

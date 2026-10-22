@@ -8,15 +8,24 @@ import android.text.format.DateFormat;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.PopupMenu;
 import android.widget.Toast;
+import android.graphics.Bitmap;
 import android.graphics.Rect;
+import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.SystemClock;
 import android.os.Bundle;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.widget.BaseAdapter;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.view.View;
 import android.view.ViewGroup;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -24,19 +33,22 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.io.File;
-import java.util.ArrayList;import java.util.List;
-
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import a.a.a.lC;
 import a.a.a.qA;
+import a.a.a.wq;
+import a.a.a.yB;
 import pro.sketchware.R;
 import pro.sketchware.ai.AgentChatLog;
 import pro.sketchware.ai.AgentExport;
 import pro.sketchware.ai.AgentJournal;
 import pro.sketchware.ai.AgentKnowledgePack;
 import pro.sketchware.ai.AgentLoop;
+import pro.sketchware.ai.AgentMedia;
 import pro.sketchware.ai.AgentProposal;
 
 import java.util.concurrent.CountDownLatch;
@@ -105,6 +117,14 @@ public class AgentFragment extends qA {
     private String stripDismissedText = "";
     /** Current live step/tool label for the floating task strip. */
     private String liveStepLabel = "";
+    /** Images staged in the composer before the user taps Send. */
+    private final List<ChatMessage.Attachment> pendingAttachments =
+            new ArrayList<>();
+    private volatile boolean attachingImages;
+    private final ActivityResultLauncher<String> pickImagesLauncher =
+            registerForActivityResult(
+                    new ActivityResultContracts.GetMultipleContents(),
+                    this::onImagesPicked);
     /** The project whose stored conversation is on screen, if any. */
     private String chatProjectId = "";
     /**
@@ -166,10 +186,7 @@ public class AgentFragment extends qA {
         });
 
         binding.chatInput.addTextChangedListener(new SimpleTextWatcher(text -> {
-            boolean hasText = !text.trim().isEmpty();
-            binding.sendButton.setEnabled(hasText || generating);
-            binding.sendButton.setIconResource(
-                    generating ? R.drawable.ic_mtrl_close : R.drawable.agent_ic_send);
+            updateActionButton();
         }));
 
         binding.chooseModelButton.setOnClickListener(v -> openSettings());
@@ -180,6 +197,7 @@ public class AgentFragment extends qA {
         // was done in a project lives in its task log, in the box.)
         binding.historyButton.setOnClickListener(v -> showChatHistoryDialog());
         binding.exportButton.setOnClickListener(v -> exportConversation());
+        binding.attachButton.setOnClickListener(v -> pickAttachmentImages());
         binding.styleButton.setOnClickListener(v -> showStyleBriefDialog());
         binding.designSystemButton.setOnClickListener(
                 v -> showDesignSystemDialog());
@@ -371,21 +389,165 @@ public class AgentFragment extends qA {
         sendCurrentInput();
     }
 
+    private void pickAttachmentImages() {
+        if (generating || attachingImages) {
+            return;
+        }
+        if (pendingAttachments.size() >= AgentMedia.MAX_ATTACHMENTS_PER_MESSAGE) {
+            Toast.makeText(requireContext(), R.string.agent_attach_limit,
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            pickImagesLauncher.launch("image/*");
+        } catch (Exception e) {
+            Toast.makeText(requireContext(), R.string.agent_attach_failed,
+                    Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void onImagesPicked(List<Uri> uris) {
+        if (uris == null || uris.isEmpty() || getContext() == null) {
+            return;
+        }
+        int slots = AgentMedia.MAX_ATTACHMENTS_PER_MESSAGE
+                - pendingAttachments.size();
+        if (slots <= 0) {
+            Toast.makeText(requireContext(), R.string.agent_attach_limit,
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        boolean capped = uris.size() > slots;
+        List<Uri> toImport = new ArrayList<>(
+                uris.subList(0, Math.min(uris.size(), slots)));
+        Context appContext = requireContext().getApplicationContext();
+        attachingImages = true;
+        updateActionButton();
+        io.execute(() -> {
+            List<ChatMessage.Attachment> imported = new ArrayList<>();
+            boolean anyFailed = false;
+            for (Uri uri : toImport) {
+                try {
+                    imported.add(AgentMedia.saveAttachment(appContext, uri));
+                } catch (Exception e) {
+                    anyFailed = true;
+                }
+            }
+            boolean failedFinal = anyFailed;
+            runOnUi(() -> {
+                attachingImages = false;
+                pendingAttachments.addAll(imported);
+                refreshAttachmentStrip();
+                updateActionButton();
+                if (capped && getContext() != null) {
+                    Toast.makeText(requireContext(),
+                            R.string.agent_attach_limit,
+                            Toast.LENGTH_SHORT).show();
+                } else if (failedFinal && imported.isEmpty()
+                        && getContext() != null) {
+                    Toast.makeText(requireContext(),
+                            R.string.agent_attach_failed,
+                            Toast.LENGTH_SHORT).show();
+                }
+            });
+        });
+    }
+
+    private void refreshAttachmentStrip() {
+        if (binding == null || getContext() == null) {
+            return;
+        }
+        binding.attachmentStrip.removeAllViews();
+        if (pendingAttachments.isEmpty()) {
+            binding.attachmentStripScroll.setVisibility(View.GONE);
+            return;
+        }
+        binding.attachmentStripScroll.setVisibility(View.VISIBLE);
+        Context ctx = requireContext();
+        float density = ctx.getResources().getDisplayMetrics().density;
+        int box = Math.round(60f * density);
+        int badgeSize = Math.round(20f * density);
+        int gap = Math.round(8f * density);
+        float radius = 12f * density;
+        for (int i = 0; i < pendingAttachments.size(); i++) {
+            final ChatMessage.Attachment att = pendingAttachments.get(i);
+            FrameLayout cell = new FrameLayout(ctx);
+            LinearLayout.LayoutParams cellParams =
+                    new LinearLayout.LayoutParams(box, box);
+            if (i > 0) {
+                cellParams.leftMargin = gap;
+            }
+            cell.setLayoutParams(cellParams);
+
+            ImageView thumbView = new ImageView(ctx);
+            thumbView.setLayoutParams(new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+            thumbView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            GradientDrawable shape = new GradientDrawable();
+            shape.setCornerRadius(radius);
+            shape.setColor(0x22000000);
+            thumbView.setBackground(shape);
+            thumbView.setClipToOutline(true);
+            Bitmap bmp = AgentMedia.decodeThumbnail(
+                    att.path, Math.round(120f * density));
+            if (bmp != null) {
+                thumbView.setImageBitmap(bmp);
+            } else {
+                thumbView.setImageResource(R.drawable.ic_mtrl_image);
+            }
+            cell.addView(thumbView);
+
+            ImageView removeBtn = new ImageView(ctx);
+            FrameLayout.LayoutParams badgeParams =
+                    new FrameLayout.LayoutParams(
+                            badgeSize, badgeSize, Gravity.TOP | Gravity.END);
+            int margin = Math.round(3f * density);
+            badgeParams.setMargins(margin, margin, margin, margin);
+            removeBtn.setLayoutParams(badgeParams);
+            GradientDrawable badgeBg = new GradientDrawable();
+            badgeBg.setShape(GradientDrawable.OVAL);
+            badgeBg.setColor(0xBB000000);
+            removeBtn.setBackground(badgeBg);
+            int iconPad = Math.round(3f * density);
+            removeBtn.setPadding(iconPad, iconPad, iconPad, iconPad);
+            removeBtn.setImageResource(R.drawable.ic_mtrl_close);
+            removeBtn.setColorFilter(0xFFFFFFFF);
+            removeBtn.setOnClickListener(v -> {
+                pendingAttachments.remove(att);
+                refreshAttachmentStrip();
+                updateActionButton();
+            });
+            cell.addView(removeBtn);
+            binding.attachmentStrip.addView(cell);
+        }
+    }
+
     private void sendCurrentInput() {
         String text = binding.chatInput.getText() == null
                 ? "" : binding.chatInput.getText().toString().trim();
-        if (text.isEmpty()) {
+        if (text.isEmpty() && pendingAttachments.isEmpty()) {
             return;
         }
-        binding.chatInput.setText("");
 
         if (providerConfig == null || !providerConfig.isConfigured()) {
             appendMessage(ChatMessage.error(getString(R.string.agent_provider_missing)));
             return;
         }
 
-        appendMessage(ChatMessage.user(text));
-        lastUserText = text;
+        binding.chatInput.setText("");
+        ChatMessage userMsg = ChatMessage.user(text);
+        for (ChatMessage.Attachment att : pendingAttachments) {
+            userMsg.attachments.add(att.copy());
+        }
+        pendingAttachments.clear();
+        refreshAttachmentStrip();
+
+        appendMessage(userMsg);
+        persistChat();
+        lastUserText = !text.isEmpty()
+                ? text
+                : "Attached image (" + userMsg.attachments.size() + ")";
         ChatMessage reply = ChatMessage.assistant("");
         streamingMessage = reply;
         appendMessage(reply);
@@ -417,6 +579,11 @@ public class AgentFragment extends qA {
                 continue;
             }
             if (message.role == ChatMessage.Role.ASSISTANT && message.text.trim().isEmpty()) {
+                continue;
+            }
+            if (message.role == ChatMessage.Role.USER
+                    && message.text.trim().isEmpty()
+                    && !message.hasAttachments()) {
                 continue;
             }
             history.add(message);
@@ -515,6 +682,10 @@ public class AgentFragment extends qA {
                         runOnUi(() -> {
                             liveStepLabel = "";
                             resolveApprovalCard(proposal, result);
+                            if (proposal != null
+                                    && "set_app_icon".equals(proposal.tool)) {
+                                updateWorkingOnCard();
+                            }
                             refreshStrip();
                         });
                     }
@@ -619,12 +790,24 @@ public class AgentFragment extends qA {
         if (scId.isEmpty()) {
             binding.workingOnName.setText(R.string.agent_working_on_choose);
             binding.workingOnSubtitle.setText(R.string.agent_working_on_hint);
+            binding.workingOnIcon.setImageResource(R.drawable.sketch_app_icon);
             setCardCompact(false);
             refreshStrip();
             return;
         }
         io.execute(() -> {
             SketchwareProjects.ProjectInfo project = SketchwareProjects.project(scId);
+            Bitmap customIcon = null;
+            try {
+                java.util.HashMap<String, Object> meta = lC.b(scId);
+                if (meta != null && yB.a(meta, "custom_icon")) {
+                    String iconPath = wq.e() + File.separator + scId
+                            + File.separator + "icon.png";
+                    customIcon = AgentMedia.decodeThumbnail(iconPath, 128);
+                }
+            } catch (Exception ignored) {
+            }
+            final Bitmap resolvedIcon = customIcon;
             runOnUi(() -> {
                 if (binding == null) {
                     return;
@@ -632,11 +815,18 @@ public class AgentFragment extends qA {
                 if (project == null) {
                     binding.workingOnName.setText(R.string.agent_working_on_choose);
                     binding.workingOnSubtitle.setText(R.string.agent_working_on_hint);
+                    binding.workingOnIcon.setImageResource(R.drawable.sketch_app_icon);
                     setCardCompact(false);
                 } else {
                     binding.workingOnName.setText(project.name);
                     binding.workingOnSubtitle.setText(
                             project.appName + " · " + project.packageName);
+                    if (resolvedIcon != null) {
+                        binding.workingOnIcon.setImageBitmap(resolvedIcon);
+                    } else {
+                        binding.workingOnIcon.setImageResource(
+                                R.drawable.sketch_app_icon);
+                    }
                     // Chosen: the card settles into a compact chip so
                     // the chat gets the room.
                     setCardCompact(true);
@@ -2000,6 +2190,15 @@ public class AgentFragment extends qA {
             showQuotaDialog(error);
             return;
         }
+        if (AiChatService.isVisionUnsupported(error) && getContext() != null) {
+            new MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(R.string.agent_vision_title)
+                    .setMessage(R.string.agent_error_unsupported_vision)
+                    .setPositiveButton(R.string.agent_action_switch_model,
+                            (dialog, which) -> fetchModelsAndPick())
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+        }
         String note = explainError(error);
         // Retrying a dead connection must not stack the same note again.
         int lastIndex = messages.size() - 1;
@@ -2022,6 +2221,9 @@ public class AgentFragment extends qA {
             case EMPTY:
                 return getString(R.string.agent_error_empty);
             case UNSUPPORTED: {
+                if (AiChatService.isVisionUnsupported(error)) {
+                    return getString(R.string.agent_error_unsupported_vision);
+                }
                 String detail = error.message.toLowerCase(java.util.Locale.ROOT);
                 if (detail.contains("developer instruction")
                         || detail.contains("system instruction")) {
@@ -2533,7 +2735,12 @@ public class AgentFragment extends qA {
                 getString(generating ? R.string.agent_action_stop : R.string.agent_action_send));
         boolean hasText = binding.chatInput.getText() != null
                 && !binding.chatInput.getText().toString().trim().isEmpty();
-        binding.sendButton.setEnabled(hasText || generating);
+        boolean hasReadyInput = (hasText || !pendingAttachments.isEmpty())
+                && !attachingImages;
+        binding.sendButton.setEnabled(hasReadyInput || generating);
+        binding.attachButton.setEnabled(!generating && !attachingImages);
+        binding.attachButton.setAlpha(
+                (generating || attachingImages) ? 0.5f : 1.0f);
         // The working project is locked to a running turn: switching
         // it mid-flight would mix two projects' context and memory.
         binding.workingOnCard.setEnabled(!generating);

@@ -30,6 +30,12 @@ public final class AiPaths {
     /** Directory holding the knowledge pack. */
     public static final String KNOWLEDGE_DIR_NAME = "knowledge";
 
+    /** Directory holding user-attached chat images. */
+    public static final String ATTACHMENTS_DIR_NAME = "attachments";
+
+    /** Directory holding offscreen ViewPane preview renders. */
+    public static final String PREVIEWS_DIR_NAME = "previews";
+
     /** Root of the Agent Mode storage tree. */
     public static File agentRoot() {
         return ensureDir(new File(wq.getAbsolutePathOf(wq.q)));
@@ -43,6 +49,29 @@ public final class AiPaths {
     /** Directory holding the versioned knowledge pack. */
     public static File knowledgeDir() {
         return ensureDir(new File(agentRoot(), KNOWLEDGE_DIR_NAME));
+    }
+
+    /** Directory holding user-attached chat images (hidden from MediaStore). */
+    public static File attachmentsDir() {
+        return ensureHiddenDir(new File(agentRoot(), ATTACHMENTS_DIR_NAME));
+    }
+
+    /** Directory holding offscreen ViewPane preview PNGs (hidden from MediaStore). */
+    public static File previewsDir() {
+        return ensureHiddenDir(new File(agentRoot(), PREVIEWS_DIR_NAME));
+    }
+
+    private static File ensureHiddenDir(File dir) {
+        ensureDir(dir);
+        File noMedia = new File(dir, ".nomedia");
+        if (!noMedia.exists()) {
+            try {
+                //noinspection ResultOfMethodCallIgnored
+                noMedia.createNewFile();
+            } catch (Exception ignored) {
+            }
+        }
+        return dir;
     }
 
     private static File ensureDir(File dir) {

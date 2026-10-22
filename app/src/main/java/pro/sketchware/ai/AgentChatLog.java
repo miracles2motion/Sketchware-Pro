@@ -62,7 +62,8 @@ public final class AgentChatLog {
                     || message.approvalTitle.trim().isEmpty())) {
                 continue;
             }
-            if (!isCard
+            boolean hasImages = message.hasAttachments();
+            if (!isCard && !hasImages
                     && (message.text == null
                             || message.text.trim().isEmpty())) {
                 continue;
@@ -100,9 +101,34 @@ public final class AgentChatLog {
             entry.addProperty("role",
                     message.role == ChatMessage.Role.USER
                             ? "user" : "assistant");
-            entry.addProperty("text", message.text);
+            entry.addProperty("text",
+                    message.text == null ? "" : message.text);
             if (message.thinking != null && !message.thinking.isEmpty()) {
                 entry.addProperty("thinking", message.thinking);
+            }
+            if (message.timestamp > 0) {
+                entry.addProperty("timestamp", message.timestamp);
+            }
+            if (hasImages) {
+                JsonArray imgs = new JsonArray();
+                for (ChatMessage.Attachment att : message.attachments) {
+                    if (att == null || att.path == null
+                            || att.path.isEmpty()) {
+                        continue;
+                    }
+                    JsonObject obj = new JsonObject();
+                    obj.addProperty("id", att.id == null ? "" : att.id);
+                    obj.addProperty("path", att.path);
+                    obj.addProperty("mimeType",
+                            att.mimeType == null ? "image/jpeg" : att.mimeType);
+                    obj.addProperty("width", att.width);
+                    obj.addProperty("height", att.height);
+                    obj.addProperty("bytes", att.bytes);
+                    imgs.add(obj);
+                }
+                if (imgs.size() > 0) {
+                    entry.add("attachments", imgs);
+                }
             }
             stored.add(entry);
             while (stored.size() > MAX_MESSAGES) {
@@ -176,13 +202,60 @@ public final class AgentChatLog {
                 }
                 String text = entry.has("text")
                         ? entry.get("text").getAsString() : "";
-                if (text.trim().isEmpty()) {
+                List<ChatMessage.Attachment> loadedAttachments =
+                        new ArrayList<>();
+                if (entry.has("attachments")
+                        && entry.get("attachments").isJsonArray()) {
+                    for (JsonElement attEl
+                            : entry.getAsJsonArray("attachments")) {
+                        if (!attEl.isJsonObject()) {
+                            continue;
+                        }
+                        JsonObject attObj = attEl.getAsJsonObject();
+                        String path = attObj.has("path")
+                                ? attObj.get("path").getAsString() : "";
+                        if (path.isEmpty()) {
+                            continue;
+                        }
+                        ChatMessage.Attachment att =
+                                new ChatMessage.Attachment(
+                                        attObj.has("id")
+                                                ? attObj.get("id").getAsString()
+                                                : "",
+                                        path,
+                                        attObj.has("mimeType")
+                                                ? attObj.get("mimeType")
+                                                        .getAsString()
+                                                : "image/jpeg",
+                                        attObj.has("width")
+                                                ? attObj.get("width").getAsInt()
+                                                : 0,
+                                        attObj.has("height")
+                                                ? attObj.get("height")
+                                                        .getAsInt()
+                                                : 0,
+                                        attObj.has("bytes")
+                                                ? attObj.get("bytes")
+                                                        .getAsLong()
+                                                : 0L);
+                        loadedAttachments.add(att);
+                    }
+                }
+                if (text.trim().isEmpty() && loadedAttachments.isEmpty()) {
                     continue;
                 }
                 boolean user = "user".equals(role);
                 ChatMessage message = new ChatMessage(
                         user ? ChatMessage.Role.USER
                                 : ChatMessage.Role.ASSISTANT, text);
+                message.attachments.addAll(loadedAttachments);
+                if (entry.has("timestamp")) {
+                    try {
+                        message.timestamp =
+                                entry.get("timestamp").getAsLong();
+                    } catch (Exception ignored) {
+                    }
+                }
                 message.state = ChatMessage.State.COMPLETE;
                 if (entry.has("thinking")) {
                     message.thinking =

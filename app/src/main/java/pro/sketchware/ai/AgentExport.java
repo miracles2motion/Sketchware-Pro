@@ -115,6 +115,26 @@ public final class AgentExport {
             if (message.durationMs > 0) {
                 entry.addProperty("duration_ms", message.durationMs);
             }
+            if (message.hasAttachments()) {
+                JsonArray atts = new JsonArray();
+                for (ChatMessage.Attachment att : message.attachments) {
+                    if (att == null) {
+                        continue;
+                    }
+                    JsonObject ao = new JsonObject();
+                    ao.addProperty("id", att.id == null ? "" : att.id);
+                    ao.addProperty("path", att.path == null ? "" : att.path);
+                    ao.addProperty("mime_type",
+                            att.mimeType == null ? "" : att.mimeType);
+                    ao.addProperty("width", att.width);
+                    ao.addProperty("height", att.height);
+                    ao.addProperty("bytes", att.bytes);
+                    ao.addProperty("exists",
+                            att.path != null && new File(att.path).isFile());
+                    atts.add(ao);
+                }
+                entry.add("attachments", atts);
+            }
             if (message.role == ChatMessage.Role.APPROVAL) {
                 JsonObject approval = new JsonObject();
                 approval.addProperty("title", message.approvalTitle);
@@ -530,6 +550,17 @@ public final class AgentExport {
                         widget.addProperty("width", bean.layout.width);
                         widget.addProperty("height", bean.layout.height);
                         widget.addProperty("weight", bean.layout.weight);
+                        if (bean.layout.backgroundResource != null
+                                && !bean.layout.backgroundResource.isEmpty()) {
+                            widget.addProperty("background_resource",
+                                    bean.layout.backgroundResource);
+                        }
+                    }
+                    if (bean.image != null
+                            && bean.image.resName != null
+                            && !bean.image.resName.isEmpty()
+                            && !"default_image".equals(bean.image.resName)) {
+                        widget.addProperty("image", bean.image.resName);
                     }
                     widgets.add(widget);
                 }
@@ -546,6 +577,32 @@ public final class AgentExport {
             // A snapshot is an aid; a damaged project still exports.
         }
         state.add("screens", screens);
+        try {
+            SketchwareProjects.Resources res =
+                    SketchwareProjects.resources(scId);
+            JsonArray imgs = new JsonArray();
+            for (String img : res.images) {
+                imgs.add(img);
+            }
+            state.add("images", imgs);
+            JsonArray customDrawables = new JsonArray();
+            for (String name : AgentAssets.listCustomDrawables(scId)) {
+                customDrawables.add(name);
+            }
+            state.add("custom_drawables", customDrawables);
+            java.util.HashMap<String, Object> meta = a.a.a.lC.b(scId);
+            JsonObject iconInfo = new JsonObject();
+            iconInfo.addProperty("custom_icon",
+                    meta != null && a.a.a.yB.a(meta, "custom_icon"));
+            iconInfo.addProperty("is_icon_adaptive",
+                    meta != null && a.a.a.yB.a(meta, "isIconAdaptive"));
+            File iconFile = new File(a.a.a.wq.e() + File.separator + scId
+                    + File.separator + "icon.png");
+            iconInfo.addProperty("icon_exists",
+                    iconFile.isFile() && iconFile.length() > 0);
+            state.add("app_icon", iconInfo);
+        } catch (Exception ignored) {
+        }
         JsonArray broken = new JsonArray();
         try {
             for (String finding

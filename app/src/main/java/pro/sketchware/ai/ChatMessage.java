@@ -1,5 +1,8 @@
 package pro.sketchware.ai;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * One message in the agent chat.
  *
@@ -7,6 +10,34 @@ package pro.sketchware.ai;
  * with Gson.
  */
 public class ChatMessage {
+
+    /** One image attached to a chat message, stored under {@link AiPaths#attachmentsDir()}. */
+    public static final class Attachment {
+        public String id = "";
+        public String path = "";
+        public String mimeType = "image/jpeg";
+        public int width;
+        public int height;
+        public long bytes;
+
+        public Attachment() {
+        }
+
+        public Attachment(String id, String path, String mimeType,
+                          int width, int height, long bytes) {
+            this.id = id == null ? "" : id;
+            this.path = path == null ? "" : path;
+            this.mimeType = (mimeType == null || mimeType.isEmpty())
+                    ? "image/jpeg" : mimeType;
+            this.width = width;
+            this.height = height;
+            this.bytes = bytes;
+        }
+
+        public Attachment copy() {
+            return new Attachment(id, path, mimeType, width, height, bytes);
+        }
+    }
 
     /** Who produced the message. */
     public enum Role {
@@ -44,6 +75,8 @@ public class ChatMessage {
 
     public Role role = Role.USER;
     public String text = "";
+    /** Optional images attached to this message (user screenshots, mockups, logos). */
+    public final List<Attachment> attachments = new ArrayList<>();
     /** Reasoning the model showed before answering ("" = it did not). */
     public String thinking = "";
     /** Whether the thinking block is expanded in the transcript. */
@@ -90,6 +123,10 @@ public class ChatMessage {
 
     public boolean isFromUser() {
         return role == Role.USER;
+    }
+
+    public boolean hasAttachments() {
+        return !attachments.isEmpty();
     }
 
     /** True for a message the app itself wrote, not the model. */

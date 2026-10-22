@@ -385,12 +385,14 @@ public final class AgentEdits {
                                         + " is a " + typeName(bean.type)
                                         + ".");
                     }
-                    String image = stringOf(op, "image");
+                    String image = stripDrawablePrefix(stringOf(op, "image"));
                     if (!ID_PATTERN.matcher(image).matches()) {
                         throw new AgentTools.ToolException("E_BAD_VALUE",
                                 "An image name uses letters, numbers and "
                                         + "underscores, like my_photo.");
                     }
+                    requireDrawableExists(scId, image, bean.id, frozen);
+                    op.addProperty("image", image);
                     bean.image.resName = image;
                     lines.add("Set " + bean.id + " image to " + image);
                 }
@@ -424,15 +426,23 @@ public final class AgentEdits {
                     // layout.backgroundResource, the property editor's
                     // background-image field.
                     ViewBean bean = requireWidget(op, byId);
-                    String image = stringOf(op, "image");
-                    if (!ID_PATTERN.matcher(image).matches()) {
-                        throw new AgentTools.ToolException("E_BAD_VALUE",
-                                "An image name uses letters, numbers and "
-                                        + "underscores, like my_photo.");
+                    String image = stripDrawablePrefix(stringOf(op, "image"));
+                    if (image.isEmpty() || "none".equalsIgnoreCase(image)) {
+                        bean.layout.backgroundResource = null;
+                        op.addProperty("image", "none");
+                        lines.add("Clear " + bean.id + " background image");
+                    } else {
+                        if (!ID_PATTERN.matcher(image).matches()) {
+                            throw new AgentTools.ToolException("E_BAD_VALUE",
+                                    "An image name uses letters, numbers and "
+                                            + "underscores, like my_photo.");
+                        }
+                        requireDrawableExists(scId, image, bean.id, frozen);
+                        op.addProperty("image", image);
+                        bean.layout.backgroundResource = image;
+                        lines.add("Set " + bean.id + " background image to "
+                                + image);
                     }
-                    bean.layout.backgroundResource = image;
-                    lines.add("Set " + bean.id + " background image to "
-                            + image);
                 }
                 case "set_checked" -> {
                     ViewBean bean = requireWidget(op, byId);
@@ -711,13 +721,16 @@ public final class AgentEdits {
                     // path writes them to that bean.
                     boolean changed = false;
                     if (op.has("icon")) {
-                        String icon = stringOf(op, "icon");
+                        String icon = stripDrawablePrefix(stringOf(op, "icon"));
                         if (!ID_PATTERN.matcher(icon).matches()) {
                             throw new AgentTools.ToolException("E_BAD_VALUE",
                                     "An icon name uses letters, numbers "
                                             + "and underscores, like "
                                             + "ic_add.");
                         }
+                        requireDrawableExists(
+                                scId, icon, "the floating button", frozen);
+                        op.addProperty("icon", icon);
                         lines.add("Set the floating button's icon to "
                                 + icon);
                         changed = true;
@@ -2679,6 +2692,49 @@ public final class AgentEdits {
         } catch (Exception e) {
             return fallback;
         }
+    }
+
+    private static String stripDrawablePrefix(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String s = raw.trim();
+        if (s.startsWith("@drawable/")) {
+            s = s.substring("@drawable/".length()).trim();
+        }
+        if (s.endsWith(".png") || s.endsWith(".xml") || s.endsWith(".svg")) {
+            s = s.substring(0, s.length() - 4);
+        }
+        return s;
+    }
+
+    private static void requireDrawableExists(String scId,
+                                              String image,
+                                              String targetDesc,
+                                              boolean frozen)
+            throws AgentTools.ToolException {
+        if (frozen || scId == null || scId.isEmpty()) {
+            return;
+        }
+        if ("default_image".equals(image)
+                || "app_icon".equals(image)
+                || "ic_add_white".equals(image)) {
+            return;
+        }
+        SketchwareProjects.Resources res =
+                SketchwareProjects.resources(scId);
+        if (res.images.contains(image)
+                || res.customDrawables.contains(image)) {
+            return;
+        }
+        throw new AgentTools.ToolException("E_MISSING_DRAWABLE",
+                "Drawable \"" + image + "\" does not exist in this project "
+                        + "yet, so it cannot be set on " + targetDesc
+                        + ". Import or create it first with "
+                        + "import_builtin_icon (Material icon), "
+                        + "import_chat_image (user-attached photo/logo), "
+                        + "or manage_drawable (custom XML shape/ripple/"
+                        + "vector), then call edit_screen.");
     }
 
     private static String shorten(String text) {

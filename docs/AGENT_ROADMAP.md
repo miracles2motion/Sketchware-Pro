@@ -22,8 +22,8 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 |---|---|---|
 | Library Manager (AppCompat, Material 3, Firebase, AdMob, Google Maps, Local Libs, Maven downloader, Excluded Built-in Libs) | `ManageLibraryActivity`, `ManageCompatActivity`, `Material3LibraryManager`, `FirebaseActivity`, `AdmobActivity`, `ManageGoogleMapActivity`, `ManageLocalLibrary`, `DependencyResolver.kt`, `ExcludeBuiltInLibrariesActivity` | **Phase 1 (DONE)** |
 | Permission Manager + auto-prerequisite checks | `ManagePermissionActivity`, `ListPermission`, `FileResConfig` | **Phase 1 (DONE)** |
-| Multimodal Vision Chat + Screenshot-to-Screen + Chat-Image-to-Asset + Offscreen `ViewPane` Preview | `AgentFragment`, `AiChatService`, `ChatMessage`, `LayoutPreviewActivity`, `ViewPane`, `ViewBeanParser` | Phase 2 |
-| Image Manager, Built-in Icon Pack, Vector/Shape Icon Creator & Adaptive Launcher Icons | `ManageImageActivity`, `ImportIconActivity`, `IconCreatorActivity`, `jC.d(scId)` | Phase 2 |
+| Multimodal Vision Chat + Screenshot-to-Screen + Chat-Image-to-Asset + Offscreen `ViewPane` Preview | `AgentFragment`, `AiChatService`, `ChatMessage`, `AgentMedia`, `AgentPreview`, `LayoutPreviewActivity`, `ViewPane` | **Phase 2 (DONE)** |
+| Image Manager, Built-in Icon Pack, Vector/Shape Icon Creator & Adaptive Launcher Icons | `AgentAssets`, `ManageImageActivity`, `ImportIconActivity`, `IconCreatorActivity`, `jC.d(scId)` | **Phase 2 (DONE)** |
 | View Manager: Fragments, DialogFragments, BottomSheetFragments, Drawer Layouts (`_drawer_*`), Root Layout Injection, Raw XML Import, `remove_component`, `delete_custom_view` | `ManageViewActivity`, `AddViewActivity`, `InjectRootLayoutManager`, `ViewBeanParser`, `eC` | Phase 3 |
 | Resource Editor (`strings.xml`, `colors.xml`, `styles.xml`, `arrays.xml`) & Raw Resource Manager (`res/drawable`, `menu`, `anim`, `xml`, `values-night`) | `ResourcesEditorActivity`, `StringsEditorManager`, `ColorsEditorManager`, `StylesEditorManager`, `ArraysEditorManager`, `ManageResourceActivity` | Phase 4 |
 | Font Manager (`assets/fonts`) & Sound Manager (`res/raw`) | `ManageFontActivity`, `ManageSoundActivity`, `jC.d(scId)` | Phase 4 |
@@ -49,19 +49,21 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 ---
 
-### Phase 2 — Multimodal Vision (Screenshot-to-Screen), Icons, Drawables & Visual Self-Check
+### Phase 2 — Multimodal Vision (Screenshot-to-Screen), Icons, Drawables & Visual Self-Check (DONE)
 **Goal:** Let the user send a screenshot, UI mockup, sketch, or logo in chat and have the agent recreate the screen/view or import the visual asset faithfully.
-1. **Image Attachments in Agent Chat (`AgentFragment` + `ChatAdapter` + `AiChatService`):**
-   - Attach button beside the chat input supporting 1–4 images (gallery picker / screenshot), thumbnail strip before send, inline image display in chat bubbles, persistence in `AgentChatLog`, and metadata in `AgentExport`.
-   - OpenAI-compatible multimodal `content` array in `AiChatService` (`{"type":"text",...}` + `{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,..."}}`), resized cleanly on-device (max 1280px) so Gemini, OpenRouter vision models, NVIDIA vision models, and OpenAI-compatible vision endpoints accept it reliably.
-   - Graceful model check: if the active model rejects image input, return a plain human message offering to switch to a vision-capable model instead of a raw HTTP error.
+1. **Image Attachments in Agent Chat (`AgentFragment` + `ChatAdapter` + `AgentMedia` + `AiChatService`):**
+   - Attach button (`@drawable/ic_mtrl_image`) beside the chat input supporting 1–4 images (`GetMultipleContents`), removable composer thumbnail strip before send, rounded inline thumbnails with tap-to-zoom preview in chat bubbles, persistence in `AgentChatLog`, and full attachment metadata in `AgentExport`.
+   - OpenAI-compatible multimodal `content` array in `AiChatService` (`{"type":"text",...}` + `{"type":"image_url","image_url":{"url":"data:image/...;base64,..."}}`), EXIF-oriented and resized cleanly on-device (`AgentMedia`, max 1280px stored / 1024px vision).
+   - Graceful model check: `AiChatService.isVisionUnsupported` surfaces a plain dialog with **Switch model** (`fetchModelsAndPick()` -> `retryFailedTurn()`), and `preview_screen` automatically strips transient preview images and retries if the active model is text-only.
 2. **Screenshot-to-Screen & Mockup-to-CustomView Workflow:**
-   - Guided visual decomposition: extract color palette, typography scale, spacing/radii, icons, and container hierarchy from the user's screenshot -> propose matching Design System tokens, vector/shape drawables, and `ViewBean` trees (`edit_screen` / `create_custom_view` / raw XML via `ViewBeanParser`).
-3. **Chat-Image-to-Project-Asset & Built-in Icon / Vector Tools:**
-   - `import_chat_image`: copy an image attached in chat directly into the project's **Image Manager** (`drawable-xhdpi` + `jC.d(scId)`) or set it as the **Launcher Icon** (standard or adaptive).
-   - `import_builtin_icon` & `create_vector_drawable`: search/import icons from Sketchware Pro's built-in icon pack (`ImportIconActivity`) or create custom Material vector XML / shape / gradient / ripple drawables (`drawable/*.xml`).
-4. **Closed-Loop Visual Self-Check (`preview_screen`):**
-   - Render any screen or custom view offscreen to a `Bitmap` using Sketchware Pro's own `ViewPane` (same engine as `LayoutPreviewActivity`), report measured bounds / 0dp collapsed views / text clipping, and optionally return the rendered PNG to vision models so the agent can compare its built layout directly against the user's reference screenshot.
+   - Guided visual decomposition in `AgentLoop.AGENT_GUIDANCE` and `AgentTools.requireDesign`: derives palette, typography scale, spacing/radii, icons, and container hierarchy directly from the user's attached screenshot without redundant `ask_choice` quizzes.
+3. **Chat-Image-to-Project-Asset, Built-in Material Icons, Custom XML Drawables & Launcher Icons (`AgentAssets`):**
+   - `search_builtin_icons` & `import_builtin_icon`: searches Sketchware Pro's 2,000+ Material Icon Pack (`assets/icons/icon_pack.zip`) across `round`, `outline`, `baseline`, `sharp`, and `twotone` styles and converts tinted `<vector>` XMLs via `SvgUtils.convert` into `jC.d(scId)`.
+   - `import_chat_image`: imports user-attached chat images (`attachment_id` or `"latest"`) into Project Image Manager (`drawable-xhdpi` + `jC.d(scId)`), with `resetResourceManager(scId)` guarding `jC` temp-dir lifecycle across `commitProject`.
+   - `manage_drawable`: creates, validates (`XmlPullParser` + auto `xmlns:android`), updates, and safely deletes custom XML drawables (`<shape>`, `<vector>`, `<ripple>`, `<selector>`, `<layer-list>`) in `files/resource/drawable/*.xml` and checks active widget/FAB references before deletion; `AgentEdits` validates drawable existence on `set_image`, `set_background_image`, and `set_fab`.
+   - `set_app_icon`: generates standard legacy (`48..192px`) + Android 8+ Adaptive (`108..432px` foreground + solid/gradient background) + Android 13+ Monochrome launcher icons across all 5 `mipmap-*` folders, `icon.png`, `files/app-icon/{app_icon.png,data.json}`, and `lC` project metadata from a Material icon, chat image, or monogram, refreshing `AgentFragment`'s project header live.
+4. **Closed-Loop Visual Self-Check (`preview_screen` / `AgentPreview`):**
+   - Renders any Activity or Custom View offscreen on the main looper using Sketchware Pro's real `ViewPane` (`Theme.SketchwarePro.ProjectPreview`) with synchronous SVG/vector/`<shape>`/`onCreate_initializeLogic` visual hydration, saves a PNG to `.sketchware/ai/previews/`, reports measured dp geometry + 0dp/overflow/truncation warnings, and injects the rendered PNG into the model's next vision turn for closed-loop visual comparison.
 
 ---
 

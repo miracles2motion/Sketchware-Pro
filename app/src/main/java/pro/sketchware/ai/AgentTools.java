@@ -130,6 +130,8 @@ public final class AgentTools {
         register(new GetScreen());
         register(new GetProjectSetup());
         register(new ListLocalLibraries());
+        register(new SearchBuiltinIcons());
+        register(new PreviewScreen());
         register(new AskColor());
         register(new AskChoice());
         register(new SetStyleBrief());
@@ -151,6 +153,10 @@ public final class AgentTools {
         register(new CreateMoreBlock());
         register(new RemoveMoreBlock());
         register(new CreateComponent());
+        register(new ImportBuiltinIcon());
+        register(new ImportChatImage());
+        register(new ManageDrawable());
+        register(new SetAppIcon());
         register(new ConfigureLibrary());
         register(new ManagePermissions());
         register(new ManageLocalLibraries());
@@ -776,7 +782,7 @@ public final class AgentTools {
         }
     }
 
-    /** list_resources: the project's image, sound and font names. */
+    /** list_resources: the project's image, drawable, sound, font & icon state. */
     private static final class ListResources implements Tool {
         @Override
         public String name() {
@@ -786,18 +792,29 @@ public final class AgentTools {
         @Override
         public String description() {
             return "Lists the working project's resources by name: "
-                    + "images (for set_image and set_background_image), "
-                    + "sounds, and fonts.";
+                    + "images (from Image Manager / import_builtin_icon / "
+                    + "import_chat_image), custom_drawables (XML shapes, "
+                    + "ripples, selectors & vectors in res/drawable from "
+                    + "manage_drawable), sounds, fonts, and launcher icon "
+                    + "status. Optionally pass inspect_drawable to read "
+                    + "back one custom XML drawable's full source.";
         }
 
         @Override
         public JsonObject parameters() {
-            return AgentTools.parameters(new JsonObject());
+            JsonObject properties = new JsonObject();
+            properties.add("inspect_drawable", stringSchema(
+                    "Optional custom XML drawable name from custom_drawables "
+                            + "to read back its full XML content"));
+            return AgentTools.parameters(properties);
         }
 
         @Override
         public String activityLabel(JsonObject args) {
-            return "Listed the project's resources";
+            String inspect = stringArg(args, "inspect_drawable");
+            return inspect.isEmpty()
+                    ? "Listed the project's resources"
+                    : "Inspected drawable " + inspect;
         }
 
         @Override
@@ -807,9 +824,25 @@ public final class AgentTools {
             SketchwareProjects.Resources resources =
                     SketchwareProjects.resources(scId);
             JsonObject result = new JsonObject();
-            result.add("images", namesJson(resources.images));
-            result.add("sounds", namesJson(resources.sounds));
-            result.add("fonts", namesJson(resources.fonts));
+            result.add("images", namesJsonAll(resources.images));
+            result.add("custom_drawables",
+                    namesJsonAll(resources.customDrawables));
+            result.add("sounds", namesJsonAll(resources.sounds));
+            result.add("fonts", namesJsonAll(resources.fonts));
+            try {
+                java.util.HashMap<String, Object> meta = a.a.a.lC.b(scId);
+                result.addProperty("custom_icon",
+                        meta != null && a.a.a.yB.a(meta, "custom_icon"));
+                result.addProperty("is_icon_adaptive",
+                        meta != null && a.a.a.yB.a(meta, "isIconAdaptive"));
+            } catch (Exception ignored) {
+            }
+            String inspect = stringArg(args, "inspect_drawable");
+            if (!inspect.isEmpty()) {
+                result.addProperty("inspected_drawable", inspect);
+                result.addProperty("drawable_xml",
+                        AgentAssets.readCustomDrawableXml(scId, inspect));
+            }
             return result;
         }
     }
@@ -4892,18 +4925,23 @@ public final class AgentTools {
         if (!hasStyle) {
             message.append("There is no style yet, so first agree how “")
                     .append(what)
-                    .append("” should look. Ask the user with ask_choice "
-                            + "(two to four real directions, each one a "
-                            + "whole look: “sunny and playful: big rounded "
-                            + "cards, orange #FF8A3D, cream background” / "
-                            + "“calm and minimal: thin type, one accent, lots "
-                            + "of white space”). If they would rather you "
-                            + "chose, say which you picked and why in one "
-                            + "line. Then save it with set_style_brief as "
-                            + "headed lines: Audience; Mood; Colours (with "
-                            + "hex); Text sizes (title/body/button sp); "
-                            + "Buttons and cards (height, corner roundness); "
-                            + "Spacing; Do; Avoid. ");
+                    .append("” should look. (If the user attached a "
+                            + "screenshot or UI mockup to recreate, derive "
+                            + "the palette, typography, corner radii, and "
+                            + "spacing directly from that image instead of "
+                            + "calling ask_choice.) Otherwise ask the user "
+                            + "with ask_choice (two to four real directions, "
+                            + "each one a whole look: “sunny and playful: "
+                            + "big rounded cards, orange #FF8A3D, cream "
+                            + "background” / “calm and minimal: thin type, "
+                            + "one accent, lots of white space”). If they "
+                            + "would rather you chose, say which you picked "
+                            + "and why in one line. Then save it with "
+                            + "set_style_brief as headed lines: Audience; "
+                            + "Mood; Colours (with hex); Text sizes "
+                            + "(title/body/button sp); Buttons and cards "
+                            + "(height, corner roundness); Spacing; Do; "
+                            + "Avoid. ");
         }
         if (!hasDesign) {
             message.append("There is no design system yet, so next turn "
@@ -6396,6 +6434,874 @@ public final class AgentTools {
                                 + String.valueOf(e.getMessage()));
             }
         }
+    }
+
+    /** search_builtin_icons: search Sketchware Pro's built-in Material Icon Pack. */
+    private static final class SearchBuiltinIcons implements Tool {
+        @Override
+        public String name() {
+            return "search_builtin_icons";
+        }
+
+        @Override
+        public String description() {
+            return "Searches Sketchware Pro's built-in Material Icon Pack "
+                    + "by keyword (e.g. \"search\", \"arrow_back\", \"home\", "
+                    + "\"delete\", \"calendar\", \"person\") and returns "
+                    + "matching icon names and available styles (baseline, "
+                    + "outline, round, sharp, twotone) ready for "
+                    + "import_builtin_icon or set_app_icon.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("query", stringSchema(
+                    "Search keyword(s), e.g. \"search\", \"back arrow\", "
+                            + "\"shopping cart\", \"notification\""));
+            properties.add("style", stringSchema(
+                    "Optional Material style filter: \"baseline\" (filled), "
+                            + "\"outline\", \"round\", \"sharp\", or "
+                            + "\"twotone\""));
+            properties.add("limit", integerSchema(
+                    "Maximum results to return (1-50, default 20)"));
+            return AgentTools.parameters(properties, "query");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Searching built-in icons for \""
+                    + stringArg(args, "query") + "\"";
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String query = stringArg(args, "query");
+            String style = stringArg(args, "style");
+            int limit = intArg(args, "limit");
+            return AgentAssets.searchBuiltinIcons(
+                    session.context, query, style, limit <= 0 ? 20 : limit);
+        }
+    }
+
+    /** import_builtin_icon: import one or more tinted Material vector icons. */
+    private static final class ImportBuiltinIcon implements Tool {
+        @Override
+        public String name() {
+            return "import_builtin_icon";
+        }
+
+        @Override
+        public String description() {
+            return "Imports one or more Material icons from Sketchware "
+                    + "Pro's built-in icon pack as tinted Android VectorDrawable "
+                    + "XML assets in the working project's Image Manager, "
+                    + "ready for set_image, set_background_image, or set_fab. "
+                    + "Pass either a single {icon, res_name, style?, color?} "
+                    + "or a batch \"icons\" array of {icon, res_name, style?, "
+                    + "color?} objects.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("icon", stringSchema(
+                    "Built-in icon name from search_builtin_icons (e.g. "
+                            + "\"search\", \"arrow_back\", \"favorite\")"));
+            properties.add("res_name", stringSchema(
+                    "Project drawable resource name in lowercase snake_case "
+                            + "(e.g. \"ic_search\", \"ic_back\")"));
+            properties.add("style", stringSchema(
+                    "Icon style: \"round\" (default), \"outline\", "
+                            + "\"baseline\" (filled), \"sharp\", or "
+                            + "\"twotone\""));
+            properties.add("color", stringSchema(
+                    "Hex tint colour, e.g. \"#1E293B\" or \"#FFFFFF\" "
+                            + "(default \"#000000\")"));
+            JsonObject batchSchema = new JsonObject();
+            batchSchema.addProperty("type", "array");
+            batchSchema.addProperty("description",
+                    "Optional batch list of {icon, res_name, style?, color?} "
+                            + "icons to import in one approval step");
+            JsonObject itemObj = new JsonObject();
+            itemObj.addProperty("type", "object");
+            JsonObject itemProps = new JsonObject();
+            itemProps.add("icon", stringSchema("Built-in icon name"));
+            itemProps.add("res_name", stringSchema("Drawable resource name"));
+            itemProps.add("style", stringSchema("Style variant"));
+            itemProps.add("color", stringSchema("Hex tint colour"));
+            itemObj.add("properties", itemProps);
+            batchSchema.add("items", itemObj);
+            properties.add("icons", batchSchema);
+            return AgentTools.parameters(properties);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            String single = stringArg(args, "res_name");
+            if (!single.isEmpty()) {
+                return "Importing icon " + single;
+            }
+            return "Importing built-in Material icons";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            List<AgentAssets.IconImportSpec> specs = parseSpecs(args);
+            JsonArray cleanArr = new JsonArray();
+            StringBuilder details = new StringBuilder();
+            List<String> names = new ArrayList<>();
+            for (AgentAssets.IconImportSpec spec : specs) {
+                JsonObject item = new JsonObject();
+                item.addProperty("icon", spec.iconName);
+                item.addProperty("res_name", spec.resName);
+                item.addProperty("style", spec.style);
+                item.addProperty("color", spec.colorHex);
+                cleanArr.add(item);
+                names.add(spec.resName);
+                if (details.length() > 0) {
+                    details.append('\n');
+                }
+                details.append(spec.resName)
+                        .append(" ← ")
+                        .append(spec.iconName)
+                        .append(" (")
+                        .append(spec.style)
+                        .append(", ")
+                        .append(spec.colorHex)
+                        .append(')');
+            }
+            JsonObject clean = new JsonObject();
+            clean.add("icons", cleanArr);
+            String title = specs.size() == 1
+                    ? "Import icon " + specs.get(0).resName
+                    : "Import " + specs.size() + " Material icons";
+            String summary = specs.size() == 1
+                    ? "Add vector icon “" + specs.get(0).resName
+                            + "” (" + specs.get(0).iconName + ", "
+                            + specs.get(0).style + " in "
+                            + specs.get(0).colorHex + ") to the project."
+                    : "Add " + specs.size() + " vector icons to the project: "
+                            + String.join(", ", names) + ".";
+            return new AgentProposal(name(), clean, scId, title, summary,
+                    details.toString());
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            List<AgentAssets.IconImportSpec> specs =
+                    parseSpecs(proposal.args);
+            JsonArray imported = AgentAssets.importBuiltinIcons(
+                    session.context, scId, specs, true);
+            JsonObject out = new JsonObject();
+            out.addProperty("count", imported.size());
+            out.add("imported_icons", imported);
+            return out;
+        }
+
+        private static List<AgentAssets.IconImportSpec> parseSpecs(
+                JsonObject args) throws ToolException {
+            List<AgentAssets.IconImportSpec> specs = new ArrayList<>();
+            JsonArray arr = jsonArrayArg(args, "icons");
+            if (arr != null && arr.size() > 0) {
+                if (arr.size() > 25) {
+                    throw new ToolException("E_TOO_MANY_ICONS",
+                            "Import at most 25 icons per call.");
+                }
+                for (JsonElement el : arr) {
+                    if (el == null || !el.isJsonObject()) {
+                        throw new ToolException("E_BAD_ICON_SPEC",
+                                "Each entry in \"icons\" must be an object "
+                                        + "{icon, res_name, style?, color?}.");
+                    }
+                    specs.add(oneSpec(el.getAsJsonObject()));
+                }
+            } else {
+                specs.add(oneSpec(args));
+            }
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            for (AgentAssets.IconImportSpec s : specs) {
+                if (!seen.add(s.resName)) {
+                    throw new ToolException("E_DUPLICATE_NAME",
+                            "Duplicate drawable name \"" + s.resName
+                                    + "\" in the same import batch.");
+                }
+            }
+            return specs;
+        }
+
+        private static AgentAssets.IconImportSpec oneSpec(JsonObject obj)
+                throws ToolException {
+            String icon = stringArg(obj, "icon");
+            if (icon.isEmpty()) {
+                icon = stringArg(obj, "icon_name");
+            }
+            if (icon.isEmpty()) {
+                throw new ToolException("E_BAD_ICON_NAME",
+                        "Provide \"icon\" (built-in Material icon name, "
+                                + "e.g. \"search\" or \"arrow_back\").");
+            }
+            String style = AgentAssets.normalizeIconStyle(
+                    stringArg(obj, "style"));
+            String rawRes = stringArg(obj, "res_name");
+            String resName = rawRes.isEmpty()
+                    ? AgentAssets.defaultIconResName(icon, style)
+                    : AgentAssets.validateResName(rawRes);
+            String color = AgentAssets.normalizeHexColor(
+                    stringArg(obj, "color"), "#000000");
+            return new AgentAssets.IconImportSpec(
+                    icon.toLowerCase(Locale.ROOT).trim(),
+                    resName,
+                    style,
+                    color);
+        }
+    }
+
+    /** import_chat_image: save a user-attached chat image as a project drawable. */
+    private static final class ImportChatImage implements Tool {
+        @Override
+        public String name() {
+            return "import_chat_image";
+        }
+
+        @Override
+        public String description() {
+            return "Imports an image the user attached in chat into the "
+                    + "working project's Image Manager as a PNG drawable "
+                    + "(for banners, avatars, logos, illustrations, or "
+                    + "backgrounds via set_image / set_background_image). "
+                    + "Pass attachment_id from the message's [Attached "
+                    + "images: id=att_...] note, or \"latest\" for the "
+                    + "most recently attached image.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("attachment_id", stringSchema(
+                    "Attachment ID from [Attached images: id=att_...], "
+                            + "or \"latest\" for the newest attached image"));
+            properties.add("res_name", stringSchema(
+                    "Project drawable resource name in lowercase snake_case "
+                            + "(e.g. \"img_banner\", \"logo_brand\")"));
+            properties.add("max_dimension", integerSchema(
+                    "Optional max pixel width/height (64-2048, default 1024)"));
+            return AgentTools.parameters(
+                    properties, "attachment_id", "res_name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Importing chat image as " + stringArg(args, "res_name");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String resName = AgentAssets.validateResName(
+                    stringArg(args, "res_name"));
+            String resolvedId = resolveAttachmentId(
+                    scId, stringArg(args, "attachment_id"));
+            int maxDim = intArg(args, "max_dimension");
+            if (maxDim <= 0) {
+                maxDim = 1024;
+            }
+            maxDim = Math.max(64, Math.min(2048, maxDim));
+
+            JsonObject clean = new JsonObject();
+            clean.addProperty("attachment_id", resolvedId);
+            clean.addProperty("res_name", resName);
+            clean.addProperty("max_dimension", maxDim);
+
+            return new AgentProposal(name(), clean, scId,
+                    "Save chat image as " + resName,
+                    "Import attached image (" + resolvedId
+                            + ") into the project's Image Manager as “"
+                            + resName + "”.",
+                    "Attachment: " + resolvedId
+                            + "\nDrawable name: " + resName
+                            + "\nMax dimension: " + maxDim + "px");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            return AgentAssets.importChatImage(
+                    session.context,
+                    scId,
+                    stringArg(proposal.args, "attachment_id"),
+                    stringArg(proposal.args, "res_name"),
+                    intArg(proposal.args, "max_dimension"),
+                    true);
+        }
+    }
+
+    /** manage_drawable: create/update/delete custom XML drawables & images. */
+    private static final class ManageDrawable implements Tool {
+        @Override
+        public String name() {
+            return "manage_drawable";
+        }
+
+        @Override
+        public String description() {
+            return "Creates, updates, or deletes custom Android XML "
+                    + "drawables (<shape>, <selector>, <ripple>, "
+                    + "<layer-list>, <vector>) in res/drawable/*.xml, or "
+                    + "deletes an unused image from the Image Manager. "
+                    + "Use action=\"upsert\" with {name, xml} (or a batch "
+                    + "\"drawables\" array of {name, xml}) to craft custom "
+                    + "pills, gradients, outlined inputs, ripples, or "
+                    + "badges, then apply them via edit_screen "
+                    + "set_background_image or set_image.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("action", stringSchema(
+                    "\"upsert\" (default: create or update XML drawable) "
+                            + "or \"delete\" (delete custom drawable or "
+                            + "project image)"));
+            properties.add("name", stringSchema(
+                    "Drawable name in lowercase snake_case without .xml "
+                            + "(e.g. \"bg_search_pill\", \"bg_hero_gradient\")"));
+            properties.add("xml", stringSchema(
+                    "Full Android drawable XML (<shape>, <ripple>, "
+                            + "<selector>, <layer-list>, or <vector>) when "
+                            + "action is \"upsert\""));
+            JsonObject batchSchema = new JsonObject();
+            batchSchema.addProperty("type", "array");
+            batchSchema.addProperty("description",
+                    "Optional batch list of {name, xml} drawables to upsert "
+                            + "in one approval step");
+            JsonObject itemObj = new JsonObject();
+            itemObj.addProperty("type", "object");
+            JsonObject itemProps = new JsonObject();
+            itemProps.add("name", stringSchema("Drawable name"));
+            itemProps.add("xml", stringSchema("Drawable XML"));
+            itemObj.add("properties", itemProps);
+            batchSchema.add("items", itemObj);
+            properties.add("drawables", batchSchema);
+            properties.add("force", booleanSchema(
+                    "When action is \"delete\", true to delete even if "
+                            + "referenced by a widget (default false)"));
+            return AgentTools.parameters(properties);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            String action = stringArg(args, "action");
+            String dName = stringArg(args, "name");
+            if ("delete".equalsIgnoreCase(action)) {
+                return "Deleting drawable " + dName;
+            }
+            return dName.isEmpty()
+                    ? "Saving custom XML drawables"
+                    : "Saving custom drawable " + dName;
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String action = stringArg(args, "action").toLowerCase(Locale.ROOT);
+            if (action.isEmpty()) {
+                action = "upsert";
+            }
+            if ("delete".equals(action) || "remove".equals(action)) {
+                String dName = AgentAssets.validateResName(
+                        stringArg(args, "name"));
+                boolean force = booleanArg(args, "force");
+                List<String> refs =
+                        AgentAssets.findDrawableReferences(scId, dName);
+                if (!refs.isEmpty() && !force) {
+                    throw new ToolException("E_IN_USE",
+                            "Drawable \"" + dName + "\" is still used on "
+                                    + String.join(", ", refs)
+                                    + ". Update those widgets first or pass "
+                                    + "force=true.");
+                }
+                SketchwareProjects.Resources res =
+                        SketchwareProjects.resources(scId);
+                if (!res.images.contains(dName)
+                        && !res.customDrawables.contains(dName)) {
+                    throw new ToolException("E_NOT_FOUND",
+                            "No custom drawable or project image named \""
+                                    + dName + "\" exists.");
+                }
+                JsonObject clean = new JsonObject();
+                clean.addProperty("action", "delete");
+                clean.addProperty("name", dName);
+                clean.addProperty("force", force);
+                return new AgentProposal(name(), clean, scId,
+                        "Delete drawable " + dName,
+                        "Remove drawable “" + dName + "” from the project.",
+                        "Action: delete\nDrawable: " + dName);
+            }
+            if (!"upsert".equals(action) && !"create".equals(action)
+                    && !"save".equals(action)) {
+                throw new ToolException("E_BAD_ACTION",
+                        "Invalid action \"" + action
+                                + "\". Use \"upsert\" or \"delete\".");
+            }
+
+            List<AgentAssets.DrawableSpec> specs = parseDrawableSpecs(args);
+            JsonArray cleanArr = new JsonArray();
+            List<String> names = new ArrayList<>();
+            StringBuilder details = new StringBuilder();
+            for (AgentAssets.DrawableSpec spec : specs) {
+                if (SketchwareProjects.resources(scId).images
+                        .contains(spec.name)) {
+                    throw new ToolException("E_NAME_COLLISION",
+                            "An image named \"" + spec.name
+                                    + "\" already exists in the Image "
+                                    + "Manager. Pick a distinct name or "
+                                    + "delete it first.");
+                }
+                JsonObject item = new JsonObject();
+                item.addProperty("name", spec.name);
+                item.addProperty("xml", spec.xml);
+                cleanArr.add(item);
+                names.add(spec.name);
+                if (details.length() > 0) {
+                    details.append("\n\n");
+                }
+                details.append("--- res/drawable/")
+                        .append(spec.name)
+                        .append(".xml ---\n")
+                        .append(spec.xml);
+            }
+            JsonObject clean = new JsonObject();
+            clean.addProperty("action", "upsert");
+            clean.add("drawables", cleanArr);
+            String title = specs.size() == 1
+                    ? "Save drawable " + specs.get(0).name
+                    : "Save " + specs.size() + " custom XML drawables";
+            String summary = specs.size() == 1
+                    ? "Save custom XML drawable “" + specs.get(0).name
+                            + "” in res/drawable."
+                    : "Save " + specs.size()
+                            + " custom XML drawables in res/drawable: "
+                            + String.join(", ", names) + ".";
+            return new AgentProposal(name(), clean, scId, title, summary,
+                    details.toString());
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String action = stringArg(proposal.args, "action");
+            if ("delete".equalsIgnoreCase(action)) {
+                return AgentAssets.deleteDrawableOrImage(
+                        scId,
+                        stringArg(proposal.args, "name"),
+                        booleanArg(proposal.args, "force"));
+            }
+            List<AgentAssets.DrawableSpec> specs =
+                    parseDrawableSpecs(proposal.args);
+            JsonArray saved = AgentAssets.upsertCustomDrawables(scId, specs);
+            JsonObject out = new JsonObject();
+            out.addProperty("count", saved.size());
+            out.add("saved_drawables", saved);
+            return out;
+        }
+
+        private static List<AgentAssets.DrawableSpec> parseDrawableSpecs(
+                JsonObject args) throws ToolException {
+            List<AgentAssets.DrawableSpec> specs = new ArrayList<>();
+            JsonArray arr = jsonArrayArg(args, "drawables");
+            if (arr != null && arr.size() > 0) {
+                if (arr.size() > 20) {
+                    throw new ToolException("E_TOO_MANY_DRAWABLES",
+                            "Save at most 20 custom drawables per call.");
+                }
+                for (JsonElement el : arr) {
+                    if (el == null || !el.isJsonObject()) {
+                        throw new ToolException("E_BAD_DRAWABLE",
+                                "Each entry in \"drawables\" must be {name, xml}.");
+                    }
+                    JsonObject obj = el.getAsJsonObject();
+                    specs.add(AgentAssets.validateDrawableXml(
+                            stringArg(obj, "name"),
+                            stringArg(obj, "xml")));
+                }
+            } else {
+                specs.add(AgentAssets.validateDrawableXml(
+                        stringArg(args, "name"),
+                        stringArg(args, "xml")));
+            }
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            for (AgentAssets.DrawableSpec s : specs) {
+                if (!seen.add(s.name)) {
+                    throw new ToolException("E_DUPLICATE_NAME",
+                            "Duplicate drawable name \"" + s.name + "\".");
+                }
+            }
+            return specs;
+        }
+    }
+
+    /** set_app_icon: generate legacy + adaptive + monochrome launcher icons. */
+    private static final class SetAppIcon implements Tool {
+        @Override
+        public String name() {
+            return "set_app_icon";
+        }
+
+        @Override
+        public String description() {
+            return "Sets the working project's app launcher icon across "
+                    + "all 5 Android mipmap densities (mdpi..xxxhdpi), "
+                    + "generating both legacy rounded-square icons AND "
+                    + "Android 8+ Adaptive + Android 13+ Monochrome themed "
+                    + "icons. Supports three sources: \"builtin_icon\" "
+                    + "(any Material icon from search_builtin_icons), "
+                    + "\"chat_image\" (a user-attached image or \"latest\"), "
+                    + "or \"monogram\" (1-3 crisp bold letters/initials), "
+                    + "on a solid or gradient background.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("source", stringSchema(
+                    "\"builtin_icon\", \"chat_image\", or \"monogram\""));
+            properties.add("builtin_icon", stringSchema(
+                    "Material icon name when source is \"builtin_icon\" "
+                            + "(e.g. \"edit_note\", \"bolt\", \"check_circle\")"));
+            properties.add("icon_style", stringSchema(
+                    "Material icon style: \"round\" (default), \"baseline\", "
+                            + "\"outline\", \"sharp\", or \"twotone\""));
+            properties.add("attachment_id", stringSchema(
+                    "Attachment ID (or \"latest\") when source is "
+                            + "\"chat_image\""));
+            properties.add("monogram_text", stringSchema(
+                    "1-3 character monogram/initials when source is "
+                            + "\"monogram\" (e.g. \"MN\", \"S+\")"));
+            properties.add("foreground_color", stringSchema(
+                    "Hex colour for the foreground icon or monogram "
+                            + "(default \"#FFFFFF\")"));
+            properties.add("background_color", stringSchema(
+                    "Hex background colour (or gradient start colour), "
+                            + "e.g. \"#4F46E5\""));
+            properties.add("background_end_color", stringSchema(
+                    "Optional hex gradient end colour for a smooth two-stop "
+                            + "launcher background, e.g. \"#7C3AED\""));
+            properties.add("gradient_angle", integerSchema(
+                    "Gradient angle in degrees: 0 (left→right), 45, 90 "
+                            + "(top→bottom), or 135 (top-left→bottom-right, "
+                            + "default)"));
+            properties.add("adaptive", booleanSchema(
+                    "True (default) to generate Android 8+ adaptive "
+                            + "foreground/background + Android 13+ monochrome "
+                            + "layers alongside legacy mipmaps"));
+            properties.add("scale", numberSchema(
+                    "Foreground glyph scale inside the icon (0.40 to 1.0, "
+                            + "default 0.62 for icons/monograms or 0.85 "
+                            + "for chat images)"));
+            return AgentTools.parameters(properties);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Designing the app's launcher icon";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String rawSource = stringArg(args, "source").toLowerCase(Locale.ROOT);
+            String builtinIcon = stringArg(args, "builtin_icon");
+            if (builtinIcon.isEmpty()) {
+                builtinIcon = stringArg(args, "icon");
+            }
+            String iconStyle = stringArg(args, "icon_style").isEmpty()
+                    ? "round"
+                    : AgentAssets.normalizeIconStyle(
+                            stringArg(args, "icon_style"));
+            String attachmentId = stringArg(args, "attachment_id");
+            String monogram = stringArg(args, "monogram_text");
+            if (monogram.isEmpty()) {
+                monogram = stringArg(args, "text");
+            }
+
+            String source = switch (rawSource) {
+                case "builtin_icon", "builtin", "icon", "material",
+                        "material_icon" -> "builtin_icon";
+                case "chat_image", "image", "attachment", "chat", "photo" ->
+                        "chat_image";
+                case "monogram", "text", "initials", "letters" -> "monogram";
+                case "" -> !attachmentId.isEmpty() ? "chat_image"
+                        : (!builtinIcon.isEmpty() ? "builtin_icon"
+                                : (!monogram.isEmpty() ? "monogram" : ""));
+                default -> rawSource;
+            };
+
+            String fg = stringArg(args, "foreground_color");
+            if (fg.isEmpty()) {
+                fg = "#FFFFFF";
+            }
+            String bg = stringArg(args, "background_color");
+            if (bg.isEmpty()) {
+                bg = "#4F46E5";
+            }
+            String bgEnd = stringArg(args, "background_end_color");
+            int angle = intArg(args, "gradient_angle");
+            if (angle < 0) {
+                angle = 135;
+            }
+            boolean adaptive = !args.has("adaptive")
+                    || args.get("adaptive").isJsonNull()
+                    || booleanArg(args, "adaptive");
+            float scale = floatArg(args, "scale",
+                    "chat_image".equals(source) ? 0.85f : 0.62f);
+
+            String sourceSummary;
+            switch (source) {
+                case "builtin_icon" -> {
+                    if (builtinIcon.isEmpty()) {
+                        throw new ToolException("E_BAD_ICON_SOURCE",
+                                "Pass \"builtin_icon\" (e.g. \"bolt\") when "
+                                        + "source is \"builtin_icon\".");
+                    }
+                    sourceSummary = "Material icon “" + builtinIcon + "” ("
+                            + iconStyle + ", " + fg + ")";
+                }
+                case "chat_image" -> {
+                    attachmentId = resolveAttachmentId(scId, attachmentId);
+                    sourceSummary = "chat image (" + attachmentId + ")";
+                }
+                case "monogram" -> {
+                    if (monogram.isEmpty()) {
+                        throw new ToolException("E_BAD_ICON_SOURCE",
+                                "Pass 1-3 characters in \"monogram_text\" "
+                                        + "when source is \"monogram\".");
+                    }
+                    if (monogram.length() > 3) {
+                        monogram = monogram.substring(0, 3);
+                    }
+                    sourceSummary = "monogram “" + monogram + "” (" + fg + ")";
+                }
+                default -> throw new ToolException("E_BAD_ICON_SOURCE",
+                        "Invalid source \"" + source
+                                + "\". Use \"builtin_icon\", \"chat_image\", "
+                                + "or \"monogram\".");
+            }
+
+            String bgSummary = bgEnd.isEmpty()
+                    ? bg
+                    : bg + " → " + bgEnd + " gradient";
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+
+            JsonObject clean = new JsonObject();
+            clean.addProperty("source", source);
+            clean.addProperty("builtin_icon", builtinIcon);
+            clean.addProperty("icon_style", iconStyle);
+            clean.addProperty("attachment_id", attachmentId);
+            clean.addProperty("monogram_text", monogram);
+            clean.addProperty("foreground_color", fg);
+            clean.addProperty("background_color", bg);
+            clean.addProperty("background_end_color", bgEnd);
+            clean.addProperty("gradient_angle", angle);
+            clean.addProperty("adaptive", adaptive);
+            clean.addProperty("scale", scale);
+
+            return new AgentProposal(name(), clean, scId,
+                    "Set launcher icon for " + project.name,
+                    "Generate " + (adaptive ? "adaptive + monochrome + legacy"
+                            : "standard") + " launcher icons for "
+                            + project.name + " using " + sourceSummary
+                            + " on " + bgSummary + ".",
+                    "Source: " + sourceSummary
+                            + "\nBackground: " + bgSummary
+                            + "\nAdaptive + Monochrome (mdpi..xxxhdpi): "
+                            + adaptive);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            JsonObject a = proposal.args;
+            String source = stringArg(a, "source");
+            AgentAssets.AppIconSpec spec = new AgentAssets.AppIconSpec();
+            if ("chat_image".equalsIgnoreCase(source)) {
+                spec.attachmentId = stringArg(a, "attachment_id");
+                spec.fullBleed = floatArg(a, "scale", 0.85f) >= 0.96f;
+            } else if ("builtin_icon".equalsIgnoreCase(source)) {
+                spec.builtinIcon = stringArg(a, "builtin_icon");
+                spec.builtinStyle = stringArg(a, "icon_style");
+            } else {
+                spec.monogramText = stringArg(a, "monogram_text");
+            }
+            spec.foregroundColorHex = AgentAssets.normalizeHexColor(
+                    stringArg(a, "foreground_color"), "#FFFFFF");
+            spec.backgroundColorHex = AgentAssets.normalizeHexColor(
+                    stringArg(a, "background_color"), "#4F46E5");
+            String bgEnd = stringArg(a, "background_end_color");
+            if (!bgEnd.isEmpty()) {
+                spec.gradientStartHex = spec.backgroundColorHex;
+                spec.gradientEndHex = AgentAssets.normalizeHexColor(
+                        bgEnd, "#7C3AED");
+                int angle = intArg(a, "gradient_angle");
+                spec.gradientDirection = switch (angle) {
+                    case 0 -> "L_R";
+                    case 45 -> "BL_TR";
+                    case 90 -> "T_B";
+                    default -> "TL_BR";
+                };
+            }
+            spec.adaptive = !a.has("adaptive") || booleanArg(a, "adaptive");
+            return AgentAssets.setAppIcon(session.context, scId, spec);
+        }
+    }
+
+    /** preview_screen: offscreen ViewPane visual render + dp bounds audit. */
+    private static final class PreviewScreen implements Tool {
+        @Override
+        public String name() {
+            return "preview_screen";
+        }
+
+        @Override
+        public String description() {
+            return "Renders an Activity screen or Custom View offscreen "
+                    + "using Sketchware Pro's real ViewPane, returning "
+                    + "measured dp coordinates/sizes for every widget, "
+                    + "layout warnings (0dp collapsed views, right/bottom "
+                    + "overflow without a ScrollView, truncated text, "
+                    + "wrapped buttons), AND attaching the rendered PNG "
+                    + "image so you can visually inspect alignment, "
+                    + "contrast, hierarchy, and fidelity against any "
+                    + "user-attached screenshot before building.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("screen", stringSchema(
+                    "Activity or Custom View name (e.g. \"main\", "
+                            + "\"MainActivity\", or \"row_note\")"));
+            properties.add("width_dp", integerSchema(
+                    "Viewport width in dp (240-600, default 360)"));
+            properties.add("height_dp", integerSchema(
+                    "Viewport height in dp (200-1400, default 800 for "
+                            + "activities or 320 for custom views)"));
+            properties.add("include_image", booleanSchema(
+                    "True (default) to attach the rendered PNG to your "
+                            + "next vision turn for visual inspection"));
+            return AgentTools.parameters(properties, "screen");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Previewing screen " + stringArg(args, "screen");
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String screen = stringArg(args, "screen");
+            if (screen.isEmpty()) {
+                screen = "main";
+            }
+            int widthDp = intArg(args, "width_dp");
+            int heightDp = intArg(args, "height_dp");
+            boolean includeImage = !args.has("include_image")
+                    || args.get("include_image").isJsonNull()
+                    || booleanArg(args, "include_image");
+            return AgentPreview.renderScreen(
+                    session.context, scId, screen,
+                    widthDp, heightDp, includeImage);
+        }
+    }
+
+    private static String resolveAttachmentId(String scId, String rawId)
+            throws ToolException {
+        String wanted = rawId == null ? "" : rawId.trim();
+        if (wanted.isEmpty() || "latest".equalsIgnoreCase(wanted)
+                || "last".equalsIgnoreCase(wanted)) {
+            List<ChatMessage> log = AgentChatLog.load(scId);
+            for (int i = log.size() - 1; i >= 0; i--) {
+                ChatMessage m = log.get(i);
+                if (m != null && m.hasAttachments()) {
+                    ChatMessage.Attachment last =
+                            m.attachments.get(m.attachments.size() - 1);
+                    if (last != null && last.path != null
+                            && new java.io.File(last.path).isFile()) {
+                        return last.id;
+                    }
+                }
+            }
+            throw new ToolException("E_NO_ATTACHMENT",
+                    "No attached image was found in this conversation. "
+                            + "Ask the user to attach an image with the "
+                            + "image button first.");
+        }
+        java.io.File found = AgentMedia.findAttachmentFile(scId, wanted);
+        if (found == null || !found.isFile()) {
+            throw new ToolException("E_NO_ATTACHMENT",
+                    "Could not find chat image attachment \"" + wanted
+                            + "\". Pass an attachment ID from [Attached "
+                            + "images: id=att_...] or \"latest\".");
+        }
+        return wanted;
+    }
+
+    private static JsonObject integerSchema(String description) {
+        JsonObject schema = new JsonObject();
+        schema.addProperty("type", "integer");
+        schema.addProperty("description", description);
+        return schema;
+    }
+
+    private static JsonObject numberSchema(String description) {
+        JsonObject schema = new JsonObject();
+        schema.addProperty("type", "number");
+        schema.addProperty("description", description);
+        return schema;
+    }
+
+    private static float floatArg(JsonObject args, String key, float fallback) {
+        try {
+            if (args != null && args.has(key) && !args.get(key).isJsonNull()) {
+                return args.get(key).getAsFloat();
+            }
+        } catch (Exception ignored) {
+        }
+        return fallback;
     }
 
     private static JsonArray namesJsonAll(List<String> values) {
