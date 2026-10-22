@@ -1953,6 +1953,21 @@ logs exposed the rest of the same class:
 3. **Closed-loop Offscreen `ViewPane` Preview (`AgentPreview`, `ViewPane`, `preview_screen`)**:
    - Fixed `ViewPane.java:634` (`this.sc_id` fallback before static `DesignActivity.sc_id`) and built `AgentPreview.renderScreen` to inflate deep-copied `ViewBean` trees offscreen on the main looper under `Theme.SketchwarePro.ProjectPreview`, synchronously hydrate SVG/vector/`<shape>`/`onCreate_initializeLogic` visual styling, save rendered PNGs to `.sketchware/ai/previews/`, report dp bounds + `0dp`/overflow/truncation warnings, and inject transient post-tool-batch vision turns in `AgentLoop` (with automatic fallback for text-only models).
 
+## Wave 39 / Phase 3 — Fragments, DialogFragments, BottomSheetDialogFragments, Navigation Drawers, Root Layout Conversion, Raw XML Layout Import & Cleanup Tools
+
+1. **Fragments, DialogFragments & BottomSheetDialogFragments (`SketchwareProjects`, `SketchwareActions`, `AgentTools`, `AgentLogic`)**:
+   - Sketchware Pro stores `Fragment`, `DialogFragment`, and `BottomSheetDialogFragment` entries in `jC.b(scId).b()` with `fileType = ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY` (`0`), distinguishing them strictly by `fileName` suffix (`_fragment`, `_dialog_fragment`, `_bottomdialog_fragment` — `AddViewActivity:276-331`, `Jx:173-175`, `Ix:521`).
+   - Added `create_fragment` (and automatic Fragment-kind forwarding in `create_activity`), auto-enabling AppCompat/Material on `_bottomdialog_fragment`, matching natural aliases (`HomeFragment` -> `HomeFragmentActivity`), validating `return_fragment` against `SketchwareProjects.isFragment`, blocking `open_screen` on Fragment classes, and adding `replace_fragment`, `show_dialog_fragment`, and `dismiss_dialog_fragment` blocks.
+2. **Navigation Drawers (`_drawer_*`, `EVENT_TYPE_DRAWER_VIEW`) & Floating Action Button (`_fab`)**:
+   - `list_activities` and `get_screen` surface `fragments`, `drawers`, `options`, `fab_id`, `drawer_layout`, `drawer_widgets`, and `host_activity`; `edit_activity` rejects `toolbar`/`drawer` on Fragments and auto-enables `toolbar` when `drawer: true` is switched on.
+   - `AgentLogic.populateActivityWidgets` loads `_fab` (`eC.h(xmlName)`) and drawer widgets (`_drawer_<id>` from `eC.d(getDrawerXmlName())`), registers `EventBean.EVENT_TYPE_DRAWER_VIEW` (`4`) with unprefixed `targetId` (`AddEventActivity:203`, `Hx:132,227`), emits `_drawer_<id>` inside block parameters, guards against main-vs-drawer `targetId_eventName` collisions, and includes `_fab` / `_drawer_*` in `danglingWidgetReferences` and `AgentExport`.
+3. **Root Layout Conversion & Raw XML Layout Import (`convert_root_layout`, `edit_screen` `set_root`, `import_layout_xml`)**:
+   - `SketchwareActions.setRootLayout` and `AgentEdits` (`set_root`) convert root `ViewGroup` classes (`LinearLayout`, `RelativeLayout`, `FrameLayout`, `ConstraintLayout`, `CoordinatorLayout`, `ScrollView`, `NestedScrollView`, `HorizontalScrollView`, `MaterialCardView`, `SwipeRefreshLayout`) and root XML attributes via `InjectRootLayoutManager`, keeping top-level `ViewBean.parentType` synchronized.
+   - `import_layout_xml` runs `ViewBeanParser` on `Looper.getMainLooper()` (avoiding worker-thread `InvokeUtil.createView` crashes), validates RelativeLayout constraints with `CircularDependencyDetector`, normalizes via `eC.a(...)`, cleans removed widget events, and verifies read-back.
+4. **Cleanup & Symmetry Tools (`remove_component`, `delete_custom_view`, `view_root` cleanup)**:
+   - `remove_component` checks cross-event block references (`AgentLogic.componentUse`), deletes component events via `EventBean.deleteEvent`, and deletes the `ComponentBean` via `eC.b(javaName, componentBean)` (`br.java:168`).
+   - `delete_custom_view` checks `ViewBean.customView` and `<include>` references across all screens (with optional `clear_references`), refuses `_drawer_*` layouts, and cleans stale `InjectRootLayoutManager` (`view_root`) entries alongside `delete_activity` and `edit_activity`.
+
 
 
 

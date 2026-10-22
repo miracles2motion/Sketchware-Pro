@@ -24,7 +24,7 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 | Permission Manager + auto-prerequisite checks | `ManagePermissionActivity`, `ListPermission`, `FileResConfig` | **Phase 1 (DONE)** |
 | Multimodal Vision Chat + Screenshot-to-Screen + Chat-Image-to-Asset + Offscreen `ViewPane` Preview | `AgentFragment`, `AiChatService`, `ChatMessage`, `AgentMedia`, `AgentPreview`, `LayoutPreviewActivity`, `ViewPane` | **Phase 2 (DONE)** |
 | Image Manager, Built-in Icon Pack, Vector/Shape Icon Creator & Adaptive Launcher Icons | `AgentAssets`, `ManageImageActivity`, `ImportIconActivity`, `IconCreatorActivity`, `jC.d(scId)` | **Phase 2 (DONE)** |
-| View Manager: Fragments, DialogFragments, BottomSheetFragments, Drawer Layouts (`_drawer_*`), Root Layout Injection, Raw XML Import, `remove_component`, `delete_custom_view` | `ManageViewActivity`, `AddViewActivity`, `InjectRootLayoutManager`, `ViewBeanParser`, `eC` | Phase 3 |
+| View Manager: Fragments, DialogFragments, BottomSheetFragments, Drawer Layouts (`_drawer_*`), Root Layout Injection, Raw XML Import, `remove_component`, `delete_custom_view` | `ManageViewActivity`, `AddViewActivity`, `InjectRootLayoutManager`, `ViewBeanParser`, `eC` | **Phase 3 (DONE)** |
 | Resource Editor (`strings.xml`, `colors.xml`, `styles.xml`, `arrays.xml`) & Raw Resource Manager (`res/drawable`, `menu`, `anim`, `xml`, `values-night`) | `ResourcesEditorActivity`, `StringsEditorManager`, `ColorsEditorManager`, `StylesEditorManager`, `ArraysEditorManager`, `ManageResourceActivity` | Phase 4 |
 | Font Manager (`assets/fonts`) & Sound Manager (`res/raw`) | `ManageFontActivity`, `ManageSoundActivity`, `jC.d(scId)` | Phase 4 |
 | Java & Kotlin Manager (`.java` / `.kt` classes) & Assets Manager (`assets/`) & Native Libs (`.so`) | `ManageJavaActivity`, `KotlinCompilerBridge`, `ManageAssetsActivity`, `ManageNativelibsActivity` | Phase 5 |
@@ -67,16 +67,20 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 ---
 
-### Phase 3 — Fragments, BottomSheets, Drawers, Root Layouts & Cleanup Tools
+### Phase 3 — Fragments, BottomSheets, Drawers, Root Layouts & Cleanup Tools (DONE)
 **Goal:** Support multi-tab architectures (`TabLayout` + `ViewPager`), bottom sheets, navigation drawers, and full cleanup.
-1. **Fragments (`create_fragment` / `FragmentAdapter`):**
-   - Create, inspect, edit, wire, and delete **Fragments**, **DialogFragments**, and **BottomSheetFragments** (`ManageViewActivity` / `AddViewActivity` file types), and wire `FragmentAdapter` components end-to-end.
-2. **Navigation Drawer (`_drawer_*`):**
-   - Inspect and edit `_drawer_<activity>` layouts when `OPTION_ACTIVITY_DRAWER` is enabled, and wire drawer widget events (`EVENT_TYPE_DRAWER_VIEW`).
-3. **Root Layout Conversion & Raw XML Layout Import:**
-   - Convert root layout types (`InjectRootLayoutManager`) and support validated layout XML import via `ViewBeanParser` when recreating complex visual hierarchies.
-4. **Missing Cleanup Tools:**
-   - `remove_component` (safely checking event/block references first) and `delete_custom_view` (checking `ListView`/`RecyclerView` `customView` bindings first).
+1. **Fragments, DialogFragments & BottomSheetDialogFragments (`create_fragment`, `FragmentAdapter`, `replace_fragment`, `show_dialog_fragment`):**
+   - `create_fragment` (plus automatic Fragment-kind forwarding in `create_activity`) creates `Fragment` (`<base>_fragment`), `DialogFragment` (`<base>_dialog_fragment`), and `BottomSheetDialogFragment` (`<base>_bottomdialog_fragment`, auto-enabling AppCompat/Material) in `jC.b(scId).b()` (`PROJECT_FILE_TYPE_ACTIVITY` + suffix convention matching `AddViewActivity` / `Jx` / `Ix`).
+   - Full `FragmentAdapter` + `ViewPager` (`set_fragment_adapter`, `onFragmentAdded` -> validated `return_fragment`), container hosting (`replace_fragment`), Dialog/BottomSheet display (`show_dialog_fragment`, `dismiss_dialog_fragment`), and `open_screen` guard against passing Fragment classes to `startActivity`.
+2. **Navigation Drawer & FAB Wiring (`_drawer_*`, `EVENT_TYPE_DRAWER_VIEW`, `_fab`):**
+   - `list_activities` and `get_screen` expose `fragments`, `drawers`, `options`, `fab_id`, `drawer_layout`, `drawer_widgets`, and `host_activity`.
+   - `AgentLogic` populates `_fab` (`eC.h(xmlName)`) and drawer widgets (`_drawer_<id>` from `eC.d(getDrawerXmlName())`), registers `EVENT_TYPE_DRAWER_VIEW` (`4`) with unprefixed `targetId` (matching `AddEventActivity` & `Hx`), emits `_drawer_<id>` inside block parameters, guards against main-vs-drawer `targetId_eventName` collisions, and recognizes `_fab` / `_drawer_*` in `danglingWidgetReferences`.
+3. **Root Layout Conversion & Raw XML Layout Import (`convert_root_layout`, `edit_screen` `set_root`, `import_layout_xml`):**
+   - Converts root `ViewGroup` containers (`LinearLayout`, `RelativeLayout`, `FrameLayout`, `ConstraintLayout`, `CoordinatorLayout`, `ScrollView`, `NestedScrollView`, `HorizontalScrollView`, `MaterialCardView`, `SwipeRefreshLayout`) and custom root XML attributes via `InjectRootLayoutManager`, keeping top-level `ViewBean.parentType` in sync.
+   - `import_layout_xml` validates and imports complete Android XML layouts on the main looper through `ViewBeanParser`, `CircularDependencyDetector`, `InjectRootLayoutManager`, and `eC.a(...)` normalization.
+4. **Cleanup & Symmetry Tools (`remove_component`, `delete_custom_view`, `view_root` cleanup):**
+   - `remove_component` checks cross-event block references (`AgentLogic.componentUse`), deletes component events via `EventBean.deleteEvent`, and removes the `ComponentBean` via `eC.b(javaName, componentBean)` (`br.java:168`).
+   - `delete_custom_view` checks `ViewBean.customView` and `<include>` references across all screens (with optional `clear_references`), refuses `_drawer_*` layouts with a pointer to `edit_activity`, and cleans stale `InjectRootLayoutManager` (`view_root`) entries alongside `delete_activity` and `edit_activity`.
 
 ---
 

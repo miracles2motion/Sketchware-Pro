@@ -2015,6 +2015,8 @@ public final class AgentLogic {
         public boolean activityEvent;
         /** True when the target is a component, not a widget. */
         public boolean componentEvent;
+        /** True when the target is a navigation-drawer widget (_drawer_*). */
+        public boolean drawerViewEvent;
         /** True when wiring a MoreBlock body (<first>_moreBlock). */
         public boolean moreBlockEvent;
         /** Parsed signature when {@link #moreBlockEvent} is true. */
@@ -2427,12 +2429,8 @@ public final class AgentLogic {
         plan.activity = activity;
         plan.eventName = event == null ? "" : event.trim();
 
-        ArrayList<ViewBean> beans =
-                SketchwareProjects.screenBeans(scId, activity);
         Map<String, ViewBean> byId = new LinkedHashMap<>();
-        for (ViewBean bean : beans) {
-            byId.put(bean.id, bean);
-        }
+        populateActivityWidgets(scId, activity, byId);
         // The variables this activity declares (name to editor type
         // code), so variable blocks are checked before they run.
         LinkedHashMap<String, Integer> variables =
@@ -2553,7 +2551,12 @@ public final class AgentLogic {
                             + plan.eventName + ":";
                 }
             } else {
-                plan.targetId = widget.id;
+                if (widget.id != null && widget.id.startsWith("_drawer_")) {
+                    plan.drawerViewEvent = true;
+                    plan.targetId = widget.id.substring("_drawer_".length());
+                } else {
+                    plan.targetId = widget.id;
+                }
                 String[] events = oq.getEventsForClass(new ViewBean(
                         widget.id, widget.type).buildClassInfo(widget.type));
                 if (events == null || !Arrays.asList(events)
@@ -2566,6 +2569,7 @@ public final class AgentLogic {
                                             : String.join(", ", events))
                                     + ".");
                 }
+                checkViewDrawerEventCollision(store, javaName, plan);
                 String widgetText = widget.text == null
                         ? "" : widget.text.text;
                 String label = widgetText != null && !widgetText.isEmpty()
@@ -2613,7 +2617,9 @@ public final class AgentLogic {
         if ("onBindCustomView".equals(plan.eventName)
                 && !plan.activityEvent && !plan.componentEvent
                 && !plan.moreBlockEvent) {
-            ViewBean host = byId.get(plan.targetId);
+            ViewBean host = plan.drawerViewEvent
+                    ? byId.get("_drawer_" + plan.targetId)
+                    : byId.get(plan.targetId);
             if (host != null && host.customView != null
                     && !host.customView.isEmpty()
                     && !"none".equals(host.customView)) {
@@ -3463,6 +3469,34 @@ public final class AgentLogic {
                                         + "Create it first, or check "
                                         + "list_activities.");
                     }
+                    if (SketchwareProjects.isDialogFragment(target)) {
+                        throw new AgentTools.ToolException(
+                                "E_FRAGMENT_NOT_ACTIVITY",
+                                SketchwareProjects.activityName(target)
+                                        + " is a DialogFragment / "
+                                        + "BottomSheetDialogFragment, not an "
+                                        + "Activity. Show it with "
+                                        + "{\"block\":\"show_dialog_fragment\","
+                                        + "\"screen\":\""
+                                        + SketchwareProjects
+                                                .activityName(target)
+                                        + "\"} instead of open_screen.");
+                    }
+                    if (SketchwareProjects.isFragment(target)) {
+                        throw new AgentTools.ToolException(
+                                "E_FRAGMENT_NOT_ACTIVITY",
+                                SketchwareProjects.activityName(target)
+                                        + " is a Fragment, not a standalone "
+                                        + "Activity. Display it inside a "
+                                        + "container with "
+                                        + "{\"block\":\"replace_fragment\","
+                                        + "\"container\":\"<layoutId>\","
+                                        + "\"screen\":\""
+                                        + SketchwareProjects
+                                                .activityName(target)
+                                        + "\"} or via a FragmentAdapter + "
+                                        + "ViewPager (return_fragment).");
+                    }
                     String componentId = stringOf(op, "component");
                     if (!componentId.isEmpty()) {
                         Integer type = components.get(componentId);
@@ -3727,8 +3761,19 @@ public final class AgentLogic {
                                 "E_BAD_BLOCK",
                                 "There is no screen called " + screen
                                         + " in this project to show as "
-                                        + "a page. Create it first, or "
-                                        + "check list_activities.");
+                                        + "a page. Create it first with "
+                                        + "create_fragment, or check "
+                                        + "list_activities.");
+                    }
+                    if (!SketchwareProjects.isFragment(target)) {
+                        throw new AgentTools.ToolException(
+                                "E_NOT_FRAGMENT",
+                                SketchwareProjects.activityName(target)
+                                        + " is a full Activity, not a "
+                                        + "Fragment, so return_fragment "
+                                        + "would not compile. Create a "
+                                        + "Fragment with create_fragment "
+                                        + "first.");
                     }
                     String className =
                             SketchwareProjects.activityName(target);
@@ -3739,6 +3784,127 @@ public final class AgentLogic {
                             "Show " + className + " as this page");
                     lines.add(indent(depth) + "Show " + className
                             + " as this page");
+                    return bean;
+                }
+                case "show_dialog_fragment", "open_dialog_fragment",
+                        "show_bottom_sheet" -> {
+                    String screen = stringOf(op, "screen");
+                    if (screen.isEmpty()) {
+                        screen = stringOf(op, "fragment");
+                    }
+                    ProjectFileBean target =
+                            SketchwareProjects.findActivity(scId, screen);
+                    if (target == null) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "There is no DialogFragment or "
+                                        + "BottomSheetDialogFragment called "
+                                        + "\"" + screen + "\". Create it "
+                                        + "first with create_fragment "
+                                        + "(kind=\"dialog_fragment\" or "
+                                        + "\"bottom_sheet_fragment\").");
+                    }
+                    if (!SketchwareProjects.isDialogFragment(target)) {
+                        throw new AgentTools.ToolException(
+                                "E_NOT_DIALOG_FRAGMENT",
+                                SketchwareProjects.activityName(target)
+                                        + " is not a DialogFragment or "
+                                        + "BottomSheetDialogFragment.");
+                    }
+                    String className =
+                            SketchwareProjects.activityName(target);
+                    String rawTag = stringOf(op, "tag");
+                    String tag = rawTag.isEmpty() ? target.fileName
+                            : rawTag.replace("\\", "")
+                                    .replace("\"", "")
+                                    .replace("\n", "")
+                                    .replace("\r", "");
+                    String code = "new " + className
+                            + "().show(getSupportFragmentManager(), \""
+                            + tag + "\");";
+                    BlockBean bean = newBean("addSourceDirectly", " ");
+                    bean.parameters.add(code);
+                    allStatements.add(bean);
+                    addExpect("new " + className + "().show(",
+                            "Show dialog fragment " + className);
+                    lines.add(indent(depth) + "Show dialog fragment "
+                            + className);
+                    return bean;
+                }
+                case "dismiss_dialog_fragment" -> {
+                    ProjectFileBean self = SketchwareProjects
+                            .findActivity(scId, activityName);
+                    if (!SketchwareProjects.isDialogFragment(self)) {
+                        throw new AgentTools.ToolException(
+                                "E_NOT_DIALOG_FRAGMENT",
+                                "dismiss_dialog_fragment can only be used "
+                                        + "inside a DialogFragment or "
+                                        + "BottomSheetDialogFragment "
+                                        + "screen.");
+                    }
+                    BlockBean bean = newBean("addSourceDirectly", " ");
+                    bean.parameters.add("dismiss();");
+                    allStatements.add(bean);
+                    addExpect("dismiss();", "Dismiss this dialog fragment");
+                    lines.add(indent(depth) + "Dismiss this dialog fragment");
+                    return bean;
+                }
+                case "replace_fragment", "show_fragment" -> {
+                    String screen = stringOf(op, "screen");
+                    if (screen.isEmpty()) {
+                        screen = stringOf(op, "fragment");
+                    }
+                    ProjectFileBean target =
+                            SketchwareProjects.findActivity(scId, screen);
+                    if (target == null) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "There is no Fragment called \"" + screen
+                                        + "\". Create it first with "
+                                        + "create_fragment.");
+                    }
+                    if (!SketchwareProjects.isFragment(target)
+                            || SketchwareProjects.isDialogFragment(target)) {
+                        throw new AgentTools.ToolException(
+                                "E_NOT_FRAGMENT",
+                                SketchwareProjects.activityName(target)
+                                        + " must be a regular Fragment "
+                                        + "(use show_dialog_fragment for "
+                                        + "DialogFragments / BottomSheets).");
+                    }
+                    String containerName = stringOf(op, "container");
+                    if (containerName.isEmpty()) {
+                        containerName = stringOf(op, "target");
+                    }
+                    ViewBean container = findWidget(byId, containerName);
+                    if (container == null
+                            || container.id.startsWith("_")) {
+                        throw new AgentTools.ToolException(
+                                "E_NO_WIDGET",
+                                "replace_fragment needs \"container\": the "
+                                        + "id of a layout container on this "
+                                        + "screen (e.g. a LinearLayout or "
+                                        + "FrameLayout) that will host the "
+                                        + "Fragment.");
+                    }
+                    boolean backStack = op.has("add_to_back_stack")
+                            && !op.get("add_to_back_stack").isJsonNull()
+                            && op.get("add_to_back_stack").getAsBoolean();
+                    String className =
+                            SketchwareProjects.activityName(target);
+                    String code = "getSupportFragmentManager()"
+                            + ".beginTransaction().replace(R.id."
+                            + container.id + ", new " + className + "())"
+                            + (backStack ? ".addToBackStack(null)" : "")
+                            + ".commit();";
+                    BlockBean bean = newBean("addSourceDirectly", " ");
+                    bean.parameters.add(code);
+                    allStatements.add(bean);
+                    addExpect(".replace(R.id." + container.id,
+                            "Show " + className + " inside "
+                                    + container.id);
+                    lines.add(indent(depth) + "Show " + className
+                            + " inside " + container.id);
                     return bean;
                 }
                 case "return_title" -> {
@@ -7213,6 +7379,10 @@ public final class AgentLogic {
                     store.a(javaName, EventBean.EVENT_TYPE_COMPONENT,
                             plan.componentType, plan.targetId,
                             plan.eventName);
+                } else if (plan.drawerViewEvent) {
+                    store.a(javaName, EventBean.EVENT_TYPE_DRAWER_VIEW,
+                            targetTypeOf(plan), plan.targetId,
+                            plan.eventName);
                 } else {
                     store.a(javaName, EventBean.EVENT_TYPE_VIEW,
                             targetTypeOf(plan), plan.targetId,
@@ -10414,6 +10584,12 @@ public final class AgentLogic {
                         && plan.eventName.equals(event.eventName)) {
                     return true;
                 }
+            } else if (plan.drawerViewEvent) {
+                if (event.eventType == EventBean.EVENT_TYPE_DRAWER_VIEW
+                        && plan.targetId.equals(event.targetId)
+                        && plan.eventName.equals(event.eventName)) {
+                    return true;
+                }
             } else if (event.eventType == EventBean.EVENT_TYPE_VIEW
                     && plan.targetId.equals(event.targetId)
                     && plan.eventName.equals(event.eventName)) {
@@ -10423,8 +10599,34 @@ public final class AgentLogic {
         return false;
     }
 
-    /** The widget's numeric type, for registering a view event. */
+    /** The widget's numeric type, for registering a view or drawer event. */
     private static int targetTypeOf(Plan plan) {
+        if ("_fab".equals(plan.targetId)) {
+            try {
+                ViewBean fab = jC.a(plan.scId)
+                        .h(plan.activity.getXmlName());
+                if (fab != null) {
+                    return fab.type;
+                }
+            } catch (Exception ignored) {
+            }
+            return ViewBean.VIEW_TYPE_WIDGET_FAB;
+        }
+        if (plan.drawerViewEvent) {
+            try {
+                ArrayList<ViewBean> drawerBeans = jC.a(plan.scId)
+                        .d(plan.activity.getDrawerXmlName());
+                if (drawerBeans != null) {
+                    for (ViewBean bean : drawerBeans) {
+                        if (bean != null && plan.targetId.equals(bean.id)) {
+                            return bean.type;
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+            return 0;
+        }
         ArrayList<ViewBean> beans =
                 SketchwareProjects.screenBeans(plan.scId, plan.activity);
         for (ViewBean bean : beans) {
@@ -10433,6 +10635,93 @@ public final class AgentLogic {
             }
         }
         return 0;
+    }
+
+    /**
+     * Populates {@code byId} with the activity's screen widgets plus, when
+     * enabled, its {@code _fab} bean ({@code eC.h(xmlName)}) and its
+     * navigation-drawer widgets ({@code _drawer_<id>} from
+     * {@code eC.d(getDrawerXmlName())}, also indexed under bare {@code <id>}
+     * when unshadowed so block parameters emit {@code _drawer_<id>}).
+     */
+    private static void populateActivityWidgets(
+            String scId, ProjectFileBean activity,
+            Map<String, ViewBean> byId) {
+        for (ViewBean bean : SketchwareProjects.screenBeans(scId, activity)) {
+            if (bean != null && bean.id != null) {
+                byId.put(bean.id, bean);
+            }
+        }
+        if (activity == null
+                || activity.fileType
+                        != ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
+            return;
+        }
+        try {
+            eC store = jC.a(scId);
+            if (activity.hasActivityOption(
+                    ProjectFileBean.OPTION_ACTIVITY_FAB)) {
+                ViewBean fab = store.h(activity.getXmlName());
+                if (fab != null) {
+                    ViewBean fabCopy = new ViewBean();
+                    fabCopy.copy(fab);
+                    fabCopy.id = "_fab";
+                    byId.put("_fab", fabCopy);
+                }
+            }
+            if (activity.hasActivityOption(
+                    ProjectFileBean.OPTION_ACTIVITY_DRAWER)) {
+                ArrayList<ViewBean> drawerBeans =
+                        store.d(activity.getDrawerXmlName());
+                if (drawerBeans != null) {
+                    for (ViewBean db : drawerBeans) {
+                        if (db == null || db.id == null || db.id.isEmpty()) {
+                            continue;
+                        }
+                        ViewBean prefixed = new ViewBean();
+                        prefixed.copy(db);
+                        prefixed.id = "_drawer_" + db.id;
+                        byId.put(prefixed.id, prefixed);
+                        if (!byId.containsKey(db.id)) {
+                            byId.put(db.id, prefixed);
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    /**
+     * Sketchware Pro keys event block lists in {@code eC} by
+     * {@code eventBean.targetId + "_" + eventBean.eventName} (unprefixed
+     * {@code targetId}; see {@code Hx.java:132}). If a screen widget and a
+     * drawer widget share the exact same id AND event name, their block
+     * lists would collide. Refuse with a clear rename instruction.
+     */
+    private static void checkViewDrawerEventCollision(
+            eC store, String javaName, Plan plan)
+            throws AgentTools.ToolException {
+        ArrayList<EventBean> events = store.g(javaName);
+        if (events == null) {
+            return;
+        }
+        int conflictingType = plan.drawerViewEvent
+                ? EventBean.EVENT_TYPE_VIEW
+                : EventBean.EVENT_TYPE_DRAWER_VIEW;
+        for (EventBean ev : events) {
+            if (ev != null && ev.eventType == conflictingType
+                    && plan.targetId.equals(ev.targetId)
+                    && plan.eventName.equals(ev.eventName)) {
+                throw new AgentTools.ToolException("E_EVENT_ID_COLLISION",
+                        "Both the main screen and its navigation drawer have "
+                                + "a widget named \"" + plan.targetId
+                                + "\" with event \"" + plan.eventName
+                                + "\", which collide in Sketchware's event "
+                                + "table. Give the drawer widget a distinct "
+                                + "id (e.g. nav_" + plan.targetId + ") first.");
+            }
+        }
     }
 
     /**
@@ -10824,10 +11113,15 @@ public final class AgentLogic {
                 // them real. A warning that cries wolf teaches the user
                 // to ignore the ones that matter.
                 java.util.Set<String> ids = new java.util.HashSet<>();
-                for (ViewBean bean
-                        : SketchwareProjects.screenBeans(scId, activity)) {
-                    if (bean != null && bean.id != null) {
-                        ids.add(bean.id);
+                Map<String, ViewBean> activityWidgets =
+                        new LinkedHashMap<>();
+                populateActivityWidgets(scId, activity, activityWidgets);
+                for (Map.Entry<String, ViewBean> wEntry
+                        : activityWidgets.entrySet()) {
+                    ids.add(wEntry.getKey());
+                    if (wEntry.getValue() != null
+                            && wEntry.getValue().id != null) {
+                        ids.add(wEntry.getValue().id);
                     }
                 }
                 try {
@@ -11037,6 +11331,45 @@ public final class AgentLogic {
         } catch (Throwable ignored) {
             // Unknown means "not proven unused", which is the safe
             // answer: refuse the removal.
+            return "a block on this screen may name it";
+        }
+        return null;
+    }
+
+    /**
+     * Where a component is still used on a screen outside its own
+     * component events, or null if nothing touches it.
+     */
+    public static String componentUse(String scId, String javaName,
+                                      String componentId) {
+        if (scId == null || javaName == null || componentId == null
+                || componentId.isEmpty()) {
+            return null;
+        }
+        try {
+            eC store = jC.a(scId);
+            String ownPrefix = componentId + "_";
+            for (Map.Entry<String, ArrayList<BlockBean>> entry
+                    : allActivityBlocks(store, javaName).entrySet()) {
+                if (entry.getKey() != null
+                        && entry.getKey().startsWith(ownPrefix)) {
+                    continue;
+                }
+                ArrayList<BlockBean> blocks = entry.getValue();
+                if (blocks == null) {
+                    continue;
+                }
+                for (BlockBean bean : blocks) {
+                    java.util.Set<String> ids =
+                            new java.util.HashSet<>();
+                    collectBlockIdentifiers(bean, ids);
+                    if (ids.contains(componentId)) {
+                        return "a block in " + entry.getKey()
+                                + " names it";
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
             return "a block on this screen may name it";
         }
         return null;
@@ -11315,15 +11648,13 @@ public final class AgentLogic {
         // {"var":"Box"} or {"json_of_list":"allNotes"} inside
         // replace_with compiles into reporter beans instead of throwing
         // Gson's UnsupportedOperationException("JsonObject").
-        ArrayList<ViewBean> screenBeans =
-                SketchwareProjects.screenBeans(scId, activity);
         Map<String, ViewBean> byId = new LinkedHashMap<>();
-        for (ViewBean viewBean : screenBeans) {
-            byId.put(viewBean.id, viewBean);
-        }
+        populateActivityWidgets(scId, activity, byId);
         if ("onBindCustomView".equals(plan.eventName)
                 && !plan.activityEvent) {
-            ViewBean host = byId.get(plan.targetId);
+            ViewBean host = probe.drawerViewEvent
+                    ? byId.get("_drawer_" + plan.targetId)
+                    : byId.get(plan.targetId);
             if (host != null && host.customView != null
                     && !host.customView.isEmpty()
                     && !"none".equals(host.customView)) {
@@ -11845,10 +12176,8 @@ public final class AgentLogic {
                     + " runs " + plan.eventName + ":";
             return plan;
         }
-        ArrayList<ViewBean> beans =
-                SketchwareProjects.screenBeans(scId, activity);
         Map<String, ViewBean> byId = new LinkedHashMap<>();
-        for (ViewBean bean : beans) byId.put(bean.id, bean);
+        populateActivityWidgets(scId, activity, byId);
         ViewBean widget = findWidget(byId, target);
         if (widget == null) {
             String wanted = target == null ? "" : target.trim();
@@ -11889,7 +12218,12 @@ public final class AgentLogic {
                     + plan.eventName + ":";
             return plan;
         }
-        plan.targetId = widget.id;
+        if (widget.id != null && widget.id.startsWith("_drawer_")) {
+            plan.drawerViewEvent = true;
+            plan.targetId = widget.id.substring("_drawer_".length());
+        } else {
+            plan.targetId = widget.id;
+        }
         String text = widget.text == null ? "" : widget.text.text;
         String label = text != null && !text.isEmpty()
                 ? " (" + text + ")" : "";

@@ -413,6 +413,29 @@ public final class AgentExport {
                 JsonObject screen = new JsonObject();
                 screen.addProperty("activity",
                         SketchwareProjects.activityName(activity));
+                screen.addProperty("file_name", activity.fileName);
+                screen.addProperty("kind",
+                        SketchwareProjects.screenKind(activity));
+                screen.addProperty("root",
+                        SketchwareProjects.rootDescription(scId, activity));
+                JsonObject opts = new JsonObject();
+                opts.addProperty("toolbar",
+                        !SketchwareProjects.isFragment(activity)
+                                && activity.hasActivityOption(
+                                        ProjectFileBean
+                                                .OPTION_ACTIVITY_TOOLBAR));
+                opts.addProperty("fullscreen",
+                        activity.hasActivityOption(
+                                ProjectFileBean.OPTION_ACTIVITY_FULLSCREEN));
+                opts.addProperty("floating_button",
+                        activity.hasActivityOption(
+                                ProjectFileBean.OPTION_ACTIVITY_FAB));
+                opts.addProperty("drawer",
+                        !SketchwareProjects.isFragment(activity)
+                                && activity.hasActivityOption(
+                                        ProjectFileBean
+                                                .OPTION_ACTIVITY_DRAWER));
+                screen.add("options", opts);
                 SketchwareProjects.LogicSummary logic =
                         SketchwareProjects.logicSummary(scId, activity);
                 // Variables are per screen in Sketchware: recording
@@ -479,12 +502,18 @@ public final class AgentExport {
                             }
                             boolean activityEvent =
                                     event.targetId.equals(event.eventName);
+                            String probeTarget = activityEvent ? "activity"
+                                    : (event.eventType
+                                            == com.besome.sketch.beans.EventBean
+                                                    .EVENT_TYPE_DRAWER_VIEW
+                                            && !event.targetId
+                                                    .startsWith("_drawer_")
+                                            ? "_drawer_" + event.targetId
+                                            : event.targetId);
                             try {
                                 AgentLogic.EditPlan plan =
                                         AgentLogic.describeEvent(scId,
-                                                activity,
-                                                activityEvent ? "activity"
-                                                        : event.targetId,
+                                                activity, probeTarget,
                                                 event.eventName);
                                 if (plan == null
                                         || plan.existingCount <= 0) {
@@ -562,6 +591,14 @@ public final class AgentExport {
                             && !"default_image".equals(bean.image.resName)) {
                         widget.addProperty("image", bean.image.resName);
                     }
+                    if (bean.convert != null && !bean.convert.isEmpty()) {
+                        widget.addProperty("convert", bean.convert);
+                    }
+                    if (bean.customView != null
+                            && !bean.customView.isEmpty()
+                            && !"none".equals(bean.customView)) {
+                        widget.addProperty("custom_view", bean.customView);
+                    }
                     widgets.add(widget);
                 }
                 screen.add("widgets", widgets);
@@ -577,6 +614,26 @@ public final class AgentExport {
             // A snapshot is an aid; a damaged project still exports.
         }
         state.add("screens", screens);
+        JsonArray layouts = new JsonArray();
+        try {
+            for (ProjectFileBean view : SketchwareProjects.customViews(scId)) {
+                JsonObject layoutObj = new JsonObject();
+                layoutObj.addProperty("name", view.fileName);
+                layoutObj.addProperty("kind",
+                        SketchwareProjects.screenKind(view));
+                layoutObj.addProperty("root",
+                        SketchwareProjects.rootDescription(scId, view));
+                JsonArray viewWidgets = new JsonArray();
+                for (String line
+                        : SketchwareProjects.screenLines(scId, view, 120)) {
+                    viewWidgets.add(line);
+                }
+                layoutObj.add("widgets", viewWidgets);
+                layouts.add(layoutObj);
+            }
+        } catch (Exception ignored) {
+        }
+        state.add("layouts", layouts);
         try {
             SketchwareProjects.Resources res =
                     SketchwareProjects.resources(scId);

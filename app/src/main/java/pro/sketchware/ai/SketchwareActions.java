@@ -1,6 +1,11 @@
 package pro.sketchware.ai;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Pair;
+import android.view.View;
+import android.view.ViewGroup;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -10,7 +15,13 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import a.a.a.GB;
 import a.a.a.eC;
@@ -19,12 +30,20 @@ import a.a.a.lC;
 import a.a.a.nB;
 import a.a.a.oB;
 import a.a.a.wq;
+import com.besome.sketch.beans.ComponentBean;
 import com.besome.sketch.beans.EventBean;
 import com.besome.sketch.beans.ProjectFileBean;
 import com.besome.sketch.beans.ProjectLibraryBean;
 import com.besome.sketch.beans.ViewBean;
 import mod.hey.studios.project.ProjectSettings;
 import mod.hey.studios.util.ProjectFile;
+import pro.sketchware.SketchApplication;
+import pro.sketchware.managers.inject.InjectRootLayoutManager;
+import pro.sketchware.tools.ViewBeanParser;
+import pro.sketchware.utility.FileUtil;
+import pro.sketchware.utility.InvokeUtil;
+import pro.sketchware.utility.PropertiesUtil;
+import pro.sketchware.utility.relativelayout.CircularDependencyDetector;
 
 /**
  * The agent's hands. Every method performs one mutation by calling the
@@ -124,11 +143,21 @@ public final class SketchwareActions {
      */
     public static void createActivity(String scId, String fileName)
             throws Exception {
-        // The file manager keeps two lists, and ManageViewActivity's save
-        // writes both back exactly as loaded: activities (b()) and custom
-        // views (c()). Both are carried through untouched here — feeding
-        // the custom-view list from the activity list (as an earlier
-        // version did) would silently drop a project's custom views.
+        ProjectFileBean template = new ProjectFileBean(
+                ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY, fileName);
+        createScreen(scId, fileName, template.options, template.orientation,
+                false);
+    }
+
+    /**
+     * Adds an Activity, Fragment ({@code _fragment}), DialogFragment
+     * ({@code _dialog_fragment}), or BottomSheetDialogFragment
+     * ({@code _bottomdialog_fragment}) with explicit options and
+     * orientation, matching AddViewActivity + ManageViewActivity.
+     */
+    public static void createScreen(String scId, String fileName, int options,
+                                    int orientation, boolean needsAppCompat)
+            throws Exception {
         ArrayList<ProjectFileBean> activities = jC.b(scId).b();
         if (activities == null) {
             activities = new ArrayList<>();
@@ -145,8 +174,41 @@ public final class SketchwareActions {
             }
         }
         backupProjectOnce(scId);
-        activities.add(new ProjectFileBean(
-                ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY, fileName));
+        boolean isFragment = fileName.toLowerCase(Locale.ROOT)
+                .contains("_fragment");
+        int effectiveOptions = isFragment
+                ? (options & ~(ProjectFileBean.OPTION_ACTIVITY_TOOLBAR
+                        | ProjectFileBean.OPTION_ACTIVITY_DRAWER))
+                : options;
+        ProjectFileBean created = new ProjectFileBean(
+                ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY, fileName,
+                orientation, 0, effectiveOptions);
+        activities.add(created);
+        boolean hasDrawer = !isFragment
+                && (effectiveOptions
+                        & ProjectFileBean.OPTION_ACTIVITY_DRAWER) != 0;
+        if (hasDrawer) {
+            String drawerName = ProjectFileBean.getDrawerName(fileName);
+            boolean exists = false;
+            for (ProjectFileBean view : customViews) {
+                if (view.fileName.equalsIgnoreCase(drawerName)) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                customViews.add(new ProjectFileBean(
+                        ProjectFileBean.PROJECT_FILE_TYPE_DRAWER,
+                        drawerName));
+            }
+        }
+        if (needsAppCompat || hasDrawer
+                || (effectiveOptions
+                        & ProjectFileBean.OPTION_ACTIVITY_FAB) != 0
+                || fileName.toLowerCase(Locale.ROOT)
+                        .endsWith("_bottomdialog_fragment")) {
+            enableAppCompat(scId);
+        }
         jC.b(scId).a(activities);
         jC.b(scId).b(customViews);
         jC.b(scId).l();
@@ -192,12 +254,14 @@ public final class SketchwareActions {
         }
         backupProjectOnce(scId);
         activities.remove(target);
+        String drawerName = ProjectFileBean.getDrawerName(fileName);
         if (target.hasActivityOption(
                 ProjectFileBean.OPTION_ACTIVITY_DRAWER)) {
-            String drawerName = ProjectFileBean.getDrawerName(fileName);
             customViews.removeIf(file ->
                     file.fileName.equalsIgnoreCase(drawerName));
         }
+        removeRootEntry(scId, target.getXmlName());
+        removeRootEntry(scId, ProjectFileBean.getXmlName(drawerName));
         jC.b(scId).a(activities);
         jC.b(scId).b(customViews);
         jC.b(scId).l();
@@ -208,6 +272,156 @@ public final class SketchwareActions {
             throw new ActionException("The screen was deleted but can "
                     + "still be read back.");
         }
+    }
+
+    /**
+     * Deletes a custom view layout (never a {@code _drawer_*} layout),
+     * optionally clearing {@code customView} / {@code include} references
+     * across other screens first.
+     */
+    public static List<String> deleteCustomView(String scId, String fileName,
+                                                boolean clearReferences)
+            throws Exception {
+        ArrayList<ProjectFileBean> activities = jC.b(scId).b();
+        if (activities == null) {
+            activities = new ArrayList<>();
+        }
+        ArrayList<ProjectFileBean> customViews = jC.b(scId).c();
+        if (customViews == null) {
+            customViews = new ArrayList<>();
+        }
+        ProjectFileBean target = null;
+        for (ProjectFileBean view : customViews) {
+            if (view.fileName.equalsIgnoreCase(fileName)) {
+                target = view;
+                break;
+            }
+        }
+        if (target == null) {
+            throw new ActionException("That custom view no longer exists.");
+        }
+        if (SketchwareProjects.isDrawer(target)) {
+            throw new ActionException("Navigation drawer layouts ("
+                    + target.fileName
+                    + ") are managed by edit_activity (drawer: false).");
+        }
+        List<String> refs =
+                SketchwareProjects.customViewReferences(scId, target.fileName);
+        if (!refs.isEmpty() && !clearReferences) {
+            throw new ActionException("Custom view \"" + target.fileName
+                    + "\" is still referenced by: "
+                    + String.join("; ", refs)
+                    + ". Pass clear_references=true or update those widgets "
+                    + "first.");
+        }
+        backupProjectOnce(scId);
+        if (!refs.isEmpty()) {
+            List<ProjectFileBean> allScreens = new ArrayList<>(activities);
+            allScreens.addAll(customViews);
+            for (ProjectFileBean screen : allScreens) {
+                if (screen.fileName.equalsIgnoreCase(target.fileName)) {
+                    continue;
+                }
+                ArrayList<ViewBean> beans =
+                        SketchwareProjects.screenBeans(scId, screen);
+                boolean touched = false;
+                ArrayList<ViewBean> includeRemovals = new ArrayList<>();
+                for (ViewBean bean : beans) {
+                    if (bean == null) {
+                        continue;
+                    }
+                    if (bean.customView != null
+                            && bean.customView.equalsIgnoreCase(
+                                    target.fileName)) {
+                        bean.customView = "none";
+                        touched = true;
+                    } else if ("include".equals(bean.convert)
+                            && bean.id != null
+                            && bean.id.equalsIgnoreCase(target.fileName)) {
+                        includeRemovals.add(bean);
+                    }
+                }
+                for (ViewBean inc : includeRemovals) {
+                    deleteWidgetLikeEditor(scId, screen, inc);
+                    beans.remove(inc);
+                    touched = true;
+                }
+                if (touched) {
+                    saveScreen(scId, screen, beans);
+                }
+            }
+        }
+        customViews.remove(target);
+        removeRootEntry(scId, target.getXmlName());
+        jC.b(scId).a(activities);
+        jC.b(scId).b(customViews);
+        jC.b(scId).l();
+        jC.b(scId).j();
+        jC.a(scId).a(jC.b(scId));
+        commitProject(scId);
+        if (SketchwareProjects.findCustomView(scId, target.fileName)
+                != null) {
+            throw new ActionException("The custom view was deleted but can "
+                    + "still be read back.");
+        }
+        return refs;
+    }
+
+    /**
+     * Removes one component and its component events from an activity or
+     * fragment screen through Sketchware's component delete path
+     * ({@code br.java:168}: {@code eC.b(javaName, componentBean)}).
+     */
+    public static int removeComponent(String scId, ProjectFileBean activity,
+                                      String componentId) throws Exception {
+        eC store = jC.a(scId);
+        String javaName = activity.getJavaName();
+        ArrayList<ComponentBean> components = store.e(javaName);
+        ComponentBean target = null;
+        if (components != null) {
+            for (ComponentBean component : components) {
+                if (component != null
+                        && componentId.equals(component.componentId)) {
+                    target = component;
+                    break;
+                }
+            }
+        }
+        if (target == null) {
+            throw new ActionException("Component \"" + componentId
+                    + "\" no longer exists on "
+                    + SketchwareProjects.activityName(activity) + ".");
+        }
+        backupProjectOnce(scId);
+        int removedEvents = 0;
+        ArrayList<EventBean> events = store.g(javaName);
+        if (events != null) {
+            ArrayList<EventBean> toDelete = new ArrayList<>();
+            for (EventBean ev : events) {
+                if (ev != null
+                        && ev.eventType == EventBean.EVENT_TYPE_COMPONENT
+                        && componentId.equals(ev.targetId)) {
+                    toDelete.add(ev);
+                }
+            }
+            for (EventBean ev : toDelete) {
+                EventBean.deleteEvent(scId, ev, activity);
+                removedEvents++;
+            }
+        }
+        store.b(javaName, target);
+        commitProject(scId);
+        ArrayList<ComponentBean> after = store.e(javaName);
+        if (after != null) {
+            for (ComponentBean component : after) {
+                if (component != null
+                        && componentId.equals(component.componentId)) {
+                    throw new ActionException("Component \"" + componentId
+                            + "\" was deleted but can still be read back.");
+                }
+            }
+        }
+        return removedEvents;
     }
 
     /**
@@ -291,7 +505,7 @@ public final class SketchwareActions {
         if ((options & ProjectFileBean.OPTION_ACTIVITY_FAB) != 0) {
             // The screen manager enables the design library the moment
             // a floating button is switched on (Fw's option save).
-            jC.c(scId).c().useYn = "Y";
+            enableAppCompat(scId);
         }
         // A drawer is a screen of its own — `_drawer_<activity>` —
         // which the screen manager creates when the option goes on and
@@ -319,6 +533,7 @@ public final class SketchwareActions {
             enableAppCompat(scId);
         } else if (drawerFile != null) {
             customViews.remove(drawerFile);
+            removeRootEntry(scId, ProjectFileBean.getXmlName(drawerName));
         }
         jC.b(scId).a(activities);
         jC.b(scId).b(customViews);
@@ -413,19 +628,326 @@ public final class SketchwareActions {
     public static pro.sketchware.managers.inject.InjectRootLayoutManager.Root
             setRootAttributes(String scId, ProjectFileBean activity,
                               java.util.Map<String, String> updates) {
-        pro.sketchware.managers.inject.InjectRootLayoutManager manager =
-                new pro.sketchware.managers.inject.InjectRootLayoutManager(
-                        scId);
-        String xmlName = activity.getXmlName();
-        pro.sketchware.managers.inject.InjectRootLayoutManager.Root
-                previous = manager.getLayoutByFileName(xmlName);
-        java.util.Map<String, String> attributes =
-                new java.util.LinkedHashMap<>(previous.getAttributes());
-        attributes.putAll(updates);
-        manager.set(xmlName, new pro.sketchware.managers.inject
-                .InjectRootLayoutManager.Root(
-                        previous.getClassName(), attributes));
+        return setRootLayout(scId, activity, null, updates, false);
+    }
+
+    /**
+     * Resolves a human or full-package ViewGroup name to the exact XML tag
+     * Sketchware Pro's {@link InjectRootLayoutManager} and {@code Ox} write.
+     * Returns {@code null} when unknown or not a {@link ViewGroup}.
+     */
+    public static String resolveRootClassName(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        String key = trimmed.toLowerCase(Locale.ROOT)
+                .replace("_", "").replace(" ", "");
+        String mapped = switch (key) {
+            case "linearlayout", "linear" -> "LinearLayout";
+            case "relativelayout", "relative" -> "RelativeLayout";
+            case "framelayout", "frame" -> "FrameLayout";
+            case "scrollview", "vscrollview", "verticalscrollview" ->
+                    "ScrollView";
+            case "horizontalscrollview", "hscrollview" ->
+                    "HorizontalScrollView";
+            case "constraintlayout", "constraint" ->
+                    "androidx.constraintlayout.widget.ConstraintLayout";
+            case "coordinatorlayout", "coordinator" ->
+                    "androidx.coordinatorlayout.widget.CoordinatorLayout";
+            case "nestedscrollview", "nestedscroll" ->
+                    "androidx.core.widget.NestedScrollView";
+            case "cardview", "materialcardview" ->
+                    "com.google.android.material.card.MaterialCardView";
+            case "swiperefreshlayout", "swiperefresh" ->
+                    "androidx.swiperefreshlayout.widget.SwipeRefreshLayout";
+            case "radiogroup" -> "RadioGroup";
+            case "gridlayout" -> "GridLayout";
+            case "tablelayout" -> "TableLayout";
+            default -> trimmed;
+        };
+        if (mapped.equals(trimmed)
+                && !mapped.contains(".")
+                && !mapped.matches("[A-Z][A-Za-z0-9]*")) {
+            return null;
+        }
+        Object ok = runOnMainLooperWithTimeout(() -> {
+            View created = InvokeUtil.createView(
+                    SketchApplication.getContext(), mapped);
+            return created instanceof ViewGroup;
+        });
+        return Boolean.TRUE.equals(ok) ? mapped : null;
+    }
+
+    /**
+     * Updates a screen's root ViewGroup class and/or attributes through
+     * {@link InjectRootLayoutManager} and keeps top-level children's
+     * {@code parentType} in sync. Returns the previous root for rollback.
+     */
+    public static InjectRootLayoutManager.Root setRootLayout(
+            String scId, ProjectFileBean screen, String newClassName,
+            Map<String, String> updates, boolean replaceAttributes) {
+        InjectRootLayoutManager manager = new InjectRootLayoutManager(scId);
+        String xmlName = screen.getXmlName();
+        InjectRootLayoutManager.Root previous =
+                manager.getLayoutByFileName(xmlName);
+        String targetClass = newClassName != null && !newClassName.isEmpty()
+                ? newClassName : previous.getClassName();
+        Map<String, String> attributes = replaceAttributes
+                ? new LinkedHashMap<>()
+                : new LinkedHashMap<>(previous.getAttributes() != null
+                        ? previous.getAttributes() : new LinkedHashMap<>());
+        if (!attributes.containsKey("android:layout_width")) {
+            attributes.put("android:layout_width", "match_parent");
+        }
+        if (!attributes.containsKey("android:layout_height")) {
+            attributes.put("android:layout_height", "match_parent");
+        }
+        if (newClassName != null && !"LinearLayout".equals(targetClass)
+                && !"RadioGroup".equals(targetClass)
+                && (updates == null
+                        || !updates.containsKey("android:orientation"))) {
+            attributes.remove("android:orientation");
+        } else if ("LinearLayout".equals(targetClass)
+                && !attributes.containsKey("android:orientation")) {
+            attributes.put("android:orientation", "vertical");
+        }
+        if (updates != null) {
+            for (Map.Entry<String, String> entry : updates.entrySet()) {
+                if (entry.getValue() == null || entry.getValue().isEmpty()) {
+                    attributes.remove(entry.getKey());
+                } else {
+                    attributes.put(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+        manager.set(xmlName,
+                new InjectRootLayoutManager.Root(targetClass, attributes));
+        if (newClassName != null && !newClassName.isEmpty()) {
+            Object rootTypeObj = runOnMainLooperWithTimeout(
+                    () -> ViewBeanParser.getViewTypeByClassName(targetClass));
+            int resolvedType = rootTypeObj instanceof Integer
+                    ? (Integer) rootTypeObj : ViewBean.VIEW_TYPE_LAYOUT_LINEAR;
+            ArrayList<ViewBean> beans =
+                    SketchwareProjects.screenBeans(scId, screen);
+            if (beans != null && !beans.isEmpty()) {
+                boolean touched = false;
+                for (ViewBean bean : beans) {
+                    if (bean != null
+                            && ("root".equals(bean.parent)
+                                    || bean.parent == null
+                                    || bean.parent.isEmpty())
+                            && bean.parentType != resolvedType) {
+                        bean.parent = "root";
+                        bean.parentType = resolvedType;
+                        touched = true;
+                    }
+                }
+                if (touched) {
+                    saveScreen(scId, screen, beans);
+                }
+            }
+            if (targetClass.startsWith("androidx.")
+                    || targetClass.startsWith("com.google.android.material.")) {
+                enableAppCompat(scId);
+            }
+        }
         return previous;
+    }
+
+    /** Result of parsing and validating raw Android layout XML. */
+    public static final class ParsedLayoutXml {
+        public final InjectRootLayoutManager.Root root;
+        public final ArrayList<ViewBean> beans;
+
+        public ParsedLayoutXml(InjectRootLayoutManager.Root root,
+                               ArrayList<ViewBean> beans) {
+            this.root = root;
+            this.beans = beans;
+        }
+    }
+
+    /**
+     * Parses and validates raw Android layout XML on the main looper using
+     * {@link ViewBeanParser} + {@link CircularDependencyDetector} +
+     * {@code eC.a(...)} (matching {@code ViewCodeEditorActivity:167-212}).
+     */
+    public static ParsedLayoutXml parseLayoutXml(String xml) throws Exception {
+        if (xml == null || xml.trim().isEmpty()) {
+            throw new ActionException("Layout XML is empty.");
+        }
+        final String cleaned = xml.startsWith("\uFEFF")
+                ? xml.substring(1).trim() : xml.trim();
+        AtomicReference<ParsedLayoutXml> outRef = new AtomicReference<>();
+        AtomicReference<Exception> errRef = new AtomicReference<>();
+        Runnable task = () -> {
+            try {
+                ViewBeanParser parser = new ViewBeanParser(cleaned);
+                parser.setSkipRoot(true);
+                ArrayList<ViewBean> parsed = parser.parse();
+                Pair<String, Map<String, String>> rootPair =
+                        parser.getRootAttributes();
+                if (rootPair == null || rootPair.first == null
+                        || rootPair.first.isEmpty()) {
+                    throw new ActionException(
+                            "Layout XML must start with a ViewGroup root tag "
+                                    + "(e.g. LinearLayout, FrameLayout, "
+                                    + "ConstraintLayout).");
+                }
+                for (ViewBean viewBean : parsed) {
+                    if (viewBean.parentAttributes == null
+                            || viewBean.parentAttributes.isEmpty()) {
+                        continue;
+                    }
+                    CircularDependencyDetector detector =
+                            new CircularDependencyDetector(parsed, viewBean);
+                    for (Map.Entry<String, String> entry
+                            : viewBean.parentAttributes.entrySet()) {
+                        String targetId = PropertiesUtil.parseReferName(
+                                entry.getValue(), "/");
+                        if (!detector.isLegalAttribute(
+                                targetId, entry.getKey())) {
+                            throw new ActionException(
+                                    "Circular RelativeLayout dependency on "
+                                            + viewBean.id + " ("
+                                            + entry.getKey() + " -> "
+                                            + entry.getValue() + ").");
+                        }
+                    }
+                }
+                ArrayList<ViewBean> normalized = eC.a(parsed);
+                outRef.set(new ParsedLayoutXml(
+                        InjectRootLayoutManager.toRoot(rootPair),
+                        normalized != null ? normalized : parsed));
+            } catch (Exception e) {
+                errRef.set(e);
+            }
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            task.run();
+        } else {
+            CountDownLatch latch = new CountDownLatch(1);
+            new Handler(Looper.getMainLooper()).post(() -> {
+                try {
+                    task.run();
+                } finally {
+                    latch.countDown();
+                }
+            });
+            if (!latch.await(15, TimeUnit.SECONDS)) {
+                throw new ActionException(
+                        "Timed out while parsing layout XML on main thread.");
+            }
+        }
+        if (errRef.get() != null) {
+            throw errRef.get();
+        }
+        return outRef.get();
+    }
+
+    /**
+     * Imports validated Android layout XML into {@code screen}, cleaning up
+     * events/block references for any removed widgets and updating both
+     * {@link InjectRootLayoutManager} and {@code eC}.
+     */
+    public static ParsedLayoutXml importLayoutXml(String scId,
+                                                  ProjectFileBean screen,
+                                                  String xml)
+            throws Exception {
+        ParsedLayoutXml parsed = parseLayoutXml(xml);
+        ArrayList<ViewBean> current =
+                SketchwareProjects.screenBeans(scId, screen);
+        ArrayList<ViewBean> snapshot = AgentEdits.deepCopy(current);
+        InjectRootLayoutManager rootManager =
+                new InjectRootLayoutManager(scId);
+        InjectRootLayoutManager.Root previousRoot =
+                rootManager.getLayoutByFileName(screen.getXmlName());
+        java.util.Set<String> keepIds = new java.util.HashSet<>();
+        for (ViewBean b : parsed.beans) {
+            if (b != null && b.id != null) {
+                keepIds.add(b.id);
+            }
+        }
+        backupProjectOnce(scId);
+        try {
+            for (ViewBean old : current) {
+                if (old != null && !keepIds.contains(old.id)) {
+                    deleteWidgetLikeEditor(scId, screen, old);
+                }
+            }
+            rootManager.set(screen.getXmlName(), parsed.root);
+            saveScreen(scId, screen, parsed.beans);
+            String rootClass = parsed.root.getClassName();
+            if (rootClass != null
+                    && (rootClass.startsWith("androidx.")
+                            || rootClass.startsWith(
+                                    "com.google.android.material."))) {
+                enableAppCompat(scId);
+            }
+            commitProject(scId);
+            ArrayList<ViewBean> readBack =
+                    SketchwareProjects.screenBeans(scId, screen);
+            if (readBack.size() != parsed.beans.size()) {
+                throw new ActionException("Imported " + parsed.beans.size()
+                        + " widgets, but read back " + readBack.size() + ".");
+            }
+            return parsed;
+        } catch (Exception e) {
+            try {
+                restoreRoot(scId, screen, previousRoot);
+                saveScreen(scId, screen, snapshot);
+                commitProject(scId);
+            } catch (Exception ignored) {
+            }
+            throw e;
+        }
+    }
+
+    private static void removeRootEntry(String scId, String xmlName) {
+        if (scId == null || xmlName == null || xmlName.isEmpty()) {
+            return;
+        }
+        try {
+            String path = wq.b(scId) + "/view_root";
+            if (!FileUtil.isExistFile(path)) {
+                return;
+            }
+            InjectRootLayoutManager manager =
+                    new InjectRootLayoutManager(scId);
+            Map<String, InjectRootLayoutManager.Root> map = manager.get();
+            if (map != null && map.remove(xmlName) != null) {
+                FileUtil.writeFile(path,
+                        new com.google.gson.Gson().toJson(map));
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static Object runOnMainLooperWithTimeout(
+            java.util.concurrent.Callable<Object> callable) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            try {
+                return callable.call();
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
+        AtomicReference<Object> ref = new AtomicReference<>();
+        CountDownLatch latch = new CountDownLatch(1);
+        new Handler(Looper.getMainLooper()).post(() -> {
+            try {
+                ref.set(callable.call());
+            } catch (Exception ignored) {
+            } finally {
+                latch.countDown();
+            }
+        });
+        try {
+            latch.await(10, TimeUnit.SECONDS);
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
+        return ref.get();
     }
 
     /**

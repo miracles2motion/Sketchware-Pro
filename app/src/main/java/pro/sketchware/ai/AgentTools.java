@@ -141,10 +141,14 @@ public final class AgentTools {
         register(new GetTaskLog());
         register(new CreateProject());
         register(new CreateActivity());
+        register(new CreateFragment());
         register(new CreateCustomView());
         register(new DeleteActivity());
+        register(new DeleteCustomView());
         register(new EditActivity());
         register(new EditScreen());
+        register(new ConvertRootLayout());
+        register(new ImportLayoutXml());
         register(new SetEventHandler());
         register(new GetEventLogic());
         register(new EditEventBlock());
@@ -153,6 +157,7 @@ public final class AgentTools {
         register(new CreateMoreBlock());
         register(new RemoveMoreBlock());
         register(new CreateComponent());
+        register(new RemoveComponent());
         register(new ImportBuiltinIcon());
         register(new ImportChatImage());
         register(new ManageDrawable());
@@ -750,7 +755,10 @@ public final class AgentTools {
 
         @Override
         public String description() {
-            return "Lists the activities (screens) of the working project.";
+            return "Lists the working project's screens and layouts: "
+                    + "activities, fragments (Fragment, DialogFragment, "
+                    + "BottomSheetDialogFragment), drawers (_drawer_*), "
+                    + "and custom_views.";
         }
 
         @Override
@@ -768,15 +776,34 @@ public final class AgentTools {
                 throws ToolException {
             String scId = requiredProject(session.workingProjectId);
             JsonArray activities = new JsonArray();
-            for (ProjectFileBean activity : SketchwareProjects.activities(scId)) {
-                activities.add(SketchwareProjects.activityName(activity));
+            JsonArray fragments = new JsonArray();
+            for (ProjectFileBean activity
+                    : SketchwareProjects.activities(scId)) {
+                if (SketchwareProjects.isFragment(activity)) {
+                    JsonObject entry = new JsonObject();
+                    entry.addProperty("name",
+                            SketchwareProjects.activityName(activity));
+                    entry.addProperty("file_name", activity.fileName);
+                    entry.addProperty("kind",
+                            SketchwareProjects.screenKind(activity));
+                    fragments.add(entry);
+                } else {
+                    activities.add(SketchwareProjects.activityName(activity));
+                }
             }
+            JsonArray drawers = new JsonArray();
             JsonArray customViews = new JsonArray();
             for (ProjectFileBean view : SketchwareProjects.customViews(scId)) {
-                customViews.add(view.fileName);
+                if (SketchwareProjects.isDrawer(view)) {
+                    drawers.add(view.fileName);
+                } else {
+                    customViews.add(view.fileName);
+                }
             }
             JsonObject result = new JsonObject();
             result.add("activities", activities);
+            result.add("fragments", fragments);
+            result.add("drawers", drawers);
             result.add("custom_views", customViews);
             return result;
         }
@@ -916,11 +943,62 @@ public final class AgentTools {
             result.addProperty("activity",
                     SketchwareProjects.screenName(activity));
             result.addProperty("kind",
-                    activity.fileType
-                            == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY
-                            ? "activity" : "custom_view");
+                    SketchwareProjects.screenKind(activity));
             result.addProperty("root",
                     SketchwareProjects.rootDescription(scId, activity));
+            if (activity.fileType
+                    == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
+                JsonObject opts = new JsonObject();
+                opts.addProperty("toolbar",
+                        !SketchwareProjects.isFragment(activity)
+                                && activity.hasActivityOption(
+                                        ProjectFileBean
+                                                .OPTION_ACTIVITY_TOOLBAR));
+                opts.addProperty("fullscreen",
+                        activity.hasActivityOption(
+                                ProjectFileBean.OPTION_ACTIVITY_FULLSCREEN));
+                opts.addProperty("floating_button",
+                        activity.hasActivityOption(
+                                ProjectFileBean.OPTION_ACTIVITY_FAB));
+                opts.addProperty("drawer",
+                        !SketchwareProjects.isFragment(activity)
+                                && activity.hasActivityOption(
+                                        ProjectFileBean
+                                                .OPTION_ACTIVITY_DRAWER));
+                String orient = switch (activity.orientation) {
+                    case ProjectFileBean.ORIENTATION_LANDSCAPE -> "landscape";
+                    case ProjectFileBean.ORIENTATION_BOTH -> "both";
+                    default -> "portrait";
+                };
+                opts.addProperty("orientation", orient);
+                result.add("options", opts);
+                if (activity.hasActivityOption(
+                        ProjectFileBean.OPTION_ACTIVITY_FAB)) {
+                    result.addProperty("fab_id", "_fab");
+                }
+                ProjectFileBean drawerFile =
+                        SketchwareProjects.drawerFileOf(scId, activity);
+                if (drawerFile != null) {
+                    result.addProperty("drawer_layout", drawerFile.fileName);
+                    JsonArray drawerWidgets = new JsonArray();
+                    for (String line : SketchwareProjects.screenLines(
+                            scId, drawerFile, 60)) {
+                        drawerWidgets.add(line);
+                    }
+                    result.add("drawer_widgets", drawerWidgets);
+                }
+            } else if (SketchwareProjects.isDrawer(activity)) {
+                ProjectFileBean host =
+                        SketchwareProjects.drawerHostActivity(scId, activity);
+                if (host != null) {
+                    String hostName = SketchwareProjects.activityName(host);
+                    result.addProperty("host_activity", hostName);
+                    result.addProperty("drawer_events_note",
+                            "Wire drawer widget events on " + hostName
+                                    + " with target \"<widgetId>\" or "
+                                    + "\"_drawer_<widgetId>\".");
+                }
+            }
             JsonArray widgets = new JsonArray();
             for (String line : SketchwareProjects.screenLines(scId, activity, 120)) {
                 widgets.add(line);
@@ -1217,6 +1295,7 @@ public final class AgentTools {
                 // Screen-level changes ride in set_root ops; they are
                 // written through the root layout manager the editor
                 // itself uses, with the previous root kept for rollback.
+                String rootClassUpdate = null;
                 java.util.Map<String, String> rootUpdates =
                         new java.util.LinkedHashMap<>();
                 for (com.google.gson.JsonElement element
@@ -1226,6 +1305,10 @@ public final class AgentTools {
                             ? op.get("op").getAsString() : "")) {
                         continue;
                     }
+                    if (op.has("resolved_class_name")) {
+                        rootClassUpdate =
+                                op.get("resolved_class_name").getAsString();
+                    }
                     if (op.has("background_hex")) {
                         rootUpdates.put("android:background",
                                 op.get("background_hex").getAsString());
@@ -1234,10 +1317,20 @@ public final class AgentTools {
                         rootUpdates.put("android:orientation",
                                 op.get("orientation").getAsString());
                     }
+                    if (op.has("resolved_attributes")
+                            && op.get("resolved_attributes").isJsonObject()) {
+                        for (java.util.Map.Entry<String, JsonElement> entry
+                                : op.getAsJsonObject("resolved_attributes")
+                                        .entrySet()) {
+                            rootUpdates.put(entry.getKey(),
+                                    entry.getValue().getAsString());
+                        }
+                    }
                 }
-                if (!rootUpdates.isEmpty()) {
-                    previousRoot = SketchwareActions.setRootAttributes(
-                            located.scId, located.activity, rootUpdates);
+                if (rootClassUpdate != null || !rootUpdates.isEmpty()) {
+                    previousRoot = SketchwareActions.setRootLayout(
+                            located.scId, located.activity, rootClassUpdate,
+                            rootUpdates, false);
                 }
                 // Floating-button changes ride in set_fab ops; they go
                 // to the activity's own fab bean in the data manager.
@@ -5002,6 +5095,9 @@ public final class AgentTools {
             JsonObject properties = new JsonObject();
             properties.add("activity", stringSchema(
                     "The new activity name, e.g. SettingsActivity"));
+            properties.add("kind", stringSchema(
+                    "Optional screen kind: activity (default), fragment, "
+                            + "dialog_fragment, or bottom_sheet_fragment"));
             return AgentTools.parameters(properties, "activity");
         }
 
@@ -5022,6 +5118,21 @@ public final class AgentTools {
                 throws ToolException {
             String scId = requiredProject(session.workingProjectId);
             String asked = stringArg(args, "activity");
+            String kind = inferFragmentKindOrEmpty(asked,
+                    stringArg(args, "kind"));
+            if (!kind.isEmpty()) {
+                JsonObject forwarded = new JsonObject();
+                forwarded.addProperty("name", asked);
+                forwarded.addProperty("kind", kind);
+                AgentProposal fp = new CreateFragment().propose(
+                        session, forwarded);
+                JsonObject clean = fp.args.deepCopy();
+                clean.addProperty("activity",
+                        stringArg(fp.args, "file_name"));
+                clean.addProperty("fragment_mode", true);
+                return new AgentProposal(name(), clean, scId,
+                        fp.title, fp.summary, fp.details);
+            }
             // A new screen is real work: it is planned before it is
             // added, so the user sees where it fits before it exists.
             requireDesign(scId, asked, "screen", false, false, true);
@@ -5056,6 +5167,10 @@ public final class AgentTools {
         @Override
         public JsonObject execute(Session session, AgentProposal proposal)
                 throws ToolException {
+            if (proposal.args != null
+                    && proposal.args.has("fragment_mode")) {
+                return new CreateFragment().execute(session, proposal);
+            }
             String scId = requiredProject(proposal.workingProjectId);
             String fileName = stringArg(proposal.args, "activity");
             if (SketchwareProjects.findActivity(scId, fileName) != null) {
@@ -5268,11 +5383,19 @@ public final class AgentTools {
                         "There is no screen named \"" + asked + "\" in "
                                 + "the working project.");
             }
+            boolean isFragment = SketchwareProjects.isFragment(target);
             int options = target.options;
             int orientation = target.orientation;
             List<String> lines = new java.util.ArrayList<>();
             if (args.has("toolbar")) {
                 boolean show = args.get("toolbar").getAsBoolean();
+                if (isFragment && show) {
+                    throw new ToolException("E_FRAGMENT_OPTION",
+                            SketchwareProjects.activityName(target)
+                                    + " is a Fragment and does not own a top "
+                                    + "toolbar — configure the toolbar on "
+                                    + "its host Activity instead.");
+                }
                 options = show
                         ? options | ProjectFileBean.OPTION_ACTIVITY_TOOLBAR
                         : options & ~ProjectFileBean.OPTION_ACTIVITY_TOOLBAR;
@@ -5299,13 +5422,29 @@ public final class AgentTools {
             }
             if (args.has("drawer")) {
                 boolean show = args.get("drawer").getAsBoolean();
+                if (isFragment && show) {
+                    throw new ToolException("E_FRAGMENT_OPTION",
+                            SketchwareProjects.activityName(target)
+                                    + " is a Fragment and cannot have its "
+                                    + "own navigation drawer — enable the "
+                                    + "drawer on its host Activity instead.");
+                }
                 options = show
                         ? options | ProjectFileBean.OPTION_ACTIVITY_DRAWER
                         : options & ~ProjectFileBean.OPTION_ACTIVITY_DRAWER;
+                if (show && !args.has("toolbar")
+                        && (options
+                                & ProjectFileBean.OPTION_ACTIVITY_TOOLBAR) == 0) {
+                    options |= ProjectFileBean.OPTION_ACTIVITY_TOOLBAR;
+                    lines.add("Show "
+                            + SketchwareProjects.activityName(target)
+                            + "'s top toolbar for the drawer toggle");
+                }
                 lines.add((show ? "Give " : "Remove the navigation drawer of ")
                         + SketchwareProjects.activityName(target)
                         + (show
                                 ? " a navigation drawer (its _drawer_"
+                                        + target.fileName
                                         + " layout is created too, and "
                                         + "AppCompat is switched on)"
                                 : ""));
@@ -7312,5 +7451,861 @@ public final class AgentTools {
             }
         }
         return arr;
+    }
+
+    private static String inferFragmentKindOrEmpty(String askedName,
+                                                   String explicitKind)
+            throws ToolException {
+        if (explicitKind != null && !explicitKind.trim().isEmpty()) {
+            String k = explicitKind.trim().toLowerCase(Locale.ROOT)
+                    .replace("-", "_").replace(" ", "_");
+            return switch (k) {
+                case "activity", "screen" -> "";
+                case "fragment", "page_fragment" -> "fragment";
+                case "dialog_fragment", "dialogfragment", "dialog" ->
+                        "dialog_fragment";
+                case "bottom_sheet_fragment", "bottom_sheet_dialog_fragment",
+                        "bottomdialog_fragment", "bottomsheet",
+                        "bottom_sheet" -> "bottom_sheet_fragment";
+                default -> throw new ToolException("E_BAD_KIND",
+                        "Unknown screen kind \"" + explicitKind
+                                + "\". Use activity, fragment, "
+                                + "dialog_fragment, or "
+                                + "bottom_sheet_fragment.");
+            };
+        }
+        if (askedName == null) {
+            return "";
+        }
+        String lower = askedName.trim().toLowerCase(Locale.ROOT);
+        if (lower.endsWith("bottomsheetdialogfragment")
+                || lower.endsWith("bottomsheetfragment")
+                || lower.endsWith("_bottomdialog_fragment")
+                || lower.endsWith("_bottom_sheet_fragment")) {
+            return "bottom_sheet_fragment";
+        }
+        if (lower.endsWith("dialogfragment")
+                || lower.endsWith("_dialog_fragment")) {
+            return "dialog_fragment";
+        }
+        if (lower.endsWith("fragment") || lower.endsWith("_fragment")) {
+            return "fragment";
+        }
+        return "";
+    }
+
+    /**
+     * create_fragment: adds a Fragment, DialogFragment, or
+     * BottomSheetDialogFragment to the working project.
+     */
+    private static final class CreateFragment implements Tool {
+        private static final Pattern BASE_PATTERN =
+                Pattern.compile("[a-z][a-z0-9_]{0,34}");
+
+        @Override
+        public String name() {
+            return "create_fragment";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes adding a Fragment, DialogFragment, or "
+                    + "BottomSheetDialogFragment to the working project. "
+                    + "Regular fragments (kind=\"fragment\") are displayed "
+                    + "via FragmentAdapter + ViewPager (return_fragment) or "
+                    + "replace_fragment inside a container; dialog fragments "
+                    + "(kind=\"dialog_fragment\" or \"bottom_sheet_fragment\") "
+                    + "are displayed with show_dialog_fragment and closed "
+                    + "with dismiss_dialog_fragment. BottomSheetDialogFragment "
+                    + "automatically switches AppCompat/Material on.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("name", stringSchema(
+                    "Fragment name, e.g. HomeFragment, ConfirmDialog, or "
+                            + "FilterBottomSheet"));
+            properties.add("kind", stringSchema(
+                    "One of: fragment (default), dialog_fragment, or "
+                            + "bottom_sheet_fragment"));
+            JsonObject fab = new JsonObject();
+            fab.addProperty("type", "boolean");
+            fab.addProperty("description",
+                    "Optional floating action button on this fragment "
+                            + "(default false)");
+            properties.add("floating_button", fab);
+            return AgentTools.parameters(properties, "name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            String n = stringArg(args, "name");
+            return n.isEmpty() ? "Wants to add a fragment"
+                    : "Wants to add fragment " + n;
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String asked = stringArg(args, "name").trim();
+            if (asked.isEmpty()) {
+                asked = stringArg(args, "activity").trim();
+            }
+            if (asked.isEmpty()) {
+                throw new ToolException("E_BAD_NAME",
+                        "Pass \"name\" for the fragment, e.g. HomeFragment.");
+            }
+            String explicitKind = stringArg(args, "kind");
+            String kind = inferFragmentKindOrEmpty(asked,
+                    explicitKind.isEmpty() ? null : explicitKind);
+            if (kind.isEmpty()) {
+                kind = "fragment";
+            }
+            if ("fragment".equals(kind)) {
+                requireDesign(scId, asked, "screen", false, false, true);
+            }
+            String base = normalizeFragmentBase(asked);
+            if (!BASE_PATTERN.matcher(base).matches()) {
+                throw new ToolException("E_BAD_NAME",
+                        "Fragment base name must start with a letter and use "
+                                + "letters, numbers and underscores, e.g. "
+                                + "HomeFragment or filter_sheet.");
+            }
+            String suffix = switch (kind) {
+                case "dialog_fragment" -> "_dialog_fragment";
+                case "bottom_sheet_fragment" -> "_bottomdialog_fragment";
+                default -> "_fragment";
+            };
+            String fileName = base + suffix;
+            if (SketchwareProjects.findActivity(scId, fileName) != null
+                    || SketchwareProjects.findActivity(scId, asked) != null) {
+                throw new ToolException("E_ACTIVITY_EXISTS",
+                        "The project already has a fragment or screen named "
+                                + asked + ".");
+            }
+            boolean fab = args != null && args.has("floating_button")
+                    && !args.get("floating_button").isJsonNull()
+                    && args.get("floating_button").getAsBoolean();
+            int options = fab ? ProjectFileBean.OPTION_ACTIVITY_FAB : 0;
+            ProjectFileBean previewBean = new ProjectFileBean(
+                    ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY, fileName,
+                    ProjectFileBean.ORIENTATION_PORTRAIT, 0, options);
+            String className = SketchwareProjects.activityName(previewBean);
+            String labelKind = switch (kind) {
+                case "dialog_fragment" -> "DialogFragment";
+                case "bottom_sheet_fragment" -> "BottomSheetDialogFragment";
+                default -> "Fragment";
+            };
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("file_name", fileName);
+            clean.addProperty("kind", kind);
+            clean.addProperty("options", options);
+            return new AgentProposal(name(), clean, scId,
+                    "Add " + labelKind + " to " + project.name,
+                    "New " + labelKind + ": " + className + " (layout "
+                            + fileName + ".xml"
+                            + (fab ? ", with floating button" : "") + ")",
+                    "Creates " + className
+                            + ("bottom_sheet_fragment".equals(kind)
+                                    ? " and switches AppCompat/Material on."
+                                    : ".")
+                            + " Edit its layout with edit_screen and wire its "
+                            + "events with set_event_handler.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String fileName = stringArg(proposal.args, "file_name");
+            String kind = stringArg(proposal.args, "kind");
+            int options = proposal.args != null
+                    && proposal.args.has("options")
+                    ? proposal.args.get("options").getAsInt() : 0;
+            if (SketchwareProjects.findActivity(scId, fileName) != null) {
+                throw new ToolException("E_ACTIVITY_EXISTS",
+                        "That fragment already exists now, so it was not "
+                                + "added again.");
+            }
+            try {
+                SketchwareActions.createScreen(scId, fileName, options,
+                        ProjectFileBean.ORIENTATION_PORTRAIT,
+                        "bottom_sheet_fragment".equals(kind));
+                ProjectFileBean created =
+                        SketchwareProjects.findActivity(scId, fileName);
+                JsonObject result = new JsonObject();
+                result.addProperty("created_fragment",
+                        SketchwareProjects.activityName(created));
+                result.addProperty("file_name", fileName);
+                result.addProperty("kind", kind);
+                result.addProperty("verified",
+                        "The fragment now exists in the project and can be "
+                                + "edited with edit_screen and wired with "
+                                + "set_event_handler.");
+                return result;
+            } catch (Exception e) {
+                throw new ToolException("E_CREATE_FAILED",
+                        "Adding the fragment failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+
+        private static String normalizeFragmentBase(String raw) {
+            String s = raw == null ? "" : raw.trim();
+            if (s.endsWith(".xml")) {
+                s = s.substring(0, s.length() - ".xml".length());
+            }
+            if (s.endsWith(".java")) {
+                s = s.substring(0, s.length() - ".java".length());
+            }
+            if (s.endsWith("Activity") && s.length() > "Activity".length()) {
+                s = s.substring(0, s.length() - "Activity".length());
+            }
+            StringBuilder snake = new StringBuilder();
+            for (int i = 0; i < s.length(); i++) {
+                char c = s.charAt(i);
+                if (Character.isUpperCase(c)) {
+                    if (i > 0 && s.charAt(i - 1) != '_') {
+                        snake.append('_');
+                    }
+                    snake.append(Character.toLowerCase(c));
+                } else {
+                    snake.append(Character.toLowerCase(c));
+                }
+            }
+            String out = snake.toString().replaceAll("_+", "_");
+            String[] suffixes = {
+                    "_bottom_sheet_dialog_fragment",
+                    "_bottom_sheet_fragment",
+                    "_bottomdialog_fragment",
+                    "_dialog_fragment",
+                    "_fragment"
+            };
+            for (String suf : suffixes) {
+                if (out.endsWith(suf) && out.length() > suf.length()) {
+                    out = out.substring(0, out.length() - suf.length());
+                    break;
+                }
+            }
+            while (out.startsWith("_")) {
+                out = out.substring(1);
+            }
+            while (out.endsWith("_")) {
+                out = out.substring(0, out.length() - 1);
+            }
+            return out;
+        }
+    }
+
+    /** delete_custom_view: removes one custom view layout safely. */
+    private static final class DeleteCustomView implements Tool {
+        @Override
+        public String name() {
+            return "delete_custom_view";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes deleting one custom view layout from the "
+                    + "working project. Refuses if any ListView, RecyclerView, "
+                    + "Spinner, GridView or <include> tag still references it "
+                    + "unless clear_references is true. Navigation drawer "
+                    + "layouts (_drawer_*) are removed via edit_activity "
+                    + "(drawer: false) instead.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("name", stringSchema(
+                    "The custom view name to delete, e.g. item_task"));
+            JsonObject clearRefs = new JsonObject();
+            clearRefs.addProperty("type", "boolean");
+            clearRefs.addProperty("description",
+                    "Optional: clear customView / include references on "
+                            + "other screens before deleting (default false)");
+            properties.add("clear_references", clearRefs);
+            return AgentTools.parameters(properties, "name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to delete custom view " + stringArg(args, "name");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String asked = stringArg(args, "name").trim();
+            ProjectFileBean target =
+                    SketchwareProjects.findCustomView(scId, asked);
+            if (target == null) {
+                throw new ToolException("E_CUSTOM_VIEW_NOT_FOUND",
+                        "There is no custom view named \"" + asked
+                                + "\" in the working project.");
+            }
+            if (SketchwareProjects.isDrawer(target)) {
+                ProjectFileBean host =
+                        SketchwareProjects.drawerHostActivity(scId, target);
+                throw new ToolException("E_DRAWER_LAYOUT",
+                        target.fileName + " is a navigation drawer layout. "
+                                + "Turn off drawer: false on "
+                                + (host != null
+                                        ? SketchwareProjects
+                                                .activityName(host)
+                                        : "its host activity")
+                                + " with edit_activity instead.");
+            }
+            boolean clearRefs = args != null
+                    && args.has("clear_references")
+                    && !args.get("clear_references").isJsonNull()
+                    && args.get("clear_references").getAsBoolean();
+            List<String> refs = SketchwareProjects.customViewReferences(
+                    scId, target.fileName);
+            if (!refs.isEmpty() && !clearRefs) {
+                throw new ToolException("E_CUSTOM_VIEW_IN_USE",
+                        "Custom view \"" + target.fileName
+                                + "\" is still used by: "
+                                + String.join("; ", refs)
+                                + ". Update those widgets first or pass "
+                                + "clear_references=true.");
+            }
+            int widgets =
+                    SketchwareProjects.screenBeans(scId, target).size();
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("name", target.fileName);
+            clean.addProperty("clear_references", clearRefs);
+            String summary = "Delete custom view " + target.fileName + " ("
+                    + widgets + (widgets == 1 ? " widget" : " widgets") + ")"
+                    + (refs.isEmpty() ? "."
+                            : " and clear references on: "
+                                    + String.join("; ", refs) + ".");
+            return new AgentProposal(name(), clean, scId,
+                    "Delete custom view from " + project.name,
+                    summary,
+                    "A safety backup of the project is made first.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String fileName = stringArg(proposal.args, "name");
+            boolean clearRefs = proposal.args != null
+                    && proposal.args.has("clear_references")
+                    && proposal.args.get("clear_references").getAsBoolean();
+            try {
+                List<String> cleared = SketchwareActions.deleteCustomView(
+                        scId, fileName, clearRefs);
+                JsonObject result = new JsonObject();
+                result.addProperty("deleted_custom_view", fileName);
+                result.add("cleared_references", namesJsonAll(cleared));
+                result.addProperty("verified",
+                        "Custom view " + fileName + " has been removed.");
+                return result;
+            } catch (Exception e) {
+                throw new ToolException("E_DELETE_FAILED",
+                        "Deleting the custom view failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /** remove_component: removes one component from an activity or fragment. */
+    private static final class RemoveComponent implements Tool {
+        @Override
+        public String name() {
+            return "remove_component";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes removing one component (Intent, "
+                    + "SharedPreferences, Timer, Dialog, FragmentAdapter, "
+                    + "etc.) and its component events from an activity or "
+                    + "fragment screen. Refuses if blocks outside that "
+                    + "component's own events still reference it unless "
+                    + "force is true.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("activity", stringSchema(
+                    "The screen owning the component, e.g. MainActivity"));
+            properties.add("name", stringSchema(
+                    "The component id to remove, e.g. timer1"));
+            JsonObject force = new JsonObject();
+            force.addProperty("type", "boolean");
+            force.addProperty("description",
+                    "Optional: remove even if other blocks still name this "
+                            + "component (default false)");
+            properties.add("force", force);
+            return AgentTools.parameters(properties, "activity", "name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to remove component " + stringArg(args, "name");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String askedScreen = stringArg(args, "activity");
+            ProjectFileBean activity =
+                    SketchwareProjects.findActivity(scId, askedScreen);
+            if (activity == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "There is no activity or fragment named \""
+                                + askedScreen + "\".");
+            }
+            String componentId = stringArg(args, "name").trim();
+            if (componentId.isEmpty()) {
+                componentId = stringArg(args, "component").trim();
+            }
+            if (componentId.isEmpty()) {
+                componentId = stringArg(args, "id").trim();
+            }
+            if (componentId.isEmpty()) {
+                throw new ToolException("E_BAD_NAME",
+                        "Pass \"name\" with the component id to remove.");
+            }
+            SketchwareProjects.LogicSummary summary =
+                    SketchwareProjects.logicSummary(scId, activity);
+            if (!summary.components.contains(componentId)) {
+                throw new ToolException("E_NO_COMPONENT",
+                        SketchwareProjects.activityName(activity)
+                                + " has no component named \"" + componentId
+                                + "\". Existing components: "
+                                + (summary.components.isEmpty() ? "none"
+                                        : String.join(", ",
+                                                summary.components))
+                                + ".");
+            }
+            boolean force = args != null && args.has("force")
+                    && !args.get("force").isJsonNull()
+                    && args.get("force").getAsBoolean();
+            String use = AgentLogic.componentUse(
+                    scId, activity.getJavaName(), componentId);
+            if (use != null && !force) {
+                throw new ToolException("E_COMPONENT_IN_USE",
+                        "Cannot remove component \"" + componentId
+                                + "\" on "
+                                + SketchwareProjects.activityName(activity)
+                                + " because " + use
+                                + ". Remove or update that block first, or "
+                                + "pass force=true.");
+            }
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("activity", activity.fileName);
+            clean.addProperty("name", componentId);
+            clean.addProperty("force", force);
+            return new AgentProposal(name(), clean, scId,
+                    "Remove component from "
+                            + SketchwareProjects.activityName(activity),
+                    "Remove component " + componentId + " from "
+                            + SketchwareProjects.activityName(activity)
+                            + " in " + project.name
+                            + (use != null
+                                    ? " (warning: " + use + ")" : "."),
+                    "Removes the component and any events belonging to it. "
+                            + "A safety backup of the project is made first.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String actFile = stringArg(proposal.args, "activity");
+            String componentId = stringArg(proposal.args, "name");
+            ProjectFileBean activity =
+                    SketchwareProjects.findActivity(scId, actFile);
+            if (activity == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "That screen no longer exists.");
+            }
+            try {
+                int removedEvents = SketchwareActions.removeComponent(
+                        scId, activity, componentId);
+                JsonObject result = new JsonObject();
+                result.addProperty("removed_component", componentId);
+                result.addProperty("removed_events", removedEvents);
+                result.addProperty("verified",
+                        "Component " + componentId + " was removed from "
+                                + SketchwareProjects.activityName(activity)
+                                + ".");
+                return result;
+            } catch (Exception e) {
+                throw new ToolException("E_REMOVE_FAILED",
+                        "Removing the component failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /**
+     * convert_root_layout: converts a screen's root ViewGroup class and/or
+     * root XML attributes via InjectRootLayoutManager.
+     */
+    private static final class ConvertRootLayout implements Tool {
+        @Override
+        public String name() {
+            return "convert_root_layout";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes converting the root ViewGroup container of an "
+                    + "activity, fragment, drawer (_drawer_*), or custom view "
+                    + "(e.g. LinearLayout, RelativeLayout, FrameLayout, "
+                    + "ConstraintLayout, CoordinatorLayout, ScrollView, "
+                    + "NestedScrollView, HorizontalScrollView, "
+                    + "MaterialCardView, SwipeRefreshLayout) and optionally "
+                    + "setting root XML attributes via Sketchware Pro's "
+                    + "InjectRootLayoutManager.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("activity", stringSchema(
+                    "Target screen, fragment, drawer, or custom view name"));
+            properties.add("class_name", stringSchema(
+                    "Root ViewGroup class, e.g. LinearLayout, "
+                            + "ConstraintLayout, FrameLayout, RelativeLayout, "
+                            + "CoordinatorLayout, NestedScrollView"));
+            JsonObject attrs = new JsonObject();
+            attrs.addProperty("type", "object");
+            attrs.addProperty("description",
+                    "Optional XML attributes on the root ViewGroup, e.g. "
+                            + "{\"android:padding\":\"16dp\","
+                            + "\"android:background\":\"#FFFFFF\"}");
+            properties.add("attributes", attrs);
+            JsonObject replace = new JsonObject();
+            replace.addProperty("type", "boolean");
+            replace.addProperty("description",
+                    "Optional: replace existing root attributes instead of "
+                            + "merging (default false)");
+            properties.add("replace_attributes", replace);
+            return AgentTools.parameters(properties, "activity", "class_name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to convert root layout of "
+                    + stringArg(args, "activity");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String askedScreen = stringArg(args, "activity");
+            ProjectFileBean screen =
+                    SketchwareProjects.findScreen(scId, askedScreen);
+            if (screen == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "There is no screen or layout named \""
+                                + askedScreen + "\".");
+            }
+            String askedClass = stringArg(args, "class_name");
+            if (askedClass.isEmpty()) {
+                askedClass = stringArg(args, "layout_type");
+            }
+            String resolved =
+                    SketchwareActions.resolveRootClassName(askedClass);
+            if (resolved == null || resolved.isEmpty()) {
+                throw new ToolException("E_BAD_VALUE",
+                        "\"" + askedClass + "\" is not a supported root "
+                                + "ViewGroup. Use LinearLayout, "
+                                + "RelativeLayout, FrameLayout, "
+                                + "ConstraintLayout, CoordinatorLayout, "
+                                + "ScrollView, NestedScrollView, "
+                                + "HorizontalScrollView, MaterialCardView, "
+                                + "or SwipeRefreshLayout.");
+            }
+            JsonObject cleanAttrs = new JsonObject();
+            if (args != null && args.has("attributes")
+                    && args.get("attributes").isJsonObject()) {
+                for (Map.Entry<String, JsonElement> entry
+                        : args.getAsJsonObject("attributes").entrySet()) {
+                    String k = entry.getKey() == null ? ""
+                            : entry.getKey().trim();
+                    if (!k.matches("[A-Za-z_][A-Za-z0-9_.:-]*")
+                            || k.startsWith("xmlns")) {
+                        throw new ToolException("E_BAD_VALUE",
+                                "Invalid root attribute name \"" + k + "\".");
+                    }
+                    String v = entry.getValue() == null
+                            || entry.getValue().isJsonNull() ? ""
+                            : entry.getValue().getAsString().trim();
+                    if (v.contains("\"") || v.contains("\n")
+                            || v.contains("\r")) {
+                        throw new ToolException("E_BAD_VALUE",
+                                "Invalid root attribute value for " + k + ".");
+                    }
+                    cleanAttrs.addProperty(k, v);
+                }
+            }
+            boolean replace = args != null
+                    && args.has("replace_attributes")
+                    && !args.get("replace_attributes").isJsonNull()
+                    && args.get("replace_attributes").getAsBoolean();
+            String before = SketchwareProjects.rootDescription(scId, screen);
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("screen", screen.fileName);
+            clean.addProperty("class_name", resolved);
+            clean.addProperty("replace_attributes", replace);
+            clean.add("attributes", cleanAttrs);
+            return new AgentProposal(name(), clean, scId,
+                    "Convert root layout of "
+                            + SketchwareProjects.screenName(screen),
+                    "Root container on "
+                            + SketchwareProjects.screenName(screen) + " in "
+                            + project.name + ": " + before + " -> "
+                            + resolved
+                            + (cleanAttrs.size() > 0
+                                    ? " (+" + cleanAttrs.size() + " attribute"
+                                            + (cleanAttrs.size() == 1
+                                                    ? "" : "s") + ")"
+                                    : ""),
+                    "Updates InjectRootLayoutManager and keeps top-level "
+                            + "widget parentType values in sync. A safety "
+                            + "backup is made first.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String screenKey = stringArg(proposal.args, "screen");
+            ProjectFileBean screen =
+                    SketchwareProjects.findScreen(scId, screenKey);
+            if (screen == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "That screen no longer exists.");
+            }
+            String resolved = stringArg(proposal.args, "class_name");
+            boolean replace = proposal.args != null
+                    && proposal.args.has("replace_attributes")
+                    && proposal.args.get("replace_attributes").getAsBoolean();
+            Map<String, String> updates = new LinkedHashMap<>();
+            if (proposal.args != null && proposal.args.has("attributes")
+                    && proposal.args.get("attributes").isJsonObject()) {
+                for (Map.Entry<String, JsonElement> entry
+                        : proposal.args.getAsJsonObject("attributes")
+                                .entrySet()) {
+                    updates.put(entry.getKey(),
+                            entry.getValue().getAsString());
+                }
+            }
+            try {
+                SketchwareActions.backupProjectOnce(scId);
+                SketchwareActions.setRootLayout(
+                        scId, screen, resolved, updates, replace);
+                SketchwareActions.commitProject(scId);
+                JsonObject result = new JsonObject();
+                result.addProperty("screen",
+                        SketchwareProjects.screenName(screen));
+                result.addProperty("root",
+                        SketchwareProjects.rootDescription(scId, screen));
+                result.addProperty("verified",
+                        "Root layout updated to " + resolved + ".");
+                return result;
+            } catch (Exception e) {
+                throw new ToolException("E_ROOT_CONVERT_FAILED",
+                        "Converting the root layout failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /**
+     * import_layout_xml: validates and imports raw Android layout XML into
+     * any screen, fragment, drawer, or custom view via ViewBeanParser.
+     */
+    private static final class ImportLayoutXml implements Tool {
+        @Override
+        public String name() {
+            return "import_layout_xml";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes importing raw Android layout XML into an "
+                    + "activity, fragment, drawer (_drawer_*), or custom view "
+                    + "using Sketchware Pro's ViewBeanParser, "
+                    + "CircularDependencyDetector, and "
+                    + "InjectRootLayoutManager. Prefer edit_screen for "
+                    + "incremental changes; use import_layout_xml when "
+                    + "importing complete Android XML layouts (including "
+                    + "ConstraintLayout / CoordinatorLayout / Material3 XML).";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("activity", stringSchema(
+                    "Target screen, fragment, drawer, or custom view name"));
+            properties.add("xml", stringSchema(
+                    "Complete Android layout XML starting with a ViewGroup "
+                            + "root tag"));
+            return AgentTools.parameters(properties, "activity", "xml");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to import XML layout into "
+                    + stringArg(args, "activity");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String askedScreen = stringArg(args, "activity");
+            ProjectFileBean screen =
+                    SketchwareProjects.findScreen(scId, askedScreen);
+            if (screen == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "There is no screen or layout named \""
+                                + askedScreen + "\".");
+            }
+            String xml = stringArg(args, "xml");
+            if (xml.trim().isEmpty()) {
+                throw new ToolException("E_BAD_XML",
+                        "Pass non-empty Android layout XML in \"xml\".");
+            }
+            SketchwareActions.ParsedLayoutXml parsed;
+            try {
+                parsed = SketchwareActions.parseLayoutXml(xml);
+            } catch (Exception e) {
+                throw new ToolException("E_BAD_XML",
+                        "Layout XML failed Sketchware validation: "
+                                + String.valueOf(e.getMessage()));
+            }
+            ArrayList<com.besome.sketch.beans.ViewBean> existing =
+                    SketchwareProjects.screenBeans(scId, screen);
+            StringBuilder preview = new StringBuilder();
+            int shown = Math.min(parsed.beans.size(), 8);
+            for (int i = 0; i < shown; i++) {
+                com.besome.sketch.beans.ViewBean b = parsed.beans.get(i);
+                if (preview.length() > 0) {
+                    preview.append(", ");
+                }
+                preview.append(b.id).append(" (")
+                        .append(b.convert != null && !b.convert.isEmpty()
+                                ? b.convert : AgentEdits.typeName(b.type))
+                        .append(")");
+            }
+            if (parsed.beans.size() > shown) {
+                preview.append(", ...");
+            }
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("screen", screen.fileName);
+            clean.addProperty("revision", AgentEdits.revisionOf(existing));
+            clean.addProperty("xml", xml);
+            String summary = "Import XML layout into "
+                    + SketchwareProjects.screenName(screen) + " in "
+                    + project.name + ": root " + parsed.root.getClassName()
+                    + ", " + parsed.beans.size()
+                    + (parsed.beans.size() == 1 ? " widget" : " widgets")
+                    + (existing.isEmpty() ? "."
+                            : " (replaces " + existing.size()
+                                    + " existing widget"
+                                    + (existing.size() == 1 ? "" : "s")
+                                    + ").");
+            return new AgentProposal(name(), clean, scId,
+                    "Import XML layout into "
+                            + SketchwareProjects.screenName(screen),
+                    summary,
+                    "Parsed widgets: "
+                            + (preview.length() == 0 ? "empty container"
+                                    : preview.toString())
+                            + "\n\nXML:\n" + xml);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String screenKey = stringArg(proposal.args, "screen");
+            ProjectFileBean screen =
+                    SketchwareProjects.findScreen(scId, screenKey);
+            if (screen == null) {
+                throw new ToolException("E_ACTIVITY_NOT_FOUND",
+                        "That screen no longer exists.");
+            }
+            ArrayList<com.besome.sketch.beans.ViewBean> current =
+                    SketchwareProjects.screenBeans(scId, screen);
+            String expected = stringArg(proposal.args, "revision");
+            if (!expected.isEmpty()
+                    && !expected.equals(AgentEdits.revisionOf(current))) {
+                throw new ToolException("E_SCREEN_CHANGED",
+                        "The screen changed since this XML import was "
+                                + "proposed. Inspect it again with get_screen "
+                                + "before importing.");
+            }
+            String xml = stringArg(proposal.args, "xml");
+            try {
+                SketchwareActions.ParsedLayoutXml imported =
+                        SketchwareActions.importLayoutXml(scId, screen, xml);
+                JsonObject result = new JsonObject();
+                result.addProperty("screen",
+                        SketchwareProjects.screenName(screen));
+                result.addProperty("root", imported.root.getClassName());
+                result.addProperty("widgets_imported", imported.beans.size());
+                result.addProperty("verified",
+                        "Imported " + imported.beans.size()
+                                + " widgets into "
+                                + SketchwareProjects.screenName(screen)
+                                + " and verified read-back.");
+                return result;
+            } catch (Exception e) {
+                throw new ToolException("E_IMPORT_FAILED",
+                        "Importing layout XML failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
     }
 }

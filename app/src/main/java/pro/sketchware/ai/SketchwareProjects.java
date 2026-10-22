@@ -142,16 +142,101 @@ public final class SketchwareProjects {
                 : javaName;
     }
 
-    /** Finds an activity by the name a user or model would use. */
+    /**
+     * Exact screen kind in Sketchware Pro's file model:
+     * {@code activity}, {@code fragment}, {@code dialog_fragment},
+     * {@code bottom_sheet_fragment}, {@code drawer}, or {@code custom_view}.
+     * Note that Sketchware Pro stores Fragments, DialogFragments and
+     * BottomSheetDialogFragments in the activity list with
+     * {@code PROJECT_FILE_TYPE_ACTIVITY} and distinguishes them by their
+     * {@code _fragment} / {@code _dialog_fragment} /
+     * {@code _bottomdialog_fragment} fileName suffix (AddViewActivity, Jx).
+     */
+    public static String screenKind(ProjectFileBean file) {
+        if (file == null || file.fileName == null) {
+            return "unknown";
+        }
+        String fn = file.fileName.toLowerCase(Locale.ROOT);
+        if (file.fileType == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
+            if (fn.endsWith("_bottomdialog_fragment")) {
+                return "bottom_sheet_fragment";
+            }
+            if (fn.endsWith("_dialog_fragment")) {
+                return "dialog_fragment";
+            }
+            if (fn.contains("_fragment")) {
+                return "fragment";
+            }
+            return "activity";
+        }
+        if (file.fileType == ProjectFileBean.PROJECT_FILE_TYPE_DRAWER
+                || fn.startsWith("_drawer_")) {
+            return "drawer";
+        }
+        return "custom_view";
+    }
+
+    /** True for Fragment, DialogFragment and BottomSheetDialogFragment screens. */
+    public static boolean isFragment(ProjectFileBean file) {
+        return file != null
+                && file.fileType == ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY
+                && file.fileName != null
+                && file.fileName.toLowerCase(Locale.ROOT).contains("_fragment");
+    }
+
+    /** True for DialogFragment and BottomSheetDialogFragment screens. */
+    public static boolean isDialogFragment(ProjectFileBean file) {
+        if (!isFragment(file)) {
+            return false;
+        }
+        String fn = file.fileName.toLowerCase(Locale.ROOT);
+        return fn.endsWith("_dialog_fragment")
+                || fn.endsWith("_bottomdialog_fragment");
+    }
+
+    /** True when the layout is a navigation drawer ({@code _drawer_*}). */
+    public static boolean isDrawer(ProjectFileBean file) {
+        return file != null
+                && (file.fileType == ProjectFileBean.PROJECT_FILE_TYPE_DRAWER
+                        || (file.fileName != null
+                                && file.fileName.toLowerCase(Locale.ROOT)
+                                        .startsWith("_drawer_")));
+    }
+
+    /** Finds an activity or fragment screen by the name a user or model uses. */
     public static ProjectFileBean findActivity(String scId, String asked) {
         if (asked == null) {
             return null;
         }
-        String wanted = asked.trim().toLowerCase(Locale.ROOT);
-        for (ProjectFileBean activity : activities(scId)) {
+        String raw = asked.trim();
+        if (raw.endsWith(".java")) {
+            raw = raw.substring(0, raw.length() - ".java".length());
+        }
+        String wanted = raw.toLowerCase(Locale.ROOT);
+        List<ProjectFileBean> all = activities(scId);
+        for (ProjectFileBean activity : all) {
             if (activityName(activity).toLowerCase(Locale.ROOT).equals(wanted)
                     || activity.fileName.toLowerCase(Locale.ROOT).equals(wanted)
                     || activity.getXmlName().toLowerCase(Locale.ROOT).equals(wanted)) {
+                return activity;
+            }
+        }
+        // Sketchware appends "Activity" to fragment class names
+        // (home_fragment -> HomeFragmentActivity), while models often
+        // write the natural Android name "HomeFragment" or
+        // "SheetBottomSheetFragment". Match normalized forms second.
+        String compactWanted = wanted.replace("_", "")
+                .replace("bottomsheetfragment", "bottomdialogfragment");
+        if (!compactWanted.endsWith("activity")) {
+            compactWanted = compactWanted + "activity";
+        }
+        for (ProjectFileBean activity : all) {
+            if (!isFragment(activity)) {
+                continue;
+            }
+            String compactActual = activityName(activity)
+                    .toLowerCase(Locale.ROOT).replace("_", "");
+            if (compactActual.equals(compactWanted)) {
                 return activity;
             }
         }
@@ -186,6 +271,99 @@ public final class SketchwareProjects {
         }
         views.sort((a, b) -> a.fileName.compareToIgnoreCase(b.fileName));
         return views;
+    }
+
+    /** Finds a custom view or drawer layout by name. */
+    public static ProjectFileBean findCustomView(String scId, String asked) {
+        if (asked == null) {
+            return null;
+        }
+        String wanted = asked.trim().toLowerCase(Locale.ROOT);
+        if (wanted.endsWith(".xml")) {
+            wanted = wanted.substring(0, wanted.length() - ".xml".length());
+        }
+        List<ProjectFileBean> all = customViews(scId);
+        for (ProjectFileBean view : all) {
+            if (view.fileName.toLowerCase(Locale.ROOT).equals(wanted)
+                    || view.getXmlName().toLowerCase(Locale.ROOT)
+                            .equals(wanted + ".xml")) {
+                return view;
+            }
+        }
+        if (!wanted.startsWith("_")) {
+            String drawerCandidate = "_" + wanted;
+            for (ProjectFileBean view : all) {
+                if (isDrawer(view)
+                        && view.fileName.toLowerCase(Locale.ROOT)
+                                .equals(drawerCandidate)) {
+                    return view;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Returns the navigation drawer layout file of an activity, if enabled. */
+    public static ProjectFileBean drawerFileOf(String scId,
+                                               ProjectFileBean activity) {
+        if (activity == null
+                || activity.fileType
+                        != ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY
+                || !activity.hasActivityOption(
+                        ProjectFileBean.OPTION_ACTIVITY_DRAWER)) {
+            return null;
+        }
+        return findCustomView(scId,
+                ProjectFileBean.getDrawerName(activity.fileName));
+    }
+
+    /** Returns the host activity owning a {@code _drawer_<activity>} layout. */
+    public static ProjectFileBean drawerHostActivity(String scId,
+                                                     ProjectFileBean drawer) {
+        if (!isDrawer(drawer) || drawer.fileName == null) {
+            return null;
+        }
+        String fn = drawer.fileName;
+        if (fn.regionMatches(true, 0, "_drawer_", 0, "_drawer_".length())) {
+            String hostBase = fn.substring("_drawer_".length());
+            return findActivity(scId, hostBase);
+        }
+        return null;
+    }
+
+    /**
+     * Finds every widget across the project that references {@code viewName}
+     * via {@code customView} (ListView, RecyclerView, Spinner, GridView) or
+     * {@code <include layout="@layout/viewName"/>}.
+     */
+    public static List<String> customViewReferences(String scId,
+                                                    String viewName) {
+        List<String> refs = new ArrayList<>();
+        if (scId == null || viewName == null || viewName.isEmpty()) {
+            return refs;
+        }
+        List<ProjectFileBean> screens = new ArrayList<>(activities(scId));
+        screens.addAll(customViews(scId));
+        for (ProjectFileBean screen : screens) {
+            if (screen.fileName.equalsIgnoreCase(viewName)) {
+                continue;
+            }
+            for (ViewBean bean : screenBeans(scId, screen)) {
+                if (bean == null) {
+                    continue;
+                }
+                if (bean.customView != null
+                        && bean.customView.equalsIgnoreCase(viewName)) {
+                    refs.add(screenName(screen) + " -> " + bean.id
+                            + " (customView)");
+                } else if ("include".equals(bean.convert)
+                        && bean.id != null
+                        && bean.id.equalsIgnoreCase(viewName)) {
+                    refs.add(screenName(screen) + " -> include " + bean.id);
+                }
+            }
+        }
+        return refs;
     }
 
     /**
@@ -292,7 +470,13 @@ public final class SketchwareProjects {
             }
             for (com.besome.sketch.beans.EventBean event
                     : store.g(activity.getJavaName())) {
-                String line = event.targetId + " " + event.eventName;
+                String labelTarget = event.eventType
+                        == com.besome.sketch.beans.EventBean.EVENT_TYPE_DRAWER_VIEW
+                        && event.targetId != null
+                        && !event.targetId.startsWith("_drawer_")
+                        ? "_drawer_" + event.targetId
+                        : event.targetId;
+                String line = labelTarget + " " + event.eventName;
                 try {
                     java.util.ArrayList<com.besome.sketch.beans.BlockBean>
                             blocks = store.a(activity.getJavaName(),
@@ -443,15 +627,7 @@ public final class SketchwareProjects {
         if (activity != null || asked == null) {
             return activity;
         }
-        String wanted = asked.trim().toLowerCase(Locale.ROOT);
-        for (ProjectFileBean view : customViews(scId)) {
-            if (view.fileName.toLowerCase(Locale.ROOT).equals(wanted)
-                    || view.getXmlName().toLowerCase(Locale.ROOT)
-                            .equals(wanted)) {
-                return view;
-            }
-        }
-        return null;
+        return findCustomView(scId, asked);
     }
 
     /**

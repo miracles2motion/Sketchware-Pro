@@ -680,6 +680,45 @@ public final class AgentEdits {
                     // values are resolved and frozen here; the execute
                     // path writes them through that manager.
                     boolean changed = false;
+                    String askedClass = stringOf(op, "class_name");
+                    if (askedClass.isEmpty()) {
+                        askedClass = stringOf(op, "layout_type");
+                    }
+                    if (askedClass.isEmpty()) {
+                        askedClass = stringOf(op, "type");
+                    }
+                    if (!askedClass.isEmpty()) {
+                        String resolved = frozen
+                                && !stringOf(op, "resolved_class_name")
+                                        .isEmpty()
+                                ? stringOf(op, "resolved_class_name")
+                                : SketchwareActions
+                                        .resolveRootClassName(askedClass);
+                        if (resolved == null || resolved.isEmpty()) {
+                            throw new AgentTools.ToolException(
+                                    "E_BAD_VALUE",
+                                    "\"" + askedClass + "\" is not a valid "
+                                            + "root ViewGroup. Use "
+                                            + "LinearLayout, RelativeLayout, "
+                                            + "FrameLayout, "
+                                            + "ConstraintLayout, "
+                                            + "CoordinatorLayout, "
+                                            + "ScrollView, NestedScrollView, "
+                                            + "HorizontalScrollView, "
+                                            + "MaterialCardView, or "
+                                            + "SwipeRefreshLayout.");
+                        }
+                        op.addProperty("resolved_class_name", resolved);
+                        rootParentType = rootTypeForClassName(resolved);
+                        for (ViewBean child : work) {
+                            if (child != null
+                                    && ROOT_PARENT.equals(child.parent)) {
+                                child.parentType = rootParentType;
+                            }
+                        }
+                        lines.add("Convert root layout to " + resolved);
+                        changed = true;
+                    }
                     if (op.has("background")) {
                         String raw = stringOf(op, "background");
                         int color = parseColor(scId, raw);
@@ -708,10 +747,49 @@ public final class AgentEdits {
                         lines.add("Make the screen stack " + value);
                         changed = true;
                     }
+                    if (op.has("attributes")
+                            && op.get("attributes").isJsonObject()) {
+                        JsonObject rawAttrs =
+                                op.getAsJsonObject("attributes");
+                        JsonObject cleanAttrs = new JsonObject();
+                        for (Map.Entry<String, JsonElement> entry
+                                : rawAttrs.entrySet()) {
+                            String attrKey = entry.getKey() == null ? ""
+                                    : entry.getKey().trim();
+                            if (!attrKey.matches(
+                                    "[A-Za-z_][A-Za-z0-9_.:-]*")
+                                    || attrKey.startsWith("xmlns")) {
+                                throw new AgentTools.ToolException(
+                                        "E_BAD_VALUE",
+                                        "Invalid root XML attribute name: \""
+                                                + attrKey + "\".");
+                            }
+                            String attrVal = entry.getValue() == null
+                                    || entry.getValue().isJsonNull() ? ""
+                                    : entry.getValue().getAsString().trim();
+                            if (attrVal.contains("\"")
+                                    || attrVal.contains("\n")
+                                    || attrVal.contains("\r")) {
+                                throw new AgentTools.ToolException(
+                                        "E_BAD_VALUE",
+                                        "Invalid value for root attribute "
+                                                + attrKey + ".");
+                            }
+                            cleanAttrs.addProperty(attrKey, attrVal);
+                        }
+                        if (cleanAttrs.size() > 0) {
+                            op.add("resolved_attributes", cleanAttrs);
+                            lines.add("Set " + cleanAttrs.size()
+                                    + " root XML attribute"
+                                    + (cleanAttrs.size() == 1 ? "" : "s"));
+                            changed = true;
+                        }
+                    }
                     if (!changed) {
                         throw new AgentTools.ToolException("E_BAD_OP",
-                                "set_root needs a background colour and/or "
-                                        + "an orientation.");
+                                "set_root needs class_name/layout_type, "
+                                        + "background, orientation, and/or "
+                                        + "attributes.");
                     }
                 }
                 case "set_fab" -> {
@@ -1565,7 +1643,9 @@ public final class AgentEdits {
             case "settextstyle", "textstyle", "setbold" -> "set_text_style";
             case "setinputtype", "inputtype" -> "set_input_type";
             case "setfont", "font" -> "set_font";
-            case "setroot", "rootbackground", "setrootbackground" -> "set_root";
+            case "setroot", "rootbackground", "setrootbackground",
+                    "convertroot", "convertrootlayout", "setrootlayout" ->
+                    "set_root";
             case "setlistitemview", "setitemlayout", "setcustomview",
                     "listitemview" -> "set_list_item_view";
             case "setfab", "fab" -> "set_fab";
@@ -2037,6 +2117,29 @@ public final class AgentEdits {
             }
         }
         return ViewBean.VIEW_TYPE_LAYOUT_LINEAR;
+    }
+
+    /** Maps a resolved ViewGroup class name to its Sketchware parentType. */
+    private static int rootTypeForClassName(String className) {
+        if (className == null || className.isEmpty()) {
+            return ViewBean.VIEW_TYPE_LAYOUT_LINEAR;
+        }
+        String simple = className.contains(".")
+                ? className.substring(className.lastIndexOf('.') + 1)
+                : className;
+        return switch (simple) {
+            case "RelativeLayout" -> ViewBean.VIEW_TYPE_LAYOUT_RELATIVE;
+            case "ScrollView", "VScrollView", "NestedScrollView" ->
+                    ViewBean.VIEW_TYPE_LAYOUT_VSCROLLVIEW;
+            case "HorizontalScrollView", "HScrollView" ->
+                    ViewBean.VIEW_TYPE_LAYOUT_HSCROLLVIEW;
+            case "CardView", "MaterialCardView" ->
+                    ViewBeans.VIEW_TYPE_LAYOUT_CARDVIEW;
+            case "SwipeRefreshLayout" ->
+                    ViewBeans.VIEW_TYPE_LAYOUT_SWIPEREFRESHLAYOUT;
+            case "RadioGroup" -> ViewBeans.VIEW_TYPE_LAYOUT_RADIOGROUP;
+            default -> ViewBean.VIEW_TYPE_LAYOUT_LINEAR;
+        };
     }
 
     /**
