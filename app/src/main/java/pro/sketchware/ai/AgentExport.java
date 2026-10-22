@@ -701,6 +701,10 @@ public final class AgentExport {
                 state.add("assets", AgentSources.listAssets(scId, ""));
                 state.add("native_libraries",
                         AgentSources.inspectNativeLibraries(scId));
+                state.add("custom_blocks",
+                        AgentExtensibility.listCustomBlocksJson(scId));
+                state.add("xml_commands",
+                        AgentExtensibility.listXmlCommandsJson(scId));
             } catch (Exception ignored) {
             }
             java.util.HashMap<String, Object> meta = a.a.a.lC.b(scId);

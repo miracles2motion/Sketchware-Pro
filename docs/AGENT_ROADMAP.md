@@ -108,14 +108,15 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 ---
 
-### Phase 6 — Full Pro Events, Component Callbacks, Custom Blocks & Command Blocks
-**Goal:** 100% coverage of Sketchware Pro's extensibility system.
-1. **All Activity, Menu & Component Events:**
-   - Complete wiring and event-argument scoping for `onCreateOptionsMenu`, `onOptionsItemSelected`, `onActivityResult`, `onSaveInstanceState`, `onTabLayoutNewTabAdded`, custom added events (`ManageEvent` / `EventsHandler`), and every callback on `RequestNetwork`, `FirebaseDB`, `FirebaseAuth`, `FirebaseStorage`, `FilePicker`, `Camera`, `SpeechToText`, `LocationManager`, `BluetoothConnect`, and `FragmentAdapter`.
-2. **User Custom Blocks & Developer Managers (`CustomBlocksManager`, `BlocksManager`, `ComponentsHandler`):**
-   - Dynamically load user-installed Custom Blocks (`.sketchware/resources/block/My Block/block.json`) and Custom Components (`ComponentsHandler`) into the agent's block/component tables so custom blocks work automatically, plus optional creation of reusable custom blocks/components.
-3. **XML & Java Command Blocks (`ManageXMLCommandActivity` / `CommandBlock`):**
-   - Create, list, edit, and delete Pro Command Blocks that inject or transform generated Java/XML at compile time.
+### Phase 6 — Full Pro Events, Component Callbacks, Custom Blocks & Command Blocks (DONE)
+**Goal:** 100% coverage of Sketchware Pro's extensibility system (`67` registered tools).
+1. **All Activity, Menu & Component Events (`AgentLogic` + `create_component` `extra_data`):**
+   - Complete wiring and event-argument scoping across every Activity, Widget, Menu, and Component event (`EVENT_ARG_TABLE` + `EVENT_REF_ARG_TABLE` + dynamic `EventsHandler.getBlocks` parsing), including `onLongClick` (canonical leading-space resolution), `onFilesPicked` (`listStr` `filePath`), `onActivityResult` (`requestCode`, `resultCode`, `intent` `data`), `onOptionsItemSelected` (`id`, `title`), `onCreateOptionsMenu`, `onSaveInstanceState`, `onTabLayoutNewTabAdded`, `RecyclerView`/`ViewPager`/`TabLayout`/`BottomNavigationView`/`SearchView`/`PatternLockView`/`WaveSideBar`/`RatingBar`/`VideoView`, and all `Firebase`, `RequestNetwork`, `BluetoothConnect`, `LocationManager`, `Camera`, `SpeechToText`, `FragmentAdapter`, and `AdMob` callbacks.
+   - `create_component` supports `extra_data` (`SharedPreferences` file name, `FirebaseDB`/`FirebaseStorage` path, `FilePicker` MIME type) and user Custom Components.
+2. **User Custom Blocks & Developer Managers (`list_custom_definitions`, `manage_custom_block`, `manage_custom_component_or_event`):**
+   - Dynamically loads and creates user Custom Blocks (`My Block/block.json` + project-pinned `custom_blocks`), Custom Components (`component.json`), and Custom Events/Listeners (`events.json` + `listeners.json`) with immediate `BlockLoader` / `ComponentsHandler` / `EventsHandler` cache refresh and direct statement/reporter invocation in `set_event_handler`.
+3. **XML & Java Command Blocks (`manage_xml_commands` + `java_command_block`):**
+   - Create, list, update, delete, and clear compile-time XML Command rules in `.sketchware/data/<sc_id>/command` (auto-enabling `ProjectSettings.SETTING_NEW_XML_COMMAND`) plus `java_command_block` (`CommandBlockJava`) for compile-time Activity Java transformations.
 
 ---
 

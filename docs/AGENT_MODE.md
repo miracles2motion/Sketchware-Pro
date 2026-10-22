@@ -1992,6 +1992,16 @@ logs exposed the rest of the same class:
 3. **Native Libraries Manager (`inspect_native_libs`, `import_native_lib`, `delete_native_lib`)**:
    - Lists, imports, and deletes `.so` JNI binaries across `arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`, and `armeabi` under `files/native_libs/<abi>/`, inspecting 20-byte ELF headers (`\x7FELF` + `e_machine`) to reject wrong-architecture `.so` imports and report missing `arm64-v8a` / cross-ABI mismatch warnings, with full state recorded in `AgentExport`.
 
+## Wave 42 / Phase 6 — Full Pro Events, Component Callbacks, Custom Blocks/Components & XML/Java Command Blocks
+
+1. **100% Event & Component Callback Scoping (`AgentLogic`, `create_component`)**:
+   - Expanded `EVENT_ARG_TABLE` with all 29 missing built-in widget/component event locals from `Lx.getEventCode` and `ManageEvent.f` (`onCheckedChange`, `onItemSelected`, `onItemClicked`, `onItemLongClicked`, `onTextChanged`, `onQueryTextSubmit`, `onQueryTextChanged`, `onProgressChanged`, `onDateChange`, `onDateChanged`, `onTimeChanged`, `onPageStarted`, `onPageFinished`, `onPageSelected`, `onPageScrolled`, `onPageChanged`, `onScrollChanged`, `onScrolled`, `onRecyclerScrollChanged`, `onRecyclerScrolled`, `onNavigationItemSelected`, `onTabSelected`, `onTabUnselected`, `onTabReselected`, `onRatingChanged`, `onLetterSelected`, `onError`, `onFailureLink`, `onSuccessLink`, `onUserEarnedReward`), added `EVENT_REF_ARG_TABLE` (`onFilesPicked` -> `listStr` `filePath`, `onPatternLockProgress`/`Complete` -> `listStr` `pattern`, `onActivityResult` -> `intent` `data`), and parsed dynamic custom event slots from `EventsHandler.getBlocks`.
+   - Fixed canonical event matching (`" onLongClick"` leading-space preservation and live `EventsHandler.getActivityEvents()` lookup) and wired `create_component` `extra_data` (`SharedPreferences` file name, `Firebase` path, `FilePicker` MIME type).
+2. **Custom Blocks, Custom Components & Custom Events (`AgentExtensibility`, `list_custom_definitions`, `manage_custom_block`, `manage_custom_component_or_event`)**:
+   - Reads and writes `My Block/block.json`, project `custom_blocks`, `system/component.json`, `system/events.json`, and `system/listeners.json`, refreshing `BlockLoader`, `ComponentsHandler`, and `EventsHandler` immediately and supporting direct custom block statement & expression invocation in `AgentLogic`.
+3. **XML & Java Command Blocks (`manage_xml_commands`, `java_command_block`)**:
+   - Reads and writes `.sketchware/data/<scId>/command` (migrating legacy temp commands and enabling `ProjectSettings.SETTING_NEW_XML_COMMAND`) and emits `CommandBlockJava` (`java_command_block`) for compile-time Java/XML transformations, exported in `AgentExport`.
+
 
 
 

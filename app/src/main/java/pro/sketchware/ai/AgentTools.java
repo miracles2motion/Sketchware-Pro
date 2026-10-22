@@ -138,6 +138,7 @@ public final class AgentTools {
         register(new ReadSourceFiles());
         register(new ReadAssets());
         register(new InspectNativeLibs());
+        register(new ListCustomDefinitions());
         register(new AskColor());
         register(new AskChoice());
         register(new SetStyleBrief());
@@ -181,6 +182,9 @@ public final class AgentTools {
         register(new DeleteAsset());
         register(new ImportNativeLib());
         register(new DeleteNativeLib());
+        register(new ManageCustomBlock());
+        register(new ManageCustomComponentOrEvent());
+        register(new ManageXmlCommands());
         register(new ConfigureLibrary());
         register(new ManagePermissions());
         register(new ManageLocalLibraries());
@@ -577,6 +581,13 @@ public final class AgentTools {
     private static JsonObject booleanSchema(String description) {
         JsonObject schema = new JsonObject();
         schema.addProperty("type", "boolean");
+        schema.addProperty("description", description);
+        return schema;
+    }
+
+    private static JsonObject intSchema(String description) {
+        JsonObject schema = new JsonObject();
+        schema.addProperty("type", "integer");
         schema.addProperty("description", description);
         return schema;
     }
@@ -3369,12 +3380,19 @@ public final class AgentTools {
                     "The screen, e.g. MainActivity"));
             properties.add("type", stringSchema(
                     "The component kind, e.g. timer, dialog, "
-                            + "media_player (optional; intent is "
-                            + "used when omitted)"));
+                            + "media_player, or a custom component "
+                            + "typeName (optional; intent is used when "
+                            + "omitted)"));
             properties.add("name", stringSchema(
                     "The component's name, e.g. timer1 (optional; "
                             + "the next free name for its kind is "
                             + "used)"));
+            properties.add("extra_data", stringSchema(
+                    "Optional extra parameter: SharedPreferences file "
+                            + "name (defaults to component name), "
+                            + "Firebase DB/Storage node path (e.g. "
+                            + "\"notes\"), or FilePicker MIME type (e.g. "
+                            + "\"image/*\")"));
             return AgentTools.parameters(properties, "activity");
         }
 
@@ -3395,7 +3413,7 @@ public final class AgentTools {
         }
 
         private record Checked(ProjectFileBean activity, String name,
-                               int type, String label) {
+                               int type, String label, String extraData) {
         }
 
         /** Model type name, ComponentBean type, id prefix, label. */
@@ -3518,6 +3536,19 @@ public final class AgentTools {
                 }
             }
             if (typeRow == null) {
+                AgentExtensibility.CustomComponentDef customComp =
+                        AgentExtensibility.findCustomComponent(typeName);
+                if (customComp != null) {
+                    typeRow = new Object[]{
+                            customComp.typeName,
+                            customComp.id,
+                            customComp.varName.isEmpty()
+                                    ? "comp" : customComp.varName,
+                            customComp.name
+                    };
+                }
+            }
+            if (typeRow == null) {
                 throw new ToolException("E_BAD_TYPE",
                         "Unknown component type \"" + typeName
                                 + "\". Use one of: intent, "
@@ -3533,7 +3564,9 @@ public final class AgentTools {
                                 + "progress_dialog, date_picker, "
                                 + "time_picker, notification, "
                                 + "fragment_adapter, phone_auth, "
-                                + "cloud_message, google_login.");
+                                + "cloud_message, google_login, "
+                                + "asynctask (or a custom component "
+                                + "typeName).");
             }
             int componentType = (Integer) typeRow[1];
             // The editor's own component picker refuses a component
@@ -3598,8 +3631,23 @@ public final class AgentTools {
                                 + "screen. Pick another name, or use "
                                 + "the one that is there.");
             }
+            String extraData = stringArg(args, "extra_data").trim();
+            if (componentType
+                    == com.besome.sketch.beans.ComponentBean
+                            .COMPONENT_TYPE_SHAREDPREF) {
+                if (extraData.isEmpty()) {
+                    extraData = name.length() > 20
+                            ? name.substring(0, 20) : name;
+                }
+            } else if (componentType
+                    == com.besome.sketch.beans.ComponentBean
+                            .COMPONENT_TYPE_FILE_PICKER) {
+                if (extraData.isEmpty()) {
+                    extraData = "*" + "/*";
+                }
+            }
             return new Checked(activity, name, componentType,
-                    (String) typeRow[3]);
+                    (String) typeRow[3], extraData);
         }
 
         @Override
@@ -3614,13 +3662,18 @@ public final class AgentTools {
                     checked.activity().fileName);
             clean.addProperty("name", checked.name());
             clean.addProperty("type", stringArg(args, "type"));
+            if (!checked.extraData().isEmpty()) {
+                clean.addProperty("extra_data", checked.extraData());
+            }
             return new AgentProposal(name(), clean, scId,
                     "Add a component to "
                             + SketchwareProjects.activityName(
                                     checked.activity())
                             + " in " + project.name,
                     "New " + checked.label() + " component: "
-                            + checked.name(),
+                            + checked.name()
+                            + (checked.extraData().isEmpty() ? ""
+                                    : " (" + checked.extraData() + ")"),
                     "Adds the component to the screen, the same "
                             + "entry Sketchware's component picker "
                             + "adds. Nothing else on the screen "
@@ -3643,8 +3696,14 @@ public final class AgentTools {
             String javaName = checked.activity().getJavaName();
             try {
                 SketchwareActions.backupProjectOnce(scId);
-                // The component picker's own add call.
-                store.a(javaName, checked.type(), checked.name());
+                // The component picker's own add call (with param1 when
+                // SharedPreferences / Firebase / FilePicker uses it).
+                if (!checked.extraData().isEmpty()) {
+                    store.a(javaName, checked.type(), checked.name(),
+                            checked.extraData());
+                } else {
+                    store.a(javaName, checked.type(), checked.name());
+                }
                 SketchwareActions.commitProject(scId);
             } catch (Exception e) {
                 throw new ToolException("E_APPLY_FAILED",
@@ -10393,6 +10452,580 @@ public final class AgentTools {
                 throw new ToolException("E_DELETE_NATIVE_LIB_FAILED",
                         "Deleting native_libs/" + abi + "/" + fileName
                                 + " failed: " + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    // =====================================================================
+    // Phase 6: Custom Blocks, Custom Components/Events & XML Command Blocks
+    // =====================================================================
+
+    /**
+     * list_custom_definitions: inspects Custom Blocks, Custom Components,
+     * Custom Events/Listeners, and the working project's XML Command rules.
+     */
+    private static final class ListCustomDefinitions implements Tool {
+        @Override
+        public String name() {
+            return "list_custom_definitions";
+        }
+
+        @Override
+        public String description() {
+            return "Lists user Custom Blocks (My Block/block.json and "
+                    + "project custom_blocks), Custom Components "
+                    + "(component.json), Custom Events and Listeners "
+                    + "(events.json and listeners.json), and, when a "
+                    + "working project is active, its XML Command rules "
+                    + "and available XML targets.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            return AgentTools.parameters(new JsonObject());
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Listed custom blocks, components, events & XML commands";
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args) {
+            String scId = session.workingProjectId == null
+                    ? "" : session.workingProjectId.trim();
+            JsonObject result = new JsonObject();
+            result.add("custom_blocks",
+                    AgentExtensibility.listCustomBlocksJson(scId));
+            result.add("custom_components",
+                    AgentExtensibility.listCustomComponentsJson());
+            result.add("custom_events_and_listeners",
+                    AgentExtensibility.listCustomEventsAndListenersJson());
+            if (!scId.isEmpty()) {
+                result.add("xml_commands",
+                        AgentExtensibility.listXmlCommandsJson(scId));
+            }
+            return result;
+        }
+    }
+
+    /**
+     * manage_custom_block: creates, updates, or deletes a reusable Custom
+     * Block in My Block/block.json (and pins to the working project).
+     */
+    private static final class ManageCustomBlock implements Tool {
+        @Override
+        public String name() {
+            return "manage_custom_block";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes creating, updating, or deleting a reusable "
+                    + "Sketchware Pro Custom Block (My Block/block.json "
+                    + "and project custom_blocks). Once created, invoke it "
+                    + "in set_event_handler with {\"block\":\"<name>\","
+                    + "\"args\":[...]} or in expressions with "
+                    + "{\"custom_block\":\"<name>\",\"args\":[...]}.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("action", stringSchema(
+                    "Operation: upsert (default) or delete"));
+            properties.add("name", stringSchema(
+                    "Unique custom block identifier, e.g. logDebug"));
+            properties.add("type", stringSchema(
+                    "Block shape: \" \" (statement, default), \"s\" "
+                            + "(String), \"d\" (number), \"b\" (boolean), "
+                            + "\"a\" (Map), \"v\" (View), \"c\" (container "
+                            + "with blocks), \"e\" (if/else container), "
+                            + "or \"f\" (terminator)"));
+            properties.add("typeName", stringSchema(
+                    "Optional typeName for %m.* or custom types"));
+            properties.add("spec", stringSchema(
+                    "Block spec with %s, %d, %b, or %m.* slots, e.g. "
+                            + "\"log tag %s message %s\""));
+            properties.add("spec2", stringSchema(
+                    "Optional second header spec for \"e\" (if/else) "
+                            + "blocks, e.g. \"else\""));
+            properties.add("code", stringSchema(
+                    "Java code template formatted with String.format "
+                            + "(e.g. \"android.util.Log.d(%1$s, %2$s);\")"));
+            properties.add("imports", stringSchema(
+                    "Optional newline-separated Java import statements"));
+            properties.add("color", stringSchema(
+                    "Optional hex color, e.g. #8A55D7"));
+            return AgentTools.parameters(properties, "name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            String act = stringArg(args, "action");
+            String nm = stringArg(args, "name");
+            return "delete".equalsIgnoreCase(act)
+                    ? "Wants to delete custom block " + nm
+                    : "Wants to save custom block " + nm;
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = session.workingProjectId == null
+                    ? "" : session.workingProjectId.trim();
+            String action = stringArg(args, "action").trim().toLowerCase();
+            if (action.isEmpty()) action = "upsert";
+            String nm = stringArg(args, "name").trim();
+            if ("delete".equals(action)) {
+                if (AgentExtensibility.findCustomBlock(scId, nm) == null) {
+                    throw new ToolException("E_BLOCK_NOT_FOUND",
+                            "Custom block \"" + nm + "\" does not exist.");
+                }
+                JsonObject clean = new JsonObject();
+                clean.addProperty("action", "delete");
+                clean.addProperty("name", nm);
+                return new AgentProposal(name(), clean, scId,
+                        "Delete custom block " + nm,
+                        "Remove custom block \"" + nm + "\" from My Block.",
+                        "Existing events not using it are unaffected.");
+            }
+            String type = args != null && args.has("type")
+                    && !args.get("type").isJsonNull()
+                    ? args.get("type").getAsString() : " ";
+            String spec = stringArg(args, "spec");
+            String code = stringArg(args, "code");
+            String color = stringArg(args, "color");
+            AgentExtensibility.validateCustomBlock(
+                    nm, type, spec, code, color);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("action", "upsert");
+            clean.addProperty("name", nm);
+            clean.addProperty("type", type);
+            clean.addProperty("typeName", stringArg(args, "typeName"));
+            clean.addProperty("spec", spec);
+            clean.addProperty("spec2", stringArg(args, "spec2"));
+            clean.addProperty("code", code);
+            clean.addProperty("imports", stringArg(args, "imports"));
+            clean.addProperty("color", color);
+            return new AgentProposal(name(), clean, scId,
+                    "Save custom block " + nm,
+                    "Register custom block \"" + nm + "\" (" + spec + ").",
+                    code);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = proposal.workingProjectId == null
+                    ? "" : proposal.workingProjectId.trim();
+            JsonObject a = proposal.args;
+            String action = stringArg(a, "action");
+            String nm = stringArg(a, "name");
+            try {
+                if ("delete".equals(action)) {
+                    AgentExtensibility.deleteCustomBlock(scId, nm);
+                    JsonObject res = new JsonObject();
+                    res.addProperty("deleted", nm);
+                    res.addProperty("verified",
+                            "Deleted custom block " + nm + ".");
+                    return res;
+                }
+                String type = a.has("type") && !a.get("type").isJsonNull()
+                        ? a.get("type").getAsString() : " ";
+                AgentExtensibility.CustomBlockDef saved =
+                        AgentExtensibility.upsertCustomBlock(
+                                scId,
+                                nm,
+                                type,
+                                stringArg(a, "typeName"),
+                                stringArg(a, "spec"),
+                                stringArg(a, "spec2"),
+                                stringArg(a, "code"),
+                                stringArg(a, "imports"),
+                                stringArg(a, "color"),
+                                "9",
+                                !scId.isEmpty());
+                JsonObject res = new JsonObject();
+                res.addProperty("name", saved.name);
+                res.addProperty("type", saved.type);
+                res.addProperty("spec", saved.spec);
+                res.addProperty("verified",
+                        "Saved and loaded custom block \"" + saved.name
+                                + "\".");
+                return res;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_CUSTOM_BLOCK_FAILED",
+                        "Custom block operation failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /**
+     * manage_custom_component_or_event: creates, updates, or deletes a
+     * Custom Component (component.json) or Custom Event/Listener
+     * (events.json and listeners.json).
+     */
+    private static final class ManageCustomComponentOrEvent implements Tool {
+        @Override
+        public String name() {
+            return "manage_custom_component_or_event";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes creating, updating, or deleting a Sketchware "
+                    + "Pro Custom Component (kind=\"component\") or Custom "
+                    + "Event + Listener (kind=\"event\") and refreshes "
+                    + "ComponentsHandler / EventsHandler caches immediately.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("kind", stringSchema(
+                    "Target kind: component or event"));
+            properties.add("action", stringSchema(
+                    "Operation: upsert (default) or delete"));
+            properties.add("name", stringSchema(
+                    "Display name (for component) or event method name "
+                            + "(for event, e.g. onKeyDown)"));
+            properties.add("typeName", stringSchema(
+                    "For kind=component: Java/Sketchware type identifier "
+                            + "(e.g. ExoPlayerComponent)"));
+            properties.add("varName", stringSchema(
+                    "For kind=component: default variable prefix"));
+            properties.add("buildClass", stringSchema(
+                    "For kind=component: Java field type emitted in "
+                            + "Activities"));
+            properties.add("imports", stringSchema(
+                    "Newline-separated Java imports"));
+            properties.add("additionalVar", stringSchema(
+                    "For kind=component: optional extra field declaration "
+                            + "template (uses ### or $name)"));
+            properties.add("defineAdditionalVar", stringSchema(
+                    "For kind=component: optional initialize() statement "
+                            + "template (uses ### or $name)"));
+            properties.add("target_class", stringSchema(
+                    "For kind=event: empty string \"\" for Activity events, "
+                            + "or widget/component class name"));
+            properties.add("listener_name", stringSchema(
+                    "For kind=event on a widget/component: listener name"));
+            properties.add("event_parameters", stringSchema(
+                    "For kind=event: slot tokens like \"%d.keyCode\""));
+            properties.add("header_spec", stringSchema(
+                    "For kind=event: header spec like "
+                            + "\"onKeyDown %d.keyCode\""));
+            properties.add("code", stringSchema(
+                    "For kind=event: Java method template containing %s "
+                            + "for the wired block body"));
+            properties.add("listener_code", stringSchema(
+                    "For kind=event with listener_name: Java listener "
+                            + "registration template containing %s"));
+            properties.add("description", stringSchema(
+                    "Optional human-readable description"));
+            return AgentTools.parameters(properties, "kind", "name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to update custom " + stringArg(args, "kind")
+                    + " " + stringArg(args, "name");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = session.workingProjectId == null
+                    ? "" : session.workingProjectId.trim();
+            String kind = stringArg(args, "kind").trim().toLowerCase();
+            if (!"component".equals(kind) && !"event".equals(kind)) {
+                throw new ToolException("E_BAD_KIND",
+                        "Pass kind=\"component\" or kind=\"event\".");
+            }
+            String action = stringArg(args, "action").trim().toLowerCase();
+            if (action.isEmpty()) action = "upsert";
+            String nm = stringArg(args, "name").trim();
+            if ("component".equals(kind) && "upsert".equals(action)) {
+                String tn = stringArg(args, "typeName").trim();
+                if (tn.isEmpty()) tn = nm;
+                if (tn.isEmpty()) {
+                    throw new ToolException("E_BAD_COMPONENT_TYPE",
+                            "Provide component \"typeName\" or \"name\".");
+                }
+            } else if ("event".equals(kind) && "upsert".equals(action)) {
+                String code = stringArg(args, "code");
+                if (!code.contains("%s")) {
+                    throw new ToolException("E_BAD_EVENT_CODE",
+                            "Custom event \"code\" must contain \"%s\" "
+                                    + "where the event's blocks go.");
+                }
+            }
+            JsonObject clean = args.deepCopy();
+            clean.addProperty("kind", kind);
+            clean.addProperty("action", action);
+            return new AgentProposal(name(), clean, scId,
+                    ("delete".equals(action) ? "Delete " : "Save ")
+                            + "custom " + kind + " " + nm,
+                    ("delete".equals(action) ? "Remove " : "Register ")
+                            + "custom " + kind + " \"" + nm + "\".",
+                    stringArg(args, "code"));
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            JsonObject a = proposal.args;
+            String kind = stringArg(a, "kind");
+            String action = stringArg(a, "action");
+            String nm = stringArg(a, "name");
+            JsonObject res = new JsonObject();
+            if ("component".equals(kind)) {
+                if ("delete".equals(action)) {
+                    String q = stringArg(a, "typeName").isEmpty()
+                            ? nm : stringArg(a, "typeName");
+                    AgentExtensibility.deleteCustomComponent(q);
+                    res.addProperty("deleted_component", q);
+                    res.addProperty("verified",
+                            "Deleted custom component " + q + ".");
+                    return res;
+                }
+                String tn = stringArg(a, "typeName").isEmpty()
+                        ? nm : stringArg(a, "typeName");
+                AgentExtensibility.CustomComponentDef saved =
+                        AgentExtensibility.upsertCustomComponent(
+                                nm, tn, -1,
+                                stringArg(a, "varName"),
+                                stringArg(a, "buildClass"),
+                                tn,
+                                stringArg(a, "description"),
+                                stringArg(a, "imports"),
+                                stringArg(a, "additionalVar"),
+                                stringArg(a, "defineAdditionalVar"));
+                res.addProperty("id", saved.id);
+                res.addProperty("typeName", saved.typeName);
+                res.addProperty("verified",
+                        "Registered custom component " + saved.typeName
+                                + " (id=" + saved.id + ").");
+                return res;
+            }
+            if ("delete".equals(action)) {
+                AgentExtensibility.deleteCustomEvent(nm);
+                res.addProperty("deleted_event", nm);
+                res.addProperty("verified",
+                        "Deleted custom event " + nm + ".");
+                return res;
+            }
+            AgentExtensibility.upsertCustomEvent(
+                    nm,
+                    stringArg(a, "target_class"),
+                    stringArg(a, "listener_name"),
+                    stringArg(a, "event_parameters"),
+                    stringArg(a, "header_spec"),
+                    stringArg(a, "description"),
+                    stringArg(a, "code"),
+                    stringArg(a, "listener_code"),
+                    stringArg(a, "imports"));
+            res.addProperty("event", nm);
+            res.addProperty("verified",
+                    "Registered custom event \"" + nm + "\".");
+            return res;
+        }
+    }
+
+    /**
+     * manage_xml_commands: manages compile-time XML transformation rules
+     * (.sketchware/data/<scId>/command + SETTING_NEW_XML_COMMAND).
+     */
+    private static final class ManageXmlCommands implements Tool {
+        @Override
+        public String name() {
+            return "manage_xml_commands";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes adding, updating, deleting, or clearing "
+                    + "Sketchware Pro XML Command rules on generated XML "
+                    + "files (AndroidManifest.xml, layout XMLs, styles.xml, "
+                    + "colors.xml, strings.xml, xml/provider_paths.xml) and "
+                    + "automatically enables SETTING_NEW_XML_COMMAND.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("action", stringSchema(
+                    "Operation: add (default), update, delete, or clear"));
+            properties.add("index", intSchema(
+                    "0-based command index (required for update and "
+                            + "delete)"));
+            properties.add("xml_name", stringSchema(
+                    "Target XML filename, e.g. AndroidManifest.xml, "
+                            + "main.xml, or styles.xml"));
+            properties.add("command", stringSchema(
+                    "Patch command: insert, add, replace, find-replace, "
+                            + "find-replace-first, or find-replace-all"));
+            properties.add("reference", stringSchema(
+                    "Anchor line or text/regex to match in target XML"));
+            properties.add("changes", stringSchema(
+                    "XML text to insert, add, or replace with"));
+            properties.add("distance", intSchema(
+                    "Optional line offset from reference (default 0)"));
+            properties.add("before", intSchema(
+                    "Optional lines before anchor (backend, default 0)"));
+            properties.add("after", intSchema(
+                    "Optional lines after anchor (frontend, default 0)"));
+            return AgentTools.parameters(properties, "action");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            String act = stringArg(args, "action");
+            String xml = stringArg(args, "xml_name");
+            return xml.isEmpty()
+                    ? "Wants to " + act + " XML command rules"
+                    : "Wants to patch " + xml + " via XML Command";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String action = stringArg(args, "action").trim().toLowerCase();
+            if (action.isEmpty()) action = "add";
+            if (!"add".equals(action) && !"update".equals(action)
+                    && !"delete".equals(action)
+                    && !"clear".equals(action)) {
+                throw new ToolException("E_BAD_ACTION",
+                        "Use action: add, update, delete, or clear.");
+            }
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("action", action);
+            if ("clear".equals(action)) {
+                return new AgentProposal(name(), clean, scId,
+                        "Clear XML commands in " + project.name,
+                        "Remove all XML Command rules in " + project.name
+                                + ".",
+                        "A project backup is saved first.");
+            }
+            int idx = intArg(args, "index", -1);
+            if ("delete".equals(action)) {
+                if (idx < 0) {
+                    throw new ToolException("E_MISSING_INDEX",
+                            "Pass 0-based \"index\" to delete.");
+                }
+                clean.addProperty("index", idx);
+                return new AgentProposal(name(), clean, scId,
+                        "Delete XML command #" + idx,
+                        "Remove XML Command #" + idx + " from "
+                                + project.name + ".",
+                        "A project backup is saved first.");
+            }
+            if ("update".equals(action) && idx < 0) {
+                throw new ToolException("E_MISSING_INDEX",
+                        "Pass 0-based \"index\" to update.");
+            }
+            String xmlName = stringArg(args, "xml_name").trim();
+            if (xmlName.isEmpty()) {
+                throw new ToolException("E_BAD_XML_TARGET",
+                        "Pass \"xml_name\" (e.g. AndroidManifest.xml or "
+                                + "main.xml).");
+            }
+            String cmd = AgentExtensibility.normalizeCommandAction(
+                    stringArg(args, "command").isEmpty()
+                            ? "add" : stringArg(args, "command"));
+            String ref = stringArg(args, "reference");
+            if (ref.isEmpty()) {
+                throw new ToolException("E_BAD_COMMAND_REFERENCE",
+                        "Pass non-empty \"reference\" to match in "
+                                + xmlName + ".");
+            }
+            String changes = args != null && args.has("changes")
+                    && !args.get("changes").isJsonNull()
+                    ? args.get("changes").getAsString() : "";
+            clean.addProperty("index", "update".equals(action) ? idx : -1);
+            clean.addProperty("xml_name", xmlName);
+            clean.addProperty("command", cmd);
+            clean.addProperty("reference", ref);
+            clean.addProperty("changes", changes);
+            clean.addProperty("distance", intArg(args, "distance", 0));
+            clean.addProperty("before", intArg(args, "before", 0));
+            clean.addProperty("after", intArg(args, "after", 0));
+            return new AgentProposal(name(), clean, scId,
+                    ("update".equals(action) ? "Update " : "Add ")
+                            + "XML command on " + xmlName,
+                    cmd + " around \"" + ref + "\" in " + xmlName + " ("
+                            + project.name + ").",
+                    changes);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            JsonObject a = proposal.args;
+            String action = stringArg(a, "action");
+            try {
+                JsonObject res = new JsonObject();
+                if ("clear".equals(action)) {
+                    AgentExtensibility.clearXmlCommands(scId);
+                    res.addProperty("cleared", true);
+                    res.addProperty("verified",
+                            "Cleared all XML commands.");
+                    return res;
+                }
+                if ("delete".equals(action)) {
+                    int idx = intArg(a, "index", -1);
+                    AgentExtensibility.deleteXmlCommand(scId, idx);
+                    res.addProperty("deleted_index", idx);
+                    res.addProperty("verified",
+                            "Deleted XML command #" + idx + ".");
+                    return res;
+                }
+                int savedIdx = AgentExtensibility.upsertXmlCommand(
+                        scId,
+                        intArg(a, "index", -1),
+                        stringArg(a, "xml_name"),
+                        stringArg(a, "command"),
+                        stringArg(a, "reference"),
+                        stringArg(a, "changes"),
+                        intArg(a, "distance", 0),
+                        intArg(a, "before", 0),
+                        intArg(a, "after", 0));
+                res.addProperty("index", savedIdx);
+                res.addProperty("xml_name", stringArg(a, "xml_name"));
+                res.addProperty("command", stringArg(a, "command"));
+                res.addProperty("verified",
+                        "Saved XML command #" + savedIdx
+                                + " and enabled XML Command compilation.");
+                return res;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_XML_COMMAND_FAILED",
+                        "XML command operation failed: "
+                                + String.valueOf(e.getMessage()));
             }
         }
     }
