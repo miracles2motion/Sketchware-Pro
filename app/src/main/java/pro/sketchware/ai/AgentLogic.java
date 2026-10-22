@@ -2735,8 +2735,10 @@ public final class AgentLogic {
         /** One statement from the literal/picker vocabulary. */
         private BlockBean buildTranslated(JsonObject op, int depth)
                 throws AgentTools.ToolException {
-            Stmt stmt = translate(context, op, byId, variables, lists,
-                    components, activityName);
+            // this Builder is what translate needs to evaluate value
+            // expressions: expr() lives here, not in the static helper.
+            Stmt stmt = translate(this, context, op, byId, variables,
+                    lists, components, activityName);
             stmts.add(stmt);
             BlockBean bean = newBean(stmt.opCode, stmt.type);
             bean.parameters.addAll(stmt.params);
@@ -5163,7 +5165,8 @@ public final class AgentLogic {
         };
     }
 
-    private static Stmt translate(Context context, JsonObject op,
+    private static Stmt translate(Builder builder, Context context,
+                                  JsonObject op,
                                   Map<String, ViewBean> byId,
                                   Map<String, Integer> variables,
                                   Map<String, Integer> lists,
@@ -5250,11 +5253,11 @@ public final class AgentLogic {
                     // setText block takes one, so refusing it here
                     // (which is what this used to do) forced a pointless
                     // two-step: copy into a variable, then set_text.
-                    String param = expr(op.get("text"), 's',
+                    String param = builder.expr(op.get("text"), 's',
                             "set_text needs the text to show");
                     stmt.params.add(param);
                     stmt.sentence = "Set " + widget.id + " text to "
-                            + describeExpr(op.get("text"));
+                            + builder.describeExpr(op.get("text"));
                     stmt.expectCode = widget.id + ".setText(";
                     break;
                 }
@@ -6183,9 +6186,9 @@ public final class AgentLogic {
                     // The JSON can be any expression — most usefully a
                     // saved preference: read the pref, parse it, fill
                     // the list, in one block instead of two.
-                    text = expr(op.get("text"), 's',
+                    text = builder.expr(op.get("text"), 's',
                             kind + " needs the JSON text");
-                    shown = describeExpr(op.get("text"));
+                    shown = builder.describeExpr(op.get("text"));
                 } else if (!fromVariable.isEmpty()) {
                     requireVariable(variables, fromVariable);
                     requireVariableKind(variables, fromVariable, 2,
@@ -6724,11 +6727,12 @@ public final class AgentLogic {
                 CA componentAction = action == null
                         ? COMPONENT_ACTIONS.get(kind) : null;
                 if (action != null) {
-                    buildWidgetAction(op, byId, lists, action, stmt);
-                } else if (componentAction != null) {
-                    buildComponentAction(op, byId, variables, lists,
-                            components, activityName, componentAction,
+                    buildWidgetAction(builder, op, byId, lists, action,
                             stmt);
+                } else if (componentAction != null) {
+                    buildComponentAction(builder, op, byId, variables,
+                            lists, components, activityName,
+                            componentAction, stmt);
                 } else {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
                     (kind.isEmpty()
@@ -6960,7 +6964,8 @@ public final class AgentLogic {
      * the target widget first, then the declared argument slots, each
      * validated the way the palette itself constrains it.
      */
-    private void buildWidgetAction(JsonObject op,
+    private static void buildWidgetAction(Builder builder,
+                                          JsonObject op,
                                           Map<String, ViewBean> byId,
                                           Map<String, Integer> lists,
                                           WA action, Stmt stmt)
@@ -7030,7 +7035,7 @@ public final class AgentLogic {
                     String value = stringOf(op, field);
                     JsonElement number = op.get(field);
                     if (number != null && number.isJsonObject()) {
-                        value = expr(number, 'd',
+                        value = builder.expr(number, 'd',
                                 "the \"" + field + "\" of this block");
                     } else {
                         try {
@@ -7062,14 +7067,14 @@ public final class AgentLogic {
                     // do too.
                     JsonElement raw = op.get(field);
                     if (raw != null && raw.isJsonObject()) {
-                        text = expr(raw, 's',
+                        text = builder.expr(raw, 's',
                                 "the \"" + field + "\" of this block");
                     } else if (raw != null && raw.isJsonPrimitive()
                             && raw.getAsJsonPrimitive().isString()) {
                         JsonObject decoded = expressionFromText(
                                 raw.getAsString());
                         if (decoded != null) {
-                            text = expr(decoded, 's',
+                            text = builder.expr(decoded, 's',
                                     "the \"" + field + "\" of this block");
                         }
                     }
@@ -7186,7 +7191,8 @@ public final class AgentLogic {
      * compile, and the model can convert with
      * {@code {"fn":"to_text","a":{"var":"n"}}}.
      */
-    private String textSlotValue(JsonObject op, String field,
+    private static String textSlotValue(Builder builder, JsonObject op,
+                                        String field,
                                  Map<String, Integer> variables,
                                  String opCode)
             throws AgentTools.ToolException {
@@ -7196,7 +7202,7 @@ public final class AgentLogic {
             // text. Read it as the expression it meant, not as letters.
             JsonObject decoded = expressionFromText(plain);
             if (decoded != null) {
-                return expr(decoded, 's',
+                return builder.expr(decoded, 's',
                         "the \"" + field + "\" of " + opCode);
             }
             return plain;
@@ -7206,7 +7212,7 @@ public final class AgentLogic {
             // Anything else — a list turned into JSON, a saved
             // preference, a widget's live text — is a reporter block
             // in this slot, exactly as Sketchware draws it.
-            return expr(value, 's',
+            return builder.expr(value, 's',
                     "the \"" + field + "\" of " + opCode);
         }
         String name = stringOf(value, "var");
@@ -7259,7 +7265,8 @@ public final class AgentLogic {
      * against the screen's component list and its type), then the
      * declared argument slots.
      */
-    private void buildComponentAction(JsonObject op,
+    private static void buildComponentAction(Builder builder,
+                                              JsonObject op,
                                              Map<String, ViewBean> byId,
                                              Map<String, Integer> variables,
                                              Map<String, Integer> lists,
@@ -7390,7 +7397,7 @@ public final class AgentLogic {
                     String value = stringOf(op, field);
                     JsonElement number = op.get(field);
                     if (number != null && number.isJsonObject()) {
-                        value = expr(number, 'd',
+                        value = builder.expr(number, 'd',
                                 "the \"" + field + "\" of this block");
                     } else {
                         try {
@@ -7409,8 +7416,8 @@ public final class AgentLogic {
                     String[] fields = {"text", "text2", "text3"};
                     String field = fields[Math.min(textField++,
                             fields.length - 1)];
-                    String text = textSlotValue(op, field, variables,
-                            action.opCode);
+                    String text = textSlotValue(builder, op, field,
+                            variables, action.opCode);
                     stmt.params.add(text);
                     shown = text.startsWith("@var:")
                             ? text.substring("@var:".length()) : text;
