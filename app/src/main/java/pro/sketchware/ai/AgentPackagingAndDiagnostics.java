@@ -496,7 +496,7 @@ public final class AgentPackagingAndDiagnostics {
             if (i == 0) {
                 vb.parent = targetParent;
                 vb.index = index < 0
-                        ? jC.a(scId).e(xmlName, targetParent).size()
+                        ? countChildrenOf(jC.a(scId).d(xmlName), targetParent)
                         : index;
             } else if (vb.parent != null && idMap.containsKey(vb.parent)) {
                 vb.parent = idMap.get(vb.parent);
@@ -814,6 +814,18 @@ public final class AgentPackagingAndDiagnostics {
             if (widgetId.equals(vb.id)) return vb;
         }
         return null;
+    }
+
+    private static int countChildrenOf(
+            List<ViewBean> views, String parentId) {
+        if (views == null || parentId == null) return 0;
+        int count = 0;
+        for (ViewBean vb : views) {
+            if (vb != null && parentId.equals(vb.parent)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private static String nextUniqueWidgetId(
