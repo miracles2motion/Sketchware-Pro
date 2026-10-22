@@ -103,6 +103,8 @@ public class AgentFragment extends qA {
     /** The task-strip line currently shown (dismiss remembers it). */
     private String stripShownText = "";
     private String stripDismissedText = "";
+    /** Current live step/tool label for the floating task strip. */
+    private String liveStepLabel = "";
     /** The project whose stored conversation is on screen, if any. */
     private String chatProjectId = "";
     /**
@@ -183,6 +185,20 @@ public class AgentFragment extends qA {
                 v -> showDesignSystemDialog());
         binding.planButton.setOnClickListener(v -> showPlanDialog());
         binding.taskLogButton.setOnClickListener(v -> showTaskLogDialog());
+        binding.taskStrip.setOnClickListener(v -> {
+            if (providerConfig == null) {
+                return;
+            }
+            String scId = providerConfig.workingProjectId();
+            if (scId.isEmpty()) {
+                return;
+            }
+            if (AgentJournal.hasPlan(scId)) {
+                showPlanDialog();
+            } else {
+                showTaskLogDialog();
+            }
+        });
         binding.taskStripResume.setOnClickListener(v -> resumeTask());
         binding.taskStripDismiss.setOnClickListener(v -> {
             stripDismissedText = stripShownText;
@@ -382,6 +398,8 @@ public class AgentFragment extends qA {
             return;
         }
         generating = true;
+        liveStepLabel = "";
+        stripDismissedText = "";
         requestStartedAt = SystemClock.elapsedRealtime();
         updateActionButton();
         refreshStrip();
@@ -421,12 +439,17 @@ public class AgentFragment extends qA {
                 new AgentLoop.Listener() {
                     @Override
                     public void onToolNote(String line) {
-                        runOnUi(() -> insertToolNote(line));
+                        runOnUi(() -> {
+                            liveStepLabel = line == null ? "" : line.trim();
+                            insertToolNote(line);
+                            refreshStrip();
+                        });
                     }
 
                     @Override
                     public void onAnswer(String text, String thinking) {
                         runOnUi(() -> {
+                            liveStepLabel = "";
                             clearLiveNote();
                             generating = false;
                             if (streamingMessage != null) {
@@ -448,6 +471,7 @@ public class AgentFragment extends qA {
                                 startStreamingTurn(history);
                                 return;
                             }
+                            liveStepLabel = "";
                             clearLiveNote();
                             generating = false;
                             handleError(error);
@@ -461,7 +485,15 @@ public class AgentFragment extends qA {
                     public boolean onApproval(AgentProposal proposal) {
                         // The card now says what is being proposed;
                         // the heartbeat line has done its job.
-                        runOnUi(AgentFragment.this::clearLiveNote);
+                        runOnUi(() -> {
+                            clearLiveNote();
+                            liveStepLabel = proposal != null
+                                    && proposal.title != null
+                                    && !proposal.title.isEmpty()
+                                    ? "Waiting for approval · " + proposal.title
+                                    : "Waiting for approval";
+                            refreshStrip();
+                        });
                         return awaitApproval(proposal);
                     }
 
@@ -481,6 +513,7 @@ public class AgentFragment extends qA {
                     public void onApprovalResolved(AgentProposal proposal,
                                                    com.google.gson.JsonObject result) {
                         runOnUi(() -> {
+                            liveStepLabel = "";
                             resolveApprovalCard(proposal, result);
                             refreshStrip();
                         });
@@ -496,7 +529,13 @@ public class AgentFragment extends qA {
                             chatProjectId = scId;
                             persistChat();
                             updateWorkingOnCard();
+                            refreshStrip();
                         });
+                    }
+
+                    @Override
+                    public void onStateChanged() {
+                        runOnUi(AgentFragment.this::refreshStrip);
                     }
                 });
     }
@@ -556,6 +595,14 @@ public class AgentFragment extends qA {
         if (chatService != null) {
             chatService.cancel();
         }
+        if (providerConfig != null) {
+            String scId = providerConfig.workingProjectId();
+            if (!scId.isEmpty()) {
+                AgentJournal.endTurn(scId, false, "you stopped it");
+            }
+        }
+        liveStepLabel = "";
+        clearLiveNote();
         generating = false;
         setStreamingComplete();
         updateActionButton();
@@ -703,33 +750,78 @@ public class AgentFragment extends qA {
         String scId = providerConfig.workingProjectId();
         String text = "";
         boolean resumable = false;
-        if (!scId.isEmpty()) {
-            if (generating) {
-                // While work lands, the strip follows the plan's
-                // step in hand; without a plan it names the task.
-                String planLine = currentPlanStepLine(scId);
-                if (!planLine.isEmpty()) {
-                    text = planLine;
-                } else {
-                    String title = AgentJournal.openTitle(scId);
-                    if (title.isEmpty()) {
-                        title = lastUserText;
-                    }
+        if (generating) {
+            String stepBadge = !scId.isEmpty()
+                    ? currentPlanStepBadge(scId) : "";
+            String planLine = !scId.isEmpty()
+                    ? currentPlanStepLine(scId) : "";
+            if (!stepBadge.isEmpty() && !liveStepLabel.isEmpty()) {
+                text = stepBadge + " · " + liveStepLabel;
+            } else if (!planLine.isEmpty()) {
+                text = planLine;
+            } else if (!liveStepLabel.isEmpty()) {
+                text = liveStepLabel;
+            } else {
+                String title = !scId.isEmpty()
+                        ? AgentJournal.openTitle(scId) : "";
+                if (title.isEmpty()) {
+                    title = lastUserText;
+                }
+                if (!title.isEmpty()) {
                     text = getString(R.string.agent_task_working, title);
                 }
-            } else {
-                text = AgentJournal.stripText(scId);
-                resumable = !text.isEmpty();
             }
+        } else if (!scId.isEmpty()) {
+            text = AgentJournal.stripText(scId);
+            resumable = !text.isEmpty();
         }
         stripShownText = text;
-        boolean show = !text.isEmpty() && !text.equals(stripDismissedText);
+        boolean show = !text.isEmpty()
+                && (generating || !text.equals(stripDismissedText));
         binding.taskStrip.setVisibility(show ? View.VISIBLE : View.GONE);
         if (show) {
             binding.taskStripText.setText(text);
             binding.taskStripResume.setVisibility(
                     resumable ? View.VISIBLE : View.GONE);
+            binding.taskStripDismiss.setVisibility(
+                    generating ? View.GONE : View.VISIBLE);
         }
+        updatePlanButtonBadge(scId);
+    }
+
+    /** Updates the Plan chip label with live X/Y progress when a plan exists. */
+    private void updatePlanButtonBadge(String scId) {
+        if (binding == null) {
+            return;
+        }
+        if (scId != null && !scId.isEmpty()) {
+            int[] progress = AgentJournal.planProgress(scId);
+            if (progress[1] > 0) {
+                binding.planButton.setText(
+                        getString(R.string.agent_plan_button)
+                                + " (" + progress[0] + "/" + progress[1] + ")");
+                return;
+            }
+        }
+        binding.planButton.setText(R.string.agent_plan_button);
+    }
+
+    /** "Step 2/6" badge for the active plan step, or "" when none is active. */
+    private String currentPlanStepBadge(String scId) {
+        com.google.gson.JsonObject plan = AgentJournal.plan(scId);
+        if (!plan.has("steps")) {
+            return "";
+        }
+        com.google.gson.JsonArray steps = plan.getAsJsonArray("steps");
+        for (int i = 0; i < steps.size(); i++) {
+            com.google.gson.JsonObject step = steps.get(i).getAsJsonObject();
+            String state = step.has("state")
+                    ? step.get("state").getAsString() : "";
+            if ("current".equals(state) || "stopped".equals(state)) {
+                return "Step " + (i + 1) + "/" + steps.size();
+            }
+        }
+        return "";
     }
 
     /** "Plan step 3 of 7 · ..." for the step in hand, or "". */
@@ -745,30 +837,39 @@ public class AgentFragment extends qA {
             String state = step.has("state")
                     ? step.get("state").getAsString() : "";
             if ("current".equals(state) || "stopped".equals(state)) {
+                String stepText = step.has("title")
+                        ? step.get("title").getAsString()
+                        : step.has("text")
+                                ? step.get("text").getAsString()
+                                : "";
                 return getString(R.string.agent_plan_step_line, i + 1,
                         steps.size(),
-                        step.has("title")
-                                ? step.get("title").getAsString()
-                                : step.has("text")
-                                        ? step.get("text").getAsString()
-                                        : "");
+                        AgentJournal.cleanStepText(stepText));
             }
         }
         return "";
     }
 
-    /** Continues the paused task as a normal message in the chat. */
+    /** Continues the paused task cleanly without clobbering any draft in chatInput. */
     private void resumeTask() {
-        if (generating || binding == null) {
+        if (generating || binding == null || providerConfig == null) {
+            return;
+        }
+        if (!providerConfig.isConfigured()) {
+            appendMessage(ChatMessage.error(
+                    getString(R.string.agent_provider_missing)));
             return;
         }
         stripDismissedText = "";
-        // The same task entry continues — its title and finished
-        // steps are already recorded; the brief tells the model so.
-        AgentJournal.reopenLatest(providerConfig.workingProjectId());
-        binding.chatInput.setText(
-                getString(R.string.agent_task_resume_message));
-        sendCurrentInput();
+        String scId = providerConfig.workingProjectId();
+        AgentJournal.reopenLatest(scId);
+        String visiblePrompt = "Resume unfinished work";
+        appendMessage(ChatMessage.user(visiblePrompt));
+        lastUserText = getString(R.string.agent_task_resume_message);
+        ChatMessage reply = ChatMessage.assistant("");
+        streamingMessage = reply;
+        appendMessage(reply);
+        startRequest();
     }
 
     /** The working project, or a nudge to pick one first. */
@@ -1249,33 +1350,99 @@ public class AgentFragment extends qA {
         com.google.gson.JsonObject plan = AgentJournal.plan(scId);
         String title = plan.has("title")
                 ? plan.get("title").getAsString() : "";
+        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        android.widget.LinearLayout container =
+                new android.widget.LinearLayout(requireContext());
+        container.setOrientation(android.widget.LinearLayout.VERTICAL);
+        container.setPadding(pad, pad / 2, pad, pad);
+
+        final Runnable[] rebuildRows = new Runnable[1];
+        rebuildRows[0] = () -> {
+            container.removeAllViews();
+            com.google.gson.JsonObject latest = AgentJournal.plan(scId);
+            if (!latest.has("steps")
+                    || latest.getAsJsonArray("steps").size() == 0) {
+                android.widget.TextView empty =
+                        new android.widget.TextView(requireContext());
+                empty.setText(R.string.agent_plan_empty);
+                empty.setTextAppearance(com.google.android.material.R.style
+                        .TextAppearance_Material3_BodyMedium);
+                container.addView(empty);
+                return;
+            }
+            com.google.gson.JsonArray steps = latest.getAsJsonArray("steps");
+            int[] progress = AgentJournal.planProgress(scId);
+            android.widget.TextView summary =
+                    new android.widget.TextView(requireContext());
+            summary.setText(getString(R.string.agent_plan_progress,
+                    progress[0], progress[1])
+                    + " · Tap a step to mark or unmark done");
+            summary.setTextAppearance(com.google.android.material.R.style
+                    .TextAppearance_Material3_LabelLarge);
+            summary.setPadding(0, 0, 0, pad / 2);
+            container.addView(summary);
+
+            int rowPadV = (int) (10 * getResources().getDisplayMetrics().density);
+            for (int i = 0; i < steps.size(); i++) {
+                final int stepIndex = i;
+                com.google.gson.JsonObject step =
+                        steps.get(i).getAsJsonObject();
+                String state = step.has("state")
+                        ? step.get("state").getAsString() : "pending";
+                String mark = "done".equals(state) ? "✓ "
+                        : "current".equals(state) ? "● "
+                        : "stopped".equals(state) ? "❚❚ " : "○ ";
+                String rawText = step.has("text")
+                        ? step.get("text").getAsString() : "";
+                android.widget.TextView row =
+                        new android.widget.TextView(requireContext());
+                row.setText(mark + (i + 1) + ". "
+                        + AgentJournal.cleanStepText(rawText));
+                row.setTextAppearance(com.google.android.material.R.style
+                        .TextAppearance_Material3_BodyMedium);
+                if ("done".equals(state)) {
+                    row.setAlpha(0.72f);
+                }
+                row.setPadding(0, rowPadV, 0, rowPadV);
+                android.util.TypedValue ripple = new android.util.TypedValue();
+                if (requireContext().getTheme().resolveAttribute(
+                        android.R.attr.selectableItemBackground, ripple, true)) {
+                    row.setBackgroundResource(ripple.resourceId);
+                }
+                row.setOnClickListener(v -> {
+                    AgentJournal.togglePlanStepDone(scId, stepIndex);
+                    rebuildRows[0].run();
+                    refreshStrip();
+                });
+                container.addView(row);
+            }
+        };
+        rebuildRows[0].run();
+
+        android.widget.ScrollView scroll =
+                new android.widget.ScrollView(requireContext());
+        scroll.addView(container);
         androidx.appcompat.app.AlertDialog dialog =
                 new MaterialAlertDialogBuilder(requireContext())
                         .setTitle(title.isEmpty()
                                 ? getString(R.string.agent_plan_title)
                                 : title)
-                        .setMessage(planBodyText(scId))
+                        .setView(scroll)
                         .setNegativeButton(R.string.agent_action_close, null)
                         .create();
         dialog.show();
         if (generating) {
-            // While work is landing, the open Plan keeps itself
-            // current instead of freezing at the moment it opened.
-            android.widget.TextView bodyView =
-                    dialog.findViewById(android.R.id.message);
-            if (bodyView != null) {
-                Runnable[] refresh = new Runnable[1];
-                refresh[0] = () -> {
-                    if (!dialog.isShowing()) {
-                        return;
-                    }
-                    bodyView.setText(planBodyText(scId));
-                    if (generating) {
-                        bodyView.postDelayed(refresh[0], 1500);
-                    }
-                };
-                bodyView.postDelayed(refresh[0], 1500);
-            }
+            Runnable[] refresh = new Runnable[1];
+            refresh[0] = () -> {
+                if (!dialog.isShowing() || binding == null) {
+                    return;
+                }
+                rebuildRows[0].run();
+                if (generating) {
+                    container.postDelayed(refresh[0], 1200);
+                }
+            };
+            container.postDelayed(refresh[0], 1200);
         }
     }
 

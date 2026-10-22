@@ -314,7 +314,10 @@ public final class AgentJournal {
         if (!candidate.isEmpty()
                 && !candidate.regionMatches(true, 0,
                         "please continue the unfinished task", 0,
-                        "please continue the unfinished task".length())) {
+                        "please continue the unfinished task".length())
+                && !candidate.regionMatches(true, 0,
+                        "resume unfinished work", 0,
+                        "resume unfinished work".length())) {
             return truncate(candidate, 90);
         }
         JsonObject plan = root.getAsJsonObject("plan");
@@ -531,10 +534,11 @@ public final class AgentJournal {
     /**
      * Saves the plan — under the contract the user settled: once a
      * plan exists, its steps are the agreement. A later call can
-     * only append genuinely new steps (never edit, delete or
-     * reorder settled ones); the app enforces that here, whatever
-     * the model sends. Returns how many steps were appended (the
-     * full count for a first plan).
+     * update progress ({@code doneSteps} / {@code currentStep}) and
+     * append genuinely new steps (never edit, delete or reorder
+     * settled ones); the app enforces that here, whatever the model
+     * sends. Returns how many steps were appended (the full count
+     * for a first plan).
      */
     public static synchronized int setPlan(String scId, String title,
                                            String stepsText, int doneSteps,
@@ -542,17 +546,12 @@ public final class AgentJournal {
         if (scId == null || scId.isEmpty()) {
             return 0;
         }
-        ArrayList<String> incoming = new ArrayList<>();
+        ArrayList<String> incomingRaw = new ArrayList<>();
         if (stepsText != null) {
             for (String line : stepsText.split("\\n")) {
                 String text = line.trim();
-                // Steps used to be cut at 140 characters and the plan
-                // stopped at 24 of them, which is exactly what turned a
-                // detailed plan into a list of stubs. A step that names
-                // a screen, its widgets, its data and its behaviour is
-                // longer than 140 characters.
-                if (!text.isEmpty() && incoming.size() < 40) {
-                    incoming.add(truncate(text, 400));
+                if (!text.isEmpty() && incomingRaw.size() < 40) {
+                    incomingRaw.add(truncate(text, 400));
                 }
             }
         }
@@ -560,38 +559,68 @@ public final class AgentJournal {
         JsonObject existing = root.getAsJsonObject("plan");
         if (existing != null && existing.has("steps")
                 && existing.getAsJsonArray("steps").size() > 0) {
-            JsonArray kept = existing.getAsJsonArray("steps");
-            java.util.Set<String> known = new java.util.HashSet<>();
+            JsonArray kept = dedupePlanSteps(
+                    existing.getAsJsonArray("steps"));
+            existing.add("steps", kept);
+            int baseCount = kept.size();
+            java.util.Set<String> knownKeys = new java.util.HashSet<>();
+            ArrayList<String> existingClean = new ArrayList<>();
             for (JsonElement element : kept) {
                 if (element.isJsonObject()) {
-                    known.add(text(element.getAsJsonObject(), "text")
-                            .toLowerCase(java.util.Locale.ROOT));
+                    String stepText = cleanStepText(
+                            text(element.getAsJsonObject(), "text"));
+                    knownKeys.add(normalizeStepKey(stepText));
+                    existingClean.add(stepText);
                 }
             }
             int added = 0;
             StringBuilder addedText = new StringBuilder();
-            for (String text : incoming) {
-                if (known.contains(text.toLowerCase(
-                        java.util.Locale.ROOT))) {
+            for (String raw : incomingRaw) {
+                int leadNum = parseLeadingStepNumber(raw);
+                String cleaned = cleanStepText(raw);
+                if (cleaned.isEmpty()) {
+                    continue;
+                }
+                String key = normalizeStepKey(cleaned);
+                if (key.isEmpty() || knownKeys.contains(key)) {
+                    continue;
+                }
+                // If the model re-sent its numbered step list ("1. ...",
+                // "2. ...", "3. ...") with slightly paraphrased wording
+                // while updating done_steps, steps numbered within the
+                // settled range 1..baseCount are re-statements of settled
+                // steps — never new steps to append at the bottom.
+                if (leadNum > 0 && leadNum <= baseCount) {
+                    continue;
+                }
+                if (matchesExistingStepClosely(cleaned, existingClean)) {
                     continue;
                 }
                 JsonObject step = new JsonObject();
-                step.addProperty("text", text);
+                step.addProperty("text", cleaned);
                 step.addProperty("state", "pending");
                 kept.add(step);
-                known.add(text.toLowerCase(java.util.Locale.ROOT));
+                knownKeys.add(key);
+                existingClean.add(cleaned);
                 added++;
                 if (addedText.length() > 0) {
                     addedText.append("; ");
                 }
-                addedText.append(text);
+                addedText.append(cleaned);
             }
             if (text(existing, "title").isEmpty()
                     && title != null && !title.trim().isEmpty()) {
                 existing.addProperty("title", truncate(title.trim(), 90));
             }
+            applyPlanProgress(scId, kept, doneSteps, currentStep);
             existing.addProperty("updatedAt", System.currentTimeMillis());
             save(scId, root);
+            int[] progress = countPlanProgress(kept);
+            JsonObject recorded = new JsonObject();
+            recorded.addProperty("done_steps", progress[0]);
+            recorded.addProperty("total_steps", progress[1]);
+            recorded.addProperty("added_steps", added);
+            record(scId, "plan_updated", recorded);
             if (added > 0) {
                 recordStep(scId, "set_plan",
                         "Plan grew by " + added + " step"
@@ -601,21 +630,21 @@ public final class AgentJournal {
             return added;
         }
         JsonArray steps = new JsonArray();
-        for (String text : incoming) {
+        java.util.Set<String> seenKeys = new java.util.HashSet<>();
+        for (String raw : incomingRaw) {
+            String cleaned = cleanStepText(raw);
+            String key = normalizeStepKey(cleaned);
+            if (cleaned.isEmpty() || key.isEmpty()
+                    || seenKeys.contains(key)) {
+                continue;
+            }
+            seenKeys.add(key);
             JsonObject step = new JsonObject();
-            step.addProperty("text", text);
+            step.addProperty("text", cleaned);
             step.addProperty("state", "pending");
             steps.add(step);
         }
-        int done = Math.max(0, Math.min(doneSteps,
-                Math.min(steps.size(), doneStepCount(scId))));
-        for (int i = 0; i < done; i++) {
-            steps.get(i).getAsJsonObject().addProperty("state", "done");
-        }
-        if (currentStep >= done && currentStep < steps.size()) {
-            steps.get(currentStep).getAsJsonObject()
-                    .addProperty("state", "current");
-        }
+        applyPlanProgress(scId, steps, doneSteps, currentStep);
         JsonObject plan = new JsonObject();
         plan.addProperty("title",
                 truncate(title == null ? "" : title.trim(), 90));
@@ -623,13 +652,390 @@ public final class AgentJournal {
         plan.addProperty("updatedAt", System.currentTimeMillis());
         root.add("plan", plan);
         save(scId, root);
+        int[] progress = countPlanProgress(steps);
+        JsonObject recorded = new JsonObject();
+        recorded.addProperty("title", text(plan, "title"));
+        recorded.addProperty("done_steps", progress[0]);
+        recorded.addProperty("total_steps", progress[1]);
+        record(scId, "plan_saved", recorded);
         return steps.size();
+    }
+
+    /** Parses a leading 1-based step number ("2. ...", "Step 3: ..."), or -1. */
+    private static int parseLeadingStepNumber(String raw) {
+        if (raw == null) {
+            return -1;
+        }
+        String s = raw.trim();
+        // Strip leading status glyphs if the model echoed them back.
+        while (!s.isEmpty() && ("✓✔●○•-*❚".indexOf(s.charAt(0)) >= 0
+                || Character.isWhitespace(s.charAt(0)))) {
+            s = s.substring(1).trim();
+        }
+        if (s.regionMatches(true, 0, "step ", 0, 5)) {
+            s = s.substring(5).trim();
+        } else if (s.startsWith("[") && s.indexOf(']') > 1) {
+            String inside = s.substring(1, s.indexOf(']')).trim();
+            if ("x".equalsIgnoreCase(inside) || inside.isEmpty()) {
+                s = s.substring(s.indexOf(']') + 1).trim();
+            }
+        }
+        int digits = 0;
+        while (digits < s.length() && Character.isDigit(s.charAt(digits))) {
+            digits++;
+        }
+        if (digits > 0 && digits <= 2 && digits < s.length()) {
+            char next = s.charAt(digits);
+            if (next == '.' || next == ')' || next == ':' || next == '-') {
+                try {
+                    return Integer.parseInt(s.substring(0, digits));
+                } catch (NumberFormatException ignored) {
+                    return -1;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /** Strips leading bullet/checkbox/step-number prefixes so steps stay clean. */
+    public static String cleanStepText(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String s = raw.trim();
+        while (!s.isEmpty() && ("✓✔●○•-*❚".indexOf(s.charAt(0)) >= 0
+                || Character.isWhitespace(s.charAt(0)))) {
+            s = s.substring(1).trim();
+        }
+        if (s.startsWith("[") && s.indexOf(']') > 0 && s.indexOf(']') <= 4) {
+            s = s.substring(s.indexOf(']') + 1).trim();
+        }
+        if (s.regionMatches(true, 0, "step ", 0, 5)) {
+            String rest = s.substring(5).trim();
+            int d = 0;
+            while (d < rest.length() && Character.isDigit(rest.charAt(d))) {
+                d++;
+            }
+            if (d > 0 && d < rest.length()
+                    && (rest.charAt(d) == ':' || rest.charAt(d) == '.'
+                            || rest.charAt(d) == ')' || rest.charAt(d) == '-')) {
+                s = rest.substring(d + 1).trim();
+            }
+        } else {
+            int d = 0;
+            while (d < s.length() && Character.isDigit(s.charAt(d))) {
+                d++;
+            }
+            if (d > 0 && d <= 2 && d < s.length()
+                    && (s.charAt(d) == '.' || s.charAt(d) == ')')) {
+                s = s.substring(d + 1).trim();
+            }
+        }
+        return s.trim();
+    }
+
+    private static String normalizeStepKey(String stepText) {
+        if (stepText == null) {
+            return "";
+        }
+        String cleaned = cleanStepText(stepText)
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", " ")
+                .trim();
+        return cleaned;
+    }
+
+    private static boolean matchesExistingStepClosely(
+            String candidate, ArrayList<String> existingClean) {
+        java.util.Set<String> candWords = significantWords(candidate);
+        if (candWords.size() < 3) {
+            return false;
+        }
+        for (String existing : existingClean) {
+            java.util.Set<String> exWords = significantWords(existing);
+            if (exWords.isEmpty()) {
+                continue;
+            }
+            int shared = 0;
+            for (String w : candWords) {
+                if (exWords.contains(w)) {
+                    shared++;
+                }
+            }
+            int smaller = Math.min(candWords.size(), exWords.size());
+            if (smaller >= 3 && shared * 100 >= smaller * 75) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static java.util.Set<String> significantWords(String text) {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        for (String token : normalizeStepKey(text).split(" ")) {
+            if (token.length() >= 4
+                    && !"with".equals(token) && !"from".equals(token)
+                    && !"that".equals(token) && !"this".equals(token)
+                    && !"into".equals(token) && !"screen".equals(token)) {
+                out.add(token);
+            }
+        }
+        return out;
+    }
+
+    /** Heals plans that previously accumulated duplicate numbered steps. */
+    private static JsonArray dedupePlanSteps(JsonArray rawSteps) {
+        JsonArray out = new JsonArray();
+        if (rawSteps == null) {
+            return out;
+        }
+        java.util.Map<String, Integer> keyToIndex = new java.util.HashMap<>();
+        ArrayList<String> cleanTexts = new ArrayList<>();
+        int maxNaturalNumber = 0;
+        for (int i = 0; i < rawSteps.size(); i++) {
+            JsonElement el = rawSteps.get(i);
+            if (!el.isJsonObject()) {
+                continue;
+            }
+            JsonObject obj = el.getAsJsonObject();
+            String rawText = text(obj, "text");
+            int leadNum = parseLeadingStepNumber(rawText);
+            String cleaned = cleanStepText(rawText);
+            String key = normalizeStepKey(cleaned);
+            if (cleaned.isEmpty() || key.isEmpty()) {
+                continue;
+            }
+            String state = text(obj, "state");
+            Integer prevIdx = keyToIndex.get(key);
+            if (prevIdx != null) {
+                JsonObject prev = out.get(prevIdx).getAsJsonObject();
+                prev.addProperty("state",
+                        higherStepState(text(prev, "state"), state));
+                continue;
+            }
+            // Detect legacy re-appended numbered steps ("1, 2, 3, 2, 3..."):
+            // when leadNum jumps backwards into 1..maxNaturalNumber and
+            // shares words with that slot, merge state instead of keeping
+            // the duplicate.
+            if (leadNum > 0 && leadNum <= maxNaturalNumber
+                    && leadNum - 1 < out.size()) {
+                JsonObject slot = out.get(leadNum - 1).getAsJsonObject();
+                slot.addProperty("state",
+                        higherStepState(text(slot, "state"), state));
+                continue;
+            }
+            if (leadNum > maxNaturalNumber) {
+                maxNaturalNumber = leadNum;
+            } else {
+                maxNaturalNumber = Math.max(maxNaturalNumber, out.size() + 1);
+            }
+            JsonObject copy = new JsonObject();
+            copy.addProperty("text", cleaned);
+            copy.addProperty("state", state.isEmpty() ? "pending" : state);
+            keyToIndex.put(key, out.size());
+            cleanTexts.add(cleaned);
+            out.add(copy);
+        }
+        return out;
+    }
+
+    private static String higherStepState(String a, String b) {
+        return stepRank(b) > stepRank(a) ? b : a;
+    }
+
+    private static int stepRank(String state) {
+        if ("done".equals(state)) {
+            return 4;
+        }
+        if ("current".equals(state)) {
+            return 3;
+        }
+        if ("stopped".equals(state)) {
+            return 2;
+        }
+        return 1;
+    }
+
+    private static void applyPlanProgress(String scId, JsonArray steps,
+                                          int doneSteps, int currentStep) {
+        if (steps == null || steps.size() == 0) {
+            return;
+        }
+        int existingDone = 0;
+        int existingCurrent = -1;
+        for (int i = 0; i < steps.size(); i++) {
+            String st = text(steps.get(i).getAsJsonObject(), "state");
+            if ("done".equals(st)) {
+                existingDone++;
+            } else if (existingCurrent < 0
+                    && ("current".equals(st) || "stopped".equals(st))) {
+                existingCurrent = i;
+            }
+        }
+        boolean hasRealWork = doneStepCount(scId) > 0
+                || projectHasWorkOnDisk(scId);
+        int targetDone = existingDone;
+        if (doneSteps >= 0) {
+            int requested = Math.min(doneSteps, steps.size());
+            if (hasRealWork || requested == 0) {
+                targetDone = Math.max(existingDone, requested);
+            }
+        }
+        for (int i = 0; i < steps.size(); i++) {
+            JsonObject step = steps.get(i).getAsJsonObject();
+            step.addProperty("state", i < targetDone ? "done" : "pending");
+        }
+        if (targetDone < steps.size()) {
+            int active = currentStep >= targetDone
+                    && currentStep < steps.size()
+                    ? currentStep
+                    : (existingCurrent >= targetDone
+                            && existingCurrent < steps.size()
+                            ? existingCurrent : targetDone);
+            steps.get(active).getAsJsonObject()
+                    .addProperty("state", "current");
+        }
+    }
+
+    private static boolean projectHasWorkOnDisk(String scId) {
+        try {
+            for (com.besome.sketch.beans.ProjectFileBean activity
+                    : SketchwareProjects.activities(scId)) {
+                if (!SketchwareProjects.screenBeans(scId, activity).isEmpty()
+                        || !SketchwareProjects.eventLines(scId, activity)
+                                .isEmpty()) {
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private static int[] countPlanProgress(JsonArray steps) {
+        int done = 0;
+        int total = steps == null ? 0 : steps.size();
+        if (steps != null) {
+            for (JsonElement el : steps) {
+                if (el.isJsonObject()
+                        && "done".equals(
+                                text(el.getAsJsonObject(), "state"))) {
+                    done++;
+                }
+            }
+        }
+        return new int[]{done, total};
+    }
+
+    /** Returns {done, total} for the project's plan (0, 0 when none). */
+    public static synchronized int[] planProgress(String scId) {
+        JsonObject plan = plan(scId);
+        if (!plan.has("steps")) {
+            return new int[]{0, 0};
+        }
+        return countPlanProgress(plan.getAsJsonArray("steps"));
+    }
+
+    /**
+     * Toggles one step of the plan between done and pending/current from
+     * the Plan dialog, keeping the saved progress in sync on disk.
+     */
+    public static synchronized void togglePlanStepDone(String scId,
+                                                       int index) {
+        if (scId == null || scId.isEmpty() || index < 0) {
+            return;
+        }
+        JsonObject root = load(scId);
+        JsonObject plan = root.getAsJsonObject("plan");
+        if (plan == null || !plan.has("steps")) {
+            return;
+        }
+        JsonArray steps = dedupePlanSteps(plan.getAsJsonArray("steps"));
+        plan.add("steps", steps);
+        if (index >= steps.size()) {
+            return;
+        }
+        JsonObject target = steps.get(index).getAsJsonObject();
+        boolean wasDone = "done".equals(text(target, "state"));
+        target.addProperty("state", wasDone ? "pending" : "done");
+        boolean assignedCurrent = false;
+        for (int i = 0; i < steps.size(); i++) {
+            JsonObject step = steps.get(i).getAsJsonObject();
+            String st = text(step, "state");
+            if ("done".equals(st)) {
+                continue;
+            }
+            if (!assignedCurrent) {
+                step.addProperty("state", "current");
+                assignedCurrent = true;
+            } else if ("current".equals(st)) {
+                step.addProperty("state", "pending");
+            }
+        }
+        plan.addProperty("updatedAt", System.currentTimeMillis());
+        save(scId, root);
+    }
+
+    /**
+     * When {@code build_project} succeeds and only the final build/check
+     * milestone of the plan remains, marks that final step done so a green
+     * build never leaves the last step hanging at "in progress".
+     */
+    public static synchronized void completeFinalBuildStepIfReady(
+            String scId) {
+        if (scId == null || scId.isEmpty()) {
+            return;
+        }
+        JsonObject root = load(scId);
+        JsonObject plan = root.getAsJsonObject("plan");
+        if (plan == null || !plan.has("steps")) {
+            return;
+        }
+        JsonArray steps = dedupePlanSteps(plan.getAsJsonArray("steps"));
+        plan.add("steps", steps);
+        if (steps.size() == 0) {
+            return;
+        }
+        int done = 0;
+        for (int i = 0; i < steps.size(); i++) {
+            if ("done".equals(
+                    text(steps.get(i).getAsJsonObject(), "state"))) {
+                done++;
+            }
+        }
+        JsonObject last = steps.get(steps.size() - 1).getAsJsonObject();
+        String lastLower = text(last, "text").toLowerCase(Locale.ROOT);
+        boolean lastIsBuildMilestone = lastLower.contains("build")
+                || lastLower.contains("compile")
+                || lastLower.contains("apk")
+                || lastLower.contains("verify");
+        if (done == steps.size() - 1 && (lastIsBuildMilestone
+                || !"done".equals(text(last, "state")))) {
+            last.addProperty("state", "done");
+            plan.addProperty("updatedAt", System.currentTimeMillis());
+            save(scId, root);
+        }
     }
 
     /** The saved plan object (title, steps, updatedAt); never null. */
     public static synchronized JsonObject plan(String scId) {
-        JsonObject plan = load(scId).getAsJsonObject("plan");
-        return plan == null ? new JsonObject() : plan;
+        if (scId == null || scId.isEmpty()) {
+            return new JsonObject();
+        }
+        JsonObject root = load(scId);
+        JsonObject plan = root.getAsJsonObject("plan");
+        if (plan == null) {
+            return new JsonObject();
+        }
+        if (plan.has("steps")) {
+            JsonArray raw = plan.getAsJsonArray("steps");
+            JsonArray cleaned = dedupePlanSteps(raw);
+            if (cleaned.size() != raw.size()) {
+                plan.add("steps", cleaned);
+                save(scId, root);
+            }
+        }
+        return plan;
     }
 
     public static synchronized boolean hasPlan(String scId) {
@@ -663,7 +1069,9 @@ public final class AgentJournal {
             return "";
         }
         StringBuilder out = new StringBuilder();
-        for (JsonElement element : plan.getAsJsonArray("steps")) {
+        JsonArray steps = plan.getAsJsonArray("steps");
+        for (int i = 0; i < steps.size(); i++) {
+            JsonElement element = steps.get(i);
             if (!element.isJsonObject()) {
                 continue;
             }
@@ -673,9 +1081,10 @@ public final class AgentJournal {
                     : "current".equals(state) ? "● "
                     : "stopped".equals(state) ? "❚❚ " : "○ ";
             if (out.length() > 0) {
-                out.append("\n");
+                out.append("\n\n");
             }
-            out.append(mark).append(text(step, "text"));
+            out.append(mark).append(i + 1).append(". ")
+                    .append(cleanStepText(text(step, "text")));
         }
         return out.toString();
     }
@@ -924,13 +1333,12 @@ public final class AgentJournal {
         draftDesignTokens = new JsonArray();
     }
 
-    /** Empties the project's record (the user's own choice, only). */
+    /** Empties the project's task log while keeping Style, Design System and Plan. */
     public static synchronized void clear(String scId) {
         if (scId == null || scId.isEmpty()) {
             return;
         }
-        JsonObject root = new JsonObject();
-        root.addProperty("styleBrief", "");
+        JsonObject root = load(scId);
         root.add("tasks", new JsonArray());
         save(scId, root);
     }
@@ -1025,50 +1433,59 @@ public final class AgentJournal {
         boolean havePlan = plan != null && plan.has("steps")
                 && plan.getAsJsonArray("steps").size() > 0;
         if (havePlan) {
+            JsonArray planSteps = dedupePlanSteps(
+                    plan.getAsJsonArray("steps"));
             int done = 0;
-            String current = "";
-            for (JsonElement element : plan.getAsJsonArray("steps")) {
-                if (!element.isJsonObject()) {
-                    continue;
-                }
-                JsonObject step = element.getAsJsonObject();
+            for (int i = 0; i < planSteps.size(); i++) {
+                JsonObject step = planSteps.get(i).getAsJsonObject();
                 if ("done".equals(text(step, "state"))) {
                     done++;
-                } else if (current.isEmpty()) {
-                    current = text(step, "text");
                 }
             }
             out.append("\n\nImplementation plan \"")
-                    .append(text(plan, "title")).append("\": ")
+                    .append(text(plan, "title")).append("\" (")
                     .append(done).append(" of ")
-                    .append(plan.getAsJsonArray("steps").size())
-                    .append(" steps done.");
-            if (!current.isEmpty()) {
-                out.append(" Next step: ").append(current).append(".");
+                    .append(planSteps.size())
+                    .append(" steps done):");
+            for (int i = 0; i < planSteps.size(); i++) {
+                JsonObject step = planSteps.get(i).getAsJsonObject();
+                String st = text(step, "state");
+                String tag = "done".equals(st) ? "DONE"
+                        : "current".equals(st) ? "CURRENT"
+                        : "stopped".equals(st) ? "PAUSED" : "PENDING";
+                out.append("\n  [").append(i + 1).append("] ")
+                        .append(tag).append(": ")
+                        .append(cleanStepText(text(step, "text")));
             }
-            out.append(" Keep the plan updated with set_plan as "
-                    + "milestones land.");
+            if (done < planSteps.size()) {
+                out.append("\nWhenever you finish a milestone step, call "
+                        + "set_plan with done_steps=\"" + (done + 1)
+                        + "\" (and current_step=\"" + (done + 1)
+                        + "\") — you do NOT need to resend \"steps\" to "
+                        + "update progress.");
+            }
         } else if (!style.isEmpty()) {
             out.append("\n\nThis project has a style but no saved "
                     + "implementation plan yet. For substantial work, "
                     + "agree the plan and save it with set_plan before "
                     + "building further.");
         }
-        JsonObject open = null;
-        JsonObject lastStopped = null;
-        for (JsonElement element : tasks) {
+        JsonObject unfinished = null;
+        for (int i = tasks.size() - 1; i >= 0; i--) {
+            JsonElement element = tasks.get(i);
             if (!element.isJsonObject()) {
                 continue;
             }
             JsonObject task = element.getAsJsonObject();
             String state = text(task, "state");
-            if ("open".equals(state)) {
-                open = task;
-            } else if ("stopped".equals(state)) {
-                lastStopped = task;
+            if ("done".equals(state)) {
+                break;
+            }
+            if ("open".equals(state) || "stopped".equals(state)) {
+                unfinished = task;
+                break;
             }
         }
-        JsonObject unfinished = open != null ? open : lastStopped;
         if (unfinished != null) {
             out.append("\n\nUnfinished task: \"")
                     .append(text(unfinished, "title")).append("\"");
@@ -1130,7 +1547,7 @@ public final class AgentJournal {
                     .append(".");
         }
         String brief = out.toString();
-        return brief.length() > 2400 ? brief.substring(0, 2400) : brief;
+        return brief.length() > 3600 ? brief.substring(0, 3600) : brief;
     }
 
     /** The full record in plain lines, newest first (log + UI). */
@@ -1186,6 +1603,9 @@ public final class AgentJournal {
 
     /** One line for the strip above the composer, or "" for none. */
     public static synchronized String stripText(String scId) {
+        if (scId == null || scId.isEmpty()) {
+            return "";
+        }
         JsonObject root = load(scId);
         JsonArray tasks = root.getAsJsonArray("tasks");
         for (int i = tasks.size() - 1; i >= 0; i--) {
@@ -1198,8 +1618,6 @@ public final class AgentJournal {
             int total = 0;
             for (JsonElement element : task.getAsJsonArray("steps")) {
                 if (element.isJsonObject()) {
-                    // Reading the project is not a step of the work:
-                    // progress counts the changes, not the looks.
                     if ("checked".equals(text(element.getAsJsonObject(),
                             "outcome"))) {
                         continue;
@@ -1213,7 +1631,18 @@ public final class AgentJournal {
             }
             String reason = "open".equals(state)
                     ? "the app closed" : text(task, "stopReason");
-            return "“" + truncate(text(task, "title"), 40) + "” stopped"
+            JsonObject plan = root.getAsJsonObject("plan");
+            if (plan != null && plan.has("steps")) {
+                JsonArray planSteps = dedupePlanSteps(
+                        plan.getAsJsonArray("steps"));
+                int[] counts = countPlanProgress(planSteps);
+                if (counts[1] > 0 && counts[0] < counts[1]) {
+                    return "Paused at plan step " + (counts[0] + 1)
+                            + " of " + counts[1]
+                            + (reason.isEmpty() ? "" : " — " + reason);
+                }
+            }
+            return "“" + truncate(text(task, "title"), 40) + "” paused"
                     + (total > 0 ? " after " + done + " of " + total
                             + " steps" : "")
                     + (reason.isEmpty() ? "" : " — " + reason);

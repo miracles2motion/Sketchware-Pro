@@ -178,28 +178,34 @@ public class AgentLoop {
                     + "substituted. Vague amounts (\"a shade\", \"a bit "
                     + "bigger\", \"a few\") are choices to offer, not "
                     + "values to invent."
-            + "\n\nPROJECT SETUP: some things only work once the "
-            + "project has been set up for them, and the app refuses "
-            + "them until then — an AdView needs AdMob, a MapView "
-            + "needs Google Maps, Firebase or ad components need their "
-            + "library switched on in Configuration → Library "
-            + "Manager. Call get_project_setup before proposing any of "
-            + "those; if the library is off, tell the user which "
-            + "switch to turn on rather than trying another way to add "
-            + "it. It also reports the project's permissions, its "
-            + "asset/Java/resource files, and the tail of its last "
-            + "compile log — read it when a build or runtime problem "
-            + "needs explaining. Material widgets (CardView, "
-            + "MaterialButton, RecyclerView, TabLayout, "
-            + "CollapsingToolbar, TextInputLayout, SwipeRefreshLayout, "
-            + "ViewPager, BottomNavigation) are NOT refused by the "
-            + "editor, but the build only includes their AndroidX "
-            + "libraries when AppCompat is switched on, so with the "
-            + "switch off they compile into missing classes — warn the "
-            + "user and prefer plain widgets until it is on. Component "
-            + "and block permissions are added by the app itself when "
-            + "it generates the manifest, so do not invent permission "
-            + "steps; read the declared ones instead."
+            + "\n\nPROJECT SETUP (LIBRARIES, MATERIAL 3, MAVEN & "
+            + "PERMISSIONS): call get_project_setup to check which "
+            + "libraries, Material 3 settings, local libraries, "
+            + "excluded built-in libraries, and Android permissions "
+            + "are active, plus automatic prerequisite warnings and "
+            + "the last compile log tail. Never send the user to "
+            + "manual menus when your tools can configure it directly: "
+            + "use configure_library to enable/configure AppCompat, "
+            + "Material 3 (with dynamic_colors and DayNight/Light/Dark "
+            + "theme), Firebase (accepting google-services.json text "
+            + "or database_url + app_id + api_key + storage_bucket), "
+            + "AdMob (app_id + banner/interstitial/reward ad units + "
+            + "test devices), or Google Maps (api_key) — ask the user "
+            + "in chat only for credentials/keys you cannot invent. "
+            + "Before or when adding Material/AndroidX widgets "
+            + "(CardView, MaterialButton, RecyclerView, TabLayout, "
+            + "CollapsingToolbarLayout, TextInputLayout, "
+            + "SwipeRefreshLayout, ViewPager, BottomNavigationView), "
+            + "ensure AppCompat is switched on via configure_library. "
+            + "Use manage_permissions to declare or remove Android "
+            + "permissions (or auto_add_recommended=true to satisfy "
+            + "missing network/camera/audio/location permissions), "
+            + "list_local_libraries and manage_local_libraries to "
+            + "enable/disable downloaded local libraries or exclude "
+            + "conflicting built-in libraries, and "
+            + "download_maven_library (group:artifact:version) to "
+            + "download, dex, and enable external Maven/AndroidX "
+            + "libraries on the device."
             + "\n\nKEEPING DATA (so it is still there after the app "
             + "closes): add ONE shared_preferences component to the "
             + "screen with create_component — it is named file1, file2 "
@@ -255,8 +261,10 @@ public class AgentLoop {
             + "project this work creates. If a style and plan already "
             + "exist, use them and don't re-ask. As each plan milestone "
             + "genuinely lands and you have verified it against the "
-            + "real project, call set_plan again with the updated "
-            + "progress. If the user changes direction mid-plan, update "
+            + "real project, call set_plan with done_steps set to how "
+            + "many leading milestones are now done (you do NOT need "
+            + "to resend \"steps\" when updating progress). If the "
+            + "user changes direction mid-plan, update "
             + "the plan rather than quietly abandoning it. Small "
             + "one-off requests need neither a style nor a plan. A "
             + "saved style guides new work; it never silently restyles "
@@ -331,6 +339,10 @@ public class AgentLoop {
 
         /** A created project just became the working project. */
         void onWorkingProjectChanged(String scId);
+
+        /** Task or plan progress changed; UI strip/badges should refresh. */
+        default void onStateChanged() {
+        }
     }
 
     private final Context context;
@@ -376,6 +388,7 @@ public class AgentLoop {
             }
         }
         AgentJournal.beginTurn(workingProjectId, lastUserText);
+        dispatch(listener, listener::onStateChanged);
         {
             // What the turn started from: the user's own words and the
             // project it was aimed at. The export has to be readable
@@ -488,8 +501,9 @@ public class AgentLoop {
                     failed.addProperty("messages_sent", messages.size());
                     AgentJournal.record(journalProject[0], "model_error",
                             failed);
-                    closeTask(journalProject[0], cancelled,
-                            stopReason(e.error), taskClosed);
+                    closeTask(journalProject[0], false,
+                            cancelled ? "you stopped it" : stopReason(e.error),
+                            taskClosed, listener);
                     if (!cancelled) {
                         dispatch(listener,
                                 () -> listener.onError(e.error));
@@ -533,11 +547,13 @@ public class AgentLoop {
                 String answer = reply.content == null ? "" : reply.content.trim();
                 if (answer.isEmpty()) {
                     closeTask(journalProject[0], false,
-                            "the model returned an empty reply", taskClosed);
+                            "the model returned an empty reply",
+                            taskClosed, listener);
                     dispatch(listener, () -> listener.onError(new AiChatService.AiError(
                             AiChatService.ErrorKind.EMPTY, 200, "empty reply")));
                 } else {
-                    closeTask(journalProject[0], true, "", taskClosed);
+                    closeTask(journalProject[0], true, "", taskClosed,
+                            listener);
                     String thinking = reply.thinking == null ? "" : reply.thinking;
                     dispatch(listener, () -> listener.onAnswer(answer, thinking));
                 }
@@ -549,7 +565,7 @@ public class AgentLoop {
             for (AiChatService.ToolCallData call : reply.toolCalls) {
                 if (cancelled) {
                     closeTask(journalProject[0], false, "you stopped it",
-                            taskClosed);
+                            taskClosed, listener);
                     return;
                 }
                 if (++calls > MAX_TOOL_CALLS) {
@@ -565,7 +581,7 @@ public class AgentLoop {
                         closeTask(journalProject[0], false,
                                 "it reached the limit of " + MAX_TOOL_CALLS
                                         + " steps for one message",
-                                taskClosed);
+                                taskClosed, listener);
                         dispatch(listener,
                                 () -> listener.onError(
                                         new AiChatService.AiError(
@@ -603,11 +619,13 @@ public class AgentLoop {
                 long callStartedAt = System.currentTimeMillis();
                 JsonObject result;
                 if (AgentTools.isMutation(call.name)) {
+                    String label = proposalLabel(call);
+                    dispatch(listener, () -> listener.onToolNote(label));
                     result = proposeAndExecute(call, session, listener,
                             journalProject[0], insisted);
                     if (cancelled) {
                         closeTask(journalProject[0], false, "you stopped it",
-                                taskClosed);
+                                taskClosed, listener);
                         return;
                     }
                     if (result.has("bind_project")) {
@@ -647,6 +665,11 @@ public class AgentLoop {
                     String label = AgentTools.labelFor(call.name, call.arguments);
                     dispatch(listener, () -> listener.onToolNote(label));
                     result = AgentTools.dispatch(call.name, call.arguments, session);
+                    if ("set_plan".equals(call.name)
+                            || "set_design_system".equals(call.name)
+                            || "set_style_brief".equals(call.name)) {
+                        dispatch(listener, listener::onStateChanged);
+                    }
                     // The small live line disappears when the turn
                     // ends, so what was looked at — with its exact
                     // screen, widget and event — is written down.
@@ -711,7 +734,7 @@ public class AgentLoop {
                                 + " Tell me how you'd like to proceed.";
                         closeTask(journalProject[0], false,
                                 "the same step failed twice (" + call.name
-                                        + ")", taskClosed);
+                                        + ")", taskClosed, listener);
                         dispatch(listener, () -> listener.onError(
                                 new AiChatService.AiError(
                                         AiChatService.ErrorKind.HTTP, 0,
@@ -744,12 +767,13 @@ public class AgentLoop {
             }
         }
         // The loop only falls through here when the turn was stopped.
-        closeTask(journalProject[0], false, "you stopped it", taskClosed);
+        closeTask(journalProject[0], false, "you stopped it", taskClosed,
+                listener);
     }
 
     /** Closes the open task in the project journal, once per turn. */
-    private static void closeTask(String scId, boolean done, String reason,
-                                  boolean[] closed) {
+    private void closeTask(String scId, boolean done, String reason,
+                           boolean[] closed, Listener listener) {
         if (closed[0]) {
             return;
         }
@@ -759,6 +783,7 @@ public class AgentLoop {
         ended.addProperty("reason", reason == null ? "" : reason);
         AgentJournal.record(scId, "turn_end", ended);
         AgentJournal.endTurn(scId, done, reason);
+        dispatch(listener, listener::onStateChanged);
     }
 
     /** A short plain reason a request-level failure stopped a task. */
@@ -888,36 +913,25 @@ public class AgentLoop {
         AgentTools.ProposalResult proposed = AgentTools.propose(call.name,
                 call.arguments, session, insisted.contains(fingerprint));
         if (proposed.error != null) {
+            String errCode = proposed.error.has("error")
+                    ? proposed.error.get("error").getAsString() : "";
+            if ("E_ALREADY_DONE".equals(errCode)) {
+                AgentJournal.noteCheck(journalProject, call.name,
+                        "Already in the project: " + proposalLabel(call));
+                insisted.add(fingerprint);
+                return proposed.error;
+            }
+            if ("E_ALREADY_SET".equals(errCode)) {
+                AgentJournal.noteCheck(journalProject, call.name,
+                        "Already set: " + proposalLabel(call));
+                insisted.add(fingerprint);
+                return proposed.error;
+            }
             AgentJournal.mutationFailed(journalProject, call.name,
                     AgentTools.labelFor(call.name, call.arguments),
                     proposed.error.has("message")
                             ? proposed.error.get("message").getAsString()
                             : "");
-            return proposed.error;
-        }
-        if (proposed.error != null && "E_ALREADY_DONE".equals(
-                proposed.error.has("error")
-                        ? proposed.error.get("error").getAsString() : "")) {
-            // The change is already in the project. No card, no
-            // question, nothing repeated: the model is told to move
-            // on to the next step.
-            AgentJournal.noteCheck(journalProject, call.name,
-                    "Already in the project: " + proposalLabel(call));
-            // Refused once. If the model asks again for the very same
-            // thing, the user must have asked for it too; it is then
-            // allowed through instead of argued with.
-            insisted.add(fingerprint);
-            return proposed.error;
-        }
-        if (proposed.error != null && "E_ALREADY_SET".equals(
-                proposed.error.has("error")
-                        ? proposed.error.get("error").getAsString() : "")) {
-            // Colours (or another setting) already hold these exact
-            // values: nothing to change, so nothing is asked of the
-            // user either.
-            AgentJournal.noteCheck(journalProject, call.name,
-                    "Already set: " + proposalLabel(call));
-            insisted.add(fingerprint);
             return proposed.error;
         }
         AgentProposal proposal = proposed.proposal;
@@ -997,6 +1011,9 @@ public class AgentLoop {
             AgentJournal.mutationDone(journal, call.name, proposal.title,
                     AgentTools.fingerprint(call.name, call.arguments));
             AgentJournal.touchPlanCurrent(journal);
+            if ("build_project".equals(call.name)) {
+                AgentJournal.completeFinalBuildStepIfReady(journal);
+            }
             {
                 // The change as it landed, read back from the project
                 // — not as it was promised. This is the only place

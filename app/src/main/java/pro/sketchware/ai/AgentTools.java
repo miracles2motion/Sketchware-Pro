@@ -129,6 +129,7 @@ public final class AgentTools {
         register(new ListResources());
         register(new GetScreen());
         register(new GetProjectSetup());
+        register(new ListLocalLibraries());
         register(new AskColor());
         register(new AskChoice());
         register(new SetStyleBrief());
@@ -150,6 +151,10 @@ public final class AgentTools {
         register(new CreateMoreBlock());
         register(new RemoveMoreBlock());
         register(new CreateComponent());
+        register(new ConfigureLibrary());
+        register(new ManagePermissions());
+        register(new ManageLocalLibraries());
+        register(new DownloadMavenLibrary());
         register(new EditProjectTheme());
         register(new BuildProject());
     }
@@ -539,6 +544,23 @@ public final class AgentTools {
         return schema;
     }
 
+    private static JsonObject booleanSchema(String description) {
+        JsonObject schema = new JsonObject();
+        schema.addProperty("type", "boolean");
+        schema.addProperty("description", description);
+        return schema;
+    }
+
+    private static JsonObject stringArraySchema(String description) {
+        JsonObject schema = new JsonObject();
+        schema.addProperty("type", "array");
+        JsonObject items = new JsonObject();
+        items.addProperty("type", "string");
+        schema.add("items", items);
+        schema.addProperty("description", description);
+        return schema;
+    }
+
     private static JsonObject parameters(JsonObject properties, String... required) {
         JsonObject parameters = new JsonObject();
         parameters.addProperty("type", "object");
@@ -640,22 +662,19 @@ public final class AgentTools {
         @Override
         public String description() {
             return "Reads what the working project has been set up "
-                    + "for: which libraries are switched on in the "
-                    + "Library Manager (Firebase, AdMob, Google Maps, "
-                    + "AppCompat), the permissions declared in the "
-                    + "Permission Manager, which extra files the "
-                    + "project carries (assets, Java/Kotlin, resources, "
-                    + "native libraries, imports), whether it has "
-                    + "ProGuard rules, and the tail of its last compile "
-                    + "log. Check this BEFORE proposing anything that "
-                    + "depends on a library — an AdView, MapView, "
-                    + "Firebase, AdMob or FragmentAdapter component "
-                    + "needs its library switched on first, and the app "
-                    + "refuses the change until the user turns it on in "
-                    + "Configuration → Library Manager. Also check it "
-                    + "when the user reports a build or runtime "
-                    + "problem: the compile log is the compiler's own "
-                    + "last words on this project.";
+                    + "for: built-in libraries (AppCompat, Material 3 "
+                    + "with dynamic colors and DayNight/Light/Dark "
+                    + "theme, Firebase, AdMob, Google Maps), enabled "
+                    + "and available local/Maven libraries, excluded "
+                    + "built-in libraries, declared Android "
+                    + "permissions, an automatic prerequisite audit "
+                    + "(missing permissions or disabled AppCompat for "
+                    + "widgets/components already in the project), "
+                    + "extra files (assets, Java/Kotlin, resources, "
+                    + "native libraries, imports, ProGuard), and the "
+                    + "tail of the last compile log. Check this before "
+                    + "configuring libraries/permissions or diagnosing "
+                    + "build/runtime problems.";
         }
 
         @Override
@@ -673,51 +692,41 @@ public final class AgentTools {
                 throws ToolException {
             String scId = requiredProject(session.workingProjectId);
             JsonObject result = new JsonObject();
-            result.add("libraries", AgentSetup.libraries(scId));
+            JsonObject libraries = AgentSetup.libraries(scId);
+            result.add("libraries", libraries);
+            result.add("local_libraries", AgentSetup.localLibraries(scId));
+            result.add("excluded_builtin_libraries",
+                    AgentSetup.excludedBuiltInLibraries(scId));
             result.add("permissions", AgentSetup.permissions(scId));
+            JsonObject audit = AgentSetup.auditPrerequisites(scId);
+            result.add("prerequisite_audit", audit);
             result.add("files", AgentSetup.files(scId));
             String log = AgentSetup.compileLogTail(scId, 1500);
             if (!log.isEmpty()) {
                 result.addProperty("last_compile_log_tail", log);
             }
             JsonArray notes = new JsonArray();
-            JsonObject libraries = AgentSetup.libraries(scId);
-            for (String key : new String[]{"firebase", "admob",
-                    "google_maps", "appcompat"}) {
-                if (!libraries.has(key)) {
-                    notes.add("The project's library settings could not "
-                            + "be read; ask the user what is enabled in "
-                            + "the Library Manager before proposing "
-                            + "anything that needs one.");
-                    break;
-                }
+            if (audit.has("appcompat_needed_but_off")
+                    && audit.get("appcompat_needed_but_off").getAsBoolean()) {
+                notes.add("Material/AndroidX widgets exist while AppCompat "
+                        + "is off — call configure_library with "
+                        + "library=\"appcompat\" and enabled=true before "
+                        + "building.");
             }
-            if (libraries.has("admob") && !libraries.get("admob")
-                    .getAsBoolean()) {
-                notes.add("AdMob is not switched on: AdView widgets and "
-                        + "ad components cannot be added yet.");
-            }
-            if (libraries.has("google_maps") && !libraries
-                    .get("google_maps").getAsBoolean()) {
-                notes.add("Google Maps is not switched on: MapView "
-                        + "cannot be added yet.");
-            }
-            if (libraries.has("firebase") && !libraries.get("firebase")
-                    .getAsBoolean()) {
-                notes.add("Firebase is not switched on: Firebase "
-                        + "components cannot be added yet.");
+            if (audit.has("missing_permissions")
+                    && audit.getAsJsonArray("missing_permissions").size() > 0) {
+                notes.add("Missing recommended Android permissions: "
+                        + audit.getAsJsonArray("missing_permissions")
+                        + " — call manage_permissions with "
+                        + "auto_add_recommended=true or add=[...].");
             }
             if (libraries.has("appcompat") && !libraries.get("appcompat")
                     .getAsBoolean()) {
-                notes.add("AppCompat / Material is not switched on: the "
-                        + "editor still lets CardView, MaterialButton, "
-                        + "RecyclerView, TabLayout and similar widgets "
-                        + "be added, but the build only includes the "
-                        + "AndroidX dependencies when this switch is on, "
-                        + "so such a screen will not compile. Turn it on "
-                        + "(Library Manager → AppCompat) before using "
-                        + "Material widgets, or use plain widgets "
-                        + "instead.");
+                notes.add("AppCompat is currently off. Switch it on via "
+                        + "configure_library(library=\"appcompat\", "
+                        + "enabled=true) before using CardView, "
+                        + "MaterialButton, RecyclerView, TabLayout, "
+                        + "TextInputLayout, or Material 3.");
             }
             if (notes.size() > 0) {
                 result.add("notes", notes);
@@ -3649,11 +3658,23 @@ public final class AgentTools {
                                 + "not on its screen:\n" + text
                                 + "\nFix them, then build again.");
             }
+            JsonObject audit = AgentSetup.auditPrerequisites(scId);
+            if (audit.has("missing_permissions")
+                    && audit.getAsJsonArray("missing_permissions").size() > 0) {
+                result.add("missing_permissions",
+                        audit.getAsJsonArray("missing_permissions"));
+            }
+            if (audit.has("appcompat_needed_but_off")
+                    && audit.get("appcompat_needed_but_off").getAsBoolean()) {
+                result.addProperty("appcompat_warning",
+                        "Material/AndroidX widgets are placed while AppCompat "
+                                + "is off — enable AppCompat via "
+                                + "configure_library(library=\"appcompat\", "
+                                + "enabled=true).");
+            }
             return result;
         }
     }
-
-    /** get_event_logic (read-only): an event's statements numbered. */
     private static final class GetEventLogic implements Tool {
         @Override
         public String name() {
@@ -4239,7 +4260,7 @@ public final class AgentTools {
         }
     }
 
-    /** set_plan: remembers the agreed implementation plan. */
+    /** set_plan: remembers and updates the agreed implementation plan. */
     private static final class SetPlan implements Tool {
         @Override
         public String name() {
@@ -4248,58 +4269,51 @@ public final class AgentTools {
 
         @Override
         public String description() {
-            return "Saves the implementation plan the user has agreed "
-                    + "for this project — the start-to-finish build "
-                    + "order — to the app's memory, where the Plan "
-                    + "button shows it with its progress. Call it right "
-                    + "after the plan is agreed, before building, and "
-                    + "again whenever the plan changes or a milestone "
-                    + "lands: pass the full step list each time, with "
-                    + "\"done_steps\" set to how many leading steps are "
-                    + "genuinely finished (check the real project "
-                    + "first — the app will not let done steps run "
-                    + "ahead of the changes it has recorded) and "
-                    + "\"current_step\" as the 0-based step in hand. "
-                    + "Steps are milestones ('Build the Quiz screen "
-                    + "with its timer and saved best score'), not "
-                    + "single tool calls, and should name the behaviour "
-                    + "too: where buttons lead, what is saved, what "
-                    + "happens at the end. For a small one-off request, "
-                    + "no plan is needed. No approval card — it changes "
-                    + "nothing in the project itself. With no project "
-                    + "chosen yet, the plan is held as a draft and "
-                    + "lands in the project this work creates. "
-                    + "IMPORTANT: once saved, the plan is settled — a "
-                    + "contract with the user. Calling this again does "
-                    + "NOT rewrite it: settled steps keep their text, "
-                    + "order and progress, and only genuinely new "
-                    + "non-conflicting steps are appended (and logged). "
-                    + "After a stop or a retry, resume the existing plan "
-                    + "at its next unfinished step — never restate or "
-                    + "re-plan it. Change it only when the user "
-                    + "explicitly changes the scope, and then say "
-                    + "plainly what you are adding and why.";
+            return "Saves the agreed implementation plan OR updates its "
+                    + "milestone progress in the app's Plan tracker. "
+                    + "(1) First-time plan creation: pass \"title\" and "
+                    + "\"steps\" (one milestone per line, 3+ steps, 80+ "
+                    + "chars). With no project chosen yet, it is held as "
+                    + "a draft and deposited when the project is created. "
+                    + "(2) Progress updates during building: once a plan "
+                    + "already exists, call set_plan with ONLY "
+                    + "\"done_steps\" (how many leading milestones are "
+                    + "finished, e.g. \"2\") and optional "
+                    + "\"current_step\" (0-based index now in hand, e.g. "
+                    + "\"2\") — you do NOT need to resend \"steps\"! "
+                    + "(3) Appending new scope: settled steps keep their "
+                    + "exact text and order; pass genuinely new "
+                    + "higher-numbered steps in \"steps\" only when the "
+                    + "user expands scope.";
         }
 
         @Override
         public JsonObject parameters() {
             JsonObject properties = new JsonObject();
             properties.add("title", stringSchema(
-                    "The plan's name, e.g. \"Little Learners app\""));
+                    "The plan's name, e.g. \"Little Learners app\" "
+                            + "(required when creating a plan; optional "
+                            + "when updating progress)"));
             properties.add("steps", stringSchema(
-                    "The steps, one per line, in build order"));
+                    "The milestone steps, one per line, in build order "
+                            + "(required when creating a plan or "
+                            + "appending new steps; omit when only "
+                            + "updating done_steps/current_step)"));
             properties.add("done_steps", stringSchema(
                     "How many leading steps are finished (a number, "
-                            + "e.g. \"2\"). Optional; default 0"));
+                            + "e.g. \"2\")"));
             properties.add("current_step", stringSchema(
                     "The 0-based step now in hand (a number, e.g. "
-                            + "\"2\"). Optional; default 0"));
-            return AgentTools.parameters(properties, "title", "steps");
+                            + "\"2\")"));
+            return AgentTools.parameters(properties);
         }
 
         @Override
         public String activityLabel(JsonObject args) {
-            return "Saving the implementation plan";
+            int done = intArg(args, "done_steps");
+            return done > 0
+                    ? "Updating plan progress (" + done + " done)"
+                    : "Saving the implementation plan";
         }
 
         @Override
@@ -4307,35 +4321,48 @@ public final class AgentTools {
                 throws ToolException {
             String title = stringArg(args, "title");
             String steps = stringArg(args, "steps");
-            if (steps.isEmpty()) {
-                throw new ToolException("E_BAD_ARGS",
-                        "Pass the agreed steps in \"steps\", one per line.");
-            }
-            // A plan of two lines is not a plan: it is the reason a
-            // build goes sideways. Refuse it while the model is still
-            // at the planning table rather than after the screens exist.
-            int stepCount = 0;
-            for (String line : steps.split("\n")) {
-                if (line.trim().length() >= 8) {
-                    stepCount++;
+            int done = intArg(args, "done_steps");
+            int current = intArg(args, "current_step");
+
+            boolean noProject = session.workingProjectId == null
+                    || session.workingProjectId.isEmpty();
+            boolean hadPlan = !noProject
+                    && AgentJournal.hasPlan(session.workingProjectId);
+
+            if (!hadPlan) {
+                if (steps.isEmpty()) {
+                    throw new ToolException("E_BAD_ARGS",
+                            "No plan is saved yet — pass \"title\" and "
+                                    + "the agreed \"steps\" (one per line).");
                 }
+                int stepCount = 0;
+                for (String line : steps.split("\n")) {
+                    if (line.trim().length() >= 8) {
+                        stepCount++;
+                    }
+                }
+                if (stepCount < 3 || steps.trim().length() < 80) {
+                    throw new ToolException("E_PLAN_TOO_THIN",
+                            "That plan is too thin to build from — a real "
+                                    + "one has at least three concrete "
+                                    + "steps (80+ characters) and names: "
+                                    + "every screen it will create, what "
+                                    + "is on each screen, what data is "
+                                    + "kept and where, what each button "
+                                    + "does, and the order the work "
+                                    + "happens in. Write that, show it to "
+                                    + "the user in chat, then save it.");
+                }
+            } else if (steps.isEmpty() && done < 0 && current < 0) {
+                throw new ToolException("E_BAD_ARGS",
+                        "Pass \"done_steps\" (and optional "
+                                + "\"current_step\") to update progress, "
+                                + "or new lines in \"steps\" to append "
+                                + "new milestones.");
             }
-            if (stepCount < 3 || steps.trim().length() < 80) {
-                throw new ToolException("E_PLAN_TOO_THIN",
-                        "That plan is too thin to build from — a real one "
-                                + "has at least three concrete steps (80+ "
-                                + "characters) and names: every screen it "
-                                + "will create, what is on each screen, "
-                                + "what data is kept and where, what each "
-                                + "button does, and the order the work "
-                                + "happens in. Write that, show it to the "
-                                + "user in chat, then save it.");
-            }
-            int done = Math.max(0, intArg(args, "done_steps"));
-            int current = Math.max(0, intArg(args, "current_step"));
+
             JsonObject result = new JsonObject();
-            if (session.workingProjectId == null
-                    || session.workingProjectId.isEmpty()) {
+            if (noProject) {
                 AgentJournal.setDraftPlan(title, steps);
                 result.addProperty("saved", "draft");
                 result.addProperty("message",
@@ -4345,36 +4372,27 @@ public final class AgentTools {
                 return result;
             }
             String scId = requiredProject(session.workingProjectId);
-            boolean hadPlan = AgentJournal.hasPlan(scId);
-            int saved = AgentJournal.setPlan(scId, title, steps, done,
-                    current);
+            int saved = AgentJournal.setPlan(scId, title, steps,
+                    hadPlan ? done : Math.max(0, done),
+                    hadPlan ? current : Math.max(0, current));
+            int[] progress = AgentJournal.planProgress(scId);
             result.addProperty("saved", true);
+            result.addProperty("done_steps", progress[0]);
+            result.addProperty("total_steps", progress[1]);
             if (hadPlan) {
-                result.addProperty("message",
-                        saved == 0
-                                ? "This project already has a settled "
-                                        + "plan, and every step you just "
-                                        + "sent is already in it. A settled "
-                                        + "plan is a contract: its steps "
-                                        + "cannot be rewritten — only new, "
-                                        + "non-conflicting steps can be "
-                                        + "appended. Continue with the next "
-                                        + "step of the existing plan."
-                                : saved + " new step"
-                                        + (saved == 1 ? " was" : "s were")
-                                        + " appended to the settled plan. "
-                                        + "Existing steps were left exactly "
-                                        + "as the user agreed them; their "
-                                        + "text, order and progress cannot "
-                                        + "be rewritten.");
+                String progressLine = "Plan progress saved: " + progress[0]
+                        + " of " + progress[1] + " steps done.";
+                if (saved > 0) {
+                    progressLine += " Appended " + saved + " new step"
+                            + (saved == 1 ? "." : "s.");
+                }
+                result.addProperty("message", progressLine);
                 return result;
             }
             result.addProperty("message",
-                    "Plan remembered for this project and shown under "
-                            + "its Plan button. Work to it, and keep it "
-                            + "updated as milestones land. Its steps are "
-                            + "now settled: later set_plan calls can only "
-                            + "append new steps, never rewrite these.");
+                    "Plan saved (" + progress[1] + " steps). Call "
+                            + "set_plan with done_steps as each milestone "
+                            + "finishes.");
             return result;
         }
     }
@@ -5407,5 +5425,986 @@ public final class AgentTools {
                                 + String.valueOf(e.getMessage()));
             }
         }
+    }
+
+    // -- Phase 1: Libraries, Material 3, Maven/Local Libraries & Permissions
+
+    private static List<String> stringListArg(JsonObject args, String key)
+            throws ToolException {
+        JsonArray arr = jsonArrayArg(args, key);
+        if (arr == null) {
+            return Collections.emptyList();
+        }
+        List<String> out = new ArrayList<>();
+        for (JsonElement el : arr) {
+            if (el != null && el.isJsonPrimitive()) {
+                String s = el.getAsString().trim();
+                if (!s.isEmpty()) {
+                    out.add(s);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** list_local_libraries (read-only): local libs, built-in libs & permission search. */
+    private static final class ListLocalLibraries implements Tool {
+        @Override
+        public String name() {
+            return "list_local_libraries";
+        }
+
+        @Override
+        public String description() {
+            return "Lists all local/Maven libraries downloaded on the "
+                    + "device, which ones are enabled in the working "
+                    + "project, excluded built-in libraries, and "
+                    + "(optionally) searches known built-in library names "
+                    + "or available Android permissions.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("filter_builtin", stringSchema(
+                    "Optional substring to search Sketchware's built-in "
+                            + "library names (e.g. \"material\", "
+                            + "\"okhttp\", \"lifecycle\"). Pass \"*\" "
+                            + "to list all."));
+            properties.add("filter_permissions", stringSchema(
+                    "Optional substring to search valid Android "
+                            + "Manifest permissions (e.g. \"CAMERA\", "
+                            + "\"MEDIA\", \"BLUETOOTH\")."));
+            return AgentTools.parameters(properties);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Checked local libraries and setup catalog";
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String scId = session.workingProjectId == null
+                    ? "" : session.workingProjectId;
+            JsonObject result = new JsonObject();
+            result.add("local_libraries", AgentSetup.localLibraries(scId));
+            if (!scId.isEmpty()) {
+                result.add("excluded_builtin_libraries",
+                        AgentSetup.excludedBuiltInLibraries(scId));
+            }
+            String builtinFilter = stringArg(args, "filter_builtin");
+            if (!builtinFilter.isEmpty()) {
+                JsonArray builtins = new JsonArray();
+                String needle = "*".equals(builtinFilter)
+                        ? "" : builtinFilter.toLowerCase(Locale.ROOT);
+                for (String libName : AgentSetup.knownBuiltInLibraryNames()) {
+                    if (needle.isEmpty() || libName.toLowerCase(Locale.ROOT)
+                            .contains(needle)) {
+                        builtins.add(libName);
+                    }
+                }
+                result.add("matching_builtin_libraries", builtins);
+            }
+            String permFilter = stringArg(args, "filter_permissions");
+            if (!permFilter.isEmpty()) {
+                JsonArray perms = new JsonArray();
+                for (String p : AgentSetup.availablePermissions(
+                        "*".equals(permFilter) ? "" : permFilter)) {
+                    perms.add(p);
+                }
+                result.add("matching_permissions", perms);
+            }
+            return result;
+        }
+    }
+
+    /** configure_library: AppCompat, Material 3, Firebase, AdMob, Google Maps. */
+    private static final class ConfigureLibrary implements Tool {
+        @Override
+        public String name() {
+            return "configure_library";
+        }
+
+        @Override
+        public String description() {
+            return "Enables, disables, or configures one of Sketchware "
+                    + "Pro's built-in libraries for the working project: "
+                    + "\"appcompat\" (AndroidX AppCompat & Material "
+                    + "Components), \"material3\" (Material 3 components, "
+                    + "dynamic_colors, and theme: \"DayNight\", \"Light\" "
+                    + "or \"Dark\" — automatically turns on AppCompat "
+                    + "when enabled), \"firebase\" (accepts "
+                    + "google_services_json content OR database_url, "
+                    + "app_id, api_key, storage_bucket — automatically "
+                    + "turns on AppCompat when enabled), \"admob\" "
+                    + "(app_id, banner_ad_unit_id, "
+                    + "interstitial_ad_unit_id, reward_ad_unit_id, "
+                    + "test_devices), or \"google_maps\" (api_key).";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("library", stringSchema(
+                    "Which built-in library: \"appcompat\", \"material3\", "
+                            + "\"firebase\", \"admob\", or \"google_maps\""));
+            properties.add("enabled", booleanSchema(
+                    "True to switch the library on, false to switch it off"));
+            properties.add("dynamic_colors", booleanSchema(
+                    "For material3: enable Android 12+ Material You "
+                            + "dynamic colors (optional)"));
+            properties.add("theme", stringSchema(
+                    "For material3: \"DayNight\", \"Light\", or \"Dark\" "
+                            + "(optional; default \"DayNight\")"));
+            properties.add("google_services_json", stringSchema(
+                    "For firebase: full contents of google-services.json "
+                            + "to extract database_url, app_id, api_key, "
+                            + "and storage_bucket automatically"));
+            properties.add("database_url", stringSchema(
+                    "For firebase: Realtime Database host/URL "
+                            + "(e.g. \"my-app-default-rtdb.firebaseio.com\")"));
+            properties.add("app_id", stringSchema(
+                    "For firebase (mobilesdk_app_id, e.g. \"1:123...:android:abc\") "
+                            + "or admob (AdMob App ID, e.g. \"ca-app-pub-...\")"));
+            properties.add("api_key", stringSchema(
+                    "For firebase (Web/Android API key) or google_maps "
+                            + "(Maps SDK API key)"));
+            properties.add("storage_bucket", stringSchema(
+                    "For firebase: Storage bucket (e.g. \"my-app.appspot.com\")"));
+            properties.add("banner_ad_unit_id", stringSchema(
+                    "For admob: Banner Ad Unit ID (or \"Name : id\")"));
+            properties.add("banner_ad_name", stringSchema(
+                    "For admob: Optional friendly name for banner ad unit"));
+            properties.add("interstitial_ad_unit_id", stringSchema(
+                    "For admob: Interstitial Ad Unit ID (or \"Name : id\")"));
+            properties.add("interstitial_ad_name", stringSchema(
+                    "For admob: Optional friendly name for interstitial ad unit"));
+            properties.add("reward_ad_unit_id", stringSchema(
+                    "For admob: Optional Rewarded Video Ad Unit ID"));
+            properties.add("reward_ad_name", stringSchema(
+                    "For admob: Optional friendly name for reward ad unit"));
+            properties.add("test_devices", stringArraySchema(
+                    "For admob: Optional list of test device IDs"));
+            return AgentTools.parameters(properties, "library", "enabled");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Configuring "
+                    + AgentSetup.libraryName(
+                            stringArg(args, "library").toLowerCase(Locale.ROOT));
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String lib = stringArg(args, "library").toLowerCase(Locale.ROOT);
+            if ("googlemap".equals(lib) || "maps".equals(lib)) {
+                lib = AgentSetup.GOOGLE_MAPS;
+            } else if ("compat".equals(lib)) {
+                lib = AgentSetup.APPCOMPAT;
+            } else if ("m3".equals(lib) || "material_3".equals(lib)) {
+                lib = AgentSetup.MATERIAL3;
+            }
+            if (!args.has("enabled") || args.get("enabled").isJsonNull()) {
+                throw new ToolException("E_BAD_ARGS",
+                        "Pass \"enabled\": true or false.");
+            }
+            boolean turnOn = booleanArg(args, "enabled");
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            com.besome.sketch.beans.ProjectLibraryBean[] beans =
+                    AgentSetup.loadLibraryBeans(scId);
+            com.besome.sketch.beans.ProjectLibraryBean compat = beans[0];
+            com.besome.sketch.beans.ProjectLibraryBean firebase = beans[1];
+            com.besome.sketch.beans.ProjectLibraryBean admob = beans[2];
+            com.besome.sketch.beans.ProjectLibraryBean maps = beans[3];
+
+            JsonObject clean = new JsonObject();
+            clean.addProperty("library", lib);
+            clean.addProperty("enabled", turnOn);
+
+            String title;
+            String body;
+            String details;
+
+            switch (lib) {
+                case AgentSetup.APPCOMPAT -> {
+                    boolean wasOn = compat.isEnabled();
+                    if (wasOn == turnOn) {
+                        throw new ToolException("E_ALREADY_SET",
+                                "AppCompat is already "
+                                        + (turnOn ? "enabled" : "disabled")
+                                        + " on this project.");
+                    }
+                    title = (turnOn ? "Enable" : "Disable")
+                            + " AppCompat in " + project.name;
+                    body = turnOn
+                            ? "Switch on AndroidX AppCompat & Material "
+                                    + "Components so CardView, RecyclerView, "
+                                    + "TabLayout, TextInputLayout, and "
+                                    + "Material buttons compile cleanly."
+                            : "Switch off AppCompat (also turns off Material 3 "
+                                    + "and Firebase if active).";
+                    details = "Library: AppCompat\nState: "
+                            + (wasOn ? "on" : "off") + " → "
+                            + (turnOn ? "on" : "off");
+                }
+                case AgentSetup.MATERIAL3 -> {
+                    String theme = stringArg(args, "theme");
+                    if (theme.isEmpty()) {
+                        Object existingTheme = compat.configurations.get("theme");
+                        theme = existingTheme instanceof String s && !s.isEmpty()
+                                ? s : "DayNight";
+                    }
+                    if (!"DayNight".equals(theme) && !"Light".equals(theme)
+                            && !"Dark".equals(theme)) {
+                        throw new ToolException("E_BAD_ARGS",
+                                "Material 3 \"theme\" must be \"DayNight\", "
+                                        + "\"Light\", or \"Dark\".");
+                    }
+                    boolean dyn = args.has("dynamic_colors")
+                            ? booleanArg(args, "dynamic_colors")
+                            : Boolean.TRUE.equals(
+                                    compat.configurations.get("dynamic_colors"));
+                    clean.addProperty("dynamic_colors", dyn);
+                    clean.addProperty("theme", theme);
+                    title = (turnOn ? "Enable" : "Disable")
+                            + " Material 3 in " + project.name;
+                    body = turnOn
+                            ? "Enable Material 3 (" + theme + " theme, "
+                                    + "dynamic colors "
+                                    + (dyn ? "on" : "off") + ")"
+                                    + (compat.isEnabled() ? "."
+                                            : " and switch on AppCompat.")
+                            : "Disable Material 3 styling on " + project.name + ".";
+                    details = "Library: Material 3\nEnabled: " + turnOn
+                            + "\nTheme: " + theme
+                            + "\nDynamic colors: " + dyn
+                            + "\nAppCompat: " + (turnOn || compat.isEnabled());
+                }
+                case AgentSetup.FIREBASE -> {
+                    Map<String, String> parsed = AgentSetup
+                            .parseGoogleServicesJson(
+                                    stringArg(args, "google_services_json"));
+                    String dbUrl = !stringArg(args, "database_url").isEmpty()
+                            ? AgentSetup.stripHttps(
+                                    stringArg(args, "database_url"))
+                            : parsed.getOrDefault("database_url",
+                                    firebase.data == null ? "" : firebase.data.trim());
+                    String appId = !stringArg(args, "app_id").isEmpty()
+                            ? stringArg(args, "app_id")
+                            : parsed.getOrDefault("app_id",
+                                    firebase.reserved1 == null ? ""
+                                            : firebase.reserved1.trim());
+                    String apiKey = !stringArg(args, "api_key").isEmpty()
+                            ? stringArg(args, "api_key")
+                            : parsed.getOrDefault("api_key",
+                                    firebase.reserved2 == null ? ""
+                                            : firebase.reserved2.trim());
+                    String bucket = !stringArg(args, "storage_bucket").isEmpty()
+                            ? AgentSetup.stripHttps(
+                                    stringArg(args, "storage_bucket"))
+                            : parsed.getOrDefault("storage_bucket",
+                                    firebase.reserved3 == null ? ""
+                                            : firebase.reserved3.trim());
+                    if (turnOn && (dbUrl.isEmpty() || appId.isEmpty()
+                            || apiKey.isEmpty())) {
+                        throw new ToolException("E_BAD_ARGS",
+                                "Enabling Firebase requires \"google_services_json\" "
+                                        + "or \"database_url\", \"app_id\", and "
+                                        + "\"api_key\". Ask the user for their "
+                                        + "google-services.json or Firebase "
+                                        + "project settings first.");
+                    }
+                    clean.addProperty("database_url", dbUrl);
+                    clean.addProperty("app_id", appId);
+                    clean.addProperty("api_key", apiKey);
+                    clean.addProperty("storage_bucket", bucket);
+                    title = (turnOn ? "Configure Firebase in "
+                            : "Disable Firebase in ") + project.name;
+                    body = turnOn
+                            ? "Enable Firebase (" + dbUrl + ")"
+                                    + (compat.isEnabled() ? "."
+                                            : " and switch on AppCompat.")
+                            : "Switch off Firebase in " + project.name + ".";
+                    details = "Library: Firebase\nEnabled: " + turnOn
+                            + "\nDatabase URL: " + dbUrl
+                            + "\nApp ID: " + appId
+                            + "\nAPI key configured: " + (!apiKey.isEmpty())
+                            + "\nStorage bucket: "
+                            + (bucket.isEmpty() ? "(none)" : bucket);
+                }
+                case AgentSetup.ADMOB -> {
+                    String appId = !stringArg(args, "app_id").isEmpty()
+                            ? stringArg(args, "app_id")
+                            : (admob.appId == null ? "" : admob.appId.trim());
+                    String bannerId = !stringArg(args, "banner_ad_unit_id").isEmpty()
+                            ? stringArg(args, "banner_ad_unit_id")
+                            : (admob.reserved1 == null ? "" : admob.reserved1.trim());
+                    String bannerName = stringArg(args, "banner_ad_name");
+                    String interId = !stringArg(args, "interstitial_ad_unit_id").isEmpty()
+                            ? stringArg(args, "interstitial_ad_unit_id")
+                            : (admob.reserved2 == null ? "" : admob.reserved2.trim());
+                    String interName = stringArg(args, "interstitial_ad_name");
+                    String rewardId = !stringArg(args, "reward_ad_unit_id").isEmpty()
+                            ? stringArg(args, "reward_ad_unit_id")
+                            : (admob.reserved3 == null ? "" : admob.reserved3.trim());
+                    String rewardName = stringArg(args, "reward_ad_name");
+                    List<String> testDevices = args.has("test_devices")
+                            ? stringListArg(args, "test_devices") : null;
+                    if (turnOn && appId.isEmpty()) {
+                        throw new ToolException("E_BAD_ARGS",
+                                "Enabling AdMob requires \"app_id\" (and "
+                                        + "ad unit IDs for banner/interstitial). "
+                                        + "Ask the user for their AdMob App ID "
+                                        + "or whether they want Google's official "
+                                        + "AdMob test IDs for development.");
+                    }
+                    clean.addProperty("app_id", appId);
+                    clean.addProperty("banner_ad_unit_id", bannerId);
+                    clean.addProperty("banner_ad_name", bannerName);
+                    clean.addProperty("interstitial_ad_unit_id", interId);
+                    clean.addProperty("interstitial_ad_name", interName);
+                    clean.addProperty("reward_ad_unit_id", rewardId);
+                    clean.addProperty("reward_ad_name", rewardName);
+                    if (testDevices != null) {
+                        JsonArray td = new JsonArray();
+                        for (String d : testDevices) {
+                            td.add(d);
+                        }
+                        clean.add("test_devices", td);
+                    }
+                    title = (turnOn ? "Configure AdMob in "
+                            : "Disable AdMob in ") + project.name;
+                    body = turnOn
+                            ? "Enable AdMob (App ID " + appId + ")."
+                            : "Switch off AdMob in " + project.name + ".";
+                    details = "Library: AdMob\nEnabled: " + turnOn
+                            + "\nApp ID: " + appId
+                            + "\nBanner unit: "
+                            + (bannerId.isEmpty() ? "(none)" : bannerId)
+                            + "\nInterstitial unit: "
+                            + (interId.isEmpty() ? "(none)" : interId)
+                            + "\nReward unit: "
+                            + (rewardId.isEmpty() ? "(none)" : rewardId);
+                }
+                case AgentSetup.GOOGLE_MAPS -> {
+                    String apiKey = !stringArg(args, "api_key").isEmpty()
+                            ? stringArg(args, "api_key")
+                            : (maps.data == null ? "" : maps.data.trim());
+                    if (turnOn && apiKey.isEmpty()) {
+                        throw new ToolException("E_BAD_ARGS",
+                                "Enabling Google Maps requires a non-empty "
+                                        + "\"api_key\". Ask the user for their "
+                                        + "Google Maps SDK API key first.");
+                    }
+                    clean.addProperty("api_key", apiKey);
+                    title = (turnOn ? "Configure Google Maps in "
+                            : "Disable Google Maps in ") + project.name;
+                    body = turnOn
+                            ? "Enable Google Maps SDK with the provided API key."
+                            : "Switch off Google Maps in " + project.name + ".";
+                    details = "Library: Google Maps\nEnabled: " + turnOn
+                            + "\nAPI key configured: " + (!apiKey.isEmpty());
+                }
+                default -> throw new ToolException("E_BAD_ARGS",
+                        "Unknown library \"" + lib + "\". Choose one of: "
+                                + "\"appcompat\", \"material3\", \"firebase\", "
+                                + "\"admob\", \"google_maps\".");
+            }
+            return new AgentProposal(name(), clean, scId, title, body, details);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String lib = stringArg(proposal.args, "library");
+            boolean turnOn = booleanArg(proposal.args, "enabled");
+            com.besome.sketch.beans.ProjectLibraryBean[] beans =
+                    AgentSetup.loadLibraryBeans(scId);
+            com.besome.sketch.beans.ProjectLibraryBean compat = beans[0];
+            com.besome.sketch.beans.ProjectLibraryBean firebase = beans[1];
+            com.besome.sketch.beans.ProjectLibraryBean admob = beans[2];
+            com.besome.sketch.beans.ProjectLibraryBean maps = beans[3];
+
+            switch (lib) {
+                case AgentSetup.APPCOMPAT -> {
+                    compat.useYn = turnOn ? "Y" : "N";
+                    if (!turnOn) {
+                        compat.configurations.put("material3", false);
+                        firebase.useYn = "N";
+                    }
+                }
+                case AgentSetup.MATERIAL3 -> {
+                    if (turnOn) {
+                        compat.useYn = "Y";
+                    }
+                    compat.configurations.put("material3", turnOn);
+                    compat.configurations.put("dynamic_colors",
+                            booleanArg(proposal.args, "dynamic_colors"));
+                    compat.configurations.put("theme",
+                            stringArg(proposal.args, "theme"));
+                }
+                case AgentSetup.FIREBASE -> {
+                    firebase.useYn = turnOn ? "Y" : "N";
+                    firebase.data = stringArg(proposal.args, "database_url");
+                    firebase.reserved1 = stringArg(proposal.args, "app_id");
+                    firebase.reserved2 = stringArg(proposal.args, "api_key");
+                    firebase.reserved3 = stringArg(proposal.args,
+                            "storage_bucket");
+                    if (turnOn) {
+                        compat.useYn = "Y";
+                    }
+                }
+                case AgentSetup.ADMOB -> {
+                    admob.useYn = turnOn ? "Y" : "N";
+                    admob.appId = stringArg(proposal.args, "app_id");
+                    String bId = stringArg(proposal.args, "banner_ad_unit_id");
+                    if (!bId.isEmpty()) {
+                        admob.reserved1 = AgentSetup.registerAdUnit(admob,
+                                stringArg(proposal.args, "banner_ad_name"), bId);
+                    }
+                    String iId = stringArg(proposal.args,
+                            "interstitial_ad_unit_id");
+                    if (!iId.isEmpty()) {
+                        admob.reserved2 = AgentSetup.registerAdUnit(admob,
+                                stringArg(proposal.args, "interstitial_ad_name"),
+                                iId);
+                    }
+                    String rId = stringArg(proposal.args, "reward_ad_unit_id");
+                    if (!rId.isEmpty()) {
+                        admob.reserved3 = AgentSetup.registerAdUnit(admob,
+                                stringArg(proposal.args, "reward_ad_name"), rId);
+                    }
+                    if (proposal.args.has("test_devices")) {
+                        AgentSetup.replaceTestDevices(admob,
+                                stringListArg(proposal.args, "test_devices"));
+                    }
+                }
+                case AgentSetup.GOOGLE_MAPS -> {
+                    maps.useYn = turnOn ? "Y" : "N";
+                    maps.data = stringArg(proposal.args, "api_key");
+                }
+                default -> throw new ToolException("E_BAD_ARGS",
+                        "Unsupported library: " + lib);
+            }
+            try {
+                AgentSetup.saveBuiltInLibraries(scId, compat, firebase,
+                        admob, maps);
+            } catch (Exception e) {
+                throw new ToolException("E_SAVE_FAILED",
+                        "Saving library settings failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+            JsonObject verified = AgentSetup.libraries(scId);
+            JsonObject result = new JsonObject();
+            result.addProperty("configured", lib);
+            result.addProperty("enabled", turnOn);
+            result.add("libraries", verified);
+            result.addProperty("verified",
+                    AgentSetup.libraryName(lib) + " is now "
+                            + (turnOn ? "enabled" : "disabled")
+                            + " (read back from Library Manager state).");
+            return result;
+        }
+    }
+
+    /** manage_permissions: declare or remove Android Manifest permissions. */
+    private static final class ManagePermissions implements Tool {
+        @Override
+        public String name() {
+            return "manage_permissions";
+        }
+
+        @Override
+        public String description() {
+            return "Adds and/or removes Android Manifest permissions "
+                    + "for the working project (saved in Sketchware's "
+                    + "Permission Manager). Accepts full names like "
+                    + "\"android.permission.INTERNET\" or short names "
+                    + "like \"INTERNET\", \"CAMERA\", "
+                    + "\"POST_NOTIFICATIONS\". Set "
+                    + "\"auto_add_recommended\": true to automatically "
+                    + "add all missing permissions detected for the "
+                    + "project's widgets, components, and libraries.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("add", stringArraySchema(
+                    "Permissions to add, e.g. "
+                            + "[\"android.permission.INTERNET\", "
+                            + "\"android.permission.CAMERA\"]"));
+            properties.add("remove", stringArraySchema(
+                    "Permissions to remove"));
+            properties.add("auto_add_recommended", booleanSchema(
+                    "When true, automatically includes every missing "
+                            + "permission found by get_project_setup's "
+                            + "prerequisite_audit"));
+            return AgentTools.parameters(properties);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Updating Android permissions";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            List<String> rawAdd = stringListArg(args, "add");
+            List<String> rawRemove = stringListArg(args, "remove");
+            boolean autoRec = booleanArg(args, "auto_add_recommended");
+
+            java.util.Set<String> normalizedAdd = new java.util.LinkedHashSet<>();
+            for (String p : rawAdd) {
+                String norm = AgentSetup.normalizePermission(p);
+                if (norm == null) {
+                    throw new ToolException("E_BAD_PERMISSION",
+                            "Unrecognized Android permission \"" + p
+                                    + "\". Pass standard Android permission "
+                                    + "names such as "
+                                    + "\"android.permission.INTERNET\" or "
+                                    + "call list_local_libraries with "
+                                    + "filter_permissions to search.");
+                }
+                normalizedAdd.add(norm);
+            }
+            if (autoRec) {
+                JsonObject audit = AgentSetup.auditPrerequisites(scId);
+                if (audit.has("missing_permissions")) {
+                    for (JsonElement el
+                            : audit.getAsJsonArray("missing_permissions")) {
+                        normalizedAdd.add(el.getAsString());
+                    }
+                }
+            }
+            java.util.Set<String> normalizedRemove =
+                    new java.util.LinkedHashSet<>();
+            for (String p : rawRemove) {
+                String norm = AgentSetup.normalizePermission(p);
+                normalizedRemove.add(norm != null ? norm : p.trim());
+            }
+            normalizedAdd.removeAll(normalizedRemove);
+
+            if (normalizedAdd.isEmpty() && normalizedRemove.isEmpty()) {
+                throw new ToolException("E_ALREADY_SET",
+                        autoRec
+                                ? "All recommended permissions are already "
+                                        + "declared in this project."
+                                : "Pass at least one permission in \"add\" "
+                                        + "or \"remove\", or set "
+                                        + "\"auto_add_recommended\": true.");
+            }
+
+            java.util.Set<String> existing = new java.util.LinkedHashSet<>();
+            for (JsonElement el : AgentSetup.permissions(scId)) {
+                existing.add(el.getAsString());
+            }
+            List<String> effectiveAdd = new ArrayList<>();
+            for (String p : normalizedAdd) {
+                if (!existing.contains(p)) {
+                    effectiveAdd.add(p);
+                }
+            }
+            List<String> effectiveRemove = new ArrayList<>();
+            for (String p : normalizedRemove) {
+                if (existing.contains(p)) {
+                    effectiveRemove.add(p);
+                }
+            }
+            if (effectiveAdd.isEmpty() && effectiveRemove.isEmpty()) {
+                throw new ToolException("E_ALREADY_SET",
+                        "Those permissions are already in that exact state "
+                                + "on this project.");
+            }
+
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            JsonArray addArr = new JsonArray();
+            for (String p : effectiveAdd) {
+                addArr.add(p);
+            }
+            JsonArray remArr = new JsonArray();
+            for (String p : effectiveRemove) {
+                remArr.add(p);
+            }
+            clean.add("add", addArr);
+            clean.add("remove", remArr);
+
+            StringBuilder body = new StringBuilder();
+            if (!effectiveAdd.isEmpty()) {
+                body.append("Add ")
+                        .append(effectiveAdd.size())
+                        .append(effectiveAdd.size() == 1
+                                ? " permission: " : " permissions: ")
+                        .append(String.join(", ", effectiveAdd))
+                        .append(".");
+            }
+            if (!effectiveRemove.isEmpty()) {
+                if (body.length() > 0) {
+                    body.append("\n");
+                }
+                body.append("Remove ")
+                        .append(effectiveRemove.size())
+                        .append(effectiveRemove.size() == 1
+                                ? " permission: " : " permissions: ")
+                        .append(String.join(", ", effectiveRemove))
+                        .append(".");
+            }
+            return new AgentProposal(name(), clean, scId,
+                    "Update permissions in " + project.name,
+                    body.toString(),
+                    "Saved directly to Sketchware's Permission Manager "
+                            + "(.sketchware/data/" + scId + "/permission).");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            List<String> add = stringListArg(proposal.args, "add");
+            List<String> remove = stringListArg(proposal.args, "remove");
+            try {
+                List<String> updated =
+                        AgentSetup.updatePermissions(scId, add, remove);
+                JsonObject result = new JsonObject();
+                JsonArray arr = new JsonArray();
+                for (String p : updated) {
+                    arr.add(p);
+                }
+                result.add("permissions", arr);
+                result.addProperty("count", updated.size());
+                result.addProperty("verified",
+                        "Project now declares " + updated.size()
+                                + " permission(s).");
+                return result;
+            } catch (Exception e) {
+                throw new ToolException("E_SAVE_FAILED",
+                        "Updating permissions failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /** manage_local_libraries: toggle local libraries and excluded built-in libraries. */
+    private static final class ManageLocalLibraries implements Tool {
+        @Override
+        public String name() {
+            return "manage_local_libraries";
+        }
+
+        @Override
+        public String description() {
+            return "Enables or disables downloaded local libraries for "
+                    + "the working project, and/or configures Excluded "
+                    + "Built-in Libraries (useful when a newer local "
+                    + "Maven library replaces an older built-in JAR). "
+                    + "Call list_local_libraries first to inspect exact "
+                    + "library folder names.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("enable", stringArraySchema(
+                    "Local library names to enable in this project"));
+            properties.add("disable", stringArraySchema(
+                    "Local library names to disable in this project"));
+            properties.add("excluding_enabled", booleanSchema(
+                    "Optional: enable or disable built-in library exclusion"));
+            properties.add("exclude_builtin", stringArraySchema(
+                    "Optional: built-in library names to exclude during build"));
+            properties.add("include_builtin", stringArraySchema(
+                    "Optional: previously excluded built-in libraries to re-include"));
+            return AgentTools.parameters(properties);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Updating local & built-in library configuration";
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            List<String> enable = stringListArg(args, "enable");
+            List<String> disable = stringListArg(args, "disable");
+            Boolean excludingEnabled = args.has("excluding_enabled")
+                    && !args.get("excluding_enabled").isJsonNull()
+                    ? booleanArg(args, "excluding_enabled") : null;
+            List<String> excludeBuiltin = stringListArg(args, "exclude_builtin");
+            List<String> includeBuiltin = stringListArg(args, "include_builtin");
+
+            if (enable.isEmpty() && disable.isEmpty()
+                    && excludingEnabled == null
+                    && excludeBuiltin.isEmpty()
+                    && includeBuiltin.isEmpty()) {
+                throw new ToolException("E_BAD_ARGS",
+                        "Pass at least one of \"enable\", \"disable\", "
+                                + "\"excluding_enabled\", \"exclude_builtin\", "
+                                + "or \"include_builtin\".");
+            }
+
+            if (!enable.isEmpty()) {
+                java.util.Set<String> onDisk = new java.util.LinkedHashSet<>();
+                JsonObject local = AgentSetup.localLibraries(scId);
+                for (JsonElement el
+                        : local.getAsJsonArray("available_on_device")) {
+                    onDisk.add(el.getAsJsonObject().get("name").getAsString());
+                }
+                for (String req : enable) {
+                    if (!onDisk.contains(req)) {
+                        throw new ToolException("E_LIBRARY_NOT_FOUND",
+                                "Local library \"" + req + "\" is not "
+                                        + "downloaded on this device yet. "
+                                        + "Call list_local_libraries to see "
+                                        + "available names, or call "
+                                        + "download_maven_library to download "
+                                        + "it from Maven.");
+                    }
+                }
+            }
+
+            if (!excludeBuiltin.isEmpty()) {
+                java.util.Set<String> known = new java.util.LinkedHashSet<>(
+                        AgentSetup.knownBuiltInLibraryNames());
+                for (String b : excludeBuiltin) {
+                    if (!known.contains(b)) {
+                        throw new ToolException("E_LIBRARY_NOT_FOUND",
+                                "Unknown built-in library \"" + b + "\". "
+                                        + "Call list_local_libraries with "
+                                        + "filter_builtin=\"*\" to see exact "
+                                        + "built-in library names.");
+                    }
+                }
+                if (excludingEnabled == null) {
+                    excludingEnabled = true;
+                }
+            }
+
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            if (!enable.isEmpty()) {
+                clean.add("enable", namesJsonAll(enable));
+            }
+            if (!disable.isEmpty()) {
+                clean.add("disable", namesJsonAll(disable));
+            }
+            if (excludingEnabled != null) {
+                clean.addProperty("excluding_enabled", excludingEnabled);
+            }
+            if (!excludeBuiltin.isEmpty()) {
+                clean.add("exclude_builtin", namesJsonAll(excludeBuiltin));
+            }
+            if (!includeBuiltin.isEmpty()) {
+                clean.add("include_builtin", namesJsonAll(includeBuiltin));
+            }
+
+            StringBuilder summary = new StringBuilder();
+            if (!enable.isEmpty()) {
+                summary.append("Enable local libraries: ")
+                        .append(String.join(", ", enable)).append(". ");
+            }
+            if (!disable.isEmpty()) {
+                summary.append("Disable local libraries: ")
+                        .append(String.join(", ", disable)).append(". ");
+            }
+            if (excludingEnabled != null || !excludeBuiltin.isEmpty()
+                    || !includeBuiltin.isEmpty()) {
+                summary.append("Update excluded built-in libraries.");
+            }
+            return new AgentProposal(name(), clean, scId,
+                    "Update libraries in " + project.name,
+                    summary.toString().trim(), clean.toString());
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            List<String> enable = stringListArg(proposal.args, "enable");
+            List<String> disable = stringListArg(proposal.args, "disable");
+            Boolean excludingEnabled = proposal.args.has("excluding_enabled")
+                    ? booleanArg(proposal.args, "excluding_enabled") : null;
+            List<String> excludeBuiltin =
+                    stringListArg(proposal.args, "exclude_builtin");
+            List<String> includeBuiltin =
+                    stringListArg(proposal.args, "include_builtin");
+
+            try {
+                JsonObject result = new JsonObject();
+                if (!enable.isEmpty() || !disable.isEmpty()) {
+                    List<String> nowEnabled = AgentSetup.updateLocalLibraries(
+                            scId, enable, disable);
+                    result.add("enabled_local_libraries",
+                            namesJsonAll(nowEnabled));
+                }
+                if (excludingEnabled != null || !excludeBuiltin.isEmpty()
+                        || !includeBuiltin.isEmpty()) {
+                    AgentSetup.updateExcludedBuiltInLibraries(
+                            scId, excludingEnabled,
+                            excludeBuiltin, includeBuiltin);
+                    result.add("excluded_builtin_libraries",
+                            AgentSetup.excludedBuiltInLibraries(scId));
+                }
+                result.addProperty("verified",
+                        "Local and built-in library configuration saved.");
+                return result;
+            } catch (Exception e) {
+                throw new ToolException("E_SAVE_FAILED",
+                        "Updating library configuration failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /** download_maven_library: download + D8 dex + enable a Maven artifact. */
+    private static final class DownloadMavenLibrary implements Tool {
+        @Override
+        public String name() {
+            return "download_maven_library";
+        }
+
+        @Override
+        public String description() {
+            return "Downloads an external Maven/AndroidX/Google library "
+                    + "by coordinate (\"group:artifact:version\", e.g. "
+                    + "\"com.squareup.okhttp3:okhttp:4.12.0\"), unzips "
+                    + "AAR/JAR resources, compiles classes to DEX with "
+                    + "D8 via Sketchware Pro's DependencyResolver, saves "
+                    + "it into .sketchware/libs/local_libs, and enables "
+                    + "it in the working project.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("coordinate", stringSchema(
+                    "Maven coordinate in group:artifact:version format, "
+                            + "e.g. \"com.google.code.gson:gson:2.11.0\""));
+            properties.add("skip_subdependencies", booleanSchema(
+                    "True to download only this artifact without "
+                            + "transitive sub-dependencies (default false)"));
+            properties.add("enable_in_project", booleanSchema(
+                    "True (default) to automatically enable the downloaded "
+                            + "library in the working project"));
+            return AgentTools.parameters(properties, "coordinate");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Downloading Maven library "
+                    + stringArg(args, "coordinate");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String coord = stringArg(args, "coordinate");
+            String[] parts = coord.split(":");
+            if (parts.length != 3 || parts[0].trim().isEmpty()
+                    || parts[1].trim().isEmpty()
+                    || parts[2].trim().isEmpty()) {
+                throw new ToolException("E_BAD_COORDINATE",
+                        "Invalid Maven coordinate \"" + coord
+                                + "\". Pass \"group:artifact:version\" "
+                                + "(three colon-separated parts).");
+            }
+            boolean skipDeps = booleanArg(args, "skip_subdependencies");
+            boolean enableInProject = !args.has("enable_in_project")
+                    || args.get("enable_in_project").isJsonNull()
+                    || booleanArg(args, "enable_in_project");
+
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("coordinate",
+                    parts[0].trim() + ":" + parts[1].trim() + ":"
+                            + parts[2].trim());
+            clean.addProperty("skip_subdependencies", skipDeps);
+            clean.addProperty("enable_in_project", enableInProject);
+
+            return new AgentProposal(name(), clean, scId,
+                    "Download Maven library " + parts[1].trim(),
+                    "Download “" + clean.get("coordinate").getAsString()
+                            + "”"
+                            + (skipDeps
+                                    ? " (without sub-dependencies)"
+                                    : " and its required sub-dependencies")
+                            + ", compile to DEX with D8, and "
+                            + (enableInProject
+                                    ? "enable it in " + project.name + "."
+                                    : "save it to Local Libraries."),
+                    "Coordinate: " + clean.get("coordinate").getAsString()
+                            + "\nTransitive dependencies: "
+                            + (skipDeps ? "skipped" : "included")
+                            + "\nEnable in project: " + enableInProject);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String coord = stringArg(proposal.args, "coordinate");
+            boolean skipDeps = booleanArg(proposal.args,
+                    "skip_subdependencies");
+            boolean enable = !proposal.args.has("enable_in_project")
+                    || booleanArg(proposal.args, "enable_in_project");
+            try {
+                JsonObject out = AgentSetup.downloadMavenLibrary(
+                        scId, coord, skipDeps, enable);
+                out.addProperty("verified",
+                        "Downloaded and processed "
+                                + out.getAsJsonArray("downloaded_libraries")
+                                        .size() + " library artifact(s).");
+                return out;
+            } catch (Exception e) {
+                throw new ToolException("E_DOWNLOAD_FAILED",
+                        "Maven library download/dexing failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    private static JsonArray namesJsonAll(List<String> values) {
+        JsonArray arr = new JsonArray();
+        if (values != null) {
+            for (String v : values) {
+                arr.add(v);
+            }
+        }
+        return arr;
     }
 }

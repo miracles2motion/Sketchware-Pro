@@ -1,0 +1,134 @@
+# Sketchware Pro Agent Mode — Complete Master Roadmap
+
+This document is the permanent source of truth for taking Agent Mode from basic multi-screen apps (Waves 1–36b) to **100% coverage of Sketchware Pro**, including multimodal **Screenshot / Image-to-Screen recreation**, every manager in `DesignDrawer`, developer tools, and release packaging.
+
+---
+
+## Baseline Already Shipped (Waves 1–36b, commit `f30f789`)
+
+- **Design-first workflow & anti-gravity gates:** Style brief (`set_style_brief`), editable Design System with live rendered preview (`set_design_system`, `edit_design_token`), locked implementation plan (`set_plan`), task log (`get_task_log`), lossless diagnostic JSON export (`AgentExport`), and cloud BYOK OpenAI-compatible chat with transient 5xx retry (`AiChatService`, `AgentLoop`).
+- **Projects, screens & custom row views:** `create_project`, `create_activity`, `edit_activity`, `delete_activity`, `create_custom_view`, `edit_project_theme`, `edit_screen` (container-first layouts, widgets, custom XML attribute injection via `ViewBean.inject`).
+- **Variables, lists, maps & components:** `create_variable`, `remove_variable`, `create_component` (22 stock/Pro component types).
+- **Logic, More Blocks & raw Java:** `set_event_handler` (`replace: true`), `get_event_logic` (recursive `@id` rendering), `edit_event_block`, `create_more_block` / `remove_more_block` / `call_more_block` / `return_value` (all 8 `ReturnMoreblockManager` return types + typed parameters), `add_source_directly`, inline `java_expr` (`asdString`/`asdNumber`/`asdBoolean`), `custom_import` (`Import` event), `add_custom_variable`, `add_initializer`, and built-in `onCreate_initializeLogic` wiring.
+- **On-device build & install:** `build_project` (`AgentBuild` -> APK compile + install card).
+
+---
+
+## Complete Feature Matrix vs. Sketchware Pro (`DesignDrawer` + Home + Compiler)
+
+Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and multimodal capabilities is mapped to a concrete phase below:
+
+| Sketchware Pro Subsystem | Authoritative Repo Classes | Phase |
+|---|---|---|
+| Library Manager (AppCompat, Material 3, Firebase, AdMob, Google Maps, Local Libs, Maven downloader, Excluded Built-in Libs) | `ManageLibraryActivity`, `ManageCompatActivity`, `Material3LibraryManager`, `FirebaseActivity`, `AdmobActivity`, `ManageGoogleMapActivity`, `ManageLocalLibrary`, `DependencyResolver.kt`, `ExcludeBuiltInLibrariesActivity` | **Phase 1 (DONE)** |
+| Permission Manager + auto-prerequisite checks | `ManagePermissionActivity`, `ListPermission`, `FileResConfig` | **Phase 1 (DONE)** |
+| Multimodal Vision Chat + Screenshot-to-Screen + Chat-Image-to-Asset + Offscreen `ViewPane` Preview | `AgentFragment`, `AiChatService`, `ChatMessage`, `LayoutPreviewActivity`, `ViewPane`, `ViewBeanParser` | Phase 2 |
+| Image Manager, Built-in Icon Pack, Vector/Shape Icon Creator & Adaptive Launcher Icons | `ManageImageActivity`, `ImportIconActivity`, `IconCreatorActivity`, `jC.d(scId)` | Phase 2 |
+| View Manager: Fragments, DialogFragments, BottomSheetFragments, Drawer Layouts (`_drawer_*`), Root Layout Injection, Raw XML Import, `remove_component`, `delete_custom_view` | `ManageViewActivity`, `AddViewActivity`, `InjectRootLayoutManager`, `ViewBeanParser`, `eC` | Phase 3 |
+| Resource Editor (`strings.xml`, `colors.xml`, `styles.xml`, `arrays.xml`) & Raw Resource Manager (`res/drawable`, `menu`, `anim`, `xml`, `values-night`) | `ResourcesEditorActivity`, `StringsEditorManager`, `ColorsEditorManager`, `StylesEditorManager`, `ArraysEditorManager`, `ManageResourceActivity` | Phase 4 |
+| Font Manager (`assets/fonts`) & Sound Manager (`res/raw`) | `ManageFontActivity`, `ManageSoundActivity`, `jC.d(scId)` | Phase 4 |
+| Java & Kotlin Manager (`.java` / `.kt` classes) & Assets Manager (`assets/`) & Native Libs (`.so`) | `ManageJavaActivity`, `KotlinCompilerBridge`, `ManageAssetsActivity`, `ManageNativelibsActivity` | Phase 5 |
+| Full Pro Events, Component Callbacks, Custom Blocks, Command Blocks (`ManageXMLCommandActivity`) & Developer Custom Components/Events | `EventsHandler`, `ManageEvent`, `CustomBlocksManager`, `BlocksManager`, `ManageXMLCommandActivity`, `CommandBlock`, `ComponentsHandler` | Phase 6 |
+| AndroidManifest Injection & AppCompat XML Injection (`Toolbar`, `AppBarLayout`, `CoordinatorLayout`, `FAB`) | `AndroidManifestInjection`, `AndroidManifestInjector`, `ManageAppCompatActivity`, `AppCompatInjection` | Phase 7 |
+| Pro Project Settings (`minSdk`, `targetSdk`, `ViewBinding`, custom `Application` class, version/package), ProGuard/R8 & StringFog | `MyProjectSettingActivity`, `ProjectSettings`, `VersionDialog`, `ManageProguardActivity`, `ProguardHandler`, `ManageStringFogFragment`, `StringfogHandler` | Phase 7 |
+| Show Source Code Inspector, Runtime Logcat Crash Reader, Collections Manager, `.aab` App Bundles, Keystore Signing & `.swb` Backups | `SrcViewerActivity`, `Jx`, `LogReaderActivity`, `CompileErrorSaver`, `ManageCollectionActivity`, `AppBundleCompiler`, `TestkeySignBridge`, `BackupFactory` | Phase 8 |
+
+---
+
+## Detailed Phase-by-Phase Plan
+
+### Phase 1 — Libraries, Material 3, Maven Dependencies & Permissions (DONE)
+**Goal:** Unlock real Material 3 UI, networking, Firebase, maps, and third-party libraries without manual setup.
+1. **Built-in Library Configuration (`configure_library`):**
+   - Toggle & configure **AppCompat** (`jC.c(scId).c()`), **Material 3** (`Material3LibraryManager`: `material3`, `dynamic_colors`, `theme` Light/Dark/DayNight), **Firebase** (`jC.c(scId).d()`: project ID, app ID, API key, storage bucket), **AdMob** (`jC.c(scId).b()`), and **Google Maps** (`jC.c(scId).e()`).
+2. **Local Libraries & Maven Downloader (`manage_local_libraries`):**
+   - List installed local libraries in `.sketchware/libs/local_libs/`, enable/disable them per project (`FileResConfig`), download Maven coordinates (`group:artifact:version`) via `DependencyResolver.kt`, and manage excluded built-in libraries (`ExcludeBuiltInLibrariesActivity`).
+3. **Permission Manager (`manage_permissions`):**
+   - List, add, and remove Android manifest permissions (`FileResConfig` on `.sketchware/data/<sc_id>/permission`).
+   - Automatic pre-build / component audit: warn or propose `INTERNET` when `RequestNetwork` / `WebView` / `Firebase` is used, `VIBRATE` for `Vibrator`, `CAMERA` for `Camera`, etc.
+
+---
+
+### Phase 2 — Multimodal Vision (Screenshot-to-Screen), Icons, Drawables & Visual Self-Check
+**Goal:** Let the user send a screenshot, UI mockup, sketch, or logo in chat and have the agent recreate the screen/view or import the visual asset faithfully.
+1. **Image Attachments in Agent Chat (`AgentFragment` + `ChatAdapter` + `AiChatService`):**
+   - Attach button beside the chat input supporting 1–4 images (gallery picker / screenshot), thumbnail strip before send, inline image display in chat bubbles, persistence in `AgentChatLog`, and metadata in `AgentExport`.
+   - OpenAI-compatible multimodal `content` array in `AiChatService` (`{"type":"text",...}` + `{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,..."}}`), resized cleanly on-device (max 1280px) so Gemini, OpenRouter vision models, NVIDIA vision models, and OpenAI-compatible vision endpoints accept it reliably.
+   - Graceful model check: if the active model rejects image input, return a plain human message offering to switch to a vision-capable model instead of a raw HTTP error.
+2. **Screenshot-to-Screen & Mockup-to-CustomView Workflow:**
+   - Guided visual decomposition: extract color palette, typography scale, spacing/radii, icons, and container hierarchy from the user's screenshot -> propose matching Design System tokens, vector/shape drawables, and `ViewBean` trees (`edit_screen` / `create_custom_view` / raw XML via `ViewBeanParser`).
+3. **Chat-Image-to-Project-Asset & Built-in Icon / Vector Tools:**
+   - `import_chat_image`: copy an image attached in chat directly into the project's **Image Manager** (`drawable-xhdpi` + `jC.d(scId)`) or set it as the **Launcher Icon** (standard or adaptive).
+   - `import_builtin_icon` & `create_vector_drawable`: search/import icons from Sketchware Pro's built-in icon pack (`ImportIconActivity`) or create custom Material vector XML / shape / gradient / ripple drawables (`drawable/*.xml`).
+4. **Closed-Loop Visual Self-Check (`preview_screen`):**
+   - Render any screen or custom view offscreen to a `Bitmap` using Sketchware Pro's own `ViewPane` (same engine as `LayoutPreviewActivity`), report measured bounds / 0dp collapsed views / text clipping, and optionally return the rendered PNG to vision models so the agent can compare its built layout directly against the user's reference screenshot.
+
+---
+
+### Phase 3 — Fragments, BottomSheets, Drawers, Root Layouts & Cleanup Tools
+**Goal:** Support multi-tab architectures (`TabLayout` + `ViewPager`), bottom sheets, navigation drawers, and full cleanup.
+1. **Fragments (`create_fragment` / `FragmentAdapter`):**
+   - Create, inspect, edit, wire, and delete **Fragments**, **DialogFragments**, and **BottomSheetFragments** (`ManageViewActivity` / `AddViewActivity` file types), and wire `FragmentAdapter` components end-to-end.
+2. **Navigation Drawer (`_drawer_*`):**
+   - Inspect and edit `_drawer_<activity>` layouts when `OPTION_ACTIVITY_DRAWER` is enabled, and wire drawer widget events (`EVENT_TYPE_DRAWER_VIEW`).
+3. **Root Layout Conversion & Raw XML Layout Import:**
+   - Convert root layout types (`InjectRootLayoutManager`) and support validated layout XML import via `ViewBeanParser` when recreating complex visual hierarchies.
+4. **Missing Cleanup Tools:**
+   - `remove_component` (safely checking event/block references first) and `delete_custom_view` (checking `ListView`/`RecyclerView` `customView` bindings first).
+
+---
+
+### Phase 4 — Structured Resource Editor (`res/values`), Menus, Animations & Fonts/Sounds
+**Goal:** Full control over Android resources, dark-mode palettes, toolbar menus, animations, typography, and audio.
+1. **Structured Resource Editor (`edit_resources`):**
+   - Manage `strings.xml`, `colors.xml`, `styles.xml` / themes, and `arrays.xml` using the exact formats of `StringsEditorManager`, `ColorsEditorManager`, `StylesEditorManager`, and `ArraysEditorManager`.
+2. **Raw `res/` XML Manager (`manage_res_file`):**
+   - Create, read, edit, and delete XML files under `res/drawable/`, `res/menu/`, `res/anim/`, `res/xml/`, and `res/values-night/` (validated as well-formed XML before saving).
+3. **Font Manager & Sound Manager (`manage_fonts`, `manage_sounds`):**
+   - List/import/delete `.ttf`/`.otf` fonts (`assets/fonts`) and audio clips (`res/raw`) through `jC.d(scId)` so `setTypeface` and `MediaPlayer`/`SoundPool` blocks work end-to-end.
+
+---
+
+### Phase 5 — Java / Kotlin Manager, Assets Manager & Native Libraries
+**Goal:** Let Sketchware Pro projects combine visual blocks with real `.java` / `.kt` classes and bundled assets.
+1. **Java & Kotlin Manager (`manage_source_files`):**
+   - Create, read, edit, and delete `.java` and `.kt` files under `.sketchware/data/<sc_id>/files/java/` (matching `ManageJavaActivity` and `KotlinCompilerBridge`), including custom RecyclerView adapters, data models, Services, BroadcastReceivers, and utility classes.
+2. **Assets Manager (`manage_assets`):**
+   - Create, read, edit, and delete text/JSON/HTML/CSS/JS files in `.sketchware/data/<sc_id>/files/assets/` (`ManageAssetsActivity`).
+3. **Native Libraries (`list_native_libs`):**
+   - Inspect ABI `.so` folders (`armeabi-v7a`, `arm64-v8a`, `x86`, `x86_64`) managed by `ManageNativelibsActivity` and surface ABI mismatches cleanly.
+
+---
+
+### Phase 6 — Full Pro Events, Component Callbacks, Custom Blocks & Command Blocks
+**Goal:** 100% coverage of Sketchware Pro's extensibility system.
+1. **All Activity, Menu & Component Events:**
+   - Complete wiring and event-argument scoping for `onCreateOptionsMenu`, `onOptionsItemSelected`, `onActivityResult`, `onSaveInstanceState`, `onTabLayoutNewTabAdded`, custom added events (`ManageEvent` / `EventsHandler`), and every callback on `RequestNetwork`, `FirebaseDB`, `FirebaseAuth`, `FirebaseStorage`, `FilePicker`, `Camera`, `SpeechToText`, `LocationManager`, `BluetoothConnect`, and `FragmentAdapter`.
+2. **User Custom Blocks & Developer Managers (`CustomBlocksManager`, `BlocksManager`, `ComponentsHandler`):**
+   - Dynamically load user-installed Custom Blocks (`.sketchware/resources/block/My Block/block.json`) and Custom Components (`ComponentsHandler`) into the agent's block/component tables so custom blocks work automatically, plus optional creation of reusable custom blocks/components.
+3. **XML & Java Command Blocks (`ManageXMLCommandActivity` / `CommandBlock`):**
+   - Create, list, edit, and delete Pro Command Blocks that inject or transform generated Java/XML at compile time.
+
+---
+
+### Phase 7 — AndroidManifest Injection, AppCompat XML Injection & Pro Project Settings
+**Goal:** Everything outside individual screens that controls how Android installs, themes, and compiles the app.
+1. **AndroidManifest Manager (`manage_manifest`):**
+   - Per-Activity manifest attributes (`screenOrientation`, `windowSoftInputMode`, `configChanges`, `exported`, `launchMode`), intent-filters / deep links / share targets, `<application>` attributes, and custom `<service>`, `<receiver>`, `<provider>`, and `<meta-data>` tags (`AndroidManifestInjector`).
+2. **AppCompat XML Injection (`manage_appcompat_injection`):**
+   - Read/write `.sketchware/data/<sc_id>/injection/appcompat/<screen>` (`AppCompatInjection`) to customize `CoordinatorLayout`, `AppBarLayout`, `Toolbar`, and `FloatingActionButton` XML attributes.
+3. **Pro Project Settings, ViewBinding, ProGuard/R8 & StringFog (`edit_project_settings`):**
+   - Update app name, package name, version code/name (`MyProjectSettingActivity` / `VersionDialog`), `ProjectSettings` (`min_sdk`, `target_sdk`, `custom_application`, `enable_viewbinding`, `disable_old_methods`), **ProGuard / R8** rules (`ProguardHandler`), and **StringFog** (`StringfogHandler`).
+
+---
+
+### Phase 8 — Source Inspector, Runtime Crash Logcat Reader, Collections & Release Packaging (`.aab` / Signing / `.swb`)
+**Goal:** Self-debugging, cross-project reuse, and Play Store–ready outputs.
+1. **Generated Source Inspector (`inspect_generated_source`):**
+   - Generate and read the exact `.java`, `res/layout/*.xml`, and `AndroidManifest.xml` output (`Jx` / `SrcViewerActivity`) so the agent can pinpoint tricky `javac` or `aapt2` errors by line number.
+2. **Runtime Crash & Logcat Reader (`read_app_logs`):**
+   - Read recent runtime logs / `AndroidRuntime` stack traces filtered to the project's package (`LogReaderActivity` + `CompileErrorSaver`) so when a user says *"It crashed when I tapped Save"*, the agent sees the exact stack trace and fixes it.
+3. **Collections Manager (`manage_collections`):**
+   - Save and import reusable **MoreBlock Collections**, **Widget Collections**, and **Block Collections** (`ManageCollectionActivity`, `MoreblockImporter`).
+4. **Release Packaging (`build_app_bundle`, `export_backup`):**
+   - Build Play Store `.aab` Android App Bundles (`AppBundleCompiler`), sign release builds with a user keystore (`TestkeySignBridge`), and export `.swb` project backups (`BackupFactory`).

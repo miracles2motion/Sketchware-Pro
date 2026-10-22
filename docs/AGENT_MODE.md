@@ -1923,5 +1923,21 @@ logs exposed the rest of the same class:
    - `describeBlock` resolves `@id` reporter beans recursively (`getVar`, `getArg`, nested reporters, `asd*`) instead of rendering opaque `(a value)` in `get_event_logic` and `AgentExport`.
    - `show_list` auto-resolves the screen's sole string list when `"list"` is omitted and lists declared string lists in errors; `AgentLoop` retries transient `NETWORK` and HTTP `500`/`502`/`503`/`504` errors up to twice with backoff (`model_retry` logged in the export).
 
+## Wave 37 / Phase 1 — Libraries, Material 3, Maven/Local Libraries, Permissions & Plan/Resume Strip Fixes
+
+1. **Implementation Plan progress persistence & step deduplication (`AgentJournal`, `AgentTools`, `AgentFragment`)**:
+   - Fixed `AgentJournal.setPlan`, which previously returned early on existing plans without applying `doneSteps` or `currentStep` and appended duplicate numbered steps (`1, 2, 3, 2, 3...`) whenever the model re-sent slightly reworded steps.
+   - `setPlan` now heals legacy duplicate steps (`dedupePlanSteps`), normalizes leading step numbers/bullets, preserves settled step wording/order, applies `done_steps`/`current_step` monotonically to disk, and supports progress-only `set_plan` calls without requiring `steps` to be re-sent.
+   - `AgentFragment` updates a live `Plan (X/Y)` badge on the Plan chip, renders scrollable interactive rows in `showPlanDialog()` (tap to mark/unmark done), and `completeFinalBuildStepIfReady` advances the final build milestone when `build_project` succeeds.
+2. **Floating Working / Resume Strip (`taskStrip` in `AgentFragment`, `AgentLoop`, `AgentJournal`)**:
+   - Fixed `AgentLoop` passing `cancelled` (`true`) as `done` to `closeTask` during cancelled API requests (which previously marked stopped turns `"done"` and hid the **Resume** button), fixed unreachable `E_ALREADY_DONE`/`E_ALREADY_SET` branches in `proposeAndExecute`, and stopped `AgentJournal.brief` from resurrecting old `"stopped"` tasks after a newer `"done"` task.
+   - Added `Listener.onStateChanged()` and `liveStepLabel` wiring so `taskStrip` updates live while running (`Step X/Y · <current tool/approval>`), opens the Plan/Task dialog on tap, shows **Resume** + **Dismiss** immediately when stopped/paused, and resumes without overwriting drafts in `chatInput`.
+3. **Phase 1 Project Setup Tools (`AgentSetup`, `AgentTools`, `AgentExport`)**:
+   - `configure_library`: configures AppCompat, Material 3 (`dynamic_colors`, `DayNight`/`Light`/`Dark` theme), Firebase (`google-services.json` parsing or explicit fields), AdMob (App ID, ad units, test devices), and Google Maps (API key) via `ManageLibraryActivity.saveLibraryConfiguration()`'s exact `jC` persistence sequence.
+   - `manage_permissions`: adds/removes normalized Android Manifest permissions in `.sketchware/data/<sc_id>/permission` and supports `auto_add_recommended=true` powered by `AgentSetup.auditPrerequisites(scId)`.
+   - `list_local_libraries` & `manage_local_libraries`: inspects and toggles downloaded local libraries (`.sketchware/data/<sc_id>/local_library`) and Excluded Built-in Libraries (`.sketchware/data/<sc_id>/excluded_library`).
+   - `download_maven_library`: downloads, unzips, D8-dexes, and enables external `group:artifact:version` Maven dependencies via Sketchware Pro's `DependencyResolver`.
+
+
 
 

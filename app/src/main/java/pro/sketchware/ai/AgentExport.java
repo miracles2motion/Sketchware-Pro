@@ -366,6 +366,11 @@ public final class AgentExport {
         if (setup.size() > 0) {
             env.add("libraries", setup);
         }
+        env.add("permissions", AgentSetup.permissions(scId));
+        env.add("local_libraries", AgentSetup.localLibraries(scId));
+        env.add("excluded_builtin_libraries",
+                AgentSetup.excludedBuiltInLibraries(scId));
+        env.add("prerequisite_audit", AgentSetup.auditPrerequisites(scId));
         return env;
     }
 
