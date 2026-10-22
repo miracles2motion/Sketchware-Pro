@@ -685,6 +685,24 @@ public final class AgentExport {
                         AgentResources.listRawResourceFiles(scId, null));
             } catch (Exception ignored) {
             }
+            try {
+                JsonArray srcArr = new JsonArray();
+                for (AgentSources.SourceFileInfo s
+                        : AgentSources.listSourceFiles(scId)) {
+                    JsonObject so = new JsonObject();
+                    so.addProperty("path", s.relativePath);
+                    so.addProperty("fqcn", s.fqcn);
+                    so.addProperty("language", s.language);
+                    so.addProperty("manifest_role", s.manifestRole);
+                    so.addProperty("bytes", s.bytes);
+                    srcArr.add(so);
+                }
+                state.add("source_files", srcArr);
+                state.add("assets", AgentSources.listAssets(scId, ""));
+                state.add("native_libraries",
+                        AgentSources.inspectNativeLibraries(scId));
+            } catch (Exception ignored) {
+            }
             java.util.HashMap<String, Object> meta = a.a.a.lC.b(scId);
             JsonObject iconInfo = new JsonObject();
             iconInfo.addProperty("custom_icon",

@@ -3461,15 +3461,23 @@ public final class AgentLogic {
                     }
                     ProjectFileBean target =
                             SketchwareProjects.findActivity(scId, screen);
-                    if (target == null) {
+                    String customManifestActivity = target == null
+                            ? AgentSources.findManifestActivityFqcn(
+                                    scId, screen)
+                            : null;
+                    if (target == null && customManifestActivity == null) {
                         throw new AgentTools.ToolException(
                                 "E_BAD_BLOCK",
                                 "There is no screen called " + screen
                                         + " in this project to open. "
-                                        + "Create it first, or check "
-                                        + "list_activities.");
+                                        + "Create it first with "
+                                        + "create_activity or "
+                                        + "write_source_file "
+                                        + "(register_in_manifest=\"activity\"), "
+                                        + "or check list_activities.");
                     }
-                    if (SketchwareProjects.isDialogFragment(target)) {
+                    if (target != null
+                            && SketchwareProjects.isDialogFragment(target)) {
                         throw new AgentTools.ToolException(
                                 "E_FRAGMENT_NOT_ACTIVITY",
                                 SketchwareProjects.activityName(target)
@@ -3482,7 +3490,8 @@ public final class AgentLogic {
                                                 .activityName(target)
                                         + "\"} instead of open_screen.");
                     }
-                    if (SketchwareProjects.isFragment(target)) {
+                    if (target != null
+                            && SketchwareProjects.isFragment(target)) {
                         throw new AgentTools.ToolException(
                                 "E_FRAGMENT_NOT_ACTIVITY",
                                 SketchwareProjects.activityName(target)
@@ -3533,7 +3542,9 @@ public final class AgentLogic {
                         }
                         componentId = componentToCreate;
                     }
-                    String targetName = SketchwareProjects.activityName(target);
+                    String targetName = target != null
+                            ? SketchwareProjects.activityName(target)
+                            : customManifestActivity;
                     BlockBean setScreen = newBean("intentSetScreen",
                             " ");
                     setScreen.parameters.add(componentId);
@@ -3548,8 +3559,61 @@ public final class AgentLogic {
                     addExpect("startActivity(" + componentId,
                             "Open " + targetName);
                     setScreen.nextBlock = Integer.parseInt(start.id);
-                    lines.add(indent(depth) + "Open "
-                            + SketchwareProjects.activityName(target));
+                    lines.add(indent(depth) + "Open " + targetName);
+                    return setScreen;
+                }
+                case "set_intent_screen", "intent_set_screen",
+                        "set_intent_class" -> {
+                    String componentId = stringOf(op, "component");
+                    if (componentId.isEmpty()) {
+                        componentId = soleComponentOf(
+                                ComponentBean.COMPONENT_TYPE_INTENT);
+                    }
+                    Integer type = components.get(componentId);
+                    if (type == null
+                            || type != ComponentBean.COMPONENT_TYPE_INTENT) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                missingComponentMessage(componentId,
+                                        ComponentBean.COMPONENT_TYPE_INTENT));
+                    }
+                    String asked = stringOf(op, "screen");
+                    if (asked.isEmpty()) asked = stringOf(op, "class");
+                    if (asked.isEmpty()) asked = stringOf(op, "to");
+                    ProjectFileBean act = SketchwareProjects
+                            .findActivity(scId, asked);
+                    String resolvedClass = null;
+                    if (act != null && !SketchwareProjects.isFragment(act)) {
+                        resolvedClass = SketchwareProjects.activityName(act);
+                    } else {
+                        resolvedClass = AgentSources
+                                .findManifestActivityFqcn(scId, asked);
+                        if (resolvedClass == null) {
+                            resolvedClass = AgentSources
+                                    .findManifestServiceFqcn(scId, asked);
+                        }
+                        if (resolvedClass == null) {
+                            resolvedClass = AgentSources
+                                    .findManifestReceiverFqcn(scId, asked);
+                        }
+                    }
+                    if (resolvedClass == null || resolvedClass.isEmpty()) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "Unknown target class \"" + asked
+                                        + "\" for set_intent_screen. Pass a "
+                                        + "screen Activity or a manifest-"
+                                        + "registered custom Activity, "
+                                        + "Service, or BroadcastReceiver.");
+                    }
+                    BlockBean setScreen = newBean("intentSetScreen", " ");
+                    setScreen.parameters.add(componentId);
+                    setScreen.parameters.add(resolvedClass);
+                    allStatements.add(setScreen);
+                    addExpect(componentId + ".setClass",
+                            "Point " + componentId + " at " + resolvedClass);
+                    lines.add(indent(depth) + "Point " + componentId
+                            + " at " + resolvedClass);
                     return setScreen;
                 }
                 case "set_variable" -> {
@@ -3708,23 +3772,33 @@ public final class AgentLogic {
                     return bean;
                 }
                 case "start_service", "stop_service" -> {
-                    // startService/stopService over a screen class,
-                    // resolved like open_screen resolves screens.
-                    String screen = stringOf(op, "screen");
-                    ProjectFileBean target =
-                            SketchwareProjects.findActivity(scId,
-                                    screen);
-                    if (target == null) {
+                    String asked = stringOf(op, "service");
+                    if (asked.isEmpty()) {
+                        asked = stringOf(op, "class");
+                    }
+                    if (asked.isEmpty()) {
+                        asked = stringOf(op, "screen");
+                    }
+                    String targetName = AgentSources.findManifestServiceFqcn(
+                            scId, asked);
+                    if (targetName == null) {
+                        ProjectFileBean target =
+                                SketchwareProjects.findActivity(scId, asked);
+                        if (target != null) {
+                            targetName = SketchwareProjects
+                                    .activityName(target);
+                        }
+                    }
+                    if (targetName == null || targetName.isEmpty()) {
                         throw new AgentTools.ToolException(
                                 "E_BAD_BLOCK",
-                                "There is no screen called " + screen
-                                        + " in this project. Create "
-                                        + "it first, or check "
-                                        + "list_activities.");
+                                "There is no Service called \"" + asked
+                                        + "\" registered in this project. "
+                                        + "Create it first with "
+                                        + "write_source_file "
+                                        + "(register_in_manifest=\"service\").");
                     }
                     boolean start = "start_service".equals(kind);
-                    String targetName =
-                            SketchwareProjects.activityName(target);
                     BlockBean bean = newBean(start ? "startService"
                             : "stopService", " ");
                     bean.parameters.add(targetName);

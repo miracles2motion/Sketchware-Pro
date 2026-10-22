@@ -135,6 +135,9 @@ public final class AgentTools {
         register(new GetValuesResources());
         register(new ReadResourceXml());
         register(new ListFontAndSoundSources());
+        register(new ReadSourceFiles());
+        register(new ReadAssets());
+        register(new InspectNativeLibs());
         register(new AskColor());
         register(new AskChoice());
         register(new SetStyleBrief());
@@ -172,6 +175,12 @@ public final class AgentTools {
         register(new DeleteProjectFont());
         register(new ImportProjectSound());
         register(new DeleteProjectSound());
+        register(new WriteSourceFile());
+        register(new DeleteSourceFile());
+        register(new WriteAsset());
+        register(new DeleteAsset());
+        register(new ImportNativeLib());
+        register(new DeleteNativeLib());
         register(new ConfigureLibrary());
         register(new ManagePermissions());
         register(new ManageLocalLibraries());
@@ -815,6 +824,17 @@ public final class AgentTools {
             result.add("fragments", fragments);
             result.add("drawers", drawers);
             result.add("custom_views", customViews);
+            try {
+                pro.sketchware.utility.FileResConfig frc =
+                        new pro.sketchware.utility.FileResConfig(scId);
+                result.add("custom_manifest_activities",
+                        namesJsonAll(frc.getJavaManifestList()));
+                result.add("custom_manifest_services",
+                        namesJsonAll(frc.getServiceManifestList()));
+                result.add("custom_manifest_receivers",
+                        namesJsonAll(frc.getBroadcastManifestList()));
+            } catch (Exception ignored) {
+            }
             return result;
         }
     }
@@ -9612,6 +9632,767 @@ public final class AgentTools {
                 throw new ToolException("E_SOUND_DELETE_FAILED",
                         "Deleting sound \"" + soundName + "\" failed: "
                                 + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    // =====================================================================
+    // Phase 5: Java / Kotlin Manager, Assets Manager & Native Libraries
+    // =====================================================================
+
+    /**
+     * read_source_files: lists or reads custom .java and .kt classes under
+     * files/java/ (plus AndroidManifest component registrations).
+     */
+    private static final class ReadSourceFiles implements Tool {
+        @Override
+        public String name() {
+            return "read_source_files";
+        }
+
+        @Override
+        public String description() {
+            return "Lists custom Java (.java) and Kotlin (.kt) source files "
+                    + "in the working project's Java Manager (when \"path\" "
+                    + "is omitted), including package names, FQCNs, and "
+                    + "AndroidManifest roles (activity, service, receiver, "
+                    + "none), or reads the full source code of one file.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("path", stringSchema(
+                    "Optional relative path under files/java/ (e.g. "
+                            + "NoteModel.java or adapters/FeedAdapter.kt) to "
+                            + "read its full source code"));
+            return AgentTools.parameters(properties);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            String p = stringArg(args, "path");
+            return p.isEmpty() ? "Listed Java & Kotlin source files"
+                    : "Read source file " + p;
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String path = stringArg(args, "path");
+            JsonObject result = new JsonObject();
+            if (path.isEmpty()) {
+                JsonArray arr = new JsonArray();
+                for (AgentSources.SourceFileInfo info
+                        : AgentSources.listSourceFiles(scId)) {
+                    JsonObject o = new JsonObject();
+                    o.addProperty("path", info.relativePath);
+                    o.addProperty("class_name", info.className);
+                    o.addProperty("package", info.packageName);
+                    o.addProperty("fqcn", info.fqcn);
+                    o.addProperty("language", info.language);
+                    o.addProperty("manifest_role", info.manifestRole);
+                    o.addProperty("bytes", info.bytes);
+                    arr.add(o);
+                }
+                result.add("files", arr);
+                result.addProperty("count", arr.size());
+                result.add("kotlin_compiler_plugins",
+                        namesJsonAll(
+                                AgentSources.listKotlinCompilerPlugins(scId)));
+                return result;
+            }
+            String cleanRel = AgentSources.normalizeSourceRelPath(path);
+            String code = AgentSources.readSourceFile(scId, cleanRel);
+            String expectedPkg =
+                    AgentSources.expectedPackageForRelPath(scId, cleanRel);
+            String pkg = AgentSources.extractPackageName(code, expectedPkg);
+            String leaf = cleanRel.contains("/")
+                    ? cleanRel.substring(cleanRel.lastIndexOf('/') + 1)
+                    : cleanRel;
+            String cls = leaf.substring(0, leaf.lastIndexOf('.'));
+            result.addProperty("path", cleanRel);
+            result.addProperty("fqcn", pkg + "." + cls);
+            result.addProperty("language",
+                    cleanRel.endsWith(".kt") ? "kotlin" : "java");
+            result.addProperty("code", code);
+            return result;
+        }
+    }
+
+    /**
+     * write_source_file: creates or updates a .java or .kt class in
+     * files/java/ and optionally registers it in AndroidManifest.xml.
+     */
+    private static final class WriteSourceFile implements Tool {
+        @Override
+        public String name() {
+            return "write_source_file";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes creating or updating a Java (.java) or Kotlin "
+                    + "(.kt) source file in the working project's Java "
+                    + "Manager (files/java/<path>). Kotlin stdlib is added "
+                    + "automatically whenever .kt files exist. Pass "
+                    + "register_in_manifest as \"activity\", \"service\", or "
+                    + "\"receiver\" when the class is a custom Activity, "
+                    + "Service, or BroadcastReceiver that must be declared "
+                    + "in AndroidManifest.xml.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("path", stringSchema(
+                    "Relative file path ending in .java or .kt, e.g. "
+                            + "NoteModel.java, adapters/FeedAdapter.kt, "
+                            + "services/SyncService.java"));
+            properties.add("code", stringSchema(
+                    "Complete Java or Kotlin source code (package line is "
+                            + "auto-added from project package + subfolder "
+                            + "when omitted)"));
+            properties.add("register_in_manifest", stringSchema(
+                    "Optional AndroidManifest registration: none (default "
+                            + "for new files), activity, service, receiver, "
+                            + "or keep (preserves existing role on update)"));
+            return AgentTools.parameters(properties, "path", "code");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to write " + stringArg(args, "path");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String cleanRel = AgentSources.normalizeSourceRelPath(
+                    stringArg(args, "path"));
+            String rawCode = stringArg(args, "code");
+            if (rawCode.trim().isEmpty()) {
+                throw new ToolException("E_EMPTY_SOURCE",
+                        "Pass non-empty Java or Kotlin source in \"code\".");
+            }
+            boolean isKt = cleanRel.endsWith(".kt");
+            String expectedPkg =
+                    AgentSources.expectedPackageForRelPath(scId, cleanRel);
+            String finalCode = AgentSources.ensurePackageDeclaration(
+                    rawCode, expectedPkg, isKt);
+            String pkg = AgentSources.extractPackageName(
+                    finalCode, expectedPkg);
+            String leaf = cleanRel.contains("/")
+                    ? cleanRel.substring(cleanRel.lastIndexOf('/') + 1)
+                    : cleanRel;
+            String cls = leaf.substring(0, leaf.lastIndexOf('.'));
+            String fqcn = pkg + "." + cls;
+            AgentSources.checkNoScreenClassCollision(scId, cleanRel, fqcn);
+            String role = AgentSources.normalizeManifestRole(
+                    stringArg(args, "register_in_manifest"));
+
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("path", cleanRel);
+            clean.addProperty("code", finalCode);
+            clean.addProperty("register_in_manifest", role);
+            String roleNote = role.isEmpty() || "none".equals(role)
+                    ? ""
+                    : " and register as <" + role + "> in AndroidManifest";
+            return new AgentProposal(name(), clean, scId,
+                    "Write " + (isKt ? "Kotlin" : "Java") + " file " + leaf,
+                    "Save files/java/" + cleanRel + " (" + fqcn + ") in "
+                            + project.name + roleNote + ".",
+                    finalCode);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String path = stringArg(proposal.args, "path");
+            String code = stringArg(proposal.args, "code");
+            String role = stringArg(proposal.args, "register_in_manifest");
+            try {
+                AgentSources.SourceFileInfo saved =
+                        AgentSources.writeSourceFile(scId, path, code, role);
+                JsonObject result = new JsonObject();
+                result.addProperty("path", saved.relativePath);
+                result.addProperty("fqcn", saved.fqcn);
+                result.addProperty("language", saved.language);
+                result.addProperty("manifest_role", saved.manifestRole);
+                result.addProperty("bytes", saved.bytes);
+                result.addProperty("verified",
+                        "Wrote files/java/" + saved.relativePath + " ("
+                                + saved.fqcn + ", manifest_role="
+                                + saved.manifestRole + ").");
+                return result;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_WRITE_SOURCE_FAILED",
+                        "Writing files/java/" + path + " failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /**
+     * delete_source_file: deletes a custom .java or .kt file and cleans its
+     * AndroidManifest component entry if registered.
+     */
+    private static final class DeleteSourceFile implements Tool {
+        @Override
+        public String name() {
+            return "delete_source_file";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes deleting a custom .java or .kt source file from "
+                    + "files/java/<path> and removing any matching "
+                    + "AndroidManifest <activity>/<service>/<receiver> entry.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("path", stringSchema(
+                    "Relative path under files/java/, e.g. NoteModel.java"));
+            return AgentTools.parameters(properties, "path");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to delete " + stringArg(args, "path");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String cleanRel = AgentSources.normalizeSourceRelPath(
+                    stringArg(args, "path"));
+            AgentSources.readSourceFile(scId, cleanRel);
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("path", cleanRel);
+            return new AgentProposal(name(), clean, scId,
+                    "Delete " + cleanRel,
+                    "Remove files/java/" + cleanRel + " from " + project.name
+                            + ".",
+                    "Also cleans any AndroidManifest component registration "
+                            + "for this class.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String path = stringArg(proposal.args, "path");
+            try {
+                AgentSources.deleteSourceFile(scId, path);
+                JsonObject result = new JsonObject();
+                result.addProperty("deleted", "files/java/" + path);
+                result.addProperty("verified",
+                        "Deleted files/java/" + path + ".");
+                return result;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_DELETE_SOURCE_FAILED",
+                        "Deleting files/java/" + path + " failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /**
+     * read_assets: lists or reads files in the working project's Assets
+     * Manager (files/assets/).
+     */
+    private static final class ReadAssets implements Tool {
+        @Override
+        public String name() {
+            return "read_assets";
+        }
+
+        @Override
+        public String description() {
+            return "Lists packaged asset files in assets/ (when \"path\" is "
+                    + "omitted or names a folder), or reads the content of "
+                    + "assets/<path> (JSON, HTML, CSS, JS, SVG, CSV, shaders, "
+                    + "or small binary files).";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("path", stringSchema(
+                    "Optional relative asset file or folder path, e.g. "
+                            + "data/items.json or web/index.html"));
+            return AgentTools.parameters(properties);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            String p = stringArg(args, "path");
+            return p.isEmpty() ? "Listed project assets"
+                    : "Read assets/" + p;
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String rawPath = stringArg(args, "path");
+            if (rawPath.isEmpty()) {
+                JsonArray files = AgentSources.listAssets(scId, "");
+                JsonObject res = new JsonObject();
+                res.add("assets", files);
+                res.addProperty("count", files.size());
+                return res;
+            }
+            String cleanRel = AgentSources.normalizeAssetRelPath(
+                    rawPath, false);
+            java.io.File target = new java.io.File(
+                    new pro.sketchware.utility.FilePathUtil()
+                            .getPathAssets(scId),
+                    cleanRel);
+            if (target.isDirectory()) {
+                JsonArray files = AgentSources.listAssets(scId, cleanRel);
+                JsonObject res = new JsonObject();
+                res.addProperty("folder", cleanRel);
+                res.add("assets", files);
+                res.addProperty("count", files.size());
+                return res;
+            }
+            return AgentSources.readAsset(scId, cleanRel);
+        }
+    }
+
+    /**
+     * write_asset: creates or updates a file in files/assets/<path>.
+     */
+    private static final class WriteAsset implements Tool {
+        @Override
+        public String name() {
+            return "write_asset";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes creating or updating a file in the project's "
+                    + "Assets Manager (assets/<path>, accessible at runtime "
+                    + "via getAssets().open(\"<path>\"), open_asset / "
+                    + "asset_text blocks, or WebView "
+                    + "file:///android_asset/<path>). JSON assets are "
+                    + "validated automatically.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("path", stringSchema(
+                    "Relative path inside assets/, e.g. data/questions.json "
+                            + "or web/index.html"));
+            properties.add("content", stringSchema(
+                    "Optional UTF-8 text content (HTML, JSON, JS, CSS, CSV, "
+                            + "SVG, etc.)"));
+            properties.add("base64", stringSchema(
+                    "Optional base64-encoded binary content"));
+            properties.add("source_file_path", stringSchema(
+                    "Optional local file path on device to copy into assets/"));
+            return AgentTools.parameters(properties, "path");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to write assets/" + stringArg(args, "path");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String cleanRel = AgentSources.normalizeAssetRelPath(
+                    stringArg(args, "path"), false);
+            String textContent = args != null && args.has("content")
+                    && !args.get("content").isJsonNull()
+                    ? args.get("content").getAsString() : null;
+            String b64 = stringArg(args, "base64");
+            String srcPath = stringArg(args, "source_file_path");
+            byte[] data = AgentSources.prepareAssetBytes(
+                    cleanRel, textContent, b64, srcPath);
+
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("path", cleanRel);
+            if (textContent != null) clean.addProperty("content", textContent);
+            if (!b64.isEmpty()) clean.addProperty("base64", b64);
+            if (!srcPath.isEmpty()) {
+                clean.addProperty("source_file_path", srcPath);
+            }
+            String preview = textContent != null
+                    ? (textContent.length() > 1200
+                            ? textContent.substring(0, 1200) + "\n..."
+                            : textContent)
+                    : ("Binary asset (" + data.length + " bytes)");
+            return new AgentProposal(name(), clean, scId,
+                    "Write assets/" + cleanRel,
+                    "Save assets/" + cleanRel + " (" + data.length
+                            + " bytes) in " + project.name + ".",
+                    preview);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            JsonObject a = proposal.args;
+            String cleanRel = stringArg(a, "path");
+            String textContent = a.has("content") && !a.get("content").isJsonNull()
+                    ? a.get("content").getAsString() : null;
+            String b64 = stringArg(a, "base64");
+            String srcPath = stringArg(a, "source_file_path");
+            byte[] data = AgentSources.prepareAssetBytes(
+                    cleanRel, textContent, b64, srcPath);
+            try {
+                java.io.File saved =
+                        AgentSources.writeAsset(scId, cleanRel, data);
+                JsonObject result = new JsonObject();
+                result.addProperty("path", cleanRel);
+                result.addProperty("bytes", saved.length());
+                result.addProperty("verified",
+                        "Wrote and verified assets/" + cleanRel + " ("
+                                + saved.length() + " bytes).");
+                return result;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_WRITE_ASSET_FAILED",
+                        "Writing assets/" + cleanRel + " failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /**
+     * delete_asset: removes an asset file or folder from files/assets/.
+     */
+    private static final class DeleteAsset implements Tool {
+        @Override
+        public String name() {
+            return "delete_asset";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes deleting a file or folder from the project's "
+                    + "Assets Manager (assets/<path>).";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("path", stringSchema(
+                    "Relative asset path to delete, e.g. data/old.json"));
+            return AgentTools.parameters(properties, "path");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to delete assets/" + stringArg(args, "path");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String cleanRel = AgentSources.normalizeAssetRelPath(
+                    stringArg(args, "path"), false);
+            java.io.File target = new java.io.File(
+                    new pro.sketchware.utility.FilePathUtil()
+                            .getPathAssets(scId),
+                    cleanRel);
+            if (!target.exists()) {
+                throw new ToolException("E_ASSET_NOT_FOUND",
+                        "Asset assets/" + cleanRel + " does not exist.");
+            }
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("path", cleanRel);
+            return new AgentProposal(name(), clean, scId,
+                    "Delete assets/" + cleanRel,
+                    "Remove assets/" + cleanRel + " from " + project.name
+                            + ".",
+                    "A project backup is saved before deletion.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String cleanRel = stringArg(proposal.args, "path");
+            try {
+                AgentSources.deleteAsset(scId, cleanRel);
+                JsonObject result = new JsonObject();
+                result.addProperty("deleted", "assets/" + cleanRel);
+                result.addProperty("verified",
+                        "Deleted assets/" + cleanRel + ".");
+                return result;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_DELETE_ASSET_FAILED",
+                        "Deleting assets/" + cleanRel + " failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /**
+     * inspect_native_libs: inspects .so JNI binaries across Android ABIs.
+     */
+    private static final class InspectNativeLibs implements Tool {
+        @Override
+        public String name() {
+            return "inspect_native_libs";
+        }
+
+        @Override
+        public String description() {
+            return "Inspects native JNI .so libraries in the working "
+                    + "project's Native Libraries Manager across ABIs "
+                    + "(arm64-v8a, armeabi-v7a, x86_64, x86), checks ELF "
+                    + "headers, and reports missing 64-bit or cross-ABI "
+                    + "mismatch warnings.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            return AgentTools.parameters(new JsonObject());
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Inspected native .so libraries";
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            return AgentSources.inspectNativeLibraries(scId);
+        }
+    }
+
+    /**
+     * import_native_lib: imports an ELF .so binary into native_libs/<abi>/.
+     */
+    private static final class ImportNativeLib implements Tool {
+        @Override
+        public String name() {
+            return "import_native_lib";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes importing a compiled ELF .so JNI library into "
+                    + "native_libs/<abi>/lib<name>.so, verifying ELF magic "
+                    + "and machine architecture against the target ABI.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("abi", stringSchema(
+                    "Target Android ABI: arm64-v8a, armeabi-v7a, x86_64, "
+                            + "x86, or armeabi"));
+            properties.add("source_file_path", stringSchema(
+                    "Local path to the .so file on device"));
+            properties.add("file_name", stringSchema(
+                    "Optional target filename matching lib<name>.so "
+                            + "(defaults to source filename)"));
+            return AgentTools.parameters(
+                    properties, "abi", "source_file_path");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to import native library for "
+                    + stringArg(args, "abi");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String abi = AgentSources.normalizeAbi(stringArg(args, "abi"));
+            String srcPath = stringArg(args, "source_file_path");
+            String targetName = stringArg(args, "file_name");
+            if (targetName.isEmpty() && !srcPath.isEmpty()) {
+                targetName = new java.io.File(srcPath.trim()).getName();
+            }
+            AgentSources.validateNativeLibImport(abi, srcPath, targetName);
+            java.io.File src = new java.io.File(srcPath.trim());
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("abi", abi);
+            clean.addProperty("source_file_path", srcPath);
+            clean.addProperty("file_name", targetName);
+            return new AgentProposal(name(), clean, scId,
+                    "Import " + abi + "/" + targetName,
+                    "Add native library " + targetName + " ("
+                            + (src.length() / 1024) + " KB) for ABI " + abi
+                            + " to " + project.name + ".",
+                    "ELF architecture verified as matching " + abi + ".");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String abi = stringArg(proposal.args, "abi");
+            String srcPath = stringArg(proposal.args, "source_file_path");
+            String fileName = stringArg(proposal.args, "file_name");
+            try {
+                java.io.File saved = AgentSources.importNativeLibrary(
+                        scId, abi, srcPath, fileName);
+                JsonObject result = new JsonObject();
+                result.addProperty("abi", abi);
+                result.addProperty("file", saved.getName());
+                result.addProperty("bytes", saved.length());
+                result.addProperty("verified",
+                        "Imported native_libs/" + abi + "/" + saved.getName()
+                                + ".");
+                return result;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_IMPORT_NATIVE_LIB_FAILED",
+                        "Importing native library failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /**
+     * delete_native_lib: removes a .so binary from native_libs/<abi>/.
+     */
+    private static final class DeleteNativeLib implements Tool {
+        @Override
+        public String name() {
+            return "delete_native_lib";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes deleting a native .so library from "
+                    + "native_libs/<abi>/<file_name>.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("abi", stringSchema(
+                    "Target Android ABI, e.g. arm64-v8a or armeabi-v7a"));
+            properties.add("file_name", stringSchema(
+                    "Native library filename, e.g. libcrypto.so"));
+            return AgentTools.parameters(properties, "abi", "file_name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to delete " + stringArg(args, "abi") + "/"
+                    + stringArg(args, "file_name");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String abi = AgentSources.normalizeAbi(stringArg(args, "abi"));
+            String fileName = AgentSources.normalizeSoFileName(
+                    stringArg(args, "file_name"));
+            java.io.File target = new java.io.File(
+                    new pro.sketchware.utility.FilePathUtil()
+                            .getPathNativelibs(scId),
+                    abi + "/" + fileName);
+            if (!target.exists()) {
+                throw new ToolException("E_NATIVE_LIB_NOT_FOUND",
+                        "Native library native_libs/" + abi + "/" + fileName
+                                + " does not exist.");
+            }
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("abi", abi);
+            clean.addProperty("file_name", fileName);
+            return new AgentProposal(name(), clean, scId,
+                    "Delete " + abi + "/" + fileName,
+                    "Remove native_libs/" + abi + "/" + fileName + " from "
+                            + project.name + ".",
+                    "A project backup is saved before deletion.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String abi = stringArg(proposal.args, "abi");
+            String fileName = stringArg(proposal.args, "file_name");
+            try {
+                AgentSources.deleteNativeLibrary(scId, abi, fileName);
+                JsonObject result = new JsonObject();
+                result.addProperty("deleted",
+                        "native_libs/" + abi + "/" + fileName);
+                result.addProperty("verified",
+                        "Deleted native_libs/" + abi + "/" + fileName + ".");
+                return result;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_DELETE_NATIVE_LIB_FAILED",
+                        "Deleting native_libs/" + abi + "/" + fileName
+                                + " failed: " + String.valueOf(e.getMessage()));
             }
         }
     }

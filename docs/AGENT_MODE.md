@@ -1981,6 +1981,17 @@ logs exposed the rest of the same class:
    - Imports `.ttf`/`.otf` fonts into `jC.d(scId).d` (`kC.j()`) from bundled APK fonts (`gilroy`, `jetbrains_mono`, `droid_sans_mono`), user Font Collection (`Np.g().f()`), or local font files (magic-byte + `Typeface.createFromFile` validation), committing via `kC.y() -> eC.a(kC) -> eC.k() -> commitProject -> kC.z() -> resetResourceManager`, with widget/block reference checks on delete.
    - Imports or synthesizes audio resources into `jC.d(scId).c` (`kC.o()`) from 44.1 kHz 16-bit PCM `.wav` procedural presets (`click`, `pop`, `success`, `complete`, `error`, `notification`, `alarm`) or custom `frequency_hz`/`duration_ms`/`waveform` tones, user Sound Collection (`Qp.g().f()`), or local `.mp3`/`.ogg`/`.wav`/`.m4a` files, ready for `MediaPlayer` (`mp_create`) and `SoundPool` (`load_sound`), and exported in `AgentExport`.
 
+## Wave 41 / Phase 5 — Java & Kotlin Source Manager, Manifest Component Registrations, Assets Manager & Native Libraries
+
+1. **Java & Kotlin Manager (`AgentSources`, `read_source_files`, `write_source_file`, `delete_source_file`)**:
+   - Reads, writes, and deletes `.java` and `.kt` classes under `.sketchware/data/<scId>/files/java/<path>` (compiled by ECJ in `ProjectBuilder` and `K2JVMCompiler` in `KotlinCompiler`, with `KotlinCompilerBridge` automatically adding `JETBRAINS_KOTLIN_STDLIB` whenever `.kt` files exist), plus lists `.jar` Kotlin compiler plugins in `files/kt_plugins/`.
+   - Automatically computes and inserts `package <projectPkg>[.<subDir>]` when omitted, prevents duplicate-class collisions with visual Sketchware screens, and manages `AndroidManifest.xml` `<activity>`, `<service>`, and `<receiver>` lists (`fpu.getManifestJava`, `getManifestService`, `getManifestBroadcast` consumed by `Ix.java:645-663`), automatically cleaning manifest entries on delete.
+   - Wired `AgentLogic` (`open_screen`, `set_intent_screen`, `start_service`, `stop_service`) and `list_activities` to resolve custom manifest-registered Java/Kotlin Activities, Services, and BroadcastReceivers alongside visual screens.
+2. **Assets Manager (`read_assets`, `write_asset`, `delete_asset`)**:
+   - Lists, reads (UTF-8 text or base64), validates (`.json` syntax verification), writes, and deletes files and nested folders under `.sketchware/data/<scId>/files/assets/<path>`, packaged directly into APK `assets/` for `open_asset`/`asset_text` blocks, `getAssets().open(...)`, and WebView `file:///android_asset/...`.
+3. **Native Libraries Manager (`inspect_native_libs`, `import_native_lib`, `delete_native_lib`)**:
+   - Lists, imports, and deletes `.so` JNI binaries across `arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`, and `armeabi` under `files/native_libs/<abi>/`, inspecting 20-byte ELF headers (`\x7FELF` + `e_machine`) to reject wrong-architecture `.so` imports and report missing `arm64-v8a` / cross-ABI mismatch warnings, with full state recorded in `AgentExport`.
+
 
 
 

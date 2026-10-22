@@ -96,14 +96,15 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 ---
 
-### Phase 5 — Java / Kotlin Manager, Assets Manager & Native Libraries
-**Goal:** Let Sketchware Pro projects combine visual blocks with real `.java` / `.kt` classes and bundled assets.
-1. **Java & Kotlin Manager (`manage_source_files`):**
-   - Create, read, edit, and delete `.java` and `.kt` files under `.sketchware/data/<sc_id>/files/java/` (matching `ManageJavaActivity` and `KotlinCompilerBridge`), including custom RecyclerView adapters, data models, Services, BroadcastReceivers, and utility classes.
-2. **Assets Manager (`manage_assets`):**
-   - Create, read, edit, and delete text/JSON/HTML/CSS/JS files in `.sketchware/data/<sc_id>/files/assets/` (`ManageAssetsActivity`).
-3. **Native Libraries (`list_native_libs`):**
-   - Inspect ABI `.so` folders (`armeabi-v7a`, `arm64-v8a`, `x86`, `x86_64`) managed by `ManageNativelibsActivity` and surface ABI mismatches cleanly.
+### Phase 5 — Java / Kotlin Manager, Assets Manager & Native Libraries (DONE)
+**Goal:** Let Sketchware Pro projects combine visual blocks with real `.java` / `.kt` classes, packaged assets, and JNI `.so` libraries (`63` registered tools).
+1. **Java & Kotlin Manager (`read_source_files`, `write_source_file`, `delete_source_file`):**
+   - Create, read, update, and delete `.java` and `.kt` classes under `.sketchware/data/<sc_id>/files/java/` (matching `ManageJavaActivity` + `KotlinCompilerBridge` auto-stdlib), auto-normalizing `package` declarations, guarding against visual screen class collisions, and managing `AndroidManifest.xml` `<activity>`, `<service>`, and `<receiver>` registrations (`fpu.getManifestJava`, `getManifestService`, `getManifestBroadcast`).
+   - Wired `open_screen`, `set_intent_screen`, and `start_service` / `stop_service` in `AgentLogic` to resolve custom manifest-registered Java/Kotlin Activities, Services, and BroadcastReceivers seamlessly alongside visual screens.
+2. **Assets Manager (`read_assets`, `write_asset`, `delete_asset`):**
+   - List, read, write (UTF-8 text with automatic `.json` validation, base64, or device file copy), and delete packaged files under `.sketchware/data/<sc_id>/files/assets/` (`ManageAssetsActivity` / `ResourceCompiler`).
+3. **Native Libraries (`inspect_native_libs`, `import_native_lib`, `delete_native_lib`):**
+   - Inspect ABI `.so` folders (`arm64-v8a`, `armeabi-v7a`, `x86_64`, `x86`, `armeabi`), verify ELF `\x7FELF` + `e_machine` headers against target ABIs, and surface 64-bit / cross-ABI mismatch warnings cleanly.
 
 ---
 
