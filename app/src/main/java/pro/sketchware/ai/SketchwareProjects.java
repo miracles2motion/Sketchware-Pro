@@ -232,7 +232,12 @@ public final class SketchwareProjects {
                         moreBlock.second == null ? moreBlock.first
                                 : moreBlock.second);
             }
-            summary.events = store.g(javaName).size();
+            java.util.ArrayList<com.besome.sketch.beans.BlockBean>
+                    initBlocks = store.a(javaName,
+                            "onCreate_initializeLogic");
+            summary.events = store.g(javaName).size()
+                    + (initBlocks != null && !initBlocks.isEmpty()
+                            ? 1 : 0);
         } catch (Exception ignored) {
             // An unreadable logic side reads as "nothing declared".
         }
@@ -272,6 +277,14 @@ public final class SketchwareProjects {
         }
         try {
             a.a.a.eC store = jC.a(scId);
+            java.util.ArrayList<com.besome.sketch.beans.BlockBean>
+                    initBlocks = store.a(activity.getJavaName(),
+                            "onCreate_initializeLogic");
+            if (initBlocks != null && !initBlocks.isEmpty()) {
+                lines.add("initializeLogic (" + initBlocks.size()
+                        + " block"
+                        + (initBlocks.size() == 1 ? "" : "s") + ")");
+            }
             for (com.besome.sketch.beans.EventBean event
                     : store.g(activity.getJavaName())) {
                 String line = event.targetId + " " + event.eventName;

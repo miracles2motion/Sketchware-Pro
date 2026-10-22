@@ -437,6 +437,93 @@ public final class AgentTools {
         }
     }
 
+    /**
+     * Reads a JSON array tool parameter, recovering cleanly when an
+     * OpenAI-compatible model serialises the array as a JSON string
+     * and throwing {@code E_BAD_JSON} (never a misleading count error
+     * or silent {@code null}) when that string has broken syntax.
+     */
+    private static JsonArray jsonArrayArg(JsonObject args, String key)
+            throws ToolException {
+        if (args == null || !args.has(key) || args.get(key) == null
+                || args.get(key).isJsonNull()) {
+            return null;
+        }
+        JsonElement elem = args.get(key);
+        if (elem.isJsonArray()) {
+            return elem.getAsJsonArray();
+        }
+        if (elem.isJsonPrimitive()
+                && elem.getAsJsonPrimitive().isString()) {
+            String raw = elem.getAsString().trim();
+            if (raw.isEmpty()) {
+                return null;
+            }
+            try {
+                JsonElement parsed = JsonParser.parseString(raw);
+                if (parsed != null && parsed.isJsonArray()) {
+                    return parsed.getAsJsonArray();
+                }
+            } catch (Exception firstError) {
+                if (raw.startsWith("[") && raw.endsWith("]")) {
+                    int diff = unquotedBraceDelta(raw);
+                    if (diff > 0 && diff <= 3) {
+                        StringBuilder sb = new StringBuilder(
+                                raw.substring(0, raw.length() - 1));
+                        for (int b = 0; b < diff; b++) {
+                            sb.append('}');
+                        }
+                        sb.append(']');
+                        String repaired = sb.toString();
+                        try {
+                            JsonElement parsed =
+                                    JsonParser.parseString(repaired);
+                            if (parsed != null && parsed.isJsonArray()) {
+                                return parsed.getAsJsonArray();
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+                throw new ToolException("E_BAD_JSON",
+                        "\"" + key + "\" was passed as a malformed JSON "
+                                + "string ("
+                                + String.valueOf(firstError.getMessage())
+                                + "). Pass \"" + key + "\" directly as a "
+                                + "JSON array [...] (not a quoted "
+                                + "string) with matching braces.");
+            }
+        }
+        throw new ToolException("E_BAD_JSON",
+                "\"" + key + "\" must be a JSON array [...].");
+    }
+
+    private static int unquotedBraceDelta(String raw) {
+        boolean inString = false;
+        boolean escaped = false;
+        int delta = 0;
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (c == '\\' && inString) {
+                escaped = true;
+                continue;
+            }
+            if (c == '"') {
+                inString = !inString;
+                continue;
+            }
+            if (!inString) {
+                if (c == '{') delta++;
+                else if (c == '}') delta--;
+            }
+        }
+        return delta;
+    }
+
     private static JsonArray intArrayOfProperty(int[] values) {
         JsonArray array = new JsonArray();
         for (int value : values) {
@@ -982,8 +1069,7 @@ public final class AgentTools {
         public AgentProposal propose(Session session, JsonObject args)
                 throws ToolException {
             LocatedScreen located = locate(session, args);
-            JsonArray ops = args.has("ops") && args.get("ops").isJsonArray()
-                    ? args.getAsJsonArray("ops") : null;
+            JsonArray ops = jsonArrayArg(args, "ops");
             if (ops == null || ops.size() == 0
                     || ops.size() > AgentEdits.MAX_OPS) {
                 throw new ToolException("E_OPS_LIMIT",
@@ -2054,9 +2140,7 @@ public final class AgentTools {
                         "There is no activity named \"" + asked
                                 + "\" in the working project.");
             }
-            JsonArray blocks = args.has("blocks")
-                    && args.get("blocks").isJsonArray()
-                    ? args.getAsJsonArray("blocks") : null;
+            JsonArray blocks = jsonArrayArg(args, "blocks");
             boolean replace = booleanArg(args, "replace");
             AgentLogic.Plan plan = AgentLogic.plan(session.context, scId,
                     activity, stringArg(args, "target"),
@@ -2124,9 +2208,7 @@ public final class AgentTools {
             // re-reads the event, so any drift since the card was
             // shown is caught either as a changed-block count or as
             // a fresh generation proof.
-            JsonArray blocks = proposal.args.has("blocks")
-                    && proposal.args.get("blocks").isJsonArray()
-                    ? proposal.args.getAsJsonArray("blocks") : null;
+            JsonArray blocks = jsonArrayArg(proposal.args, "blocks");
             AgentLogic.Plan plan = AgentLogic.plan(session.context, scId,
                     activity, stringArg(proposal.args, "target"),
                     stringArg(proposal.args, "event"), blocks,
@@ -2752,18 +2834,15 @@ public final class AgentTools {
                         "There is no activity named \"" + asked
                                 + "\" in the working project.");
             }
-            JsonArray rawParams = args.has("parameters")
-                    && args.get("parameters").isJsonArray()
-                    ? args.getAsJsonArray("parameters") : null;
+            JsonArray rawParams = jsonArrayArg(args, "parameters");
             String rawReturn = stringArg(args, "return_type");
             AgentLogic.MoreBlockDef def =
                     AgentLogic.buildMoreBlockSpec(scId, activity,
                             stringArg(args, "name"), rawParams,
                             rawReturn);
-            JsonArray blocks = args.has("blocks")
-                    && args.get("blocks").isJsonArray()
-                    && !args.getAsJsonArray("blocks").isEmpty()
-                    ? args.getAsJsonArray("blocks") : null;
+            JsonArray parsedBlocks = jsonArrayArg(args, "blocks");
+            JsonArray blocks = parsedBlocks != null
+                    && !parsedBlocks.isEmpty() ? parsedBlocks : null;
             AgentLogic.Plan bodyPlan = blocks != null
                     ? AgentLogic.planMoreBlock(session.context, scId,
                             activity, def, blocks, true)
@@ -2818,18 +2897,17 @@ public final class AgentTools {
                 throw new ToolException("E_ACTIVITY_NOT_FOUND",
                         "That activity no longer exists.");
             }
-            JsonArray rawParams = proposal.args.has("parameters")
-                    && proposal.args.get("parameters").isJsonArray()
-                    ? proposal.args.getAsJsonArray("parameters") : null;
+            JsonArray rawParams =
+                    jsonArrayArg(proposal.args, "parameters");
             String rawReturn = stringArg(proposal.args, "return_type");
             AgentLogic.MoreBlockDef def =
                     AgentLogic.buildMoreBlockSpec(scId, activity,
                             stringArg(proposal.args, "name"), rawParams,
                             rawReturn);
-            JsonArray blocks = proposal.args.has("blocks")
-                    && proposal.args.get("blocks").isJsonArray()
-                    && !proposal.args.getAsJsonArray("blocks").isEmpty()
-                    ? proposal.args.getAsJsonArray("blocks") : null;
+            JsonArray parsedBlocks =
+                    jsonArrayArg(proposal.args, "blocks");
+            JsonArray blocks = parsedBlocks != null
+                    && !parsedBlocks.isEmpty() ? parsedBlocks : null;
             AgentLogic.Plan bodyPlan = blocks != null
                     ? AgentLogic.planMoreBlock(session.context, scId,
                             activity, def, blocks, true)
@@ -2880,6 +2958,18 @@ public final class AgentTools {
             result.addProperty("return_type", def.humanReturnType());
             result.addProperty("wired_blocks",
                     bodyPlan == null ? 0 : blocks.size());
+            if (!def.isVoid() && bodyPlan == null) {
+                result.addProperty("warning",
+                        def.bareName + " returns "
+                                + def.humanReturnType()
+                                + " and has 0 blocks so far — wire a "
+                                + "return_value block into it with "
+                                + "set_event_handler (target \""
+                                + def.bareName
+                                + "\", event \"moreBlock\") before "
+                                + "building, or Java compilation will "
+                                + "fail.");
+            }
             result.addProperty("verified",
                     "Created More Block " + def.signature() + " on "
                             + SketchwareProjects.activityName(activity)

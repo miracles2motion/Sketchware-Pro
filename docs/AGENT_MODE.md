@@ -1911,4 +1911,17 @@ logs exposed the rest of the same class:
    - Statement `add_source_directly` (`addSourceDirectly`), inline value-slot reporters `{"java_expr":"..."}` (`asdString` / `asdNumber` / `asdBoolean`), `custom_import` (`customImport` in `target: "activity", event: "Import"`), `add_custom_variable` (`addCustomVariable`), and `add_initializer` (`addInitializer`), with `LogicEditorActivity`'s leading-space guard when raw code starts with `'@'` and plain-sentence approval previews (full code behind **Details** and in diagnostic exports).
    - Project audits (`danglingWidgetReferences`, `unusedVariables`, `variableUse`, `unreadInputs`), `get_screen`, and `AgentExport` inspect More Blocks (`eC.i`), `getVar` specs, and raw-Java identifier tokens.
 
+## Wave 36b — On-device post-mortem (`MagicalNotes` exports `1626`, `1639`, `1659`)
+
+1. **`onCreate_initializeLogic` vs `initializeLogic_initializeLogic` (`Jx.java:445, 855`, `rs.java:171`)**:
+   - Sketchware's built-in startup event uses `targetId = "onCreate"`, `eventName = "initializeLogic"` (`"onCreate_initializeLogic"`), emitted inside `private void initializeLogic()` **after** `findViewById` and `getSharedPreferences`. Using `targetId = "initializeLogic"` wrote `"initializeLogic_initializeLogic"`, which `Jx.java:445` emits at line 1 of `initialize(Bundle)` before views or `SharedPreferences` initialize (`NullPointerException` on launch in `1639`).
+   - `AgentLogic` now maps `initializeLogic` to `"onCreate_initializeLogic"` without adding a duplicate `EventBean` to `eC.g(javaName)`, includes `"onCreate_initializeLogic"` in `SketchwareProjects`, `AgentExport`, and `allActivityBlocks`, and migrates legacy non-raw `"initializeLogic_initializeLogic"` blocks automatically on edit/build.
+2. **Nested parameter-bag expressions & stringified JSON array tool arguments**:
+   - `cleanExprObject` flattens nested parameter-bag expressions such as `{"pref_has":{"component":"file1","key":"saved_notes_json"}}` and `{"pref_get":{"component":"file1","key":"saved_notes_json"}}` (plus `map_get`, `list_get`, `list_has`, `call_more_block`, `java_expr`, `extra`), eliminating the `[620]..[624]` retries.
+   - `AgentTools.jsonArrayArg` parses stringified JSON array tool arguments (repairing trailing missing `}` when unambiguous) and reports `E_BAD_JSON` instead of silent `0` blocks (`1639` `[529]`) or misleading `E_BLOCKS_LIMIT` (`1659` `[630]`). `MAX_BLOCKS` raised from `8` to `16`.
+3. **Readable `@id` reporter rendering, sole-list `show_list`, and transient HTTP 5xx retry**:
+   - `describeBlock` resolves `@id` reporter beans recursively (`getVar`, `getArg`, nested reporters, `asd*`) instead of rendering opaque `(a value)` in `get_event_logic` and `AgentExport`.
+   - `show_list` auto-resolves the screen's sole string list when `"list"` is omitted and lists declared string lists in errors; `AgentLoop` retries transient `NETWORK` and HTTP `500`/`502`/`503`/`504` errors up to twice with backoff (`model_retry` logged in the export).
+
+
 

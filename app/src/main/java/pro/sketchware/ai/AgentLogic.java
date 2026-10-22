@@ -64,7 +64,7 @@ import a.a.a.xB;
 public final class AgentLogic {
 
     /** At most this many blocks per handler call. */
-    public static final int MAX_BLOCKS = 8;
+    public static final int MAX_BLOCKS = 16;
 
     /**
      * The keys that make a value an expression rather than plain text.
@@ -186,12 +186,13 @@ public final class AgentLogic {
     /** Keys that only denote an expression when they stand alone. */
     private static final java.util.Set<String> SINGLE_KEY_EXPRESSIONS =
             java.util.Set.of("text", "number", "bool", "var", "arg",
-                    "checked", "enabled", "extra", "java_expr",
-                    "asd_string", "asd_number", "asd_boolean");
+                    "checked", "enabled");
 
     /**
      * Strips stray inner quotes around JSON keys (MagicalNotes saw
-     * {@code {"\"text_of\"":"note_input"}} from a small model).
+     * {@code {"\"text_of\"":"note_input"}} from a small model) and
+     * flattens nested parameter-bag expressions like
+     * {@code {"pref_has":{"component":"file1","key":"saved_notes_json"}}}.
      */
     private static JsonObject cleanExprObject(JsonObject raw) {
         if (raw == null) {
@@ -205,20 +206,126 @@ public final class AgentLogic {
                 break;
             }
         }
+        JsonObject cleaned;
         if (!dirty) {
-            return raw;
-        }
-        JsonObject cleaned = new JsonObject();
-        for (java.util.Map.Entry<String, JsonElement> entry
-                : raw.entrySet()) {
-            String key = entry.getKey();
-            if (key.length() >= 2 && key.startsWith("\"")
-                    && key.endsWith("\"")) {
-                key = key.substring(1, key.length() - 1);
+            cleaned = raw;
+        } else {
+            cleaned = new JsonObject();
+            for (java.util.Map.Entry<String, JsonElement> entry
+                    : raw.entrySet()) {
+                String key = entry.getKey();
+                if (key.length() >= 2 && key.startsWith("\"")
+                        && key.endsWith("\"")) {
+                    key = key.substring(1, key.length() - 1);
+                }
+                cleaned.add(key, entry.getValue());
             }
-            cleaned.add(key, entry.getValue());
         }
-        return cleaned;
+        return unwrapNestedExprParams(cleaned);
+    }
+
+    private static JsonObject unwrapNestedExprParams(JsonObject obj) {
+        if (obj == null || obj.size() != 1) {
+            return obj;
+        }
+        String head = obj.keySet().iterator().next();
+        JsonElement rawVal = obj.get(head);
+        if (rawVal == null || !rawVal.isJsonObject()) {
+            return obj;
+        }
+        JsonObject inner = rawVal.getAsJsonObject();
+        JsonObject flat = null;
+        switch (head) {
+            case "pref_get", "pref_has", "calendar_text",
+                    "calendar_diff", "load_sound", "play_sound" -> {
+                flat = new JsonObject();
+                flat.addProperty(head, firstNonEmptyString(inner,
+                        "component", "file", "id", "name"));
+            }
+            case "map_get", "map_has" -> {
+                if (inner.has("key")) {
+                    flat = new JsonObject();
+                    if (inner.has("map")
+                            && inner.get("map").isJsonObject()) {
+                        flat.add(head, inner.get("map"));
+                    } else {
+                        flat.addProperty(head, firstNonEmptyString(
+                                inner, "map", "name", "var"));
+                    }
+                }
+            }
+            case "list_get" -> {
+                if (inner.has("index")) {
+                    flat = new JsonObject();
+                    flat.addProperty(head, firstNonEmptyString(inner,
+                            "list", "name"));
+                }
+            }
+            case "list_has" -> {
+                if (inner.has("value")) {
+                    flat = new JsonObject();
+                    flat.addProperty(head, firstNonEmptyString(inner,
+                            "list", "name"));
+                }
+            }
+            case "list_map_get", "list_map_has" -> {
+                if (inner.has("key") || inner.has("index")) {
+                    flat = new JsonObject();
+                    flat.addProperty(head, firstNonEmptyString(inner,
+                            "list", "name"));
+                }
+            }
+            case "call_more_block", "more_block" -> {
+                if (inner.has("name")) {
+                    flat = new JsonObject();
+                    flat.addProperty(head,
+                            firstNonEmptyString(inner, "name"));
+                }
+            }
+            case "java_expr", "asd_string", "asd_number",
+                    "asd_boolean" -> {
+                if (inner.has("code") || inner.has("java")
+                        || inner.has("expr")
+                        || inner.has("expression")) {
+                    flat = new JsonObject();
+                    flat.addProperty(head, firstNonEmptyString(inner,
+                            "code", "java", "expr", "expression"));
+                }
+            }
+            case "extra", "has_extra" -> {
+                if (inner.has("key") || inner.has("name")) {
+                    flat = new JsonObject();
+                    flat.addProperty(head,
+                            firstNonEmptyString(inner, "key", "name"));
+                }
+            }
+            default -> {
+            }
+        }
+        if (flat == null) {
+            return obj;
+        }
+        for (java.util.Map.Entry<String, JsonElement> entry
+                : inner.entrySet()) {
+            if (!head.equals(entry.getKey())) {
+                flat.add(entry.getKey(), entry.getValue());
+            }
+        }
+        return flat;
+    }
+
+    private static String firstNonEmptyString(JsonObject obj,
+                                              String... keys) {
+        if (obj == null) {
+            return "";
+        }
+        for (String key : keys) {
+            String value = stringOf(obj, key);
+            if (!value.isEmpty()) {
+                return value;
+            }
+        }
+        return "";
     }
 
     /**
@@ -378,7 +485,7 @@ public final class AgentLogic {
     private static final int MAX_DEPTH = 3;
 
     /** Every statement in one handler, nested ones included. */
-    private static final int MAX_TOTAL = 24;
+    private static final int MAX_TOTAL = 40;
 
     /** Slot token separators, for finding editable values. */
     private static final java.util.regex.Pattern SLOT_PATTERN =
@@ -1858,6 +1965,13 @@ public final class AgentLogic {
             allActivityBlocks(eC store, String javaName) {
         LinkedHashMap<String, ArrayList<BlockBean>> out =
                 new LinkedHashMap<>();
+        // Built-in startup event (rs.java:171): stored at
+        // onCreate_initializeLogic, never listed in store.g(javaName).
+        ArrayList<BlockBean> initList =
+                store.a(javaName, "onCreate_initializeLogic");
+        if (initList != null && !initList.isEmpty()) {
+            out.put("initializeLogic", initList);
+        }
         ArrayList<EventBean> events = store.g(javaName);
         if (events != null) {
             for (EventBean event : events) {
@@ -2346,9 +2460,11 @@ public final class AgentLogic {
             plan.header = "More Block " + resolvedMb.signature()
                     + " on " + SketchwareProjects.activityName(activity)
                     + ":";
-        } else if ("activity".equalsIgnoreCase(target)) {
+        } else if ("activity".equalsIgnoreCase(target)
+                || ("onCreate".equalsIgnoreCase(target)
+                        && "initializeLogic".equalsIgnoreCase(
+                                plan.eventName))) {
             plan.activityEvent = true;
-            plan.targetId = plan.eventName;
             if (!Arrays.asList(oq.getAllActivityEvents())
                     .contains(plan.eventName)) {
                 // Models name screen events the Android way; accept
@@ -2367,8 +2483,16 @@ public final class AgentLogic {
                                     + ".");
                 }
                 plan.eventName = alias;
-                plan.targetId = alias;
             }
+            // Sketchware's built-in startup event (rs.java:171,
+            // Jx.java:855) uses targetId "onCreate" and eventName
+            // "initializeLogic" -> key "onCreate_initializeLogic",
+            // emitted inside private void initializeLogic() AFTER
+            // views and components initialize. Using targetId
+            // "initializeLogic" hits Jx.java:445 at line 1 of
+            // initialize(Bundle) BEFORE views or SharedPreferences exist.
+            plan.targetId = "initializeLogic".equals(plan.eventName)
+                    ? "onCreate" : plan.eventName;
             plan.header = "When " + SketchwareProjects.activityName(activity)
                     + " runs " + plan.eventName + ":";
         } else {
@@ -6912,7 +7036,8 @@ public final class AgentLogic {
             if (!element.isJsonObject()) {
                 return false;
             }
-            JsonObject object = element.getAsJsonObject();
+            JsonObject object = cleanExprObject(
+                    element.getAsJsonObject());
             if (object.has("checked") || object.has("enabled")
                     || object.has("map_has") || object.has("list_has")
                     || object.has("bool") || object.has("file_exists")
@@ -7126,6 +7251,10 @@ public final class AgentLogic {
                 }
             }
             store.a(javaName, key, combined);
+            if ("onCreate".equals(plan.targetId)
+                    && "initializeLogic".equals(plan.eventName)) {
+                cleanupLegacyInitializeLogic(plan.scId, plan.activity);
+            }
             SketchwareActions.commitProject(plan.scId);
 
             ArrayList<BlockBean> readBack =
@@ -7823,12 +7952,43 @@ public final class AgentLogic {
                                     + ", not a ListView.");
                 }
                 String list = listNameOf(op);
+                if (list.isEmpty()) {
+                    String sole = null;
+                    int count = 0;
+                    for (Map.Entry<String, Integer> entry
+                            : lists.entrySet()) {
+                        if (entry.getValue() != null
+                                && entry.getValue() == 2) {
+                            sole = entry.getKey();
+                            count++;
+                        }
+                    }
+                    if (count == 1 && sole != null) {
+                        list = sole;
+                    }
+                }
                 Integer listKind = lists.get(list);
                 if (listKind == null || listKind != 2) {
+                    ArrayList<String> textLists = new ArrayList<>();
+                    for (Map.Entry<String, Integer> entry
+                            : lists.entrySet()) {
+                        if (entry.getValue() != null
+                                && entry.getValue() == 2) {
+                            textLists.add(entry.getKey());
+                        }
+                    }
+                    String hint = textLists.isEmpty()
+                            ? " Declare one first with create_variable "
+                                    + "(type \"list_string\")."
+                            : " Available text lists on this screen: "
+                                    + String.join(", ", textLists) + ".";
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
-                            "show_list needs a list of text on this "
-                                    + "screen; “" + list + "” is not "
-                                    + "one.");
+                            "show_list needs \"list\" set to a list of "
+                                    + "text on this screen"
+                                    + (list.isEmpty() ? "."
+                                            : " (“" + list + "” is not "
+                                                    + "one).")
+                                    + hint);
                 }
                 stmt.opCode = "listSetData";
                 stmt.type = " ";
@@ -10107,13 +10267,137 @@ public final class AgentLogic {
     private static ArrayList<BlockBean> readBlocks(eC store,
                                                    String javaName,
                                                    Plan plan) {
+        return readEventBlocks(store, javaName, plan.targetId,
+                plan.eventName);
+    }
+
+    private static ArrayList<BlockBean> readEventBlocks(eC store,
+                                                        String javaName,
+                                                        String targetId,
+                                                        String eventName) {
         ArrayList<BlockBean> blocks = store.a(javaName,
-                plan.targetId + "_" + plan.eventName);
+                targetId + "_" + eventName);
+        if ((blocks == null || blocks.isEmpty())
+                && "onCreate".equals(targetId)
+                && "initializeLogic".equals(eventName)) {
+            ArrayList<BlockBean> legacy = store.a(javaName,
+                    "initializeLogic_initializeLogic");
+            if (legacy != null && !legacy.isEmpty()
+                    && !hasRawSourceBlock(legacy)) {
+                ArrayList<BlockBean> copy = new ArrayList<>();
+                for (BlockBean bean : legacy) {
+                    if (bean != null) copy.add(bean.clone());
+                }
+                return copy;
+            }
+        }
         return blocks == null ? new ArrayList<>() : blocks;
+    }
+
+    private static boolean hasRawSourceBlock(
+            ArrayList<BlockBean> blocks) {
+        if (blocks == null) return false;
+        for (BlockBean bean : blocks) {
+            if (bean != null
+                    && "addSourceDirectly".equals(bean.opCode)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Migrates pre-fix {@code initializeLogic_initializeLogic} blocks
+     * (written before {@code onCreate_initializeLogic} was mapped to
+     * {@code rs.java:171}) into {@code onCreate_initializeLogic} and
+     * removes the stray pre-init {@link EventBean} so views and
+     * SharedPreferences exist before startup blocks run.
+     */
+    public static void migrateAllLegacyInitializeLogic(String scId) {
+        try {
+            boolean changed = false;
+            for (ProjectFileBean activity
+                    : SketchwareProjects.activities(scId)) {
+                if (migrateLegacyInitializeLogic(scId, activity)) {
+                    changed = true;
+                }
+            }
+            if (changed) {
+                SketchwareActions.commitProject(scId);
+            }
+        } catch (Throwable ignored) {
+            // Best-effort healing; never block a build on migration.
+        }
+    }
+
+    private static boolean migrateLegacyInitializeLogic(
+            String scId, ProjectFileBean activity) {
+        eC store = jC.a(scId);
+        String javaName = activity.getJavaName();
+        ArrayList<BlockBean> legacy = store.a(javaName,
+                "initializeLogic_initializeLogic");
+        if (hasRawSourceBlock(legacy)) {
+            return false;
+        }
+        boolean touched = false;
+        if (legacy != null && !legacy.isEmpty()) {
+            ArrayList<BlockBean> builtIn = store.a(javaName,
+                    "onCreate_initializeLogic");
+            if (builtIn == null || builtIn.isEmpty()) {
+                ArrayList<BlockBean> moved = new ArrayList<>();
+                for (BlockBean bean : legacy) {
+                    if (bean != null) moved.add(bean.clone());
+                }
+                store.a(javaName, "onCreate_initializeLogic", moved);
+                touched = true;
+            }
+        }
+        if (cleanupLegacyInitializeLogic(scId, activity)) {
+            touched = true;
+        }
+        return touched;
+    }
+
+    private static boolean cleanupLegacyInitializeLogic(
+            String scId, ProjectFileBean activity) {
+        eC store = jC.a(scId);
+        String javaName = activity.getJavaName();
+        ArrayList<BlockBean> legacy = store.a(javaName,
+                "initializeLogic_initializeLogic");
+        if (hasRawSourceBlock(legacy)) {
+            return false;
+        }
+        boolean touched = false;
+        ArrayList<EventBean> events = store.g(javaName);
+        if (events != null) {
+            ArrayList<EventBean> toDelete = new ArrayList<>();
+            for (EventBean ev : events) {
+                if (ev != null
+                        && "initializeLogic".equals(ev.targetId)
+                        && "initializeLogic".equals(ev.eventName)) {
+                    toDelete.add(ev);
+                }
+            }
+            for (EventBean ev : toDelete) {
+                EventBean.deleteEvent(scId, ev, activity);
+                touched = true;
+            }
+        }
+        if (legacy != null && !legacy.isEmpty()) {
+            store.k(javaName, "initializeLogic_initializeLogic");
+            touched = true;
+        }
+        return touched;
     }
 
     private static boolean eventRegistered(eC store, String javaName,
                                            Plan plan) {
+        if (plan.activityEvent && "onCreate".equals(plan.targetId)
+                && "initializeLogic".equals(plan.eventName)) {
+            // Built-in permanent event (rs.java:171); never added to
+            // store.g(javaName).
+            return true;
+        }
         ArrayList<EventBean> events = store.g(javaName);
         if (events == null) {
             return false;
@@ -10919,9 +11203,8 @@ public final class AgentLogic {
         plan.eventName = probe.eventName;
         plan.activityEvent = probe.activityEvent;
         plan.header = probe.header;
-        ArrayList<BlockBean> blocks = store.a(javaName,
-                plan.targetId + "_" + plan.eventName);
-        if (blocks == null) blocks = new ArrayList<>();
+        ArrayList<BlockBean> blocks = readEventBlocks(store, javaName,
+                plan.targetId, plan.eventName);
         plan.existingCount = blocks.size();
         plan.eventRendering = renderEvent(blocks, chainIndices(blocks));
         return plan;
@@ -10972,9 +11255,8 @@ public final class AgentLogic {
                             + "container. Read the event with "
                             + "get_event_logic first.");
         }
-        ArrayList<BlockBean> blocks = store.a(javaName,
-                plan.targetId + "_" + plan.eventName);
-        if (blocks == null) blocks = new ArrayList<>();
+        ArrayList<BlockBean> blocks = readEventBlocks(store, javaName,
+                plan.targetId, plan.eventName);
         plan.existingCount = blocks.size();
         ArrayList<Integer> chain = chainIndices(blocks);
         plan.eventRendering = renderEvent(blocks, chain);
@@ -10988,7 +11270,8 @@ public final class AgentLogic {
         }
         BlockBean block = blocks.get(plan.targetBeanIndex);
         plan.blockOpCode = block.opCode;
-        plan.blockDescription = describeBlock(block);
+        plan.blockDescription = describeBlock(block, blocks,
+                indexByNumericId(blocks), 0);
 
         if (plan.remove) {
             ArrayList<BlockBean> clones = new ArrayList<>();
@@ -11287,8 +11570,8 @@ public final class AgentLogic {
         String javaName = plan.activity.getJavaName();
         eC store = jC.a(plan.scId);
         String key = plan.targetId + "_" + plan.eventName;
-        ArrayList<BlockBean> current = store.a(javaName, key);
-        if (current == null) current = new ArrayList<>();
+        ArrayList<BlockBean> current = readEventBlocks(store, javaName,
+                plan.targetId, plan.eventName);
         if (current.size() != plan.existingCount
                 || resolvePath(current, chainIndices(current),
                         plan.targetPath) != plan.targetBeanIndex) {
@@ -11325,6 +11608,10 @@ public final class AgentLogic {
                                 + editProblems.get(0) + ")");
             }
             store.a(javaName, key, combined);
+            if ("onCreate".equals(plan.targetId)
+                    && "initializeLogic".equals(plan.eventName)) {
+                cleanupLegacyInitializeLogic(plan.scId, plan.activity);
+            }
             SketchwareActions.commitProject(plan.scId);
 
             ArrayList<BlockBean> readBack = store.a(javaName, key);
@@ -11528,9 +11815,11 @@ public final class AgentLogic {
                     + ":";
             return plan;
         }
-        if ("activity".equalsIgnoreCase(target)) {
+        if ("activity".equalsIgnoreCase(target)
+                || ("onCreate".equalsIgnoreCase(target)
+                        && "initializeLogic".equalsIgnoreCase(
+                                plan.eventName))) {
             plan.activityEvent = true;
-            plan.targetId = plan.eventName;
             if (!Arrays.asList(oq.getAllActivityEvents())
                     .contains(plan.eventName)) {
                 String alias = activityEventAlias(plan.eventName);
@@ -11549,8 +11838,9 @@ public final class AgentLogic {
                                     + "it.)");
                 }
                 plan.eventName = alias;
-                plan.targetId = alias;
             }
+            plan.targetId = "initializeLogic".equals(plan.eventName)
+                    ? "onCreate" : plan.eventName;
             plan.header = "When " + SketchwareProjects.activityName(activity)
                     + " runs " + plan.eventName + ":";
             return plan;
@@ -11685,7 +11975,8 @@ public final class AgentLogic {
         for (int i = 0; i < chain.size(); i++) {
             BlockBean bean = blocks.get(chain.get(i));
             out.append(indent).append(i + 1).append(". ")
-                    .append(describeBlock(bean)).append("\n");
+                    .append(describeBlock(bean, blocks, byIdNum, 0))
+                    .append("\n");
             if (bean.subStack1 >= 0) {
                 renderChain(blocks, byIdNum,
                         subChain(blocks, byIdNum, bean.subStack1),
@@ -11715,6 +12006,29 @@ public final class AgentLogic {
 
     /** One block in plain words, from its stored spec and values. */
     public static String describeBlock(BlockBean bean) {
+        return describeBlock(bean, null, null, 0);
+    }
+
+    private static String describeBlock(BlockBean bean,
+                                        ArrayList<BlockBean> blocks,
+                                        Map<Integer, Integer> byIdNum,
+                                        int depth) {
+        if (bean == null) return "";
+        if ("addSourceDirectly".equals(bean.opCode)) {
+            String raw = bean.parameters != null
+                    && !bean.parameters.isEmpty()
+                    ? bean.parameters.get(0) : "";
+            return "addSourceDirectly "
+                    + Builder.summarizeRawJava(raw);
+        }
+        if ("asdString".equals(bean.opCode)
+                || "asdNumber".equals(bean.opCode)
+                || "asdBoolean".equals(bean.opCode)) {
+            String raw = bean.parameters != null
+                    && !bean.parameters.isEmpty()
+                    ? bean.parameters.get(0) : "";
+            return Builder.summarizeRawJava(raw);
+        }
         String spec = bean.spec == null ? "" : bean.spec;
         ArrayList<String> values = bean.parameters == null
                 ? new ArrayList<>() : bean.parameters;
@@ -11727,7 +12041,8 @@ public final class AgentLogic {
             String slot = matcher.group();
             String value = slotOrdinal < values.size()
                     ? values.get(slotOrdinal) : "";
-            words.append(describeSlotValue(slot, value));
+            words.append(describeSlotValue(slot, value, blocks,
+                    byIdNum, depth));
             slotOrdinal++;
             lastEnd = matcher.end();
         }
@@ -11736,10 +12051,35 @@ public final class AgentLogic {
         return text.isEmpty() ? String.valueOf(bean.opCode) : text;
     }
 
-    private static String describeSlotValue(String slot, String value) {
+    private static String describeSlotValue(
+            String slot, String value, ArrayList<BlockBean> blocks,
+            Map<Integer, Integer> byIdNum, int depth) {
         if (value == null) value = "";
         if (value.startsWith("@")) {
-            // "@42" points at a value block whose spec is its meaning.
+            if (blocks != null && byIdNum != null && depth < 4) {
+                try {
+                    int id = Integer.parseInt(value.substring(1).trim());
+                    Integer idx = byIdNum.get(id);
+                    if (idx != null && idx >= 0
+                            && idx < blocks.size()) {
+                        BlockBean ref = blocks.get(idx);
+                        if (ref != null) {
+                            if ("getVar".equals(ref.opCode)
+                                    || "getArg".equals(ref.opCode)) {
+                                String name = ref.spec == null ? ""
+                                        : ref.spec.trim();
+                                if (!name.isEmpty()) return name;
+                            }
+                            String nested = describeBlock(ref, blocks,
+                                    byIdNum, depth + 1);
+                            if (!nested.isEmpty()) {
+                                return "(" + nested + ")";
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+            }
             return "(a value)";
         }
         if ("%s".equals(slot) || slot.startsWith("%s")) {
@@ -12087,8 +12427,25 @@ public final class AgentLogic {
     /** JSON int array from a named argument. */
     private static int[] intArrayOf(JsonObject object, String key) {
         try {
-            com.google.gson.JsonArray array =
-                    object.getAsJsonArray(key);
+            if (object == null || !object.has(key)
+                    || object.get(key) == null
+                    || object.get(key).isJsonNull()) {
+                return new int[0];
+            }
+            JsonElement elem = object.get(key);
+            if (elem.isJsonPrimitive()) {
+                if (elem.getAsJsonPrimitive().isNumber()) {
+                    return new int[]{elem.getAsInt()};
+                }
+                String text = elem.getAsString().trim();
+                if (text.startsWith("[") && text.endsWith("]")) {
+                    elem = com.google.gson.JsonParser
+                            .parseString(text);
+                } else {
+                    return new int[]{Integer.parseInt(text)};
+                }
+            }
+            com.google.gson.JsonArray array = elem.getAsJsonArray();
             int[] out = new int[array.size()];
             for (int i = 0; i < array.size(); i++) {
                 out[i] = array.get(i).getAsInt();

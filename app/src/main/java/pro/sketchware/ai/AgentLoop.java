@@ -425,34 +425,77 @@ public class AgentLoop {
         // it on purpose, so it is let through.
         final java.util.Set<String> insisted = new java.util.HashSet<>();
         while (!cancelled) {
-            AiChatService.AgentReply reply;
+            AiChatService.AgentReply reply = null;
             long requestedAt = System.currentTimeMillis();
-            try {
-                reply = service.agentTurnSync(baseUrl, apiKey, model, messages,
-                        AgentTools.definitions());
-            } catch (AiChatService.AgentRequestException e) {
-                // A provider failure is part of the story: the export
-                // has to show that the model was never reached (or
-                // answered with an error), not just that nothing moved.
-                JsonObject failed = new JsonObject();
-                failed.addProperty("model", model);
-                failed.addProperty("error_kind",
-                        String.valueOf(e.error.kind));
-                failed.addProperty("http_code", e.error.httpCode);
-                failed.addProperty("message",
-                        AgentJournal.cap(String.valueOf(e.error.message),
-                                1200));
-                failed.addProperty("took_ms",
-                        System.currentTimeMillis() - requestedAt);
-                failed.addProperty("messages_sent", messages.size());
-                AgentJournal.record(journalProject[0], "model_error",
-                        failed);
-                closeTask(journalProject[0], cancelled, stopReason(e.error),
-                        taskClosed);
-                if (!cancelled) {
-                    dispatch(listener, () -> listener.onError(e.error));
+            for (int attempt = 0; ; attempt++) {
+                requestedAt = System.currentTimeMillis();
+                try {
+                    reply = service.agentTurnSync(baseUrl, apiKey, model,
+                            messages, AgentTools.definitions());
+                    break;
+                } catch (AiChatService.AgentRequestException e) {
+                    int code = e.error.httpCode;
+                    boolean transientFailure = !cancelled && attempt < 2
+                            && (e.error.kind
+                                            == AiChatService.ErrorKind.NETWORK
+                                    || code == 500 || code == 502
+                                    || code == 503 || code == 504);
+                    if (transientFailure) {
+                        JsonObject retried = new JsonObject();
+                        retried.addProperty("model", model);
+                        retried.addProperty("attempt", attempt + 1);
+                        retried.addProperty("error_kind",
+                                String.valueOf(e.error.kind));
+                        retried.addProperty("http_code", code);
+                        retried.addProperty("message",
+                                AgentJournal.cap(
+                                        String.valueOf(e.error.message),
+                                        600));
+                        retried.addProperty("took_ms",
+                                System.currentTimeMillis() - requestedAt);
+                        AgentJournal.record(journalProject[0],
+                                "model_retry", retried);
+                        long waitMs = attempt == 0 ? 1500L : 3000L;
+                        long deadline = System.currentTimeMillis()
+                                + waitMs;
+                        while (!cancelled
+                                && System.currentTimeMillis() < deadline) {
+                            try {
+                                Thread.sleep(150L);
+                            } catch (InterruptedException ie) {
+                                Thread.currentThread().interrupt();
+                                break;
+                            }
+                        }
+                        if (!cancelled) {
+                            continue;
+                        }
+                    }
+                    // A provider failure is part of the story: the export
+                    // has to show that the model was never reached (or
+                    // answered with an error), not just that nothing moved.
+                    JsonObject failed = new JsonObject();
+                    failed.addProperty("model", model);
+                    failed.addProperty("error_kind",
+                            String.valueOf(e.error.kind));
+                    failed.addProperty("http_code", e.error.httpCode);
+                    failed.addProperty("message",
+                            AgentJournal.cap(
+                                    String.valueOf(e.error.message),
+                                    1200));
+                    failed.addProperty("took_ms",
+                            System.currentTimeMillis() - requestedAt);
+                    failed.addProperty("messages_sent", messages.size());
+                    AgentJournal.record(journalProject[0], "model_error",
+                            failed);
+                    closeTask(journalProject[0], cancelled,
+                            stopReason(e.error), taskClosed);
+                    if (!cancelled) {
+                        dispatch(listener,
+                                () -> listener.onError(e.error));
+                    }
+                    return;
                 }
-                return;
             }
             {
                 // What the model said, before anything is done with

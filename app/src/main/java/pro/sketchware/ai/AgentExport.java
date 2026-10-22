@@ -425,6 +425,17 @@ public final class AgentExport {
                 JsonObject eventLogic = new JsonObject();
                 try {
                     a.a.a.eC eventStore = a.a.a.jC.a(scId);
+                    try {
+                        AgentLogic.EditPlan initPlan =
+                                AgentLogic.describeEvent(scId, activity,
+                                        "activity", "initializeLogic");
+                        if (initPlan != null
+                                && initPlan.existingCount > 0) {
+                            eventLogic.addProperty(initPlan.header,
+                                    initPlan.eventRendering);
+                        }
+                    } catch (Exception ignored) {
+                    }
                     java.util.ArrayList<com.besome.sketch.beans.EventBean>
                             wired =
                             eventStore.g(activity.getJavaName());
@@ -433,6 +444,12 @@ public final class AgentExport {
                                 : wired) {
                             if (event.targetId == null
                                     || event.eventName == null) {
+                                continue;
+                            }
+                            if ("initializeLogic".equals(event.targetId)
+                                    && "initializeLogic"
+                                            .equals(event.eventName)
+                                    && eventLogic.size() > 0) {
                                 continue;
                             }
                             boolean activityEvent =

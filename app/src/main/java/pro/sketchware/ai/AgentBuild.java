@@ -51,6 +51,7 @@ public final class AgentBuild {
             throws AgentTools.ToolException {
         SketchwareProjects.ProjectInfo project =
                 SketchwareProjects.project(scId);
+        AgentLogic.migrateAllLegacyInitializeLogic(scId);
         long started = System.currentTimeMillis();
         yq q = new yq(context, scId);
         // Progress steps go nowhere visible: the approval card's
