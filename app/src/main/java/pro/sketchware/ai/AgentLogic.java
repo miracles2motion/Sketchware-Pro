@@ -7221,6 +7221,34 @@ public final class AgentLogic {
         if (action.componentType != 0) {
             componentId = stringOf(op, "component");
             Integer type = components.get(componentId);
+            boolean choseOnly = false;
+            if (type == null) {
+                // When the screen has exactly one component of the
+                // kind this block needs, that is the answer — not a
+                // guess. The MagicalNotes model never sent a
+                // "component" key at all (three attempts, the list of
+                // valid ones in front of it each time), because it
+                // does not know the parameter exists; the screen had
+                // exactly one SharedPreferences component. Refusing
+                // that costs the user three dead turns and a save
+                // button that never saves.
+                if (componentId.isEmpty()) {
+                    ArrayList<String> only = new ArrayList<>();
+                    for (java.util.Map.Entry<String, Integer> entry
+                            : components.entrySet()) {
+                        if (entry.getValue() != null
+                                && entry.getValue()
+                                        == action.componentType) {
+                            only.add(entry.getKey());
+                        }
+                    }
+                    if (only.size() == 1) {
+                        componentId = only.get(0);
+                        type = components.get(componentId);
+                        choseOnly = true;
+                    }
+                }
+            }
             if (type == null) {
                 // Say which kind of component this block needs, and
                 // name one on this screen that would do — the old
@@ -7288,6 +7316,14 @@ public final class AgentLogic {
             stmt.params.add(componentId);
         }
         String sentence = action.sentence.replace("{c}", componentId);
+        if (choseOnly) {
+            // It is not a guess when there is only one, but the user
+            // should still see which one the block was pointed at.
+            sentence = sentence + " (this screen has one "
+                    + ComponentBean.getComponentName(null,
+                            action.componentType)
+                    + " component, " + componentId + ")";
+        }
         int numberField = 0;
         int textField = 0;
         int colourField = 0;

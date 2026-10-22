@@ -1748,3 +1748,24 @@ form instead of having its mistake quietly absorbed:
 **The lesson, for the third time in a different shape:** the app must
 judge meaning, not just syntax. A string is valid input for a value
 slot; that does not make it what the model meant.
+
+### When there is only one component, that is the answer
+
+The improved `save_pref` message fired three times in the 22 October
+run and the model still never named `file1` — because it does not know
+the `component` parameter exists. It sent, three times:
+
+```json
+{"block":"save_pref","text":"magical_note","text2":"noteText"}
+```
+
+The screen had exactly one SharedPreferences component. Refusing that
+is pedantry that costs the user three dead turns and a save button
+that never saves. Now, when a component action needs a component, none
+is named, and the screen has **exactly one** of the required kind, it
+is used — and the approval card says so:
+
+> In file1, save "noteText" under "magical_note" (this screen has one
+> SharedPreferences component, file1)
+
+Zero or several are still refused, with the list.
