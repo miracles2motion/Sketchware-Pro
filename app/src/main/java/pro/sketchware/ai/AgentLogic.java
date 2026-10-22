@@ -2269,18 +2269,6 @@ public final class AgentLogic {
         return false;
     }
 
-    /**
-     * Validates a handler request and builds the beans it would add.
-     * Pure: reads the project, changes nothing.
-     */
-    public static Plan plan(Context context, String scId,
-                            ProjectFileBean activity, String target,
-                            String event, JsonArray blocks)
-            throws AgentTools.ToolException {
-        return plan(context, scId, activity, target, event, blocks,
-                false);
-    }
-
     public static Plan plan(Context context, String scId,
                             ProjectFileBean activity, String target,
                             String event, JsonArray blocks,
