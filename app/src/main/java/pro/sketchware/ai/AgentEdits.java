@@ -858,6 +858,19 @@ public final class AgentEdits {
                                 + anchor.id + " in " + destName);
                     }
                 }
+                case "set_card_radius", "set_card_elevation",
+                        "set_corner_radius", "set_elevation",
+                        "set_stroke" -> throw new AgentTools.ToolException(
+                        "E_BAD_OP",
+                        "\"" + kind + "\" is a runtime logic block for "
+                                + "set_event_handler, not an edit_screen "
+                                + "operation. On edit_screen, set XML "
+                                + "attributes with set_attributes — e.g. "
+                                + "{\"op\":\"set_attributes\",\"id\":\"...\","
+                                + "\"attributes\":{\"app:cardCornerRadius\":"
+                                + "\"16dp\",\"app:cardElevation\":\"4dp\"}} "
+                                + "on a CardView, or {\"android:elevation\":"
+                                + "\"4dp\"} on any widget.");
                 default -> throw new AgentTools.ToolException("E_BAD_OP",
                         "Unknown operation \"" + kind + "\". Every "
                                 + "operation is an object with an \"op\" "
@@ -2472,6 +2485,57 @@ public final class AgentEdits {
         if (classInfo.b("MaterialButton")) {
             set.addAll(ATTRS_MATERIAL_BUTTON);
         }
+        switch (bean.type) {
+            case ViewBeans.VIEW_TYPE_WIDGET_CIRCLEIMAGEVIEW ->
+                    Collections.addAll(set, "app:civ_border_width",
+                            "app:civ_border_color",
+                            "app:civ_circle_background_color",
+                            "app:civ_border_overlay");
+            case ViewBeans.VIEW_TYPE_WIDGET_LOTTIEANIMATIONVIEW ->
+                    Collections.addAll(set, "android:scaleType",
+                            "android:layout_centerInParent",
+                            "app:lottie_fileName", "app:lottie_loop",
+                            "app:lottie_autoPlay");
+            case ViewBeans.VIEW_TYPE_LAYOUT_TABLAYOUT ->
+                    Collections.addAll(set, "app:tabGravity",
+                            "app:tabMode", "app:tabIndicatorHeight",
+                            "app:tabIndicatorColor",
+                            "app:tabSelectedTextColor",
+                            "app:tabTextColor", "app:tabTextAppearance");
+            case ViewBeans.VIEW_TYPE_WIDGET_YOUTUBEPLAYERVIEW ->
+                    Collections.addAll(set, "app:autoPlay",
+                            "app:useWebUi", "app:showYouTubeButton",
+                            "app:showFullScreenButton",
+                            "app:showVideoCurrentTime",
+                            "app:showVideoDuration", "app:showSeekBar",
+                            "app:handleNetworkEvents",
+                            "app:enableAutomaticInitialization");
+            case ViewBeans.VIEW_TYPE_LAYOUT_COLLAPSINGTOOLBARLAYOUT ->
+                    Collections.addAll(set, "android:fitsSystemWindows",
+                            "app:layout_scrollFlags", "app:titleEnabled",
+                            "app:contentScrim");
+            case ViewBeans.VIEW_TYPE_WIDGET_WAVESIDEBAR ->
+                    Collections.addAll(set, "app:sidebar_text_alignment",
+                            "app:sidebar_position",
+                            "app:sidebar_max_offset");
+            case ViewBeans.VIEW_TYPE_WIDGET_GRIDVIEW ->
+                    Collections.addAll(set, "android:numColumns",
+                            "android:stretchMode",
+                            "android:horizontalSpacing",
+                            "android:verticalSpacing");
+            case ViewBeans.VIEW_TYPE_LAYOUT_TEXTINPUTLAYOUT ->
+                    Collections.addAll(set, "app:boxBackgroundMode",
+                            "app:boxBackgroundColor",
+                            "app:boxStrokeColor",
+                            "app:boxCornerRadiusTopStart",
+                            "app:boxCornerRadiusTopEnd",
+                            "app:boxCornerRadiusBottomStart",
+                            "app:boxCornerRadiusBottomEnd",
+                            "app:hintEnabled", "app:counterEnabled",
+                            "app:counterMaxLength", "app:endIconMode");
+            default -> {
+            }
+        }
         return set;
     }
 
@@ -2542,7 +2606,7 @@ public final class AgentEdits {
         String cleanName = name.trim();
         String cleanValue = value.trim().replace(" ", "")
                 .replace("\"", "");
-        if (!cleanName.matches("[a-zA-Z]+:[a-zA-Z]+")) {
+        if (!cleanName.matches("[a-zA-Z]+:[a-zA-Z][a-zA-Z0-9_]*")) {
             throw new AgentTools.ToolException("E_BAD_VALUE",
                     "\"" + cleanName + "\" is not a custom attribute "
                             + "name: it must look like "

@@ -311,6 +311,8 @@ public final class AgentTools {
         // the project never reaches an approval card again: it is
         // reported back to the model as done, whatever model sent it.
         if (!allowRepeat
+                && !"build_project".equals(name)
+                && !"edit_event_block".equals(name)
                 && session.workingProjectId != null
                 && !session.workingProjectId.isEmpty()
                 && AgentJournal.hasDoneFingerprint(session.workingProjectId,
@@ -1012,7 +1014,7 @@ public final class AgentTools {
                 body.append("\n⚠ ").append(warning);
             }
             return new AgentProposal(name(), clean, located.scId,
-                    "Edit " + SketchwareProjects.activityName(located.activity)
+                    "Edit " + SketchwareProjects.screenName(located.activity)
                             + " in " + project.name,
                     body.toString(),
                     "If this screen is open in the editor, close it before "
@@ -1284,27 +1286,40 @@ public final class AgentTools {
                     + "through their events, and the values an event "
                     + "passes are read with {\"arg\":\"name\"}. The "
                     + "new blocks are "
-                    + "APPENDED after whatever the event already does — "
+                    + "APPENDED after whatever the event already does "
+                    + "(or pass replace: true to replace the event's "
+                    + "existing blocks cleanly) — "
                     + "check get_screen first, which lists each event "
                     + "and how many blocks it already has. Never append "
                     + "a second copy of a block to replace the first: "
                     + "to change or remove one that is already wired, "
                     + "read it with get_event_logic and use "
-                    + "edit_event_block. Blocks (1 to "
+                    + "edit_event_block, or pass replace: true. Every "
+                    + "value slot (toast message, set_text, add_to_list, "
+                    + "put_in_map, list index, save_pref, list_from_json, "
+                    + "set_enabled, set_checked, set_progress, file "
+                    + "paths) accepts value expressions directly "
+                    + "({\"var\":\"x\"}, {\"text_of\":\"id\"}, "
+                    + "{\"pref_get\":\"file1\",\"key\":\"k\"}, "
+                    + "{\"json_of_list\":\"list\"}) — never wrap an "
+                    + "expression object in quotes. Blocks (1 to "
                     + AgentLogic.MAX_BLOCKS + "): toast {message} "
-                    + "(show a short message) or {from_variable} (show "
-                    + "a string variable's value), set_text {target,"
+                    + "(show a message or expression) or {from_variable}, "
+                    + "show_keyboard {}, hide_keyboard {}, set_text {target,"
                     + "text} (change a text widget's text) or {target,"
                     + "from_variable} (use a string variable's value), "
+                    + "set_typeface {target,font,style}, "
                     + "set_visibility {target,visible} or {target,state} "
                     + "(visible, gone, invisible), set_enabled {target,"
                     + "enabled}, set_text_color {target,color} (a text "
                     + "widget's text colour, #RRGGBB), set_hint {target,"
                     + "text} (an EditText's hint), set_clickable {target,"
-                    + "clickable} (whether taps land), set_image_url "
+                    + "clickable} (whether taps land), set_image "
+                    + "{target,image} (an ImageView drawable), "
+                    + "set_image_url "
                     + "{target,url} (load an image from a URL into an "
                     + "ImageView), set_progress {target,value} (a "
-                    + "SeekBar's progress), copy_to_clipboard {text}, "
+                    + "SeekBar or ProgressBar's progress), copy_to_clipboard {text}, "
                     + "set_screen_title {text}, open_drawer {} and "
                     + "add_to_list {list,text|value|from_variable}, "
                     + "clear_list {list}, show_list {target,list} "
@@ -1345,7 +1360,13 @@ public final class AgentTools {
                     + "remove_all_views {target}, add_view {target,child}, "
                     + "add_view_at {target,child,value}, remove_view "
                     + "{target,child}, set_checked {target,flag} "
-                    + "(a CheckBox), set_max {target,value} (a SeekBar), "
+                    + "(a CheckBox, Switch or RadioButton), "
+                    + "when_clicked/when_long_clicked {target,blocks} "
+                    + "and when_checked_changed {target,blocks} (inline "
+                    + "listeners for row widgets inside "
+                    + "onBindCustomView; read the toggle state with "
+                    + "{\"is_checked\":true}) and refresh_adapter {} "
+                    + "(inside onBindCustomView), set_max {target,value} (a SeekBar), "
                     + "set_indeterminate {target,flag} (a ProgressBar), "
                     + "set_num_stars/set_rating/set_step_size {target,"
                     + "value} (a RatingBar), set_lines/set_max_lines "
@@ -1944,7 +1965,14 @@ public final class AgentTools {
                     "menu_item", "submenu", "submenu_item",
                     "menu_item_visible", "menu_item_enabled",
                     "otp_listener", "youtube_listener",
-                    "crop_image", "youtube_lifecycle"}) {
+                    "crop_image", "youtube_lifecycle",
+                    "set_image", "set_typeface", "show_keyboard",
+                    "hide_keyboard", "set_pref_file",
+                    "set_custom_letter", "list_set_checked",
+                    "list_checked_positions_to_list",
+                    "refresh_adapter", "notify_data_changed",
+                    "when_clicked", "when_long_clicked",
+                    "when_checked_changed", "when_swipe_refresh"}) {
                 kinds.add(kind);
             }
             blockProp.add("enum", kinds);
@@ -1957,6 +1985,12 @@ public final class AgentTools {
             item.add("required", required);
             blocksSchema.add("items", item);
             properties.add("blocks", blocksSchema);
+            JsonObject replaceProp = new JsonObject();
+            replaceProp.addProperty("type", "boolean");
+            replaceProp.addProperty("description",
+                    "Optional: true to replace the event's existing "
+                            + "blocks instead of appending");
+            properties.add("replace", replaceProp);
             return AgentTools.parameters(properties,
                     "activity", "target", "event", "blocks");
         }
@@ -1988,9 +2022,10 @@ public final class AgentTools {
             JsonArray blocks = args.has("blocks")
                     && args.get("blocks").isJsonArray()
                     ? args.getAsJsonArray("blocks") : null;
+            boolean replace = booleanArg(args, "replace");
             AgentLogic.Plan plan = AgentLogic.plan(session.context, scId,
                     activity, stringArg(args, "target"),
-                    stringArg(args, "event"), blocks);
+                    stringArg(args, "event"), blocks, replace);
             SketchwareProjects.ProjectInfo project =
                     SketchwareProjects.project(scId);
             JsonObject clean = new JsonObject();
@@ -2003,6 +2038,7 @@ public final class AgentTools {
             clean.addProperty("event", plan.eventName);
             clean.addProperty("activity_event", plan.activityEvent);
             clean.addProperty("existing", plan.existingCount);
+            clean.addProperty("replace", plan.replace);
             clean.add("blocks", blocks);
 
             StringBuilder body = new StringBuilder(plan.header);
@@ -2010,7 +2046,9 @@ public final class AgentTools {
                 body.append("\n• ").append(line);
             }
             if (plan.existingCount > 0) {
-                body.append("\n(Runs after the ")
+                body.append(plan.replace
+                                ? "\n(Replaces the "
+                                : "\n(Runs after the ")
                         .append(plan.existingCount)
                         .append(" block")
                         .append(plan.existingCount == 1 ? "" : "s")
@@ -2056,7 +2094,8 @@ public final class AgentTools {
                     ? proposal.args.getAsJsonArray("blocks") : null;
             AgentLogic.Plan plan = AgentLogic.plan(session.context, scId,
                     activity, stringArg(proposal.args, "target"),
-                    stringArg(proposal.args, "event"), blocks);
+                    stringArg(proposal.args, "event"), blocks,
+                    booleanArg(proposal.args, "replace"));
             if (plan.existingCount
                     != intArg(proposal.args, "existing")) {
                 throw new ToolException("E_LOGIC_CHANGED",
@@ -3181,13 +3220,13 @@ public final class AgentTools {
                     + "Read the event with get_event_logic first, then "
                     + "pass block_path (the statement's numbers, e.g. "
                     + "[2], or [1,2] inside a container). To change a "
-                    + "value, pass replace_with {text|message|value|"
-                    + "number: the new value} — only values a block "
-                    + "holds directly can change (a toast's message, a "
-                    + "set-text's text, a variable's value or number). "
-                    + "To remove the statement, pass remove: true. The "
-                    + "event's first statement cannot be removed — "
-                    + "change its value instead. The user approves "
+                    + "value, pass replace_with {text|text2|message|"
+                    + "value|number|flag: the new value or expression "
+                    + "object, e.g. {\"text\":{\"text_of\":\"note_input\"}}} "
+                    + "— any value slot of the block can be rewritten "
+                    + "with a literal or an expression. "
+                    + "To remove the statement (including position [1]), "
+                    + "pass remove: true. The user approves "
                     + "first; if the event changed since the card, the "
                     + "edit refuses rather than touching the wrong "
                     + "block.";
@@ -3268,7 +3307,11 @@ public final class AgentTools {
             if (!plan.values.isEmpty()) {
                 JsonObject with = new JsonObject();
                 for (AgentLogic.EditableValue value : plan.values) {
-                    with.addProperty(value.kind, value.newValue);
+                    if (value.rawElement != null) {
+                        with.add(value.kind, value.rawElement);
+                    } else {
+                        with.addProperty(value.kind, value.newValue);
+                    }
                 }
                 clean.add("values", with);
             }
@@ -3278,10 +3321,12 @@ public final class AgentTools {
                         .append(plan.blockDescription);
             } else {
                 for (AgentLogic.EditableValue value : plan.values) {
+                    String shownNew = value.shownNewValue != null
+                            ? value.shownNewValue : value.newValue;
                     body.append("Change ").append(value.kind)
                             .append(" from “")
                             .append(value.currentValue)
-                            .append("” to “").append(value.newValue)
+                            .append("” to “").append(shownNew)
                             .append("”.");
                 }
             }

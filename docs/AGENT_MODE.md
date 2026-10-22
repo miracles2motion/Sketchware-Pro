@@ -1835,3 +1835,68 @@ is told.
 agent still could not use them, because the *slots* they plug into
 were wired for text. Teaching the inventory is not the same as wiring
 the sockets.
+
+## Wave 35 — full reachability bundle (every value slot, palette gaps, event editing, and export fixes)
+
+Wave 34 wired four sockets; a mechanical audit of `AgentLogic.java`,
+`ExtraPaletteBlock.java`, `Fx.java`, `Gx.java` and the exported session
+logs exposed the rest of the same class:
+
+1. **Every remaining value slot in `translate()`, `Builder`,
+   `buildWidgetAction` and `buildComponentAction` now routes through
+   `expr()`** via `valueSlot`, `numberSlot` and `boolSlot`:
+   - `toast` (its explicit object refusal cost 5 dead turns in
+     MagicalNotes), `custom_toast`, `add_to_list`, `put_in_map`,
+     `remove_map_key`, `add_map_entry` / `insert_map_entry` /
+     `set_map_entry`, `map_put_number` / `map_put_flag`,
+     `map_from_json` / `list_from_json`, `sort_list` (`key`),
+     list `index` / `index2` (`indexParam`), `numberParam`,
+     `numericField`, `set_hint`, `copy_to_clipboard`,
+     `set_screen_title`, `load_url`, `set_image_url`, `set_progress`,
+     `set_enabled`, `set_clickable`, `write_file`, `pathParam`,
+     `copy_file` / `move_file` / `copy_folder` / `rename_file`,
+     `crop_image`, `scale_bitmap` and kin, `split_into_list`,
+     `open_asset`, `menu_add_item`, `dialog_*_button`, and `'b'`
+     boolean slots in widget/component actions.
+   - Common parameter aliases (`key`/`value` on `save_pref` and
+     `put_extra`; `variable` on list blocks) are accepted directly.
+2. **`EXPRESSION_KEYS` expanded from 48 to the full set of ~95
+   top-level `expr()` keys** (including `fn`, `op`, `text_of`,
+   `checked`, `enabled`, `extra`, `progress_of`, `url_of`,
+   `selection_of`, etc., with single-key guards so multi-field data
+   JSON is never mistaken for an expression), plus inner-quote cleanup
+   (`{"\"text_of\"":...}`).
+3. **Widget hierarchy & remaining stock blocks (`Gx.java` +
+   `ExtraPaletteBlock.java`)**:
+   - `CompoundButton` blocks (`set_checked`, `{"checked":"..."}`) now
+     accept `CheckBox`, `Switch` and `RadioButton`.
+   - `EditText` blocks accept `AutoCompleteTextView` and
+     `MultiAutoCompleteTextView`; `SeekBar` progress blocks accept
+     `ProgressBar`.
+   - Added `set_image`, `set_typeface`, `show_keyboard`,
+     `hide_keyboard`, `set_pref_file`, `set_custom_letter`,
+     `list_set_checked`, `list_checked_positions_to_list`,
+     `refresh_adapter`, inline row/view listeners (`when_clicked`,
+     `when_long_clicked`, `when_checked_changed` with
+     `{"is_checked":true}`, `when_swipe_refresh`), and reporters
+     `current_time` / `fn:"now"`, `date_of`, `res_string`,
+     `list_checked_position_of`, `list_checked_count_of`.
+4. **Event editing, replacement, terminators & export fixes**:
+   - `edit_event_block`: any `%s`/`%d`/`%b` slot is editable, object
+     expressions in `replace_with` compile into reporter beans instead
+     of failing with `JsonObject`, and statement `[1]` can be removed
+     cleanly (promoting `nextBlock` to chain head or emptying the
+     event).
+   - `set_event_handler`: optional `replace: true` replaces an event's
+     existing blocks in one step.
+   - `Builder.requireComponent` and `expr()` component reporters share
+     sole-component auto-resolution; `E_NO_VARIABLE` detects when the
+     named identifier is a list on the same screen.
+   - `checkTerminators` checks existing chain tails even when new
+     blocks have no terminator, and guards nested sub-chains in
+     `Builder.buildList`.
+   - `build_project` and positional `edit_event_block` are never
+     blocked by `E_ALREADY_DONE`; custom-view edits show their real
+     screen name; underscored and extended-widget custom attributes
+     validate cleanly in `AgentEdits`.
+

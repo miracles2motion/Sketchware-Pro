@@ -68,14 +68,19 @@ public final class AgentLogic {
      * string, and the value is stored as the literal text
      * {\"pref_get\":\"file1\"} — which is what MagicalNotes did, so the
      * app saved and displayed raw JSON instead of the saved note.
-     * These keys let that mistake be recognised and undone.
+     * Every top-level expression key {@code expr()} accepts is listed
+     * here (not just the original 48, which missed {@code fn},
+     * {@code op} and {@code text_of}), so any quoted expression is
+     * recognised and undone.
      */
     private static final java.util.Set<String> EXPRESSION_KEYS =
             java.util.Set.of(
             "ad_loaded",
+            "alpha_of",
             "anim_running",
             "arg",
             "asset_text",
+            "badge_count_of",
             "bool",
             "bt_enabled",
             "bt_on",
@@ -83,11 +88,26 @@ public final class AgentLogic {
             "calendar_diff",
             "calendar_millis",
             "calendar_text",
+            "can_go_back",
+            "can_go_forward",
+            "can_pause",
+            "can_seek_back",
+            "can_seek_forward",
+            "checked",
+            "counter_max_of",
+            "current_time",
+            "date_of",
+            "enabled",
+            "extra",
             "fb_push_key",
             "file_exists",
             "file_length",
+            "fn",
             "has_extra",
+            "height_of",
+            "index_of",
             "instance_of",
+            "is_checked",
             "is_file",
             "is_folder",
             "item_of",
@@ -95,31 +115,99 @@ public final class AgentLogic {
             "json_of_list",
             "json_of_list_map",
             "json_of_map",
+            "last_visible_of",
+            "list_checked_count_of",
+            "list_checked_position_of",
             "list_has",
             "list_length",
             "list_map_has",
             "list_map_value",
             "load_sound",
+            "location_x_of",
+            "location_y_of",
+            "map_empty",
             "map_get",
             "map_has",
+            "map_has_value",
+            "map_size",
+            "max_of",
             "mp_duration_of",
             "mp_looping",
             "mp_playing",
             "mp_position_of",
             "number",
+            "op",
+            "otp_text_of",
+            "page_limit_of",
+            "page_of",
             "pattern_md5_of",
             "pattern_sha1_of",
             "pattern_text_of",
             "play_sound",
             "pref_get",
             "pref_has",
+            "progress_of",
             "public_dir",
+            "rating_of",
             "read_file",
             "replace_all",
+            "res_string",
+            "rotation_of",
+            "scale_x_of",
+            "scale_y_of",
+            "selection_end_of",
+            "selection_of",
+            "selection_start_of",
             "text",
+            "text_of",
+            "translation_x_of",
+            "translation_y_of",
             "tts_speaking",
+            "url_of",
             "var",
-            "visibility_is"            );
+            "video_duration_of",
+            "video_playing",
+            "video_position_of",
+            "visibility_is",
+            "web_progress_of",
+            "width_of");
+
+    /** Keys that only denote an expression when they stand alone. */
+    private static final java.util.Set<String> SINGLE_KEY_EXPRESSIONS =
+            java.util.Set.of("text", "number", "bool", "var", "arg",
+                    "checked", "enabled", "extra");
+
+    /**
+     * Strips stray inner quotes around JSON keys (MagicalNotes saw
+     * {@code {"\"text_of\"":"note_input"}} from a small model).
+     */
+    private static JsonObject cleanExprObject(JsonObject raw) {
+        if (raw == null) {
+            return null;
+        }
+        boolean dirty = false;
+        for (String key : raw.keySet()) {
+            if (key.length() >= 2 && key.startsWith("\"")
+                    && key.endsWith("\"")) {
+                dirty = true;
+                break;
+            }
+        }
+        if (!dirty) {
+            return raw;
+        }
+        JsonObject cleaned = new JsonObject();
+        for (java.util.Map.Entry<String, JsonElement> entry
+                : raw.entrySet()) {
+            String key = entry.getKey();
+            if (key.length() >= 2 && key.startsWith("\"")
+                    && key.endsWith("\"")) {
+                key = key.substring(1, key.length() - 1);
+            }
+            cleaned.add(key, entry.getValue());
+        }
+        return cleaned;
+    }
 
     /**
      * A string that is really an expression written as text, or null.
@@ -141,11 +229,26 @@ public final class AgentLogic {
             if (parsed == null || !parsed.isJsonObject()) {
                 return null;
             }
-            JsonObject object = parsed.getAsJsonObject();
+            JsonObject object = cleanExprObject(parsed.getAsJsonObject());
             for (String key : EXPRESSION_KEYS) {
-                if (object.has(key)) {
-                    return object;
+                if (!object.has(key)) {
+                    continue;
                 }
+                if (SINGLE_KEY_EXPRESSIONS.contains(key)) {
+                    if (object.size() != 1) {
+                        continue;
+                    }
+                    if (("checked".equals(key) || "enabled".equals(key))
+                            && (!object.get(key).isJsonPrimitive()
+                                    || !object.get(key)
+                                            .getAsJsonPrimitive()
+                                            .isString())) {
+                        // {"title":"Milk","checked":false} is data, not
+                        // a widget-checked reporter.
+                        continue;
+                    }
+                }
+                return object;
             }
             return null;
         } catch (Exception e) {
@@ -153,6 +256,111 @@ public final class AgentLogic {
         }
     }
 
+
+    /**
+     * One value slot, read the way the editor's own block reads it.
+     *
+     * Sketchware's blocks take a reporter in most value slots. Ours
+     * used to read them with stringOf(), which returns "" for
+     * anything that is not text — so a model wanting "the value of
+     * Box" or "this list as JSON" had nothing to reach for but its
+     * own invented JSON-in-text notation, and the app ended up
+     * storing and showing those letters. Every slot that can hold a
+     * value now comes through here.
+     *
+     * @param what plain words for the error when the value does not fit
+     */
+    private static String valueSlot(Builder builder, JsonObject op,
+                                    String field, char slot, String what)
+            throws AgentTools.ToolException {
+        JsonElement raw = op.get(field);
+        if (raw != null && raw.isJsonObject()) {
+            return builder.expr(cleanExprObject(raw.getAsJsonObject()),
+                    slot, what);
+        }
+        if (raw != null && raw.isJsonPrimitive()
+                && raw.getAsJsonPrimitive().isString()) {
+            // A value written as text — {"var":"Box"} quoted. Wave 33
+            // reads those back as the expression they meant.
+            JsonObject decoded = expressionFromText(raw.getAsString());
+            if (decoded != null) {
+                builder.recoveredFromText = true;
+                return builder.expr(decoded, slot, what);
+            }
+        }
+        return stringOf(op, field);
+    }
+
+    /** A value slot whose literal form has to be a number. */
+    private static String numberSlot(Builder builder, JsonObject op,
+                                     String field, String what)
+            throws AgentTools.ToolException {
+        JsonElement raw = op.get(field);
+        if (raw != null && raw.isJsonObject()) {
+            return builder.expr(cleanExprObject(raw.getAsJsonObject()),
+                    'd', what);
+        }
+        if (raw != null && raw.isJsonPrimitive()
+                && raw.getAsJsonPrimitive().isString()) {
+            JsonObject decoded = expressionFromText(raw.getAsString());
+            if (decoded != null) {
+                builder.recoveredFromText = true;
+                return builder.expr(decoded, 'd', what);
+            }
+        }
+        String text = stringOf(op, field);
+        if (text.isEmpty()) {
+            return text;
+        }
+        try {
+            Double.parseDouble(text);
+        } catch (Exception e) {
+            throw new AgentTools.ToolException("E_BAD_BLOCK",
+                    what + " (got \"" + text + "\").");
+        }
+        return text;
+    }
+
+    /** A boolean value slot: true/false literal or boolean expression. */
+    private static String boolSlot(Builder builder, JsonObject op,
+                                   String field, boolean fallback,
+                                   String what)
+            throws AgentTools.ToolException {
+        JsonElement raw = op.get(field);
+        if (raw != null && raw.isJsonObject()) {
+            return builder.expr(cleanExprObject(raw.getAsJsonObject()),
+                    'b', what);
+        }
+        if (raw != null && raw.isJsonPrimitive()
+                && raw.getAsJsonPrimitive().isString()) {
+            JsonObject decoded = expressionFromText(raw.getAsString());
+            if (decoded != null) {
+                builder.recoveredFromText = true;
+                return builder.expr(decoded, 'b', what);
+            }
+        }
+        return String.valueOf(boolOf(op, field, fallback));
+    }
+
+    /** Plain words for a value, for the plan and the card. */
+    private static String describeSlot(Builder builder, JsonObject op,
+                                       String field) {
+        JsonElement raw = op.get(field);
+        if (raw == null) {
+            return "";
+        }
+        if (raw.isJsonObject()) {
+            return builder.describeExpr(
+                    cleanExprObject(raw.getAsJsonObject()));
+        }
+        if (raw.isJsonPrimitive() && raw.getAsJsonPrimitive().isString()) {
+            JsonObject decoded = expressionFromText(raw.getAsString());
+            if (decoded != null) {
+                return builder.describeExpr(decoded);
+            }
+        }
+        return stringOf(op, field);
+    }
 
     /** Deepest container nesting in one handler. */
     private static final int MAX_DEPTH = 3;
@@ -238,6 +446,11 @@ public final class AgentLogic {
         WIDGET_ACTIONS.put("set_image_resource", new WA(
                 "setImageCustomRes", "imageview", "r",
                 ".setImageResource(", "Set {t} image to {1}"));
+        WIDGET_ACTIONS.put("set_image", new WA("setImage", "imageview",
+                "r", ".setImageResource(", "Set {t} image to {1}"));
+        WIDGET_ACTIONS.put("set_custom_letter", new WA(
+                "setCustomLetter", "sidebar", "s", ".setCustomLetter(",
+                "Set {t} index letters to {1}"));
         WIDGET_ACTIONS.put("set_image_by_name", new WA(
                 "setImageIdentifier", "imageview", "s",
                 ".setImageResource(", "Set {t} image to the one "
@@ -781,6 +994,9 @@ public final class AgentLogic {
         COMPONENT_ACTIONS.put("remove_pref", new CA("fileRemoveData",
                 prefs, "s", ".edit().remove(",
                 "In {c}, remove “{1}”"));
+        COMPONENT_ACTIONS.put("set_pref_file", new CA("fileSetFileName",
+                prefs, "s", ".getSharedPreferences(",
+                "Point {c} at preferences file “{1}”"));
         COMPONENT_ACTIONS.put("calendar_now", new CA("calendarGetNow",
                 calendar, "", " = Calendar.getInstance();",
                 "Set {c} to now"));
@@ -1079,6 +1295,8 @@ public final class AgentLogic {
                 new LinkedHashMap<>();
         public boolean eventExists;
         public int existingCount;
+        /** True when the handler replaces existing blocks outright. */
+        public boolean replace;
         /** Intent component apply() must create first, or null. */
         public String newComponentId;
         public String header;
@@ -1203,6 +1421,15 @@ public final class AgentLogic {
     public static Plan plan(Context context, String scId,
                             ProjectFileBean activity, String target,
                             String event, JsonArray blocks)
+            throws AgentTools.ToolException {
+        return plan(context, scId, activity, target, event, blocks,
+                false);
+    }
+
+    public static Plan plan(Context context, String scId,
+                            ProjectFileBean activity, String target,
+                            String event, JsonArray blocks,
+                            boolean replace)
             throws AgentTools.ToolException {
         if (activity.fileType != ProjectFileBean.PROJECT_FILE_TYPE_ACTIVITY) {
             throw new AgentTools.ToolException("E_NOT_ACTIVITY",
@@ -1342,11 +1569,14 @@ public final class AgentLogic {
         }
         plan.eventArgs.putAll(eventArgsOf(plan.eventName));
 
-        // The event this handler appends to, and what it already does.
+        // The event this handler appends to (or replaces), and what it
+        // already does.
         plan.eventExists = eventRegistered(store, javaName, plan);
         ArrayList<BlockBean> existing = readBlocks(store, javaName, plan);
         plan.existingCount = existing.size();
-        int nextId = nextFreeId(existing);
+        plan.replace = replace;
+        int nextId = replace ? nextFreeId(new ArrayList<>())
+                : nextFreeId(existing);
 
         // A screen that closes cannot do anything afterwards. This is
         // not a style rule: in MagicalNotes the agent put Finish
@@ -1360,7 +1590,8 @@ public final class AgentLogic {
         // so the save and the confirmation never ran, and the user saw
         // a block sitting under Finish Activity in the editor. Nothing
         // may follow a terminator, and a second one is a copy.
-        checkTerminators(blocks, existing, plan.eventName, plan.targetId);
+        checkTerminators(blocks, replace ? new ArrayList<>() : existing,
+                plan.eventName, plan.targetId);
 
         // Inside onBindCustomView, blocks address the item layout's
         // widgets (the editor swaps its widget menus to that layout);
@@ -1409,10 +1640,29 @@ public final class AgentLogic {
                 plan.chain.add(builder.buildStatement(
                         element.getAsJsonObject(), 0));
             } catch (AgentTools.ToolException e) {
-                // A missing variable is almost always the per-screen
-                // rule: the name exists — on another screen. Say so,
-                // instead of making the model guess again.
                 if ("E_NO_VARIABLE".equals(e.code)) {
+                    // StickerBoardTodo declared "tasks" as a list_map
+                    // and then called set_variable on it — "no variable
+                    // named tasks; declares no variables yet" hid the
+                    // real reason: it is a list on this same screen.
+                    for (String listName : builder.lists.keySet()) {
+                        if (e.getMessage() != null && e.getMessage()
+                                .contains("\"" + listName + "\"")) {
+                            throw new AgentTools.ToolException(
+                                    "E_BAD_BLOCK",
+                                    "\"" + listName + "\" is a list on "
+                                            + "this screen, not a "
+                                            + "single-value variable — "
+                                            + "fill or update it with "
+                                            + "list blocks "
+                                            + "(list_from_json, "
+                                            + "add_to_list, "
+                                            + "add_map_entry, "
+                                            + "clear_list, show_list, "
+                                            + "list_custom_data) rather "
+                                            + "than set_variable.");
+                        }
+                    }
                     String hint = variablesByScreenHint(scId, activity);
                     if (!hint.isEmpty()) {
                         throw new AgentTools.ToolException(e.code,
@@ -1519,8 +1769,10 @@ public final class AgentLogic {
         // The existing beans are the store's live objects, so the
         // dry run joins clones — a proposal must not touch anything.
         ArrayList<BlockBean> dryExisting = new ArrayList<>();
-        for (BlockBean bean : existing) {
-            dryExisting.add(bean.clone());
+        if (!replace) {
+            for (BlockBean bean : existing) {
+                dryExisting.add(bean.clone());
+            }
         }
         String combined = generate(context, scId, activity,
                 joined(dryExisting, freshGenerationList(plan)));
@@ -1611,6 +1863,8 @@ public final class AgentLogic {
         /** SubMenu names declared so far in this handler. */
         final java.util.Set<String> submenuNames =
                 new java.util.HashSet<>();
+        /** Nesting count of when_checked_changed bodies (isChecked). */
+        int inCheckedListener = 0;
 
         Builder(Context context, Map<String, ViewBean> byId,
                 Map<String, Integer> variables, int nextId) {
@@ -1633,31 +1887,75 @@ public final class AgentLogic {
             return bean;
         }
 
+        /** Sole component of {@code type} on this screen, or "". */
+        String soleComponentOf(int type) {
+            String found = null;
+            for (Map.Entry<String, Integer> entry
+                    : components.entrySet()) {
+                if (entry.getValue() != null
+                        && entry.getValue() == type) {
+                    if (found != null) {
+                        return "";
+                    }
+                    found = entry.getKey();
+                }
+            }
+            return found == null ? "" : found;
+        }
+
+        /** Typed guidance when a component of {@code type} is missing. */
+        String missingComponentMessage(String componentId, int type) {
+            String wanted = ComponentBean.getComponentName(null, type);
+            ArrayList<String> matching = new ArrayList<>();
+            for (Map.Entry<String, Integer> entry
+                    : components.entrySet()) {
+                if (entry.getValue() != null
+                        && entry.getValue() == type) {
+                    matching.add(entry.getKey());
+                }
+            }
+            StringBuilder message = new StringBuilder();
+            if (componentId == null || componentId.isEmpty()) {
+                message.append("This block works on a ").append(wanted)
+                        .append(" component, and none was named. ");
+            } else {
+                message.append("There is no ").append(wanted)
+                        .append(" called \"").append(componentId)
+                        .append("\" on this screen. ");
+            }
+            if (!matching.isEmpty()) {
+                message.append("Name one of this screen's ")
+                        .append(wanted).append(" components: ")
+                        .append(String.join(", ", matching)).append(".");
+            } else {
+                String keyword = AgentTools.componentTypeKeyword(type);
+                message.append("This screen has no ").append(wanted)
+                        .append(" component yet — add one with "
+                                + "create_component");
+                if (!keyword.isEmpty()) {
+                    message.append(" {type: \"").append(keyword)
+                            .append("\"}");
+                }
+                message.append(", then name it here.");
+            }
+            return message.toString();
+        }
+
         /** A component argument of the required kind, by id. */
         String requireComponent(JsonObject op, int type, String label)
                 throws AgentTools.ToolException {
             String componentId = stringOf(op, "component");
             Integer actual = components.get(componentId);
+            if (actual == null && componentId.isEmpty()) {
+                String sole = soleComponentOf(type);
+                if (!sole.isEmpty()) {
+                    componentId = sole;
+                    actual = components.get(componentId);
+                }
+            }
             if (actual == null) {
-                // An empty name is the common case: the model knows it
-                // wants a component but not which one. Naming the ones
-                // that exist turns a dead end into a correction.
                 throw new AgentTools.ToolException("E_BAD_BLOCK",
-                        componentId.isEmpty()
-                                ? "This block needs a component and none "
-                                        + "was named. "
-                                        + describe("This screen has: ",
-                                                "It has no components yet "
-                                                        + "— add one with "
-                                                        + "create_component.",
-                                                components.keySet())
-                                : "There is no component called "
-                                        + componentId + " on this screen. "
-                                        + describe("This screen has: ",
-                                                "It has no components yet "
-                                                        + "— add one with "
-                                                        + "create_component.",
-                                                components.keySet()));
+                        missingComponentMessage(componentId, type));
             }
             if (actual != type) {
                 throw new AgentTools.ToolException("E_BAD_BLOCK",
@@ -1949,12 +2247,14 @@ public final class AgentLogic {
                     String componentId = requireComponent(op,
                             ComponentBean.COMPONENT_TYPE_DIALOG,
                             "Dialog");
-                    String text = stringOf(op, "text");
+                    String text = valueSlot(this, op, "text", 's',
+                            "the dialog button's \"text\"");
                     if (text.isEmpty()) {
                         throw new AgentTools.ToolException(
                                 "E_BAD_BLOCK",
                                 "A dialog button needs its \"text\".");
                     }
+                    String shownText = describeSlot(this, op, "text");
                     String kindName = kind;
                     String opCode = "dialog_ok_button".equals(kindName)
                             ? "dialogOkButton"
@@ -1973,10 +2273,10 @@ public final class AgentLogic {
                                             .equals(kindName)
                                             ? "NegativeButton"
                                             : "NeutralButton") + "(",
-                            "When " + componentId + "'s “" + text
+                            "When " + componentId + "'s “" + shownText
                                     + "” button is tapped");
                     lines.add(indent(depth) + "When " + componentId
-                            + "'s “" + text + "” (" + which
+                            + "'s “" + shownText + "” (" + which
                             + ") button is tapped:");
                     ArrayList<BlockBean> body = buildList(
                             arrayOf(op, "blocks"), depth + 1, "blocks");
@@ -2564,7 +2864,7 @@ public final class AgentLogic {
                     }
                     BlockBean bean = newBean("menuAddMenuItem", " ");
                     bean.parameters.add(name);
-                    bean.parameters.add(numericField(op, "id"));
+                    bean.parameters.add(numericField(this, op, "id"));
                     bean.parameters.add(expr(op.get("title"), 's',
                             "menu_item needs \"title\": the item text"));
                     bean.parameters.add(icon);
@@ -2615,7 +2915,7 @@ public final class AgentLogic {
                     }
                     BlockBean bean = newBean("submenuAddItem", " ");
                     bean.parameters.add(name);
-                    bean.parameters.add(numericField(op, "id"));
+                    bean.parameters.add(numericField(this, op, "id"));
                     bean.parameters.add(expr(op.get("title"), 's',
                             "submenu_item needs \"title\": the item "
                                     + "text"));
@@ -2697,6 +2997,84 @@ public final class AgentLogic {
                     }
                     return bean;
                 }
+                case "when_clicked", "when_long_clicked" -> {
+                    // Inline click/long-click listeners (viewOnClick /
+                    // viewOnLongClick): essential in onBindCustomView
+                    // where row widgets have no top-level event, and
+                    // valid on any screen widget too.
+                    ViewBean widget = requireWidget(op, byId);
+                    boolean longClick = "when_long_clicked".equals(kind);
+                    BlockBean bean = newBean(
+                            longClick ? "viewOnLongClick" : "viewOnClick",
+                            "c");
+                    bean.parameters.add(widget.id);
+                    allStatements.add(bean);
+                    addExpect(widget.id + (longClick
+                                    ? ".setOnLongClickListener("
+                                    : ".setOnClickListener("),
+                            "When " + widget.id + (longClick
+                                    ? " is long-pressed" : " is tapped"));
+                    lines.add(indent(depth) + "When " + widget.id
+                            + (longClick ? " is long-pressed:"
+                                    : " is tapped:"));
+                    ArrayList<BlockBean> body = buildList(
+                            arrayOf(op, "blocks"), depth + 1, "blocks");
+                    bean.subStack1 = Integer.parseInt(body.get(0).id);
+                    return bean;
+                }
+                case "when_checked_changed" -> {
+                    // Inline CompoundButton listener (checkboxOnChecked):
+                    // inside its body, {"is_checked":true} or
+                    // {"arg":"isChecked"} reads the new state.
+                    ViewBean widget = requireWidget(op, byId);
+                    String typeName = AgentEdits.typeName(widget.type);
+                    if (!"CheckBox".equals(typeName)
+                            && !"Switch".equals(typeName)
+                            && !"RadioButton".equals(typeName)) {
+                        throw new AgentTools.ToolException("E_BAD_BLOCK",
+                                widget.id + " is a " + typeName
+                                        + ", not a CheckBox, Switch or "
+                                        + "RadioButton.");
+                    }
+                    BlockBean bean = newBean("checkboxOnChecked", "c");
+                    bean.parameters.add(widget.id);
+                    allStatements.add(bean);
+                    addExpect(widget.id + ".setOnCheckedChangeListener(",
+                            "When " + widget.id + " is toggled");
+                    lines.add(indent(depth) + "When " + widget.id
+                            + " is toggled:");
+                    inCheckedListener++;
+                    try {
+                        ArrayList<BlockBean> body = buildList(
+                                arrayOf(op, "blocks"), depth + 1,
+                                "blocks");
+                        bean.subStack1 = Integer.parseInt(
+                                body.get(0).id);
+                    } finally {
+                        inCheckedListener--;
+                    }
+                    return bean;
+                }
+                case "when_swipe_refresh" -> {
+                    ViewBean widget = requireWidget(op, byId);
+                    String typeName = AgentEdits.typeName(widget.type);
+                    if (!"SwipeRefreshLayout".equals(typeName)) {
+                        throw new AgentTools.ToolException("E_BAD_BLOCK",
+                                widget.id + " is a " + typeName
+                                        + ", not a SwipeRefreshLayout.");
+                    }
+                    BlockBean bean = newBean("onSwipeRefreshLayout", "c");
+                    bean.parameters.add(widget.id);
+                    allStatements.add(bean);
+                    addExpect(widget.id + ".setOnRefreshListener(",
+                            "When " + widget.id + " is pulled to refresh");
+                    lines.add(indent(depth) + "When " + widget.id
+                            + " is pulled to refresh:");
+                    ArrayList<BlockBean> body = buildList(
+                            arrayOf(op, "blocks"), depth + 1, "blocks");
+                    bean.subStack1 = Integer.parseInt(body.get(0).id);
+                    return bean;
+                }
                 case "youtube_listener" -> {
                     // YTPVSetListener: cue a video when the player is
                     // ready, then run the body.
@@ -2770,6 +3148,10 @@ public final class AgentLogic {
                         "At most " + MAX_BLOCKS + " blocks in one \""
                                 + what + "\" list.");
             }
+            // Sub-chains obey the same terminator rule as the main
+            // chain: nothing after finish / break / continue can run.
+            checkTerminators(array, new ArrayList<>(), currentEvent,
+                    what);
             ArrayList<BlockBean> heads = new ArrayList<>();
             for (JsonElement element : array) {
                 if (!element.isJsonObject()) {
@@ -2862,13 +3244,59 @@ public final class AgentLogic {
                                 + "\" is not a number");
                     }
                 }
+                if (slot == 'b') {
+                    String word = text.trim().toLowerCase(Locale.ROOT);
+                    if ("true".equals(word) || "false".equals(word)) {
+                        return word;
+                    }
+                }
                 throw badValue(what, "\"" + text + "\" does not fit "
                         + "here");
             }
             if (!element.isJsonObject()) {
                 throw badValue(what, "unsupported value shape");
             }
-            JsonObject object = element.getAsJsonObject();
+            JsonObject object = cleanExprObject(
+                    element.getAsJsonObject());
+            if (object.has("is_checked")
+                    || (inCheckedListener > 0 && object.has("arg")
+                            && "isChecked".equalsIgnoreCase(
+                                    stringOf(object, "arg")))) {
+                if (inCheckedListener <= 0) {
+                    throw badValue(what, "\"is_checked\" is only in "
+                            + "scope inside a when_checked_changed "
+                            + "block; outside one, read a widget's "
+                            + "state with {\"checked\":\"widgetId\"}");
+                }
+                if (slot != 'b') {
+                    throw badValue(what, "is_checked is true/false "
+                            + "and does not fit here");
+                }
+                BlockBean bean = newBean("checkboxIsChecked", "b");
+                return "@" + bean.id;
+            }
+            if (object.has("current_time")) {
+                if (slot != 'd') {
+                    throw badValue(what, "current_time is a number "
+                            + "(milliseconds) and does not fit here");
+                }
+                BlockBean bean = newBean("currentTime", "d");
+                return "@" + bean.id;
+            }
+            if (object.has("res_string")) {
+                if (slot != 's') {
+                    throw badValue(what, "a string resource is text "
+                            + "and does not fit here");
+                }
+                String resName = stringOf(object, "res_string");
+                if (!resName.matches("[a-z][a-z0-9_]*")) {
+                    throw badValue(what, "res_string needs a resource "
+                            + "name like \"app_name\"");
+                }
+                BlockBean bean = newBean("getResStr", "s");
+                bean.spec = resName;
+                return "@" + bean.id;
+            }
             if (object.has("arg")) {
                 // A value the event itself passes (a Firebase child
                 // key, a sensor reading, a success flag): stored as
@@ -3423,19 +3851,43 @@ public final class AgentLogic {
                             + "not fit here");
                 }
                 String componentId = stringOf(object, key);
+                if (componentId.isEmpty()) {
+                    componentId = stringOf(object, "component");
+                }
+                String inferredPrefKey = null;
                 Integer actual = components.get(componentId);
+                if (actual == null) {
+                    String sole = soleComponentOf(type);
+                    if (!sole.isEmpty()) {
+                        if (!componentId.isEmpty()
+                                && ("pref_get".equals(key)
+                                        || "pref_has".equals(key))
+                                && !object.has("key")) {
+                            // {"pref_get":"magical_note"} when file1 is
+                            // the screen's only SharedPreferences: the
+                            // string is the key, not a missing component.
+                            inferredPrefKey = componentId;
+                            componentId = sole;
+                            actual = components.get(componentId);
+                        } else if (componentId.isEmpty()) {
+                            componentId = sole;
+                            actual = components.get(componentId);
+                        }
+                    }
+                }
                 if (actual == null || actual != type) {
-                    throw badValue(what, "there is no "
-                            + ComponentBean.getComponentName(null, type)
-                            + " component called " + componentId
-                            + " on this screen");
+                    throw badValue(what,
+                            missingComponentMessage(componentId, type));
                 }
                 BlockBean bean = newBean(opCode,
                         String.valueOf(needed));
                 bean.parameters.add(componentId);
                 switch (key) {
                     case "pref_get", "pref_has" -> {
-                        String prefKey = stringOf(object, "key");
+                        String prefKey = inferredPrefKey != null
+                                ? inferredPrefKey
+                                : valueSlot(this, object, "key", 's',
+                                        "the preference \"key\" to read");
                         if (prefKey.isEmpty()) {
                             throw badValue(what, "this needs the "
                                     + "\"key\" to read");
@@ -3645,6 +4097,15 @@ public final class AgentLogic {
                                     + "and does not fit here");
                         }
                         BlockBean bean = newBean("mathPi", "d");
+                        return "@" + bean.id;
+                    }
+                    case "now", "current_time" -> {
+                        if (slot != 'd') {
+                            throw badValue(what, "current time is a "
+                                    + "number (milliseconds) and does "
+                                    + "not fit here");
+                        }
+                        BlockBean bean = newBean("currentTime", "d");
                         return "@" + bean.id;
                     }
                     case "len" -> {
@@ -4083,7 +4544,10 @@ public final class AgentLogic {
                     || object.has("badge_count_of")
                     || object.has("otp_text_of")
                     || object.has("counter_max_of")
-                    || object.has("page_limit_of")) {
+                    || object.has("page_limit_of")
+                    || object.has("date_of")
+                    || object.has("list_checked_position_of")
+                    || object.has("list_checked_count_of")) {
                 // Widget geometry/state reporters (View page):
                 // getWidth/getHeight/getAlpha/getRotation/getScaleX/
                 // getScaleY/getTranslationX/getTranslationY for any
@@ -4104,7 +4568,9 @@ public final class AgentLogic {
                         "location_x_of", "location_y_of",
                         "badge_count_of",
                         "otp_text_of", "counter_max_of",
-                        "page_limit_of"}) {
+                        "page_limit_of", "date_of",
+                        "list_checked_position_of",
+                        "list_checked_count_of"}) {
                     if (object.has(candidate)) {
                         key = candidate;
                         break;
@@ -4245,12 +4711,33 @@ public final class AgentLogic {
                         opCode = "tilGetCounterMaxLength";
                         yield "TextInputLayout";
                     }
+                    case "date_of" -> {
+                        opCode = "calendarViewGetDate";
+                        yield "CalendarView";
+                    }
+                    case "list_checked_position_of" -> {
+                        opCode = "listGetCheckedPosition";
+                        yield "ListView";
+                    }
+                    case "list_checked_count_of" -> {
+                        opCode = "listGetCheckedCount";
+                        yield "ListView";
+                    }
                     default -> {
                         opCode = "pagerGetOffscreenPageLimit";
                         yield "ViewPager";
                     }
                 };
-                if (!family.isEmpty() && !family.equals(typeName)) {
+                boolean familyMatches = family.isEmpty()
+                        || family.equals(typeName)
+                        || ("EditText".equals(family)
+                                && ("AutoCompleteTextView"
+                                        .equals(typeName)
+                                        || "MultiAutoCompleteTextView"
+                                                .equals(typeName)))
+                        || ("SeekBar".equals(family)
+                                && "ProgressBar".equals(typeName));
+                if (!familyMatches) {
                     throw badValue(what, widget.id + " is a "
                             + typeName + ", not a " + family);
                 }
@@ -4313,9 +4800,13 @@ public final class AgentLogic {
                                     + " is checked is true/false and "
                                     + "does not fit here");
                         }
-                        if (!"CheckBox".equals(typeName)) {
+                        if (!"CheckBox".equals(typeName)
+                                && !"Switch".equals(typeName)
+                                && !"RadioButton".equals(typeName)) {
                             throw badValue(what, widget.id + " is a "
-                                    + typeName + ", not a CheckBox");
+                                    + typeName
+                                    + ", not a CheckBox, Switch or "
+                                    + "RadioButton");
                         }
                         BlockBean bean = newBean("getChecked", "b");
                         bean.parameters.add(widget.id);
@@ -4337,9 +4828,11 @@ public final class AgentLogic {
                                     + widget.id + " is a number and "
                                     + "does not fit here");
                         }
-                        if (!"SeekBar".equals(typeName)) {
+                        if (!"SeekBar".equals(typeName)
+                                && !"ProgressBar".equals(typeName)) {
                             throw badValue(what, widget.id + " is a "
-                                    + typeName + ", not a SeekBar");
+                                    + typeName
+                                    + ", not a SeekBar or ProgressBar");
                         }
                         BlockBean bean = newBean(
                                 "seekBarGetProgress", "d");
@@ -4458,7 +4951,29 @@ public final class AgentLogic {
             if (!element.isJsonObject()) {
                 return "?";
             }
-            JsonObject object = element.getAsJsonObject();
+            JsonObject object = cleanExprObject(
+                    element.getAsJsonObject());
+            if (object.has("is_checked")) {
+                return "whether it is checked";
+            }
+            if (object.has("current_time")) {
+                return "the current time (ms)";
+            }
+            if (object.has("res_string")) {
+                return "string resource “"
+                        + stringOf(object, "res_string") + "”";
+            }
+            if (object.has("date_of")) {
+                return stringOf(object, "date_of") + "'s selected date";
+            }
+            if (object.has("list_checked_position_of")) {
+                return "the checked position in "
+                        + stringOf(object, "list_checked_position_of");
+            }
+            if (object.has("list_checked_count_of")) {
+                return "the number of checked items in "
+                        + stringOf(object, "list_checked_count_of");
+            }
             if (object.has("arg")) {
                 return "the " + stringOf(object, "arg")
                         + " this event passes";
@@ -4467,6 +4982,7 @@ public final class AgentLogic {
                 String fn = stringOf(object, "fn")
                         .toLowerCase(Locale.ROOT);
                 return switch (fn) {
+                    case "now", "current_time" -> "the current time (ms)";
                     case "len" -> "length of "
                             + describeExpr(object.get("a"));
                     case "concat" -> describeExpr(object.get("a"))
@@ -4976,7 +5492,8 @@ public final class AgentLogic {
             // linking to the first created bean instead strands
             // the new chain behind a condition reporter.
             ArrayList<BlockBean> combined = editorOrder(
-                    joined(current, freshGenerationList(plan)));
+                    plan.replace ? freshGenerationList(plan)
+                            : joined(current, freshGenerationList(plan)));
             java.util.Set<String> freshIds = new java.util.HashSet<>();
             for (BlockBean bean : plan.fresh) {
                 freshIds.add(bean.id);
@@ -5196,28 +5713,27 @@ public final class AgentLogic {
                                     + fromVariable;
                     break;
                 }
-                if (op.has("message")
-                        && op.get("message").isJsonObject()) {
-                    throw new AgentTools.ToolException("E_BAD_BLOCK",
-                            "A toast message is plain text. To show a "
-                                    + "value — an event's "
-                                    + "{\"arg\":...}, a map entry, a "
-                                    + "widget's text — first put it in "
-                                    + "a string variable with "
-                                    + "set_variable, then toast "
-                                    + "{from_variable}.");
-                }
-                String message = stringOf(op, "message");
+                // A value in the message slot — a variable, a widget's
+                // text, an event's argument. Sketchware's own Toast
+                // block takes a reporter here; the refusal that used
+                // to sit in this spot cost five dead turns in the
+                // MagicalNotes export and left the app with no way to
+                // show a value at all.
+                String message = valueSlot(builder, op, "message", 's',
+                        "the message to show");
                 if (message.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
                             "A toast block needs a \"message\".");
                 }
-                if (message.length() > 200) {
+                boolean literalMessage = !op.has("message")
+                        || !op.get("message").isJsonObject();
+                if (literalMessage && message.length() > 200) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
                             "Toast messages are capped at 200 characters.");
                 }
                 stmt.params.add(message);
-                stmt.sentence = "Show message “" + message + "”";
+                stmt.sentence = "Show message “"
+                        + describeSlot(builder, op, "message") + "”";
                 stmt.expectCode = "SketchwareUtil.showMessage";
             }
             case "set_text" -> {
@@ -5247,24 +5763,13 @@ public final class AgentLogic {
                     stmt.expectCode = widget.id + ".setText(" + fromVariable;
                     break;
                 }
-                if (op.has("text") && op.get("text").isJsonObject()) {
-                    // A reporter in the text slot — a variable's value,
-                    // a widget's text, a list's JSON. Sketchware's own
-                    // setText block takes one, so refusing it here
-                    // (which is what this used to do) forced a pointless
-                    // two-step: copy into a variable, then set_text.
-                    String param = builder.expr(op.get("text"), 's',
-                            "set_text needs the text to show");
-                    stmt.params.add(param);
-                    stmt.sentence = "Set " + widget.id + " text to "
-                            + builder.describeExpr(op.get("text"));
-                    stmt.expectCode = widget.id + ".setText(";
-                    break;
-                }
-                String text = stringOf(op, "text");
+                String textField = op.has("text") ? "text"
+                        : op.has("value") ? "value" : "text";
+                String text = valueSlot(builder, op, textField, 's',
+                        "set_text needs the text to show");
                 stmt.params.add(text);
-                stmt.sentence = "Set " + widget.id + " text to “"
-                        + text + "”";
+                stmt.sentence = "Set " + widget.id + " text to "
+                        + describeSlot(builder, op, textField);
                 stmt.expectCode = widget.id + ".setText(";
             }
             case "set_visibility" -> {
@@ -5295,17 +5800,26 @@ public final class AgentLogic {
             }
             case "set_enabled" -> {
                 ViewBean widget = requireWidget(op, byId);
-                if (!op.has("enabled") || !op.get("enabled").isJsonPrimitive()) {
+                String enabledField = op.has("enabled") ? "enabled"
+                        : op.has("flag") ? "flag" : "";
+                if (enabledField.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
-                            "set_enabled needs \"enabled\": true or false.");
+                            "set_enabled needs \"enabled\": true, false "
+                                    + "or a boolean expression.");
                 }
-                boolean enabled = boolOf(op, "enabled", true);
+                String enabled = boolSlot(builder, op, enabledField,
+                        true, "whether " + widget.id + " is enabled");
                 stmt.opCode = "setEnable";
                 stmt.type = " ";
                 stmt.params.add(widget.id);
-                stmt.params.add(String.valueOf(enabled));
-                stmt.sentence = (enabled ? "Enable " : "Disable ")
-                        + widget.id;
+                stmt.params.add(enabled);
+                stmt.sentence = "true".equals(enabled)
+                        ? "Enable " + widget.id
+                        : "false".equals(enabled)
+                                ? "Disable " + widget.id
+                                : "Set " + widget.id + " enabled to "
+                                        + describeSlot(builder, op,
+                                                enabledField);
                 stmt.expectCode = widget.id + ".setEnabled(";
             }
             case "set_text_color" -> {
@@ -5327,17 +5841,17 @@ public final class AgentLogic {
             }
             case "set_image_url" -> {
                 ViewBean widget = requireWidget(op, byId);
-                if (!"ImageView".equals(AgentEdits.typeName(widget.type))) {
+                String typeName = AgentEdits.typeName(widget.type);
+                if (!"ImageView".equals(typeName)
+                        && !"CircleImageView".equals(typeName)) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
                             "Only an ImageView loads an image from a "
                                     + "URL; " + widget.id + " is a "
-                                    + AgentEdits.typeName(widget.type)
-                                    + ".");
+                                    + typeName + ".");
                 }
-                String url = stringOf(op, "url");
-                if (url.isEmpty()) {
-                    url = stringOf(op, "text");
-                }
+                String urlField = op.has("url") ? "url" : "text";
+                String url = valueSlot(builder, op, urlField, 's',
+                        "the image URL to load");
                 if (url.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
                             "set_image_url needs \"url\".");
@@ -5346,7 +5860,8 @@ public final class AgentLogic {
                 stmt.type = " ";
                 stmt.params.add(widget.id);
                 stmt.params.add(url);
-                stmt.sentence = "Load the image at " + url + " into "
+                stmt.sentence = "Load the image at "
+                        + describeSlot(builder, op, urlField) + " into "
                         + widget.id;
                 // Fx emits the app's image loader call; the dry run
                 // itself proves the shape, this just anchors it.
@@ -5355,43 +5870,53 @@ public final class AgentLogic {
             }
             case "set_hint" -> {
                 ViewBean widget = requireWidget(op, byId);
-                if (!"EditText".equals(AgentEdits.typeName(widget.type))) {
+                String typeName = AgentEdits.typeName(widget.type);
+                if (!"EditText".equals(typeName)
+                        && !"AutoCompleteTextView".equals(typeName)
+                        && !"MultiAutoCompleteTextView".equals(typeName)) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
                             "Only an EditText has a hint to set; "
                                     + widget.id + " is a "
-                                    + AgentEdits.typeName(widget.type)
-                                    + ".");
+                                    + typeName + ".");
                 }
-                String hint = stringOf(op, "text");
-                if (hint.isEmpty() && op.has("message")) {
-                    hint = stringOf(op, "message");
-                }
+                String hintField = op.has("text") ? "text"
+                        : op.has("hint") ? "hint"
+                        : op.has("message") ? "message" : "text";
+                String hint = valueSlot(builder, op, hintField, 's',
+                        "the hint to show");
                 stmt.opCode = "setHint";
                 stmt.type = " ";
                 stmt.params.add(widget.id);
                 stmt.params.add(hint);
-                stmt.sentence = "Set " + widget.id + " hint to \""
-                        + hint + "\"";
+                stmt.sentence = "Set " + widget.id + " hint to "
+                        + describeSlot(builder, op, hintField);
                 stmt.expectCode = widget.id + ".setHint(";
             }
             case "set_clickable" -> {
                 ViewBean widget = requireWidget(op, byId);
-                boolean clickable = boolOf(op, "enabled", true);
-                if (op.has("clickable")) {
-                    clickable = boolOf(op, "clickable", true);
-                }
+                String clickField = op.has("clickable") ? "clickable"
+                        : op.has("flag") ? "flag" : "enabled";
+                String clickable = boolSlot(builder, op, clickField,
+                        true, "whether " + widget.id + " is clickable");
                 stmt.opCode = "setClickable";
                 stmt.type = " ";
                 stmt.params.add(widget.id);
-                stmt.params.add(String.valueOf(clickable));
-                stmt.sentence = (clickable ? "Make " : "Make un-clickable ")
-                        + widget.id + (clickable ? " clickable" : "");
+                stmt.params.add(clickable);
+                stmt.sentence = "true".equals(clickable)
+                        ? "Make " + widget.id + " clickable"
+                        : "false".equals(clickable)
+                                ? "Make un-clickable " + widget.id
+                                : "Set " + widget.id + " clickable to "
+                                        + describeSlot(builder, op,
+                                                clickField);
                 stmt.expectCode = widget.id + ".setClickable(";
             }
             case "copy_to_clipboard" -> {
-                String text = stringOf(op, "text");
+                String text = valueSlot(builder, op, "text", 's',
+                        "the text to copy");
                 if (text.isEmpty()) {
-                    text = stringOf(op, "message");
+                    text = valueSlot(builder, op, "message", 's',
+                            "the text to copy");
                 }
                 if (text.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
@@ -5400,14 +5925,17 @@ public final class AgentLogic {
                 stmt.opCode = "copyToClipboard";
                 stmt.type = " ";
                 stmt.params.add(text);
-                stmt.sentence = "Copy \"" + text
-                        + "\" to the clipboard";
+                stmt.sentence = "Copy "
+                        + describeSlot(builder, op, "text")
+                        + " to the clipboard";
                 stmt.expectCode = "setPrimaryClip(ClipData.newPlainText(";
             }
             case "set_screen_title" -> {
-                String text = stringOf(op, "text");
+                String text = valueSlot(builder, op, "text", 's',
+                        "the screen title");
                 if (text.isEmpty()) {
-                    text = stringOf(op, "message");
+                    text = valueSlot(builder, op, "message", 's',
+                            "the screen title");
                 }
                 if (text.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
@@ -5416,8 +5944,8 @@ public final class AgentLogic {
                 stmt.opCode = "setTitle";
                 stmt.type = " ";
                 stmt.params.add(text);
-                stmt.sentence = "Set the screen title to \"" + text
-                        + "\"";
+                stmt.sentence = "Set the screen title to "
+                        + describeSlot(builder, op, "text");
                 stmt.expectCode = "setTitle(";
             }
             case "open_drawer", "close_drawer" -> {
@@ -5438,9 +5966,11 @@ public final class AgentLogic {
                                     + AgentEdits.typeName(widget.type)
                                     + ".");
                 }
-                String url = stringOf(op, "url");
+                String url = valueSlot(builder, op, "url", 's',
+                        "the web address to load");
                 if (url.isEmpty()) {
-                    url = stringOf(op, "text");
+                    url = valueSlot(builder, op, "text", 's',
+                            "the web address to load");
                 }
                 if (url.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
@@ -5450,31 +5980,34 @@ public final class AgentLogic {
                 stmt.type = " ";
                 stmt.params.add(widget.id);
                 stmt.params.add(url);
-                stmt.sentence = "Load " + url + " in " + widget.id;
+                stmt.sentence = "Load "
+                        + describeSlot(builder, op, "url") + " in "
+                        + widget.id;
                 stmt.expectCode = widget.id + ".loadUrl(";
             }
             case "set_progress" -> {
                 ViewBean widget = requireWidget(op, byId);
-                if (!"SeekBar".equals(AgentEdits.typeName(widget.type))) {
+                String typeName = AgentEdits.typeName(widget.type);
+                if (!"SeekBar".equals(typeName)
+                        && !"ProgressBar".equals(typeName)) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
-                            "Only a SeekBar has progress to set; "
-                                    + widget.id + " is a "
-                                    + AgentEdits.typeName(widget.type)
-                                    + ".");
+                            "Only a SeekBar or ProgressBar has progress "
+                                    + "to set; " + widget.id + " is a "
+                                    + typeName + ".");
                 }
-                String value = stringOf(op, "value");
-                try {
-                    Double.parseDouble(value);
-                } catch (Exception e) {
+                String value = numberSlot(builder, op, "value",
+                        "set_progress needs a number \"value\"");
+                if (value.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
-                            "set_progress needs a numeric \"value\".");
+                            "set_progress needs a \"value\" — the "
+                                    + "position to move the bar to.");
                 }
                 stmt.opCode = "seekBarSetProgress";
                 stmt.type = " ";
                 stmt.params.add(widget.id);
                 stmt.params.add(value);
                 stmt.sentence = "Set " + widget.id + " progress to "
-                        + value;
+                        + describeSlot(builder, op, "value");
                 // Fx emits "setProgress((int)%s)" — literal numbers
                 // come straight through, so just the call is anchored.
                 stmt.expectCode = widget.id + ".setProgress(";
@@ -5592,20 +6125,14 @@ public final class AgentLogic {
                 stmt.expectCode = name + (up ? "++;" : "--;");
             }
             case "add_to_list" -> {
-                String list = stringOf(op, "list");
+                String list = requireList(op, lists);
                 Integer listKind = lists.get(list);
-                if (listKind == null) {
-                    throw new AgentTools.ToolException("E_BAD_BLOCK",
-                            "There is no list called " + list
-                                    + " on this screen. Declare one "
-                                    + "with create_variable (type "
-                                    + "list_string or list_number).");
-                }
                 if (listKind == 3) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
-                            "Adding to a list of maps is not "
-                                    + "supported yet; " + list
-                                    + " is a list of maps.");
+                            list + " is a list of maps — use "
+                                    + "add_map_entry {list, key, text} "
+                                    + "or add_map_to_list {list, "
+                                    + "variable} to add to it.");
                 }
                 String fromVariable = stringOf(op, "from_variable");
                 stmt.type = " ";
@@ -5621,13 +6148,22 @@ public final class AgentLogic {
                                 + fromVariable + "” to list “" + list
                                 + "”";
                     } else {
-                        String text = stringOf(op, "text");
+                        String text = valueSlot(builder, op, "text",
+                                's', "the value to add to list “"
+                                        + list + "”");
+                        String shown = describeSlot(builder, op, "text");
                         if (text.isEmpty()) {
-                            text = stringOf(op, "value");
+                            text = valueSlot(builder, op, "value", 's',
+                                    "the value to add to list “" + list
+                                            + "”");
+                            shown = describeSlot(builder, op, "value");
                         }
                         stmt.params.add(text);
-                        stmt.sentence = "Add “" + text + "” to list “"
-                                + list + "”";
+                        // The MagicalNotes case: adding the saved note
+                        // to the list. This slot used to take text only,
+                        // which is why the note arrived as letters.
+                        stmt.sentence = "Add “" + shown
+                                + "” to list “" + list + "”";
                     }
                     stmt.params.add(list);
                 } else {
@@ -5642,32 +6178,27 @@ public final class AgentLogic {
                                 + fromVariable + "” to list “" + list
                                 + "”";
                     } else {
-                        String value = stringOf(op, "value");
-                        try {
-                            Double.parseDouble(value);
-                        } catch (Exception e) {
+                        String value = numberSlot(builder, op, "value",
+                                "List “" + list + "” holds numbers, so "
+                                        + "\"value\" must be a number");
+                        if (value.isEmpty()) {
                             throw new AgentTools.ToolException(
                                     "E_BAD_BLOCK",
-                                    "List “" + list + "” holds "
-                                            + "numbers, so \"value\" "
-                                            + "must be a number (got "
-                                            + "\"" + value + "\").");
+                                    "add_to_list needs the \"value\" to "
+                                            + "add to list “" + list
+                                            + "”.");
                         }
                         stmt.params.add(value);
-                        stmt.sentence = "Add " + value + " to list “"
-                                + list + "”";
+                        stmt.sentence = "Add "
+                                + describeSlot(builder, op, "value")
+                                + " to list “" + list + "”";
                     }
                     stmt.params.add(list);
                 }
                 stmt.expectCode = list + ".add(";
             }
             case "clear_list" -> {
-                String list = stringOf(op, "list");
-                if (!lists.containsKey(list)) {
-                    throw new AgentTools.ToolException("E_BAD_BLOCK",
-                            "There is no list called " + list
-                                    + " on this screen.");
-                }
+                String list = requireList(op, lists);
                 stmt.opCode = "clearList";
                 stmt.type = " ";
                 stmt.params.add(list);
@@ -5682,7 +6213,7 @@ public final class AgentLogic {
                                     + AgentEdits.typeName(widget.type)
                                     + ", not a ListView.");
                 }
-                String list = stringOf(op, "list");
+                String list = listNameOf(op);
                 Integer listKind = lists.get(list);
                 if (listKind == null || listKind != 2) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
@@ -5749,7 +6280,7 @@ public final class AgentLogic {
                                     + "first if needed — then fill each "
                                     + "row in its onBindCustomView event.");
                 }
-                String list = stringOf(op, "list");
+                String list = listNameOf(op);
                 Integer listKind = lists.get(list);
                 if (listKind == null || listKind != 3) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
@@ -5773,11 +6304,13 @@ public final class AgentLogic {
                         "put_in_map needs a map variable; “" + name
                                 + "” is not one. Declare it with "
                                 + "create_variable (type map).");
-                String key = stringOf(op, "key");
+                String key = valueSlot(builder, op, "key", 's',
+                        "the map \"key\"");
                 if (key.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
                             "put_in_map needs a \"key\".");
                 }
+                String shownKey = describeSlot(builder, op, "key");
                 stmt.opCode = "mapPut";
                 stmt.type = " ";
                 stmt.params.add(name);
@@ -5791,15 +6324,20 @@ public final class AgentLogic {
                     stmt.params.add("@var:" + fromVariable);
                     stmt.sentence = "In map “" + name + "”, store "
                             + "the value of “" + fromVariable
-                            + "” under “" + key + "”";
+                            + "” under “" + shownKey + "”";
                 } else {
-                    String text = stringOf(op, "text");
+                    String text = valueSlot(builder, op, "text", 's',
+                            "the value to store in map “" + name + "”");
+                    String shown = describeSlot(builder, op, "text");
                     if (text.isEmpty()) {
-                        text = stringOf(op, "value");
+                        text = valueSlot(builder, op, "value", 's',
+                                "the value to store in map “" + name
+                                        + "”");
+                        shown = describeSlot(builder, op, "value");
                     }
                     stmt.params.add(text);
                     stmt.sentence = "In map “" + name + "”, store “"
-                            + text + "” under “" + key + "”";
+                            + shown + "” under “" + shownKey + "”";
                 }
                 stmt.expectCode = name + ".put(";
             }
@@ -5828,21 +6366,22 @@ public final class AgentLogic {
             case "write_file" -> {
                 // The editor's fileutilwrite: content first, then
                 // the path (Fx emits FileUtil.writeFile(path, text)).
-                String text = stringOf(op, "text");
                 String fromVariable = stringOf(op, "from_variable");
                 stmt.opCode = "fileutilwrite";
                 stmt.type = " ";
+                String shownContent;
                 if (!fromVariable.isEmpty()) {
                     requireVariable(variables, fromVariable);
                     requireVariableKind(variables, fromVariable, 2,
                             "A file's content can only come from a "
                                     + "string variable.");
                     stmt.params.add("@var:" + fromVariable);
-                    text = "the value of “" + fromVariable + "”";
+                    shownContent = "the value of “" + fromVariable + "”";
                 } else {
-                    if (text.isEmpty()) {
-                        text = stringOf(op, "value");
-                    }
+                    String contentField = op.has("text") ? "text"
+                            : "value";
+                    String text = valueSlot(builder, op, contentField,
+                            's', "the text to write to the file");
                     if (text.isEmpty()) {
                         throw new AgentTools.ToolException(
                                 "E_BAD_BLOCK",
@@ -5851,18 +6390,19 @@ public final class AgentLogic {
                                         + "naming a string variable.");
                     }
                     stmt.params.add(text);
-                    text = "“" + text + "”";
+                    shownContent = describeSlot(builder, op,
+                            contentField);
                 }
-                PathArg path = pathParam(op, variables, "path");
+                PathArg path = pathParam(builder, op, variables, "path");
                 stmt.params.add(path.stored);
-                stmt.sentence = "Write " + text + " to the file at "
-                        + path.shown;
+                stmt.sentence = "Write " + shownContent
+                        + " to the file at " + path.shown;
                 stmt.expectCode = "FileUtil.writeFile(";
             }
             case "delete_file" -> {
                 stmt.opCode = "fileutildelete";
                 stmt.type = " ";
-                PathArg path = pathParam(op, variables, "path");
+                PathArg path = pathParam(builder, op, variables, "path");
                 stmt.params.add(path.stored);
                 stmt.sentence = "Delete the file at " + path.shown;
                 stmt.expectCode = "FileUtil.deleteFile(";
@@ -5870,51 +6410,55 @@ public final class AgentLogic {
             case "make_folder" -> {
                 stmt.opCode = "fileutilmakedir";
                 stmt.type = " ";
-                PathArg path = pathParam(op, variables, "path");
+                PathArg path = pathParam(builder, op, variables, "path");
                 stmt.params.add(path.stored);
                 stmt.sentence = "Create the folder at " + path.shown;
                 stmt.expectCode = "FileUtil.makeDir(";
             }
             case "copy_file", "move_file", "copy_folder",
                     "rename_file" -> {
-                String from = stringOf(op, "from");
-                String to = stringOf(op, "to");
+                String from = valueSlot(builder, op, "from", 's',
+                        "the \"from\" path");
+                String to = valueSlot(builder, op, "to", 's',
+                        "the \"to\" path");
                 if (from.isEmpty() || to.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
                             kind + " needs \"from\" and \"to\" paths.");
                 }
+                String shownFrom = describeSlot(builder, op, "from");
+                String shownTo = describeSlot(builder, op, "to");
                 stmt.type = " ";
                 stmt.params.add(from);
                 stmt.params.add(to);
                 switch (kind) {
                     case "copy_file" -> {
                         stmt.opCode = "fileutilcopy";
-                        stmt.sentence = "Copy the file at “" + from
-                                + "” to “" + to + "”";
+                        stmt.sentence = "Copy the file at “" + shownFrom
+                                + "” to “" + shownTo + "”";
                         stmt.expectCode = "FileUtil.copyFile(";
                     }
                     case "move_file" -> {
                         stmt.opCode = "fileutilmove";
-                        stmt.sentence = "Move the file at “" + from
-                                + "” to “" + to + "”";
+                        stmt.sentence = "Move the file at “" + shownFrom
+                                + "” to “" + shownTo + "”";
                         stmt.expectCode = "FileUtil.moveFile(";
                     }
                     case "copy_folder" -> {
                         stmt.opCode = "fileutilcopydir";
-                        stmt.sentence = "Copy the folder at “" + from
-                                + "” to “" + to + "”";
+                        stmt.sentence = "Copy the folder at “"
+                                + shownFrom + "” to “" + shownTo + "”";
                         stmt.expectCode = "FileUtil.copyDir(";
                     }
                     default -> {
                         stmt.opCode = "renameFile";
-                        stmt.sentence = "Rename the file at “" + from
-                                + "” to “" + to + "”";
+                        stmt.sentence = "Rename the file at “"
+                                + shownFrom + "” to “" + shownTo + "”";
                         stmt.expectCode = "renameTo(e5Cyk)";
                     }
                 }
             }
             case "list_files" -> {
-                String list = stringOf(op, "list");
+                String list = listNameOf(op);
                 Integer listKind = lists.get(list);
                 if (listKind == null || listKind != 2) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
@@ -5924,7 +6468,7 @@ public final class AgentLogic {
                 }
                 stmt.opCode = "fileutillistdir";
                 stmt.type = " ";
-                PathArg path = pathParam(op, variables, "path");
+                PathArg path = pathParam(builder, op, variables, "path");
                 stmt.params.add(path.stored);
                 stmt.params.add(list);
                 stmt.sentence = "List the files in the folder at "
@@ -5935,7 +6479,7 @@ public final class AgentLogic {
                 String list = requireList(op, lists);
                 stmt.opCode = "deleteList";
                 stmt.type = " ";
-                String index = indexParam(op);
+                String index = indexParam(builder, op, "index");
                 stmt.params.add(index);
                 stmt.params.add(list);
                 stmt.sentence = "Remove item " + index + " from list “"
@@ -5951,19 +6495,19 @@ public final class AgentLogic {
                                     + "add_map_entry, insert_map_entry "
                                     + "or set_map_entry for it.");
                 }
-                String index = indexParam(op);
+                String index = indexParam(builder, op, "index");
                 boolean insert = "insert_in_list".equals(kind);
                 stmt.type = " ";
                 if (listKind == 2) {
                     stmt.opCode = insert ? "insertListStr"
                             : "setAtPosListstr";
-                    String text = listTextParam(op, variables, list);
+                    String text = listTextParam(builder, op, variables, list);
                     stmt.params.add(text);
                     stmt.params.add(index);
                 } else {
                     stmt.opCode = insert ? "insertListInt"
                             : "setAtPosListnum";
-                    stmt.params.add(numberParam(op, list));
+                    stmt.params.add(numberParam(builder, op, list));
                     stmt.params.add(index);
                 }
                 stmt.params.add(list);
@@ -5992,7 +6536,8 @@ public final class AgentLogic {
                     }
                     default -> {
                         if (listKind == 3) {
-                            String key = stringOf(op, "key");
+                            String key = valueSlot(builder, op, "key",
+                                    's', "the \"key\" to sort by");
                             if (key.isEmpty()) {
                                 throw new AgentTools.ToolException(
                                         "E_BAD_BLOCK",
@@ -6009,7 +6554,8 @@ public final class AgentLogic {
                             stmt.params.add(String.valueOf(
                                     boolOf(op, "ascending", true)));
                             stmt.sentence = "Sort list “" + list
-                                    + "” by “" + key + "”";
+                                    + "” by "
+                                    + describeSlot(builder, op, "key");
                             stmt.expectCode = "SketchwareUtil.sortListMap(";
                         } else if (listKind == 2) {
                             stmt.opCode = "sortList";
@@ -6028,17 +6574,13 @@ public final class AgentLogic {
                 stmt.opCode = "swapInList";
                 stmt.type = " ";
                 stmt.params.add(list);
-                stmt.params.add(indexParam(op));
-                String index2 = stringOf(op, "index2");
-                try {
-                    Double.parseDouble(index2);
-                } catch (Exception e) {
-                    throw new AgentTools.ToolException("E_BAD_BLOCK",
-                            "swap_in_list needs a numeric \"index2\".");
-                }
+                stmt.params.add(indexParam(builder, op, "index"));
+                String index2 = indexParam(builder, op, "index2");
                 stmt.params.add(index2);
-                stmt.sentence = "Swap items " + stmt.params.get(1)
-                        + " and " + index2 + " in list “" + list + "”";
+                stmt.sentence = "Swap items "
+                        + describeSlot(builder, op, "index")
+                        + " and " + describeSlot(builder, op, "index2")
+                        + " in list “" + list + "”";
                 stmt.expectCode = "Collections.swap(" + list;
             }
             case "remove_map_key" -> {
@@ -6046,7 +6588,8 @@ public final class AgentLogic {
                 requireVariable(variables, name);
                 requireVariableKind(variables, name, 3,
                         "remove_map_key needs a map variable.");
-                String key = stringOf(op, "key");
+                String key = valueSlot(builder, op, "key", 's',
+                        "the \"key\" to remove");
                 if (key.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
                             "remove_map_key needs a \"key\".");
@@ -6055,8 +6598,9 @@ public final class AgentLogic {
                 stmt.type = " ";
                 stmt.params.add(name);
                 stmt.params.add(key);
-                stmt.sentence = "Remove “" + key + "” from map “"
-                        + name + "”";
+                stmt.sentence = "Remove "
+                        + describeSlot(builder, op, "key")
+                        + " from map “" + name + "”";
                 stmt.expectCode = name + ".remove(";
             }
             case "map_keys_to_list" -> {
@@ -6093,11 +6637,12 @@ public final class AgentLogic {
                         "get_map_from_list stores into a map variable.");
                 stmt.opCode = "getMapInList";
                 stmt.type = " ";
-                stmt.params.add(indexParam(op));
+                stmt.params.add(indexParam(builder, op, "index"));
                 stmt.params.add(list);
                 stmt.params.add(name);
                 stmt.sentence = "Take the map at item "
-                        + stmt.params.get(0) + " of list “" + list
+                        + describeSlot(builder, op, "index")
+                        + " of list “" + list
                         + "” into map “" + name + "”";
                 stmt.expectCode = name + " = " + list + ".get((int)";
             }
@@ -6117,7 +6662,7 @@ public final class AgentLogic {
                 stmt.type = " ";
                 stmt.params.add(name);
                 if (insert) {
-                    stmt.params.add(indexParam(op));
+                    stmt.params.add(indexParam(builder, op, "index"));
                 }
                 stmt.params.add(list);
                 stmt.sentence = (insert ? "Insert" : "Add") + " map “"
@@ -6133,15 +6678,17 @@ public final class AgentLogic {
                             kind + " needs a list of maps; “" + list
                                     + "” is not one.");
                 }
-                String key = stringOf(op, "key");
+                String key = valueSlot(builder, op, "key", 's',
+                        "the map \"key\"");
                 if (key.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
                             kind + " needs a \"key\".");
                 }
-                String text = stringOf(op, "text");
-                if (text.isEmpty()) {
-                    text = stringOf(op, "value");
-                }
+                String shownKey = describeSlot(builder, op, "key");
+                String valField = op.has("text") ? "text" : "value";
+                String text = valueSlot(builder, op, valField, 's',
+                        "the value for key “" + shownKey + "”");
+                String shownVal = describeSlot(builder, op, valField);
                 stmt.type = " ";
                 stmt.params.add(key);
                 stmt.params.add(text);
@@ -6149,26 +6696,26 @@ public final class AgentLogic {
                     case "add_map_entry" -> {
                         stmt.opCode = "addListMap";
                         stmt.params.add(list);
-                        stmt.sentence = "Add a map with “" + key
-                                + "” = “" + text + "” to list “"
+                        stmt.sentence = "Add a map with “" + shownKey
+                                + "” = “" + shownVal + "” to list “"
                                 + list + "”";
                     }
                     case "insert_map_entry" -> {
                         stmt.opCode = "insertListMap";
-                        stmt.params.add(indexParam(op));
+                        stmt.params.add(indexParam(builder, op, "index"));
                         stmt.params.add(list);
-                        stmt.sentence = "Insert a map with “" + key
-                                + "” = “" + text + "” into list “"
+                        stmt.sentence = "Insert a map with “" + shownKey
+                                + "” = “" + shownVal + "” into list “"
                                 + list + "”";
                     }
                     default -> {
                         stmt.opCode = "setListMap";
-                        stmt.params.add(indexParam(op));
+                        stmt.params.add(indexParam(builder, op, "index"));
                         stmt.params.add(list);
                         stmt.sentence = "In the map at item "
-                                + stmt.params.get(2) + " of list “"
-                                + list + "”, set “" + key + "” to “"
-                                + text + "”";
+                                + describeSlot(builder, op, "index")
+                                + " of list “" + list + "”, set “"
+                                + shownKey + "” to “" + shownVal + "”";
                     }
                 }
                 stmt.expectCode = "_item.put(";
@@ -6179,29 +6726,26 @@ public final class AgentLogic {
             case "map_from_json", "list_from_json" -> {
                 // The Gson conversion statements: text slot first,
                 // then the map/list it fills (Fx-verified orders).
-                String text = stringOf(op, "text");
+                String jsonField = op.has("text") ? "text" : "value";
                 String fromVariable = stringOf(op, "from_variable");
+                String text;
                 String shown;
-                if (op.has("text") && op.get("text").isJsonObject()) {
-                    // The JSON can be any expression — most usefully a
-                    // saved preference: read the pref, parse it, fill
-                    // the list, in one block instead of two.
-                    text = builder.expr(op.get("text"), 's',
-                            kind + " needs the JSON text");
-                    shown = builder.describeExpr(op.get("text"));
-                } else if (!fromVariable.isEmpty()) {
+                if (!fromVariable.isEmpty()) {
                     requireVariable(variables, fromVariable);
                     requireVariableKind(variables, fromVariable, 2,
                             "JSON text can only come from a string "
                                     + "variable.");
                     text = "@var:" + fromVariable;
                     shown = "the JSON in “" + fromVariable + "”";
-                } else if (text.isEmpty()) {
-                    throw new AgentTools.ToolException("E_BAD_BLOCK",
-                            kind + " needs the JSON \"text\" (or "
-                                    + "\"from_variable\").");
                 } else {
-                    shown = "“" + text + "”";
+                    text = valueSlot(builder, op, jsonField, 's',
+                            kind + " needs the JSON text");
+                    if (text.isEmpty()) {
+                        throw new AgentTools.ToolException("E_BAD_BLOCK",
+                                kind + " needs the JSON \"text\" (or "
+                                        + "\"from_variable\").");
+                    }
+                    shown = describeSlot(builder, op, jsonField);
                 }
                 stmt.type = " ";
                 stmt.params.add(text);
@@ -6238,7 +6782,9 @@ public final class AgentLogic {
                 // imageCrop: open the crop screen for an image
                 // file; the answer comes back to onActivityResult
                 // under the request code given here.
-                String path = stringOf(op, "text");
+                String pathField = op.has("text") ? "text" : "path";
+                String path = valueSlot(builder, op, pathField, 's',
+                        "the image file's path");
                 if (path.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
                             "crop_image needs \"text\": the image "
@@ -6247,8 +6793,9 @@ public final class AgentLogic {
                 stmt.opCode = "imageCrop";
                 stmt.type = " ";
                 stmt.params.add(path);
-                stmt.params.add(numericField(op, "value"));
-                stmt.sentence = "Crop the image at “" + path + "”";
+                stmt.params.add(numericField(builder, op, "value"));
+                stmt.sentence = "Crop the image at "
+                        + describeSlot(builder, op, pathField);
                 stmt.expectCode = "SketchwareUtil.CropImage(this,";
             }
             case "youtube_lifecycle" -> {
@@ -6291,11 +6838,13 @@ public final class AgentLogic {
                 stmt.opCode = icon ? "customToastWithIcon"
                         : "customToast";
                 stmt.type = " ";
-                stmt.params.add(stringOf(op, "text"));
+                String msgField = op.has("text") ? "text" : "message";
+                stmt.params.add(valueSlot(builder, op, msgField, 's',
+                        "the toast message"));
                 stmt.params.add(colourField(op, "color"));
-                stmt.params.add(numericField(op, "value"));
+                stmt.params.add(numericField(builder, op, "value"));
                 stmt.params.add(colourField(op, "color2"));
-                stmt.params.add(numericField(op, "value2"));
+                stmt.params.add(numericField(builder, op, "value2"));
                 String gravity = stringOf(op, "mode")
                         .toUpperCase(Locale.ROOT);
                 if (!gravity.equals("TOP") && !gravity.equals(
@@ -6317,8 +6866,8 @@ public final class AgentLogic {
                     }
                     stmt.params.add(image.toLowerCase(Locale.ROOT));
                 }
-                stmt.sentence = "Show a custom toast: “"
-                        + stringOf(op, "text") + "”";
+                stmt.sentence = "Show a custom toast: "
+                        + describeSlot(builder, op, msgField);
                 stmt.expectCode = "SketchwareUtil.CustomToast";
             }
             case "fab_icon", "fab_size", "fab_visibility" -> {
@@ -6426,31 +6975,36 @@ public final class AgentLogic {
                 requireVariable(variables, name);
                 requireVariableKind(variables, name, 3,
                         "This block needs a map variable.");
-                String key = stringOf(op, "key");
+                String key = valueSlot(builder, op, "key", 's',
+                        "the \"key\" to store under");
                 if (key.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
                             "This block needs the \"key\" to store "
                                     + "under.");
                 }
+                String shownKey = describeSlot(builder, op, "key");
                 stmt.type = " ";
                 stmt.params.add(name);
                 stmt.params.add(key);
                 switch (kind) {
                     case "map_put_number" -> {
                         stmt.opCode = "hashmapPutNumber2";
-                        stmt.params.add(numericField(op, "value"));
+                        stmt.params.add(numericField(builder, op, "value"));
                         stmt.sentence = "In map “" + name + "”, store "
-                                + "the number " + stringOf(op, "value")
-                                + " under “" + key + "”";
+                                + "the number "
+                                + describeSlot(builder, op, "value")
+                                + " under “" + shownKey + "”";
                         stmt.expectCode = ".put(";
                     }
                     case "map_put_flag" -> {
                         stmt.opCode = "hashmapPutBoolean";
-                        stmt.params.add(String.valueOf(
-                                boolOf(op, "flag", true)));
+                        String flagField = op.has("flag") ? "flag"
+                                : "value";
+                        stmt.params.add(boolSlot(builder, op, flagField,
+                                true, "the boolean value to store"));
                         stmt.sentence = "In map “" + name + "”, store "
-                                + boolOf(op, "flag", true)
-                                + " under “" + key + "”";
+                                + describeSlot(builder, op, flagField)
+                                + " under “" + shownKey + "”";
                         stmt.expectCode = ".put(";
                     }
                     case "map_put_list" -> {
@@ -6471,7 +7025,7 @@ public final class AgentLogic {
                         stmt.params.add(list);
                         stmt.sentence = "In map “" + name + "”, store "
                                 + "the list “" + list + "” under “"
-                                + key + "”";
+                                + shownKey + "”";
                         stmt.expectCode = ".put(";
                     }
                     default -> {
@@ -6528,7 +7082,7 @@ public final class AgentLogic {
                 stmt.opCode = "setMapAtPosListmap";
                 stmt.type = " ";
                 stmt.params.add(name);
-                stmt.params.add(indexParam(op));
+                stmt.params.add(indexParam(builder, op, "index"));
                 stmt.params.add(list);
                 stmt.sentence = "Put map “" + name + "” at item "
                         + stringOf(op, "index") + " of “" + list
@@ -6565,12 +7119,15 @@ public final class AgentLogic {
                 }
                 stmt.opCode = "stringSplitToList";
                 stmt.type = " ";
-                stmt.params.add(stringOf(op, "text"));
-                stmt.params.add(stringOf(op, "text2"));
+                stmt.params.add(valueSlot(builder, op, "text", 's',
+                        "the \"text\" to split"));
+                stmt.params.add(valueSlot(builder, op, "text2", 's',
+                        "the separator \"text2\""));
                 stmt.params.add(list);
-                stmt.sentence = "Split “" + stringOf(op, "text")
-                        + "” by “" + stringOf(op, "text2")
-                        + "” into “" + list + "”";
+                stmt.sentence = "Split "
+                        + describeSlot(builder, op, "text")
+                        + " by " + describeSlot(builder, op, "text2")
+                        + " into “" + list + "”";
                 stmt.expectCode = ".split(";
             }
             case "open_asset" -> {
@@ -6581,12 +7138,16 @@ public final class AgentLogic {
                                     + "the stream (letters, digits, "
                                     + "_, starting with a letter).");
                 }
+                String assetPath = valueSlot(builder, op, "text", 's',
+                        "the asset path to open");
+                builder.assetStreams.add(name);
                 stmt.opCode = "getAssetFile";
                 stmt.type = " ";
                 stmt.params.add(name);
-                stmt.params.add(stringOf(op, "text"));
-                stmt.sentence = "Open the asset “"
-                        + stringOf(op, "text") + "” as " + name;
+                stmt.params.add(assetPath);
+                stmt.sentence = "Open the asset "
+                        + describeSlot(builder, op, "text")
+                        + " as " + name;
                 stmt.expectCode = "getAssets().open(";
             }
             case "scale_bitmap", "resize_bitmap_ratio",
@@ -6598,24 +7159,26 @@ public final class AgentLogic {
                 // The FileUtil bitmap family: from path, to path,
                 // then the block's own numbers (Fx-verified).
                 stmt.type = " ";
-                stmt.params.add(stringOf(op, "text"));
-                stmt.params.add(stringOf(op, "text2"));
+                stmt.params.add(valueSlot(builder, op, "text", 's',
+                        "the source image path"));
+                stmt.params.add(valueSlot(builder, op, "text2", 's',
+                        "the destination image path"));
                 String verb;
                 switch (kind) {
                     case "scale_bitmap" -> {
                         stmt.opCode = "scaleBitmapFile";
-                        stmt.params.add(numericField(op, "value"));
-                        stmt.params.add(numericField(op, "value2"));
+                        stmt.params.add(numericField(builder, op, "value"));
+                        stmt.params.add(numericField(builder, op, "value2"));
                         verb = "Scale";
                     }
                     case "resize_bitmap_ratio" -> {
                         stmt.opCode = "resizeBitmapFileRetainRatio";
-                        stmt.params.add(numericField(op, "value"));
+                        stmt.params.add(numericField(builder, op, "value"));
                         verb = "Resize";
                     }
                     case "resize_bitmap_square" -> {
                         stmt.opCode = "resizeBitmapFileToSquare";
-                        stmt.params.add(numericField(op, "value"));
+                        stmt.params.add(numericField(builder, op, "value"));
                         verb = "Resize square";
                     }
                     case "resize_bitmap_circle" -> {
@@ -6625,34 +7188,34 @@ public final class AgentLogic {
                     case "resize_bitmap_rounded" -> {
                         stmt.opCode =
                                 "resizeBitmapFileWithRoundedBorder";
-                        stmt.params.add(numericField(op, "value"));
+                        stmt.params.add(numericField(builder, op, "value"));
                         verb = "Round the corners of";
                     }
                     case "crop_bitmap_center" -> {
                         stmt.opCode = "cropBitmapFileFromCenter";
-                        stmt.params.add(numericField(op, "value"));
-                        stmt.params.add(numericField(op, "value2"));
+                        stmt.params.add(numericField(builder, op, "value"));
+                        stmt.params.add(numericField(builder, op, "value2"));
                         verb = "Centre-crop";
                     }
                     case "rotate_bitmap" -> {
                         stmt.opCode = "rotateBitmapFile";
-                        stmt.params.add(numericField(op, "value"));
+                        stmt.params.add(numericField(builder, op, "value"));
                         verb = "Rotate";
                     }
                     case "skew_bitmap" -> {
                         stmt.opCode = "skewBitmapFile";
-                        stmt.params.add(numericField(op, "value"));
-                        stmt.params.add(numericField(op, "value2"));
+                        stmt.params.add(numericField(builder, op, "value"));
+                        stmt.params.add(numericField(builder, op, "value2"));
                         verb = "Skew";
                     }
                     case "bitmap_brightness" -> {
                         stmt.opCode = "setBitmapFileBrightness";
-                        stmt.params.add(numericField(op, "value"));
+                        stmt.params.add(numericField(builder, op, "value"));
                         verb = "Set the brightness of";
                     }
                     case "bitmap_contrast" -> {
                         stmt.opCode = "setBitmapFileContrast";
-                        stmt.params.add(numericField(op, "value"));
+                        stmt.params.add(numericField(builder, op, "value"));
                         verb = "Set the contrast of";
                     }
                     default -> {
@@ -6661,9 +7224,9 @@ public final class AgentLogic {
                         verb = "Tint";
                     }
                 }
-                stmt.sentence = verb + " the image at “"
-                        + stringOf(op, "text") + "” into “"
-                        + stringOf(op, "text2") + "”";
+                stmt.sentence = verb + " the image at "
+                        + describeSlot(builder, op, "text") + " into "
+                        + describeSlot(builder, op, "text2");
                 stmt.expectCode = "FileUtil.";
             }
             case "set_fragment_adapter" -> {
@@ -6691,7 +7254,7 @@ public final class AgentLogic {
                 stmt.type = " ";
                 stmt.params.add(pager.id);
                 stmt.params.add(componentId);
-                stmt.params.add(numericField(op, "value"));
+                stmt.params.add(numericField(builder, op, "value"));
                 stmt.sentence = "Give " + pager.id + " the pages "
                         + "from " + componentId;
                 stmt.expectCode = ".setAdapter(";
@@ -6701,11 +7264,12 @@ public final class AgentLogic {
                 // where the menu itself is in scope.
                 stmt.opCode = "menuAddItem";
                 stmt.type = " ";
-                stmt.params.add(numericField(op, "value"));
-                stmt.params.add(stringOf(op, "text"));
-                stmt.sentence = "Add menu item “"
-                        + stringOf(op, "text") + "” (id "
-                        + stringOf(op, "value") + ")";
+                stmt.params.add(numericField(builder, op, "value"));
+                stmt.params.add(valueSlot(builder, op, "text", 's',
+                        "the menu item's title"));
+                stmt.sentence = "Add menu item "
+                        + describeSlot(builder, op, "text") + " (id "
+                        + describeSlot(builder, op, "value") + ")";
                 stmt.expectCode = "menu.add(0,";
             }
             case "menu_inflate" -> {
@@ -6721,6 +7285,131 @@ public final class AgentLogic {
                 stmt.params.add(menu.toLowerCase(Locale.ROOT));
                 stmt.sentence = "Use the “" + menu + "” menu file";
                 stmt.expectCode = "getMenuInflater().inflate(R.menu.";
+            }
+            case "show_keyboard", "hide_keyboard" -> {
+                boolean show = "show_keyboard".equals(kind);
+                stmt.opCode = show ? "showKeyboard" : "hideKeyboard";
+                stmt.type = " ";
+                stmt.sentence = show ? "Show the on-screen keyboard"
+                        : "Hide the on-screen keyboard";
+                stmt.expectCode = show ? "SketchwareUtil.showKeyboard("
+                        : "SketchwareUtil.hideKeyboard(";
+            }
+            case "set_typeface" -> {
+                ViewBean widget = requireWidget(op, byId);
+                if (!TEXT_TYPES.contains(
+                        AgentEdits.typeName(widget.type))) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            widget.id + " is a "
+                                    + AgentEdits.typeName(widget.type)
+                                    + ", which has no typeface to set.");
+                }
+                String font = stringOf(op, "font");
+                if (font.isEmpty()) {
+                    font = "default_font";
+                }
+                if (!"default_font".equals(font)
+                        && !font.matches("(?i)[a-z0-9_]+")) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "set_typeface needs \"font\" as "
+                                    + "\"default_font\" or the name of "
+                                    + "a font in the project.");
+                }
+                if (!"default_font".equals(font)
+                        && builder.scId != null
+                        && !SketchwareProjects.resources(builder.scId)
+                                .fonts.contains(font)) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "The project has no font called " + font
+                                    + ". Use list_resources to see its "
+                                    + "fonts, or \"default_font\".");
+                }
+                String rawStyle = stringOf(op, "style")
+                        .toLowerCase(Locale.ROOT).replace(' ', '_');
+                if (rawStyle.isEmpty()) {
+                    rawStyle = "normal";
+                }
+                String style = switch (rawStyle) {
+                    case "normal" -> "normal";
+                    case "bold" -> "bold";
+                    case "italic" -> "italic";
+                    case "bold_italic", "bold|italic" -> "bold|italic";
+                    default -> throw new AgentTools.ToolException(
+                            "E_BAD_BLOCK",
+                            "set_typeface \"style\" must be normal, "
+                                    + "bold, italic or bold_italic.");
+                };
+                stmt.opCode = "setTypeface";
+                stmt.type = " ";
+                stmt.params.add(widget.id);
+                stmt.params.add(font);
+                stmt.params.add(style);
+                stmt.sentence = "Set " + widget.id + " font to " + font
+                        + " (" + rawStyle + ")";
+                stmt.expectCode = widget.id + ".setTypeface(";
+            }
+            case "list_set_checked" -> {
+                ViewBean widget = requireWidget(op, byId);
+                if (!"ListView".equals(
+                        AgentEdits.typeName(widget.type))) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            widget.id + " is a "
+                                    + AgentEdits.typeName(widget.type)
+                                    + ", not a ListView.");
+                }
+                String index = indexParam(builder, op, "index");
+                String flagField = op.has("flag") ? "flag" : "checked";
+                String flag = boolSlot(builder, op, flagField, true,
+                        "whether the item is checked");
+                stmt.opCode = "listSetItemChecked";
+                stmt.type = " ";
+                stmt.params.add(widget.id);
+                stmt.params.add(index);
+                stmt.params.add(flag);
+                stmt.sentence = "Set item "
+                        + describeSlot(builder, op, "index") + " of "
+                        + widget.id + " checked = "
+                        + describeSlot(builder, op, flagField);
+                stmt.expectCode = widget.id + ".setItemChecked(";
+            }
+            case "list_checked_positions_to_list" -> {
+                ViewBean widget = requireWidget(op, byId);
+                if (!"ListView".equals(
+                        AgentEdits.typeName(widget.type))) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            widget.id + " is a "
+                                    + AgentEdits.typeName(widget.type)
+                                    + ", not a ListView.");
+                }
+                String list = requireList(op, lists);
+                if (lists.get(list) != 1) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "list_checked_positions_to_list fills a "
+                                    + "list of numbers; “" + list
+                                    + "” is not one.");
+                }
+                stmt.opCode = "listGetCheckedPositions";
+                stmt.type = " ";
+                stmt.params.add(widget.id);
+                stmt.params.add(list);
+                stmt.sentence = "Put the checked positions of "
+                        + widget.id + " into list “" + list + "”";
+                stmt.expectCode =
+                        "SketchwareUtil.getCheckedItemPositionsToArray(";
+            }
+            case "refresh_adapter", "notify_data_changed" -> {
+                if (!"onBindCustomView".equals(builder.currentEvent)) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "refresh_adapter runs inside "
+                                    + "onBindCustomView (where the row "
+                                    + "adapter itself is in scope); "
+                                    + "outside it, use list_refresh on "
+                                    + "the ListView.");
+                }
+                stmt.opCode = "notifyDataSetChanged";
+                stmt.type = " ";
+                stmt.sentence = "Refresh the list rows";
+                stmt.expectCode = "notifyDataSetChanged();";
             }
             default -> {
                 WA action = WIDGET_ACTIONS.get(kind);
@@ -6805,7 +7494,7 @@ public final class AgentLogic {
         }
     }
 
-    private static PathArg pathParam(JsonObject op,
+    private static PathArg pathParam(Builder builder, JsonObject op,
                                      Map<String, Integer> variables,
                                      String key)
             throws AgentTools.ToolException {
@@ -6817,20 +7506,28 @@ public final class AgentLogic {
             return new PathArg("@var:" + fromVariable,
                     "the path in “" + fromVariable + "”");
         }
-        String path = stringOf(op, key);
+        String path = valueSlot(builder, op, key, 's',
+                "the \"" + key + "\" file path");
         if (path.isEmpty()) {
             throw new AgentTools.ToolException("E_BAD_BLOCK",
                     "This block needs a \"" + key + "\" (a file path "
-                            + "like /sdcard/notes.txt), or \""
+                            + "like /sdcard/notes.txt, or an "
+                            + "expression), or \""
                             + key + "_from_variable\".");
         }
-        return new PathArg(path, "“" + path + "”");
+        return new PathArg(path, describeSlot(builder, op, key));
+    }
+
+    /** "list", or "variable" when a model names a list that way. */
+    private static String listNameOf(JsonObject op) {
+        String list = stringOf(op, "list");
+        return list.isEmpty() ? stringOf(op, "variable") : list;
     }
 
     private static String requireList(JsonObject op,
                                       Map<String, Integer> lists)
             throws AgentTools.ToolException {
-        String list = stringOf(op, "list");
+        String list = listNameOf(op);
         if (!lists.containsKey(list)) {
             // Same correction as requireComponent: an unnamed list is a
             // model that forgot what it declared, so the answer names
@@ -6879,8 +7576,23 @@ public final class AgentLogic {
     }
 
     /** A numeric literal argument field, validated before storing. */
-    private static String numericField(JsonObject op, String field)
+    private static String numericField(Builder builder, JsonObject op,
+                                       String field)
             throws AgentTools.ToolException {
+        JsonElement raw = op.get(field);
+        if (raw != null && raw.isJsonObject()) {
+            return builder.expr(cleanExprObject(raw.getAsJsonObject()),
+                    'd', "the \"" + field + "\" of this block");
+        }
+        if (raw != null && raw.isJsonPrimitive()
+                && raw.getAsJsonPrimitive().isString()) {
+            JsonObject decoded = expressionFromText(raw.getAsString());
+            if (decoded != null) {
+                builder.recoveredFromText = true;
+                return builder.expr(decoded, 'd',
+                        "the \"" + field + "\" of this block");
+            }
+        }
         String value = stringOf(op, field);
         try {
             Double.parseDouble(value);
@@ -6891,10 +7603,31 @@ public final class AgentLogic {
         return value;
     }
 
-    /** A numeric "index" argument, stored the way Fx casts it. */
-    private static String indexParam(JsonObject op)
+    /**
+     * A numeric "index" argument, stored the way Fx casts it. An
+     * expression is allowed: "remove the last item" is the length of
+     * the list minus one, and a position can just as well come from a
+     * variable.
+     */
+    private static String indexParam(Builder builder, JsonObject op,
+                                     String field)
             throws AgentTools.ToolException {
-        String index = stringOf(op, "index");
+        String what = "the \"" + field + "\" of this block (an item's "
+                + "position in the list, starting at 0)";
+        JsonElement raw = op.get(field);
+        if (raw != null && raw.isJsonObject()) {
+            return builder.expr(cleanExprObject(raw.getAsJsonObject()),
+                    'd', what);
+        }
+        if (raw != null && raw.isJsonPrimitive()
+                && raw.getAsJsonPrimitive().isString()) {
+            JsonObject decoded = expressionFromText(raw.getAsString());
+            if (decoded != null) {
+                builder.recoveredFromText = true;
+                return builder.expr(decoded, 'd', what);
+            }
+        }
+        String index = stringOf(op, field);
         try {
             double value = Double.parseDouble(index);
             if (value == Math.floor(value)
@@ -6904,14 +7637,32 @@ public final class AgentLogic {
             return index;
         } catch (Exception e) {
             throw new AgentTools.ToolException("E_BAD_BLOCK",
-                    "This block needs a numeric \"index\" (the item's "
-                            + "position in the list, starting at 0).");
+                    "This block needs a numeric \"" + field
+                            + "\" (the item's position in the list, "
+                            + "starting at 0).");
         }
     }
 
     /** A literal number for a list-of-numbers slot. */
-    private static String numberParam(JsonObject op, String list)
+    private static String numberParam(Builder builder, JsonObject op,
+                                      String list)
             throws AgentTools.ToolException {
+        JsonElement raw = op.get("value");
+        if (raw != null && raw.isJsonObject()) {
+            return builder.expr(cleanExprObject(raw.getAsJsonObject()),
+                    'd',
+                    "a number to go into list \u201c" + list + "\u201d");
+        }
+        if (raw != null && raw.isJsonPrimitive()
+                && raw.getAsJsonPrimitive().isString()) {
+            JsonObject decoded = expressionFromText(raw.getAsString());
+            if (decoded != null) {
+                builder.recoveredFromText = true;
+                return builder.expr(decoded, 'd',
+                        "a number to go into list \u201c" + list
+                                + "\u201d");
+            }
+        }
         String value = stringOf(op, "value");
         try {
             Double.parseDouble(value);
@@ -6925,7 +7676,7 @@ public final class AgentLogic {
     }
 
     /** Text for a list-of-text slot: literal or a string variable. */
-    private static String listTextParam(JsonObject op,
+    private static String listTextParam(Builder builder, JsonObject op,
                                         Map<String, Integer> variables,
                                         String list)
             throws AgentTools.ToolException {
@@ -6937,9 +7688,11 @@ public final class AgentLogic {
                             + "list of text.");
             return "@var:" + fromVariable;
         }
-        String text = stringOf(op, "text");
+        String text = valueSlot(builder, op, "text", 's',
+                "the text to go into list \u201c" + list + "\u201d");
         if (text.isEmpty()) {
-            text = stringOf(op, "value");
+            text = valueSlot(builder, op, "value", 's',
+                    "the text to go into list \u201c" + list + "\u201d");
         }
         return text;
     }
@@ -6974,12 +7727,17 @@ public final class AgentLogic {
         String typeName = AgentEdits.typeName(widget.type);
         boolean familyOk = switch (action.widget) {
             case "" -> true;
-            case "edittext" -> "EditText".equals(typeName);
+            case "edittext" -> "EditText".equals(typeName)
+                    || "AutoCompleteTextView".equals(typeName)
+                    || "MultiAutoCompleteTextView".equals(typeName);
             case "textview" -> TEXT_TYPES.contains(typeName);
             case "webview" -> "WebView".equals(typeName);
-            case "seekbar" -> "SeekBar".equals(typeName);
+            case "seekbar" -> "SeekBar".equals(typeName)
+                    || "ProgressBar".equals(typeName);
             case "ratingbar" -> "RatingBar".equals(typeName);
-            case "checkbox" -> "CheckBox".equals(typeName);
+            case "checkbox" -> "CheckBox".equals(typeName)
+                    || "Switch".equals(typeName)
+                    || "RadioButton".equals(typeName);
             case "imageview" -> "ImageView".equals(typeName)
                     || "CircleImageView".equals(typeName);
             case "progressbar" -> "ProgressBar".equals(typeName);
@@ -7008,6 +7766,7 @@ public final class AgentLogic {
             case "bubblelayout" -> "BubbleLayout".equals(typeName);
             case "signinbutton" -> "SignInButton".equals(typeName);
             case "adview" -> "AdView".equals(typeName);
+            case "sidebar" -> "WaveSideBar".equals(typeName);
             default -> false;
         };
         if (!familyOk) {
@@ -7032,61 +7791,39 @@ public final class AgentLogic {
                             "value4"};
                     String field = fields[Math.min(numberField++,
                             fields.length - 1)];
-                    String value = stringOf(op, field);
-                    JsonElement number = op.get(field);
-                    if (number != null && number.isJsonObject()) {
-                        value = builder.expr(number, 'd',
-                                "the \"" + field + "\" of this block");
-                    } else {
-                        try {
-                            Double.parseDouble(value);
-                        } catch (Exception e) {
-                            throw new AgentTools.ToolException(
-                                    "E_BAD_BLOCK",
-                                    "This block needs a numeric \"" + field
-                                            + "\".");
-                        }
-                    }
+                    String value = numericField(builder, op, field);
                     stmt.params.add(value);
-                    shown = value;
+                    shown = describeSlot(builder, op, field);
                 }
                 case 's' -> {
                     String[] fields = {"text", "text2", "text3"};
                     String field = fields[Math.min(textField++,
                             fields.length - 1)];
-                    String text = stringOf(op, field);
-                    if (text.isEmpty() && "text".equals(field)) {
-                        text = stringOf(op, "url");
-                    }
-                    // A computed value in this slot — a variable, a
-                    // widget's live text, a list turned into JSON.
-                    // These slots took literal text only, which is why a
-                    // model trying to save a list had nothing to reach
-                    // for but its own invented JSON-in-text notation.
-                    // Sketchware's blocks take a reporter here, so ours
-                    // do too.
-                    JsonElement raw = op.get(field);
-                    if (raw != null && raw.isJsonObject()) {
-                        text = builder.expr(raw, 's',
-                                "the \"" + field + "\" of this block");
-                    } else if (raw != null && raw.isJsonPrimitive()
-                            && raw.getAsJsonPrimitive().isString()) {
-                        JsonObject decoded = expressionFromText(
-                                raw.getAsString());
-                        if (decoded != null) {
-                            text = builder.expr(decoded, 's',
-                                    "the \"" + field + "\" of this block");
+                    if ("text".equals(field) && !op.has("text")) {
+                        if (op.has("url")) {
+                            field = "url";
+                        } else if (op.has("value")
+                                && !action.args.contains("d")) {
+                            field = "value";
+                        } else if (op.has("message")) {
+                            field = "message";
                         }
                     }
+                    String text = valueSlot(builder, op, field, 's',
+                            "the \"" + field + "\" of this block");
                     stmt.params.add(text);
-                    shown = text;
+                    shown = describeSlot(builder, op, field);
                 }
                 case 'b' -> {
-                    boolean flag = op.has("flag")
-                            ? boolOf(op, "flag", true)
-                            : boolOf(op, "enabled", true);
-                    stmt.params.add(String.valueOf(flag));
-                    shown = String.valueOf(flag);
+                    String flagField = op.has("flag") ? "flag"
+                            : op.has("checked") ? "checked" : "enabled";
+                    String flag = boolSlot(builder, op, flagField, true,
+                            "the \"" + flagField + "\" of this block");
+                    stmt.params.add(flag);
+                    shown = describeSlot(builder, op, flagField);
+                    if (shown.isEmpty()) {
+                        shown = flag;
+                    }
                 }
                 case 'c' -> {
                     String field = colourField++ == 0 ? "color"
@@ -7202,12 +7939,14 @@ public final class AgentLogic {
             // text. Read it as the expression it meant, not as letters.
             JsonObject decoded = expressionFromText(plain);
             if (decoded != null) {
+                builder.recoveredFromText = true;
                 return builder.expr(decoded, 's',
                         "the \"" + field + "\" of " + opCode);
             }
             return plain;
         }
-        JsonObject value = op.get(field).getAsJsonObject();
+        JsonObject value = cleanExprObject(
+                op.get(field).getAsJsonObject());
         if (!(value.size() == 1 && value.has("var"))) {
             // Anything else — a list turned into JSON, a saved
             // preference, a widget's live text — is a reporter block
@@ -7396,38 +8135,54 @@ public final class AgentLogic {
                     String[] fields = {"value", "value2", "value3"};
                     String field = fields[Math.min(numberField++,
                             fields.length - 1)];
-                    String value = stringOf(op, field);
-                    JsonElement number = op.get(field);
-                    if (number != null && number.isJsonObject()) {
-                        value = builder.expr(number, 'd',
-                                "the \"" + field + "\" of this block");
-                    } else {
-                        try {
-                            Double.parseDouble(value);
-                        } catch (Exception e) {
-                            throw new AgentTools.ToolException(
-                                    "E_BAD_BLOCK",
-                                    "This block needs a numeric \"" + field
-                                            + "\".");
-                        }
-                    }
+                    String value = numericField(builder, op, field);
                     stmt.params.add(value);
-                    shown = value;
+                    shown = describeSlot(builder, op, field);
                 }
                 case 's' -> {
                     String[] fields = {"text", "text2", "text3"};
                     String field = fields[Math.min(textField++,
                             fields.length - 1)];
+                    if ("text".equals(field) && !op.has("text")) {
+                        // Common parameter names models reach for on
+                        // save_pref / put_extra / dialog_* / tts_speak.
+                        if (action.args.startsWith("ss")
+                                && op.has("key")) {
+                            field = "key";
+                        } else if (!action.args.startsWith("ss")) {
+                            for (String alias : new String[]{"key",
+                                    "message", "title", "value", "url",
+                                    "path"}) {
+                                if (op.has(alias)) {
+                                    field = alias;
+                                    break;
+                                }
+                            }
+                        }
+                    } else if ("text2".equals(field)
+                            && !op.has("text2") && op.has("value")
+                            && !action.args.contains("d")) {
+                        field = "value";
+                    }
                     String text = textSlotValue(builder, op, field,
                             variables, action.opCode);
                     stmt.params.add(text);
                     shown = text.startsWith("@var:")
-                            ? text.substring("@var:".length()) : text;
+                            ? text.substring("@var:".length())
+                            : text.startsWith("@")
+                                    ? describeSlot(builder, op, field)
+                                    : text;
                 }
                 case 'b' -> {
-                    boolean flag = boolOf(op, "flag", true);
-                    stmt.params.add(String.valueOf(flag));
-                    shown = String.valueOf(flag);
+                    String flagField = op.has("flag") ? "flag"
+                            : "value";
+                    String flag = boolSlot(builder, op, flagField, true,
+                            "the \"" + flagField + "\" of this block");
+                    stmt.params.add(flag);
+                    shown = describeSlot(builder, op, flagField);
+                    if (shown.isEmpty()) {
+                        shown = flag;
+                    }
                 }
                 case 'm' -> {
                     String mode = stringOf(op, "mode")
@@ -8111,8 +8866,12 @@ public final class AgentLogic {
         public int beanIndex;
         public String kind;
         public String currentValue;
+        public JsonElement rawElement;
+        public String shownNewValue;
         String newValue;
         int paramIdx;
+        char slotChar = 's';
+        String[] aliases = new String[0];
     }
 
     /** A validated edit (replace or remove) against one event. */
@@ -8128,6 +8887,7 @@ public final class AgentLogic {
         public int[] targetPath;
         public int targetBeanIndex;
         public final ArrayList<EditableValue> values = new ArrayList<>();
+        final ArrayList<BlockBean> extraBeans = new ArrayList<>();
         public int existingCount;
         public String blockDescription;
         public String eventRendering;
@@ -8368,14 +9128,15 @@ public final class AgentLogic {
         return null;
     }
 
-    /** Blocks that end the event: nothing can run after them. */
+    /** Blocks that end their chain: nothing can run after them. */
     private static final java.util.Set<String> TERMINATORS =
-            java.util.Set.of("finish", "finish_activity", "finishactivity");
+            java.util.Set.of("finish", "finish_activity", "finishactivity",
+                    "finish_all", "return_title", "return_fragment",
+                    "return_text", "forever", "break", "continue");
 
     /**
-     * Refuses a terminator that is not last, and a second copy of one.
-     * Nothing after {@code finish()} runs, so a block there is dead
-     * code that also looks wrong in the editor.
+     * Refuses a terminator that is not last, and appending after an
+     * event whose top-level chain already ends with a terminator.
      */
     private static void checkTerminators(JsonArray blocks,
                                          ArrayList<BlockBean> existing,
@@ -8384,24 +9145,43 @@ public final class AgentLogic {
         if (blocks == null) {
             return;
         }
-        int last = -1;
+        if (existing != null && !existing.isEmpty() && blocks.size() > 0) {
+            ArrayList<Integer> chain = chainIndices(existing);
+            if (!chain.isEmpty()) {
+                BlockBean tail = existing.get(chain.get(chain.size() - 1));
+                if (tail != null && ("f".equals(tail.type)
+                        || "finishActivity".equals(tail.opCode)
+                        || "finishAffinity".equals(tail.opCode))) {
+                    throw new AgentTools.ToolException("E_AFTER_FINISH",
+                            targetId + " " + eventName
+                                    + " already ends with "
+                                    + describeBlock(tail)
+                                    + ", so nothing can be added after "
+                                    + "it. Remove that block with "
+                                    + "edit_event_block first (or call "
+                                    + "set_event_handler with \"replace\""
+                                    + ": true), then add these.");
+                }
+            }
+        }
+        int first = -1;
+        String terminatorName = "";
         for (int i = 0; i < blocks.size(); i++) {
             JsonElement element = blocks.get(i);
             if (!element.isJsonObject()) {
                 continue;
             }
-            String kind = stringOf(element.getAsJsonObject(), "block");
-            if (TERMINATORS.contains(kind.toLowerCase(
-                    java.util.Locale.ROOT))) {
-                last = i;
+            String kind = stringOf(element.getAsJsonObject(), "block")
+                    .toLowerCase(java.util.Locale.ROOT);
+            if (TERMINATORS.contains(kind)) {
+                first = i;
+                terminatorName = kind;
+                break;
             }
         }
-        if (last < 0) {
-            return;
-        }
-        if (last < blocks.size() - 1) {
+        if (first >= 0 && first < blocks.size() - 1) {
             StringBuilder names = new StringBuilder();
-            for (int i = last + 1; i < blocks.size(); i++) {
+            for (int i = first + 1; i < blocks.size(); i++) {
                 JsonElement element = blocks.get(i);
                 if (!element.isJsonObject()) {
                     continue;
@@ -8413,20 +9193,11 @@ public final class AgentLogic {
                         "block"));
             }
             throw new AgentTools.ToolException("E_AFTER_FINISH",
-                    "Finish ends the event — nothing after it ever runs. "
-                            + "These blocks are after it and would be "
-                            + "dead code: " + names + ". Put finish last, "
+                    "\"" + terminatorName + "\" ends the chain — nothing "
+                            + "after it ever runs. These blocks are after "
+                            + "it and would be dead code: " + names
+                            + ". Put \"" + terminatorName + "\" last, "
                             + "after everything else, or take it out.");
-        }
-        for (BlockBean bean : existing) {
-            if (bean != null && "finishActivity".equals(bean.opCode)) {
-                throw new AgentTools.ToolException("E_AFTER_FINISH",
-                        targetId + " " + eventName
-                                + " already ends with Finish Activity, "
-                                + "so nothing can be added after it. "
-                                + "Remove that block with edit_event_block "
-                                + "first, then add these.");
-            }
         }
     }
 
@@ -8598,15 +9369,22 @@ public final class AgentLogic {
         plan.blockDescription = describeBlock(block);
 
         if (plan.remove) {
-            if (plan.targetBeanIndex == 0 && !blocks.isEmpty()) {
-                // Fx generates from stored index 0; removing the head
-                // bean would orphan every other statement.
-                throw new AgentTools.ToolException("E_HEAD_BLOCK",
-                        "This block is the event's first statement; "
-                                + "removing it outright would break the "
-                                + "stored chain Sketchware generates "
-                                + "from. It can be changed in place "
-                                + "instead. Nothing was changed.");
+            ArrayList<BlockBean> clones = new ArrayList<>();
+            for (BlockBean bean : blocks) clones.add(bean.clone());
+            removeBlockAt(clones, plan.targetBeanIndex);
+            ArrayList<String> problems = editorLoadProblems(clones);
+            if (!problems.isEmpty()) {
+                throw new AgentTools.ToolException("E_BAD_EDIT",
+                        "Removing that block would leave broken logic ("
+                                + problems.get(0)
+                                + "). Nothing was changed.");
+            }
+            if (!clones.isEmpty()
+                    && generate(context, scId, activity, clones) == null) {
+                throw new AgentTools.ToolException("E_GENERATE",
+                        "Sketchware's code generator could not compile "
+                                + "the remaining blocks after that "
+                                + "removal. Nothing was changed.");
             }
             return plan;
         }
@@ -8616,26 +9394,97 @@ public final class AgentLogic {
             throw new AgentTools.ToolException("E_BAD_EDIT",
                     "To change a value, give \"replace_with\" with the "
                             + "new text, message, value or number, e.g. "
-                            + "{\"text\":\"Saved\"}.");
+                            + "{\"text\":\"Saved\"} or "
+                            + "{\"text\":{\"text_of\":\"note_input\"}}.");
         }
-        JsonObject with = replacement.getAsJsonObject();
+        JsonObject with = cleanExprObject(replacement.getAsJsonObject());
         ArrayList<EditableValue> editable = describeEditableValues(block);
         if (editable.isEmpty()) {
             throw new AgentTools.ToolException("E_NOT_EDITABLE",
                     "The block at " + pathText(plan.targetPath) + " ("
-                            + plan.blockOpCode + ") has no value the "
-                            + "agent can safely rewrite yet — only a "
-                            + "statement's text, message, value or "
-                            + "number can be changed in place. Remove "
-                            + "it and add the replacement instead.");
+                            + plan.blockOpCode + ") has no value slot "
+                            + "to rewrite. Remove it and add the "
+                            + "replacement instead.");
         }
+        // Build a real expression context so {"text_of":"note_input"},
+        // {"var":"Box"} or {"json_of_list":"allNotes"} inside
+        // replace_with compiles into reporter beans instead of throwing
+        // Gson's UnsupportedOperationException("JsonObject").
+        ArrayList<ViewBean> screenBeans =
+                SketchwareProjects.screenBeans(scId, activity);
+        Map<String, ViewBean> byId = new LinkedHashMap<>();
+        for (ViewBean viewBean : screenBeans) {
+            byId.put(viewBean.id, viewBean);
+        }
+        if ("onBindCustomView".equals(plan.eventName)
+                && !plan.activityEvent) {
+            ViewBean host = byId.get(plan.targetId);
+            if (host != null && host.customView != null
+                    && !host.customView.isEmpty()
+                    && !"none".equals(host.customView)) {
+                try {
+                    ArrayList<ViewBean> itemViews = store.d(
+                            ProjectFileBean.getXmlName(host.customView));
+                    if (itemViews != null) {
+                        for (ViewBean item : itemViews) {
+                            if (item != null && item.id != null
+                                    && !byId.containsKey(item.id)) {
+                                byId.put(item.id, item);
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {
+                    // Screen widgets still resolve.
+                }
+            }
+        }
+        LinkedHashMap<String, Integer> variables =
+                variablesOf(store, javaName);
+        Builder builder = new Builder(context, byId, variables,
+                nextFreeId(blocks));
+        builder.lists = listsOf(store, javaName);
+        builder.components = componentsOf(store, javaName);
+        builder.scId = scId;
+        builder.activityName = SketchwareProjects.activityName(activity);
+        builder.eventArgs.putAll(eventArgsOf(plan.eventName));
+        builder.currentEvent = plan.eventName;
+
         for (EditableValue value : editable) {
+            String matchedKey = null;
             if (with.has(value.kind)
                     && !with.get(value.kind).isJsonNull()) {
-                value.newValue = with.get(value.kind).getAsString();
-                value.beanIndex = plan.targetBeanIndex;
-                plan.values.add(value);
+                matchedKey = value.kind;
+            } else {
+                for (String alias : value.aliases) {
+                    if (with.has(alias) && !with.get(alias).isJsonNull()) {
+                        matchedKey = alias;
+                        break;
+                    }
+                }
             }
+            if (matchedKey == null) {
+                continue;
+            }
+            JsonElement elem = with.get(matchedKey);
+            value.rawElement = elem;
+            String what = "the \"" + value.kind + "\" of "
+                    + plan.blockOpCode;
+            if (value.slotChar == 'd') {
+                value.newValue = numberSlot(builder, with, matchedKey,
+                        what);
+            } else if (value.slotChar == 'b') {
+                value.newValue = boolSlot(builder, with, matchedKey,
+                        false, what);
+            } else {
+                value.newValue = valueSlot(builder, with, matchedKey,
+                        's', what);
+            }
+            value.shownNewValue = describeSlot(builder, with, matchedKey);
+            if (value.shownNewValue.isEmpty()) {
+                value.shownNewValue = value.newValue;
+            }
+            value.beanIndex = plan.targetBeanIndex;
+            plan.values.add(value);
         }
         if (plan.values.isEmpty()) {
             StringBuilder kinds = new StringBuilder();
@@ -8649,6 +9498,52 @@ public final class AgentLogic {
                             + ". Give \"replace_with\" with one of "
                             + "those keys and the new value.");
         }
+        int nextId = builder.nextId;
+        for (BlockBean createdBean : builder.created) {
+            for (int i = 0; i < createdBean.parameters.size(); i++) {
+                String param = createdBean.parameters.get(i);
+                if (param != null && param.startsWith("@var:")) {
+                    String varName = param.substring("@var:".length());
+                    String reporterType = variables.containsKey(varName)
+                            ? variableTypeLetter(variables.get(varName))
+                            : "d";
+                    BlockBean reporter = new BlockBean(
+                            String.valueOf(nextId), varName,
+                            reporterType, "", "getVar");
+                    try {
+                        reporter.color = kq.a("getVar", reporter.type);
+                    } catch (Exception ignored) {
+                        // Display-only.
+                    }
+                    plan.extraBeans.add(reporter);
+                    createdBean.parameters.set(i, "@" + nextId);
+                    nextId++;
+                }
+            }
+        }
+        for (EditableValue value : plan.values) {
+            if (value.newValue != null
+                    && value.newValue.startsWith("@var:")) {
+                String varName = value.newValue.substring(
+                        "@var:".length());
+                String reporterType = variables.containsKey(varName)
+                        ? variableTypeLetter(variables.get(varName))
+                        : "d";
+                BlockBean reporter = new BlockBean(
+                        String.valueOf(nextId), varName, reporterType,
+                        "", "getVar");
+                try {
+                    reporter.color = kq.a("getVar", reporter.type);
+                } catch (Exception ignored) {
+                    // Display-only.
+                }
+                plan.extraBeans.add(reporter);
+                value.newValue = "@" + nextId;
+                nextId++;
+            }
+        }
+        plan.extraBeans.addAll(0, builder.created);
+
         // Prove the after-state still generates: clone, rewrite, run
         // the app's own generator, require the fresh code to differ.
         ArrayList<BlockBean> clones = new ArrayList<>();
@@ -8656,6 +9551,17 @@ public final class AgentLogic {
         for (EditableValue value : plan.values) {
             clones.get(value.beanIndex).parameters.set(value.paramIdx,
                     value.newValue);
+        }
+        for (BlockBean extra : plan.extraBeans) {
+            clones.add(extra.clone());
+        }
+        dropOrphanReporters(clones);
+        ArrayList<String> problems = editorLoadProblems(clones);
+        if (!problems.isEmpty()) {
+            throw new AgentTools.ToolException("E_BAD_EDIT",
+                    "The edited block would not open in the editor ("
+                            + problems.get(0)
+                            + "). Nothing was changed.");
         }
         String before = generate(context, scId, activity, blocks);
         String after = generate(context, scId, activity, clones);
@@ -8667,6 +9573,50 @@ public final class AgentLogic {
                             + "changed.");
         }
         return plan;
+    }
+
+    /** Removes one statement bean, keeping index 0 at the chain head. */
+    private static void removeBlockAt(ArrayList<BlockBean> combined,
+                                      int targetBeanIndex) {
+        if (combined.isEmpty() || targetBeanIndex < 0
+                || targetBeanIndex >= combined.size()) {
+            return;
+        }
+        BlockBean removed = combined.get(targetBeanIndex);
+        int removedNumId = parseId(removed.id);
+        int removedNext = removed.nextBlock;
+        if (targetBeanIndex == 0 && removedNext < 0) {
+            // Removing the sole top-level statement empties the event.
+            combined.clear();
+            return;
+        }
+        for (BlockBean bean : combined) {
+            if (bean.nextBlock == removedNumId) {
+                bean.nextBlock = removedNext;
+            }
+            if (bean.subStack1 == removedNumId) {
+                bean.subStack1 = removedNext;
+            }
+            if (bean.subStack2 == removedNumId) {
+                bean.subStack2 = removedNext;
+            }
+        }
+        final String removedId = removed.id;
+        combined.removeIf(bean -> removedId.equals(bean.id));
+        if (targetBeanIndex == 0 && removedNext >= 0) {
+            BlockBean nextHead = findById(combined,
+                    String.valueOf(removedNext));
+            if (nextHead != null) {
+                combined.remove(nextHead);
+                combined.add(0, nextHead);
+            }
+        }
+        dropOrphanReporters(combined);
+        if (!combined.isEmpty()) {
+            ArrayList<BlockBean> ordered = editorOrder(combined);
+            combined.clear();
+            combined.addAll(ordered);
+        }
     }
 
     /**
@@ -8699,28 +9649,16 @@ public final class AgentLogic {
             ArrayList<BlockBean> combined = new ArrayList<>();
             for (BlockBean bean : current) combined.add(bean.clone());
             if (plan.remove) {
-                BlockBean removed = combined.get(plan.targetBeanIndex);
-                int removedNumId = parseId(removed.id);
-                int removedNext = removed.nextBlock;
-                for (BlockBean bean : combined) {
-                    if (bean.nextBlock == removedNumId) {
-                        bean.nextBlock = removedNext;
-                    }
-                    if (bean.subStack1 == removedNumId) {
-                        bean.subStack1 = removedNext;
-                    }
-                    if (bean.subStack2 == removedNumId) {
-                        bean.subStack2 = removedNext;
-                    }
-                }
-                final String removedId = removed.id;
-                combined.removeIf(bean -> removedId.equals(bean.id));
-                dropOrphanReporters(combined);
+                removeBlockAt(combined, plan.targetBeanIndex);
             } else {
                 for (EditableValue value : plan.values) {
                     combined.get(value.beanIndex).parameters.set(
                             value.paramIdx, value.newValue);
                 }
+                for (BlockBean extra : plan.extraBeans) {
+                    combined.add(extra.clone());
+                }
+                dropOrphanReporters(combined);
             }
             ArrayList<String> editProblems =
                     editorLoadProblems(combined);
@@ -9140,24 +10078,73 @@ public final class AgentLogic {
         List<String> slots = slotsOf(bean.spec);
         int count = Math.min(slots.size(),
                 bean.parameters == null ? 0 : bean.parameters.size());
+        int totalText = 0;
+        int totalNum = 0;
+        for (int i = 0; i < count; i++) {
+            if ("%s".equals(slots.get(i))) totalText++;
+            else if ("%d".equals(slots.get(i))) totalNum++;
+        }
+        int textOrdinal = 0;
+        int numOrdinal = 0;
+        int boolOrdinal = 0;
+        String opCode = String.valueOf(bean.opCode);
         for (int i = 0; i < count; i++) {
             String slot = slots.get(i);
-            String kind = switch (String.valueOf(bean.opCode)) {
-                case "doToast" -> i == 0 && "%s".equals(slot)
-                        ? EDIT_MESSAGE : null;
-                case "setText" -> i == 1 && "%s".equals(slot)
-                        ? EDIT_TEXT : null;
-                case "setVarString" -> i == 1 && "%s".equals(slot)
-                        ? EDIT_TEXT : null;
-                case "setVarInt" -> i == 1 && "%d".equals(slot)
-                        ? EDIT_NUMBER : null;
-                case "setVarBoolean" -> i == 1 && "%b".equals(slot)
-                        ? EDIT_VALUE : null;
-                default -> null;
-            };
+            String kind = null;
+            char slotChar = 's';
+            String[] aliases = new String[0];
+            if ("doToast".equals(opCode) && i == 0 && "%s".equals(slot)) {
+                kind = EDIT_MESSAGE;
+                aliases = new String[]{"text", "value"};
+            } else if ("setText".equals(opCode) && i == 1
+                    && "%s".equals(slot)) {
+                kind = EDIT_TEXT;
+                aliases = new String[]{"value", "message"};
+            } else if ("setVarString".equals(opCode) && i == 1
+                    && "%s".equals(slot)) {
+                kind = EDIT_TEXT;
+                aliases = new String[]{"value"};
+            } else if ("setVarInt".equals(opCode) && i == 1
+                    && "%d".equals(slot)) {
+                kind = EDIT_NUMBER;
+                slotChar = 'd';
+                aliases = new String[]{"value"};
+            } else if ("setVarBoolean".equals(opCode) && i == 1
+                    && "%b".equals(slot)) {
+                kind = EDIT_VALUE;
+                slotChar = 'b';
+                aliases = new String[]{"flag", "enabled"};
+            } else if ("%s".equals(slot)) {
+                int ord = textOrdinal++;
+                kind = ord == 0 ? "text" : "text" + (ord + 1);
+                if (ord == 0) {
+                    aliases = totalText >= 2
+                            ? new String[]{"key"}
+                            : new String[]{"value", "message", "key",
+                                    "url", "title", "path"};
+                } else if (ord == 1 && totalNum == 0) {
+                    aliases = new String[]{"value"};
+                }
+            } else if ("%d".equals(slot)) {
+                int ord = numOrdinal++;
+                slotChar = 'd';
+                kind = ord == 0 ? "value" : "value" + (ord + 1);
+                if (ord == 0) {
+                    aliases = new String[]{"number", "index"};
+                }
+            } else if ("%b".equals(slot)) {
+                int ord = boolOrdinal++;
+                slotChar = 'b';
+                kind = ord == 0 ? "flag" : "flag" + (ord + 1);
+                if (ord == 0) {
+                    aliases = new String[]{"value", "enabled", "checked"};
+                }
+            }
             if (kind != null) {
                 EditableValue value = new EditableValue();
                 value.kind = kind;
+                value.slotChar = slotChar;
+                value.aliases = aliases;
                 value.paramIdx = i;
                 value.currentValue = bean.parameters.get(i);
                 out.add(value);
