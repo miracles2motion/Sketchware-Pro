@@ -266,17 +266,37 @@ public final class AgentEdits {
                 }
                 case "set_background" -> {
                     ViewBean bean = requireWidget(op, byId);
-                    int color = colorOf(scId, op);
-                    bean.layout.backgroundColor = color;
-                    lines.add("Set " + bean.id + " background to "
-                            + colorWord(scId, op, color));
+                    String raw = stringOf(op, "color");
+                    ResColor rc = resolveResColor(scId, raw, frozen);
+                    if (rc != null) {
+                        bean.layout.backgroundResColor = rc.resRef;
+                        bean.layout.backgroundColor = rc.fallbackInt;
+                        lines.add("Set " + bean.id + " background to "
+                                + rc.resRef);
+                    } else {
+                        int color = colorOf(scId, op);
+                        bean.layout.backgroundResColor = null;
+                        bean.layout.backgroundColor = color;
+                        lines.add("Set " + bean.id + " background to "
+                                + colorWord(scId, op, color));
+                    }
                 }
                 case "set_text_color" -> {
                     ViewBean bean = requireWidget(op, byId);
-                    int color = colorOf(scId, op);
-                    bean.text.textColor = color;
-                    lines.add("Set " + bean.id + " text colour to "
-                            + colorWord(scId, op, color));
+                    String raw = stringOf(op, "color");
+                    ResColor rc = resolveResColor(scId, raw, frozen);
+                    if (rc != null) {
+                        bean.text.resTextColor = rc.resRef;
+                        bean.text.textColor = rc.fallbackInt;
+                        lines.add("Set " + bean.id + " text colour to "
+                                + rc.resRef);
+                    } else {
+                        int color = colorOf(scId, op);
+                        bean.text.resTextColor = null;
+                        bean.text.textColor = color;
+                        lines.add("Set " + bean.id + " text colour to "
+                                + colorWord(scId, op, color));
+                    }
                 }
                 case "set_text_size" -> {
                     ViewBean bean = requireWidget(op, byId);
@@ -1592,9 +1612,27 @@ public final class AgentEdits {
         String background = stringOf(op, "background");
         String colorNote = "";
         if (!background.isEmpty()) {
-            int color = parseColor(scId, background);
-            bean.layout.backgroundColor = color;
-            colorNote = ", background " + colorWord(scId, background, color);
+            ResColor rc = resolveResColor(scId, background, frozen);
+            if (rc != null) {
+                bean.layout.backgroundResColor = rc.resRef;
+                bean.layout.backgroundColor = rc.fallbackInt;
+                colorNote = ", background " + rc.resRef;
+            } else {
+                int color = parseColor(scId, background);
+                bean.layout.backgroundColor = color;
+                colorNote = ", background "
+                        + colorWord(scId, background, color);
+            }
+        }
+        String textColor = stringOf(op, "text_color");
+        if (!textColor.isEmpty()) {
+            ResColor rc = resolveResColor(scId, textColor, frozen);
+            if (rc != null) {
+                bean.text.resTextColor = rc.resRef;
+                bean.text.textColor = rc.fallbackInt;
+            } else {
+                bean.text.textColor = parseColor(scId, textColor);
+            }
         }
         work.add(bean);
         byId.put(id, bean);
@@ -1803,9 +1841,73 @@ public final class AgentEdits {
      * project token — {@code @primary}, {@code @primary_dark},
      * {@code @accent} — resolved from the project's own theme colours.
      */
+    private static final class ResColor {
+        final String resRef;
+        final int fallbackInt;
+
+        ResColor(String resRef, int fallbackInt) {
+            this.resRef = resRef;
+            this.fallbackInt = fallbackInt;
+        }
+    }
+
+    /**
+     * Resolves {@code @color/<name>} or {@code ?attr/<name>} for widgets so
+     * {@code Ox} writes the real XML resource/theme reference while keeping a
+     * valid preview integer on {@code ViewBean}.
+     */
+    private static ResColor resolveResColor(String scId, String raw,
+                                            boolean frozen)
+            throws AgentTools.ToolException {
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.startsWith("@color/")) {
+            String name = trimmed.substring("@color/".length()).trim();
+            if (!name.matches("^[a-zA-Z][a-zA-Z0-9_]*$")) {
+                throw new AgentTools.ToolException("E_BAD_COLOR",
+                        "Invalid @color reference \"" + trimmed + "\".");
+            }
+            Integer resolved = AgentResources.resolveColorInt(scId, name);
+            if (resolved == null) {
+                if (frozen) {
+                    resolved = 0xFF808080;
+                } else {
+                    throw new AgentTools.ToolException("E_BAD_COLOR",
+                            "Unknown color resource \"@color/" + name
+                                    + "\". Define it in colors.xml with "
+                                    + "edit_values_resource first.");
+                }
+            }
+            return new ResColor("@color/" + name, resolved);
+        }
+        if (trimmed.startsWith("?attr/")
+                || trimmed.startsWith("?android:attr/")) {
+            if (!trimmed.matches("^\\?(android:)?attr/[a-zA-Z][a-zA-Z0-9_]*$")) {
+                throw new AgentTools.ToolException("E_BAD_COLOR",
+                        "Invalid theme attribute reference \"" + trimmed
+                                + "\". Example: ?attr/colorSurface.");
+            }
+            return new ResColor(trimmed, 0xFF808080);
+        }
+        return null;
+    }
+
     public static int parseColor(String scId, String value)
             throws AgentTools.ToolException {
         String color = value == null ? "" : value.trim();
+        if (color.startsWith("@color/")) {
+            String name = color.substring("@color/".length()).trim();
+            Integer resolved = AgentResources.resolveColorInt(scId, name);
+            if (resolved == null) {
+                throw new AgentTools.ToolException("E_BAD_COLOR",
+                        "Unknown color resource \"@color/" + name
+                                + "\". Define it in colors.xml with "
+                                + "edit_values_resource first.");
+            }
+            return resolved;
+        }
         if (color.startsWith("@")) {
             String word = color.toLowerCase(Locale.ROOT);
             // Derived tints: a base token lightened toward white by a

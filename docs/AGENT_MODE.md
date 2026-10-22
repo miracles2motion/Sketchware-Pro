@@ -1968,6 +1968,19 @@ logs exposed the rest of the same class:
    - `remove_component` checks cross-event block references (`AgentLogic.componentUse`), deletes component events via `EventBean.deleteEvent`, and deletes the `ComponentBean` via `eC.b(javaName, componentBean)` (`br.java:168`).
    - `delete_custom_view` checks `ViewBean.customView` and `<include>` references across all screens (with optional `clear_references`), refuses `_drawer_*` layouts, and cleans stale `InjectRootLayoutManager` (`view_root`) entries alongside `delete_activity` and `edit_activity`.
 
+## Wave 40 / Phase 4 — Structured `values` / `values-<variant>` Resources, Raw `res/` XML Manager, Menus, Animations, Fonts & Sounds
+
+1. **Structured `values` & `values-<variant>` Resources (`AgentResources`, `get_values_resources`, `edit_values_resource`)**:
+   - Reads, validates, upserts, and deletes entries in `strings.xml` (preserving `translatable="false"` and escaping apostrophes via `ResourcesEditorActivity.escapeXml`), `colors.xml`, `styles.xml`, `themes.xml`, and `arrays.xml` (`string-array`, `integer-array`, `array` with standard `aapt2`-compatible `<item>...</item>` tags) across `values` and any `values-<variant>` (`values-night` dark theme, `values-es`, `values-ar`, `values-pt-rBR`, etc.).
+   - Seeds default base `strings.xml`, `colors.xml`, and `styles.xml` through `yq` (`getXMLString()`, `getXMLColor()`, `getXMLStyle()`) and avoids instantiating `ColorsEditorManager` directly (whose constructor reads static `DesignActivity.sc_id`, null outside `DesignActivity`).
+   - Wired `@color/<name>` and `?attr/<name>` into `AgentEdits` (`ViewBean.layout.backgroundResColor`, `ViewBean.text.resTextColor`, `parseColor`) and `AgentLogic` (`R.color.<name>` and `R.attr.<name>` in `%m.color` slots per `Fx.java:209-225`), complementing `@string/<name>` and `{"res_string":"<name>"}`.
+2. **Raw `res/` XML Resource Manager & XML Animations (`read_resource_xml`, `write_resource_xml`, `delete_resource_xml`, `start_xml_animation`)**:
+   - Lists, reads, `DocumentBuilder`-validates (XXE/DOCTYPE disabled), writes, and deletes arbitrary XML resources under `.sketchware/data/<scId>/files/resource/<folder>/<file>.xml` (`menu/*.xml` for `menu_inflate`, `anim/*.xml`, `animator/*.xml`, `xml/*.xml`, `color/*.xml`, `drawable*/*.xml`, `values*/*.xml`), compiled by `ResourceCompiler` into `project-imported.zip` and overlaid onto `project.zip` via `aapt2 link -R`.
+   - Added `start_xml_animation` (`play_xml_animation`) in `AgentLogic` (`AnimationUtils.loadAnimation` with ViewBinding and Activity/Fragment context support).
+3. **Font Manager & Sound Manager (`list_font_and_sound_sources`, `import_project_font`, `delete_project_font`, `import_project_sound`, `delete_project_sound`)**:
+   - Imports `.ttf`/`.otf` fonts into `jC.d(scId).d` (`kC.j()`) from bundled APK fonts (`gilroy`, `jetbrains_mono`, `droid_sans_mono`), user Font Collection (`Np.g().f()`), or local font files (magic-byte + `Typeface.createFromFile` validation), committing via `kC.y() -> eC.a(kC) -> eC.k() -> commitProject -> kC.z() -> resetResourceManager`, with widget/block reference checks on delete.
+   - Imports or synthesizes audio resources into `jC.d(scId).c` (`kC.o()`) from 44.1 kHz 16-bit PCM `.wav` procedural presets (`click`, `pop`, `success`, `complete`, `error`, `notification`, `alarm`) or custom `frequency_hz`/`duration_ms`/`waveform` tones, user Sound Collection (`Qp.g().f()`), or local `.mp3`/`.ogg`/`.wav`/`.m4a` files, ready for `MediaPlayer` (`mp_create`) and `SoundPool` (`load_sound`), and exported in `AgentExport`.
+
 
 
 

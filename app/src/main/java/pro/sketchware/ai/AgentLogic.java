@@ -3907,6 +3907,70 @@ public final class AgentLogic {
                             + " inside " + container.id);
                     return bean;
                 }
+                case "start_xml_animation", "play_xml_animation" -> {
+                    ViewBean widget = requireWidget(op, byId);
+                    String anim = stringOf(op, "anim");
+                    if (anim.isEmpty()) {
+                        anim = stringOf(op, "animation");
+                    }
+                    if (anim.startsWith("@anim/")) {
+                        anim = anim.substring("@anim/".length());
+                    } else if (anim.startsWith("R.anim.")) {
+                        anim = anim.substring("R.anim.".length());
+                    }
+                    if (anim.endsWith(".xml")) {
+                        anim = anim.substring(0, anim.length() - 4);
+                    }
+                    if (!anim.matches("[a-z][a-z0-9_]*")) {
+                        throw new AgentTools.ToolException(
+                                "E_BAD_BLOCK",
+                                "start_xml_animation needs \"anim\" as a "
+                                        + "lowercase resource name like "
+                                        + "\"fade_in\".");
+                    }
+                    java.io.File animFile = new java.io.File(
+                            new pro.sketchware.utility.FilePathUtil()
+                                    .getPathResource(scId),
+                            "anim/" + anim + ".xml");
+                    if (!animFile.exists()) {
+                        throw new AgentTools.ToolException(
+                                "E_ANIM_NOT_FOUND",
+                                "No animation file res/anim/" + anim
+                                        + ".xml exists yet. Create it with "
+                                        + "write_resource_xml "
+                                        + "(folder=\"anim\", file=\"" + anim
+                                        + ".xml\") first.");
+                    }
+                    boolean vb = "true".equals(
+                            new mod.hey.studios.project.ProjectSettings(scId)
+                                    .getValue(
+                                            mod.hey.studios.project.ProjectSettings
+                                                    .SETTING_ENABLE_VIEWBINDING,
+                                            "false"));
+                    String viewExpr = (vb && !widget.id.startsWith("_"))
+                            ? ("binding."
+                                    + mod.pranav.viewbinding.ViewBindingBuilder
+                                            .generateParameterFromId(
+                                                    widget.id))
+                            : widget.id;
+                    ProjectFileBean self = SketchwareProjects
+                            .findActivity(scId, activityName);
+                    String ctxExpr = SketchwareProjects.isFragment(self)
+                            ? "requireContext()"
+                            : "getApplicationContext()";
+                    String code = viewExpr
+                            + ".startAnimation(android.view.animation"
+                            + ".AnimationUtils.loadAnimation(" + ctxExpr
+                            + ", R.anim." + anim + "));";
+                    BlockBean bean = newBean("addSourceDirectly", " ");
+                    bean.parameters.add(code);
+                    allStatements.add(bean);
+                    addExpect("R.anim." + anim,
+                            "Animate " + widget.id + " with " + anim);
+                    lines.add(indent(depth) + "Animate " + widget.id
+                            + " with " + anim);
+                    return bean;
+                }
                 case "return_title" -> {
                     // The last block of onTabAdded: the page's title
                     // (returnTitle, "return %s;").
@@ -9641,12 +9705,38 @@ public final class AgentLogic {
     /** A colour argument in the editor's stored form, by field. */
     private static String colourField(JsonObject op, String field)
             throws AgentTools.ToolException {
-        String colour = stringOf(op, field);
+        return encodeBlockColour(stringOf(op, field), field);
+    }
+
+    private static String encodeBlockColour(String raw, String field)
+            throws AgentTools.ToolException {
+        String colour = raw == null ? "" : raw.trim();
+        if (colour.startsWith("@color/")) {
+            String name = colour.substring("@color/".length()).trim();
+            if (name.matches("[a-zA-Z][a-zA-Z0-9_]*")) {
+                return "R.color." + name;
+            }
+        } else if (colour.startsWith("R.color.")) {
+            String name = colour.substring("R.color.".length()).trim();
+            if (name.matches("[a-zA-Z][a-zA-Z0-9_]*")) {
+                return "R.color." + name;
+            }
+        } else if (colour.startsWith("?attr/")) {
+            String name = colour.substring("?attr/".length()).trim();
+            if (name.matches("[a-zA-Z][a-zA-Z0-9_]*")) {
+                return "R.attr." + name;
+            }
+        } else if (colour.startsWith("R.attr.")) {
+            String name = colour.substring("R.attr.".length()).trim();
+            if (name.matches("[a-zA-Z][a-zA-Z0-9_]*")) {
+                return "R.attr." + name;
+            }
+        }
         if (colour.isEmpty()
                 || !colour.matches("(?i)#([0-9a-f]{6}|[0-9a-f]{8})")) {
             throw new AgentTools.ToolException("E_BAD_BLOCK",
-                    "This block needs \"" + field + "\" as #RRGGBB or "
-                            + "#AARRGGBB.");
+                    "This block needs \"" + field + "\" as #RRGGBB, "
+                            + "#AARRGGBB, @color/<name>, or ?attr/<name>.");
         }
         String hex = colour.substring(1).toUpperCase(Locale.ROOT);
         if (hex.length() == 6) hex = "FF" + hex;
@@ -10993,21 +11083,12 @@ public final class AgentLogic {
         return widget;
     }
 
-    /** Colour literals in the editor's stored form ("0xAARRGGBB"). */
+    /** Colour literals or @color/?attr references in the editor's stored form. */
     private static String colourParam(JsonObject op)
             throws AgentTools.ToolException {
         String colour = stringOf(op, "color");
         if (colour.isEmpty()) colour = stringOf(op, "colour");
-        if (colour.isEmpty()
-                || !colour.matches("(?i)#([0-9a-f]{6}|[0-9a-f]{8})")) {
-            throw new AgentTools.ToolException("E_BAD_BLOCK",
-                    "A colour block needs \"color\" as #RRGGBB or "
-                            + "#AARRGGBB (opaque when the alpha part is "
-                            + "left out).");
-        }
-        String hex = colour.substring(1).toUpperCase(Locale.ROOT);
-        if (hex.length() == 6) hex = "FF" + hex;
-        return "0x" + hex;
+        return encodeBlockColour(colour, "color");
     }
 
     /** A JSON fragment shortened for an error message. */

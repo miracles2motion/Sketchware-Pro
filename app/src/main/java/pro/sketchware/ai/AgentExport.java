@@ -584,6 +584,24 @@ public final class AgentExport {
                             widget.addProperty("background_resource",
                                     bean.layout.backgroundResource);
                         }
+                        if (bean.layout.backgroundResColor != null
+                                && !bean.layout.backgroundResColor.isEmpty()) {
+                            widget.addProperty("background_res_color",
+                                    bean.layout.backgroundResColor);
+                        }
+                    }
+                    if (bean.text != null) {
+                        if (bean.text.resTextColor != null
+                                && !bean.text.resTextColor.isEmpty()) {
+                            widget.addProperty("res_text_color",
+                                    bean.text.resTextColor);
+                        }
+                        if (bean.text.textFont != null
+                                && !bean.text.textFont.isEmpty()
+                                && !"default_font"
+                                        .equals(bean.text.textFont)) {
+                            widget.addProperty("font", bean.text.textFont);
+                        }
                     }
                     if (bean.image != null
                             && bean.image.resName != null
@@ -647,6 +665,26 @@ public final class AgentExport {
                 customDrawables.add(name);
             }
             state.add("custom_drawables", customDrawables);
+            JsonArray fonts = new JsonArray();
+            for (String f : res.fonts) {
+                fonts.add(f);
+            }
+            state.add("fonts", fonts);
+            JsonArray sounds = new JsonArray();
+            for (String s : res.sounds) {
+                sounds.add(s);
+            }
+            state.add("sounds", sounds);
+            JsonArray variants = new JsonArray();
+            for (String v : AgentResources.listValueVariants(scId)) {
+                variants.add(v);
+            }
+            state.add("value_variants", variants);
+            try {
+                state.add("raw_resource_files",
+                        AgentResources.listRawResourceFiles(scId, null));
+            } catch (Exception ignored) {
+            }
             java.util.HashMap<String, Object> meta = a.a.a.lC.b(scId);
             JsonObject iconInfo = new JsonObject();
             iconInfo.addProperty("custom_icon",

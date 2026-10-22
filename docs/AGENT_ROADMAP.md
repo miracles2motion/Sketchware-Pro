@@ -84,14 +84,15 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 ---
 
-### Phase 4 — Structured Resource Editor (`res/values`), Menus, Animations & Fonts/Sounds
-**Goal:** Full control over Android resources, dark-mode palettes, toolbar menus, animations, typography, and audio.
-1. **Structured Resource Editor (`edit_resources`):**
-   - Manage `strings.xml`, `colors.xml`, `styles.xml` / themes, and `arrays.xml` using the exact formats of `StringsEditorManager`, `ColorsEditorManager`, `StylesEditorManager`, and `ArraysEditorManager`.
-2. **Raw `res/` XML Manager (`manage_res_file`):**
-   - Create, read, edit, and delete XML files under `res/drawable/`, `res/menu/`, `res/anim/`, `res/xml/`, and `res/values-night/` (validated as well-formed XML before saving).
-3. **Font Manager & Sound Manager (`manage_fonts`, `manage_sounds`):**
-   - List/import/delete `.ttf`/`.otf` fonts (`assets/fonts`) and audio clips (`res/raw`) through `jC.d(scId)` so `setTypeface` and `MediaPlayer`/`SoundPool` blocks work end-to-end.
+### Phase 4 — Structured Resource Editor (`res/values`), Menus, Animations & Fonts/Sounds (DONE)
+**Goal:** Full control over Android resources, dark-mode palettes, toolbar menus, animations, typography, and audio (`54` registered tools).
+1. **Structured Resource Editor (`get_values_resources`, `edit_values_resource`):**
+   - Read, upsert, and delete entries in `strings.xml` (including `translatable="false"`), `colors.xml`, `styles.xml`, `themes.xml`, and `arrays.xml` (`string-array`, `integer-array`, `array` with `aapt2`-valid `<item>` children) across `values` and any `values-<variant>` (`values-night` dark mode, `values-es` / `values-ar` localization), seeding defaults via `yq` and avoiding `ColorsEditorManager`'s static `DesignActivity.sc_id` dependency.
+   - Wired `@color/<name>` and `?attr/<name>` into `AgentEdits` (`ViewBean.layout.backgroundResColor`, `ViewBean.text.resTextColor`, `parseColor`) and `AgentLogic` (`R.color.<name>` / `R.attr.<name>` in `%m.color` slots per `Fx.java:209-225`), alongside `@string/<name>` and `{"res_string":"<name>"}`.
+2. **Raw `res/` XML Manager (`read_resource_xml`, `write_resource_xml`, `delete_resource_xml`):**
+   - List, read, `DocumentBuilder`-validate, write, and delete arbitrary XML files under `files/resource/<folder>/<file>.xml` (`menu`, `anim`, `animator`, `xml`, `color`, `drawable*`, `values*`), plus `start_xml_animation` block support in `AgentLogic` (`AnimationUtils.loadAnimation`).
+3. **Font Manager & Sound Manager (`list_font_and_sound_sources`, `import_project_font`, `delete_project_font`, `import_project_sound`, `delete_project_sound`):**
+   - Import/delete `.ttf`/`.otf` fonts (`jC.d(scId).d`, bundled APK fonts `gilroy` / `jetbrains_mono` / `droid_sans_mono`, `Np.g().f()` collection, or local files) and `.wav`/`.mp3`/`.ogg`/`.m4a` sounds (`jC.d(scId).c`, 44.1 kHz 16-bit PCM `.wav` procedural presets & custom tones, `Qp.g().f()` collection, or local files) with reference checks and read-back verification.
 
 ---
 

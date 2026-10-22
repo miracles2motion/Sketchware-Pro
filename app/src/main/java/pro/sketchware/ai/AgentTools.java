@@ -132,6 +132,9 @@ public final class AgentTools {
         register(new ListLocalLibraries());
         register(new SearchBuiltinIcons());
         register(new PreviewScreen());
+        register(new GetValuesResources());
+        register(new ReadResourceXml());
+        register(new ListFontAndSoundSources());
         register(new AskColor());
         register(new AskChoice());
         register(new SetStyleBrief());
@@ -162,6 +165,13 @@ public final class AgentTools {
         register(new ImportChatImage());
         register(new ManageDrawable());
         register(new SetAppIcon());
+        register(new EditValuesResource());
+        register(new WriteResourceXml());
+        register(new DeleteResourceXml());
+        register(new ImportProjectFont());
+        register(new DeleteProjectFont());
+        register(new ImportProjectSound());
+        register(new DeleteProjectSound());
         register(new ConfigureLibrary());
         register(new ManagePermissions());
         register(new ManageLocalLibraries());
@@ -856,6 +866,17 @@ public final class AgentTools {
                     namesJsonAll(resources.customDrawables));
             result.add("sounds", namesJsonAll(resources.sounds));
             result.add("fonts", namesJsonAll(resources.fonts));
+            result.add("value_variants",
+                    namesJsonAll(AgentResources.listValueVariants(scId)));
+            result.add("bundled_fonts_available",
+                    namesJsonAll(AgentResources.BUNDLED_FONTS));
+            result.add("sound_presets_available",
+                    namesJsonAll(AgentResources.SOUND_PRESETS));
+            try {
+                result.add("raw_resource_files",
+                        AgentResources.listRawResourceFiles(scId, null));
+            } catch (Exception ignored) {
+            }
             try {
                 java.util.HashMap<String, Object> meta = a.a.a.lC.b(scId);
                 result.addProperty("custom_icon",
@@ -8304,6 +8325,1292 @@ public final class AgentTools {
             } catch (Exception e) {
                 throw new ToolException("E_IMPORT_FAILED",
                         "Importing layout XML failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    // =====================================================================
+    // Phase 4: Values Resources, Raw res/ XML, Fonts & Sounds
+    // =====================================================================
+
+    /**
+     * get_values_resources: reads strings.xml, colors.xml, styles.xml,
+     * themes.xml, and arrays.xml for base values or any values-<variant>.
+     */
+    private static final class GetValuesResources implements Tool {
+        @Override
+        public String name() {
+            return "get_values_resources";
+        }
+
+        @Override
+        public String description() {
+            return "Reads the working project's structured values resources "
+                    + "(strings.xml, colors.xml, styles.xml, themes.xml, "
+                    + "arrays.xml) for the base values folder or a specific "
+                    + "variant (e.g. \"night\" for dark theme, \"es\" or "
+                    + "\"ar\" for localization), plus lists all existing "
+                    + "values variants.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("variant", stringSchema(
+                    "Optional values qualifier: \"\" (default), \"night\", "
+                            + "\"es\", \"fr\", \"ar\", \"pt-rBR\", etc."));
+            properties.add("type", stringSchema(
+                    "Optional filter: all (default), strings, colors, "
+                            + "styles, themes, or arrays"));
+            return AgentTools.parameters(properties);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            String v = stringArg(args, "variant");
+            return "Read values"
+                    + (v.isEmpty() ? "" : "-" + v.replaceFirst("^-", ""))
+                    + " resources";
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String suffix = AgentResources.normalizeVariant(
+                    stringArg(args, "variant"));
+            String filter = stringArg(args, "type").toLowerCase(Locale.ROOT);
+            if (filter.isEmpty()) filter = "all";
+
+            JsonObject result = new JsonObject();
+            result.addProperty("variant_folder",
+                    AgentResources.variantFolderName(suffix));
+            result.add("available_variants",
+                    namesJsonAll(AgentResources.listValueVariants(scId)));
+
+            if ("all".equals(filter) || "strings".equals(filter)) {
+                JsonObject stringsJson = new JsonObject();
+                for (Map.Entry<String, AgentResources.StringEntry> e
+                        : AgentResources.readStrings(scId, suffix)
+                                .entrySet()) {
+                    JsonObject entry = new JsonObject();
+                    entry.addProperty("value", e.getValue().value);
+                    entry.addProperty("translatable",
+                            e.getValue().translatable);
+                    stringsJson.add(e.getKey(), entry);
+                }
+                result.add("strings", stringsJson);
+            }
+            if ("all".equals(filter) || "colors".equals(filter)) {
+                JsonObject colorsJson = new JsonObject();
+                for (Map.Entry<String, String> e
+                        : AgentResources.readColors(scId, suffix).entrySet()) {
+                    colorsJson.addProperty(e.getKey(), e.getValue());
+                }
+                result.add("colors", colorsJson);
+            }
+            if ("all".equals(filter) || "styles".equals(filter)) {
+                result.add("styles", stylesMapToJson(
+                        AgentResources.readStylesFile(scId, suffix, false)));
+            }
+            if ("all".equals(filter) || "themes".equals(filter)) {
+                result.add("themes", stylesMapToJson(
+                        AgentResources.readStylesFile(scId, suffix, true)));
+            }
+            if ("all".equals(filter) || "arrays".equals(filter)) {
+                JsonObject arraysJson = new JsonObject();
+                for (Map.Entry<String, AgentResources.ArraySpec> e
+                        : AgentResources.readArrays(scId, suffix).entrySet()) {
+                    JsonObject arrObj = new JsonObject();
+                    arrObj.addProperty("type", e.getValue().type);
+                    arrObj.add("items", namesJsonAll(e.getValue().items));
+                    arraysJson.add(e.getKey(), arrObj);
+                }
+                result.add("arrays", arraysJson);
+            }
+            return result;
+        }
+    }
+
+    private static JsonObject stylesMapToJson(
+            Map<String, AgentResources.StyleSpec> styles) {
+        JsonObject out = new JsonObject();
+        for (AgentResources.StyleSpec s : styles.values()) {
+            JsonObject obj = new JsonObject();
+            obj.addProperty("parent", s.parent);
+            JsonObject items = new JsonObject();
+            for (Map.Entry<String, String> it : s.items.entrySet()) {
+                items.addProperty(it.getKey(), it.getValue());
+            }
+            obj.add("items", items);
+            out.add(s.name, obj);
+        }
+        return out;
+    }
+
+    /**
+     * edit_values_resource: upserts and/or deletes entries in strings.xml,
+     * colors.xml, styles.xml, themes.xml, or arrays.xml for any variant.
+     */
+    private static final class EditValuesResource implements Tool {
+        @Override
+        public String name() {
+            return "edit_values_resource";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes adding, updating, or deleting entries in "
+                    + "strings.xml, colors.xml, styles.xml, themes.xml, or "
+                    + "arrays.xml inside values or any values-<variant> "
+                    + "(e.g. variant=\"night\" for dark-mode colors/styles, "
+                    + "or variant=\"es\" / \"ar\" for localized strings). "
+                    + "Widgets can then reference @string/<name> and "
+                    + "@color/<name>, and blocks can use {\"res_string\": "
+                    + "\"<name>\"} or color \"@color/<name>\".";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("type", stringSchema(
+                    "Target values file: strings, colors, styles, themes, "
+                            + "or arrays"));
+            properties.add("variant", stringSchema(
+                    "Optional values qualifier: \"\" (default), \"night\", "
+                            + "\"es\", \"fr\", \"ar\", \"pt-rBR\", etc."));
+            JsonObject entries = new JsonObject();
+            entries.addProperty("type", "object");
+            entries.addProperty("description",
+                    "Key-value map to add or update. For strings: "
+                            + "{\"welcome\":\"Hello\"} (or "
+                            + "{\"api_url\":{\"value\":\"...\",\"translatable\":false}}); "
+                            + "for colors: {\"surface_card\":\"#1E293B\"}; "
+                            + "for styles/themes: "
+                            + "{\"CardTitle\":{\"parent\":\"TextAppearance.Material3.TitleMedium\","
+                            + "\"items\":{\"android:textColor\":\"@color/brand\"}}}; "
+                            + "for arrays: "
+                            + "{\"countries\":{\"type\":\"string-array\",\"items\":[\"NG\",\"GH\"]}}.");
+            properties.add("entries", entries);
+            JsonObject delete = new JsonObject();
+            delete.addProperty("type", "array");
+            delete.add("items", stringSchema("Resource key name to delete"));
+            delete.addProperty("description",
+                    "Optional list of entry names to remove");
+            properties.add("delete", delete);
+            return AgentTools.parameters(properties, "type");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            String t = stringArg(args, "type");
+            String v = stringArg(args, "variant");
+            return "Wants to update " + (t.isEmpty() ? "values" : t) + ".xml"
+                    + (v.isEmpty() ? "" : " (" + v + ")");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String type = normalizeValuesType(stringArg(args, "type"));
+            String suffix = AgentResources.normalizeVariant(
+                    stringArg(args, "variant"));
+            String folder = AgentResources.variantFolderName(suffix);
+            JsonObject rawEntries = args != null && args.has("entries")
+                    && args.get("entries").isJsonObject()
+                    ? args.getAsJsonObject("entries") : new JsonObject();
+            List<String> deletes = parseStringList(args, "delete");
+            if (rawEntries.size() == 0 && deletes.isEmpty()) {
+                throw new ToolException("E_EMPTY_EDIT",
+                        "Pass at least one entry in \"entries\" or one key "
+                                + "in \"delete\".");
+            }
+
+            List<String> detailLines = new ArrayList<>();
+            switch (type) {
+                case "strings" -> {
+                    LinkedHashMap<String, AgentResources.StringEntry> upserts =
+                            parseStringEntries(rawEntries);
+                    AgentResources.validateStringEntries(
+                            suffix, upserts, deletes);
+                    for (AgentResources.StringEntry se : upserts.values()) {
+                        detailLines.add("+ @string/" + se.name + " = \""
+                                + se.value + "\""
+                                + (se.translatable ? ""
+                                        : " (non-translatable)"));
+                    }
+                }
+                case "colors" -> {
+                    LinkedHashMap<String, String> upserts =
+                            parseColorEntries(rawEntries);
+                    AgentResources.validateColorEntries(
+                            suffix, upserts, deletes);
+                    for (Map.Entry<String, String> ce : upserts.entrySet()) {
+                        detailLines.add("+ @color/" + ce.getKey() + " = "
+                                + ce.getValue());
+                    }
+                }
+                case "styles", "themes" -> {
+                    boolean themesFile = "themes".equals(type);
+                    List<AgentResources.StyleSpec> upserts =
+                            parseStyleEntries(rawEntries);
+                    AgentResources.validateStylesUpdate(
+                            suffix, themesFile, upserts, deletes);
+                    for (AgentResources.StyleSpec ss : upserts) {
+                        detailLines.add("+ @style/" + ss.name
+                                + (ss.parent.isEmpty() ? ""
+                                        : " (parent " + ss.parent + ")")
+                                + " [" + ss.items.size() + " item"
+                                + (ss.items.size() == 1 ? "" : "s") + "]");
+                    }
+                }
+                case "arrays" -> {
+                    List<AgentResources.ArraySpec> upserts =
+                            parseArrayEntries(rawEntries);
+                    AgentResources.validateArraysUpdate(upserts);
+                    for (AgentResources.ArraySpec as : upserts) {
+                        detailLines.add("+ " + as.type + " " + as.name
+                                + " (" + as.items.size() + " item"
+                                + (as.items.size() == 1 ? "" : "s") + ")");
+                    }
+                }
+                default -> throw new ToolException("E_BAD_TYPE",
+                        "Unsupported values type: " + type);
+            }
+            for (String d : deletes) {
+                detailLines.add("- delete " + d);
+            }
+
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("type", type);
+            clean.addProperty("variant", suffix);
+            clean.add("entries", rawEntries.deepCopy());
+            clean.add("delete", namesJsonAll(deletes));
+            String fileLabel = folder + "/" + type + ".xml";
+            String summary = "Update " + fileLabel + " in " + project.name
+                    + " (" + rawEntries.size() + " upserted"
+                    + (deletes.isEmpty() ? ""
+                            : ", " + deletes.size() + " deleted")
+                    + ").";
+            return new AgentProposal(name(), clean, scId,
+                    "Update " + fileLabel,
+                    summary,
+                    String.join("\n", detailLines));
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String type = normalizeValuesType(
+                    stringArg(proposal.args, "type"));
+            String suffix = AgentResources.normalizeVariant(
+                    stringArg(proposal.args, "variant"));
+            String folder = AgentResources.variantFolderName(suffix);
+            JsonObject rawEntries = proposal.args.has("entries")
+                    && proposal.args.get("entries").isJsonObject()
+                    ? proposal.args.getAsJsonObject("entries")
+                    : new JsonObject();
+            List<String> deletes = parseStringList(proposal.args, "delete");
+            try {
+                int totalAfter;
+                switch (type) {
+                    case "strings" -> totalAfter = AgentResources.writeStrings(
+                            scId, suffix, parseStringEntries(rawEntries),
+                            deletes).size();
+                    case "colors" -> totalAfter = AgentResources.writeColors(
+                            scId, suffix, parseColorEntries(rawEntries),
+                            deletes).size();
+                    case "styles", "themes" -> totalAfter =
+                            AgentResources.writeStylesFile(
+                                    scId, suffix, "themes".equals(type),
+                                    parseStyleEntries(rawEntries),
+                                    deletes).size();
+                    case "arrays" -> totalAfter = AgentResources.writeArrays(
+                            scId, suffix, parseArrayEntries(rawEntries),
+                            deletes).size();
+                    default -> throw new ToolException("E_BAD_TYPE",
+                            "Unsupported values type: " + type);
+                }
+                JsonObject result = new JsonObject();
+                result.addProperty("file", folder + "/" + type + ".xml");
+                result.addProperty("total_entries", totalAfter);
+                result.addProperty("verified",
+                        "Wrote and verified res/" + folder + "/" + type
+                                + ".xml (" + totalAfter + " entries).");
+                return result;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_VALUES_WRITE_FAILED",
+                        "Updating " + folder + "/" + type + ".xml failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+
+        private static String normalizeValuesType(String raw)
+                throws ToolException {
+            String t = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+            if (t.endsWith(".xml")) {
+                t = t.substring(0, t.length() - 4);
+            }
+            return switch (t) {
+                case "string", "strings" -> "strings";
+                case "color", "colors", "colour", "colours" -> "colors";
+                case "style", "styles" -> "styles";
+                case "theme", "themes" -> "themes";
+                case "array", "arrays" -> "arrays";
+                default -> throw new ToolException("E_BAD_TYPE",
+                        "Unknown values resource type \"" + raw
+                                + "\". Use strings, colors, styles, themes, "
+                                + "or arrays.");
+            };
+        }
+
+        private static LinkedHashMap<String, AgentResources.StringEntry>
+                parseStringEntries(JsonObject obj) {
+            LinkedHashMap<String, AgentResources.StringEntry> out =
+                    new LinkedHashMap<>();
+            for (Map.Entry<String, JsonElement> e : obj.entrySet()) {
+                String key = e.getKey() == null ? "" : e.getKey().trim();
+                JsonElement v = e.getValue();
+                if (v == null || v.isJsonNull()) continue;
+                if (v.isJsonObject()) {
+                    JsonObject vo = v.getAsJsonObject();
+                    String val = stringArg(vo, "value");
+                    boolean trans = !vo.has("translatable")
+                            || vo.get("translatable").isJsonNull()
+                            || vo.get("translatable").getAsBoolean();
+                    out.put(key,
+                            new AgentResources.StringEntry(key, val, trans));
+                } else {
+                    out.put(key, new AgentResources.StringEntry(
+                            key, v.getAsString(), true));
+                }
+            }
+            return out;
+        }
+
+        private static LinkedHashMap<String, String> parseColorEntries(
+                JsonObject obj) {
+            LinkedHashMap<String, String> out = new LinkedHashMap<>();
+            for (Map.Entry<String, JsonElement> e : obj.entrySet()) {
+                String key = e.getKey() == null ? "" : e.getKey().trim();
+                JsonElement v = e.getValue();
+                if (v == null || v.isJsonNull()) continue;
+                String val = v.isJsonObject()
+                        ? stringArg(v.getAsJsonObject(), "value")
+                        : v.getAsString();
+                out.put(key, val);
+            }
+            return out;
+        }
+
+        private static List<AgentResources.StyleSpec> parseStyleEntries(
+                JsonObject obj) throws ToolException {
+            List<AgentResources.StyleSpec> out = new ArrayList<>();
+            for (Map.Entry<String, JsonElement> e : obj.entrySet()) {
+                String name = e.getKey() == null ? "" : e.getKey().trim();
+                if (e.getValue() == null || !e.getValue().isJsonObject()) {
+                    throw new ToolException("E_BAD_STYLE",
+                            "Style \"" + name + "\" must be an object with "
+                                    + "optional \"parent\" and \"items\" map.");
+                }
+                JsonObject so = e.getValue().getAsJsonObject();
+                String parent = stringArg(so, "parent");
+                boolean replace = so.has("replace_items")
+                        && !so.get("replace_items").isJsonNull()
+                        && so.get("replace_items").getAsBoolean();
+                LinkedHashMap<String, String> items = new LinkedHashMap<>();
+                if (so.has("items") && so.get("items").isJsonObject()) {
+                    for (Map.Entry<String, JsonElement> it
+                            : so.getAsJsonObject("items").entrySet()) {
+                        String val = it.getValue() == null
+                                || it.getValue().isJsonNull() ? ""
+                                : it.getValue().getAsString();
+                        items.put(it.getKey().trim(), val);
+                    }
+                }
+                out.add(new AgentResources.StyleSpec(
+                        name, parent, items, replace));
+            }
+            return out;
+        }
+
+        private static List<AgentResources.ArraySpec> parseArrayEntries(
+                JsonObject obj) throws ToolException {
+            List<AgentResources.ArraySpec> out = new ArrayList<>();
+            for (Map.Entry<String, JsonElement> e : obj.entrySet()) {
+                String name = e.getKey() == null ? "" : e.getKey().trim();
+                JsonElement v = e.getValue();
+                if (v == null || v.isJsonNull()) continue;
+                String tag = "string-array";
+                List<String> items = new ArrayList<>();
+                if (v.isJsonArray()) {
+                    for (JsonElement item : v.getAsJsonArray()) {
+                        if (item != null && !item.isJsonNull()) {
+                            items.add(item.getAsString());
+                        }
+                    }
+                } else if (v.isJsonObject()) {
+                    JsonObject ao = v.getAsJsonObject();
+                    String askedTag = stringArg(ao, "type");
+                    if (!askedTag.isEmpty()) {
+                        tag = AgentResources.normalizeArrayTag(askedTag);
+                    }
+                    if (ao.has("items") && ao.get("items").isJsonArray()) {
+                        for (JsonElement item
+                                : ao.getAsJsonArray("items")) {
+                            if (item != null && !item.isJsonNull()) {
+                                items.add(item.getAsString());
+                            }
+                        }
+                    }
+                } else {
+                    throw new ToolException("E_BAD_ARRAY",
+                            "Array \"" + name + "\" must be a JSON array of "
+                                    + "items or {\"type\":\"string-array\","
+                                    + "\"items\":[...]}.");
+                }
+                out.add(new AgentResources.ArraySpec(tag, name, items));
+            }
+            return out;
+        }
+    }
+
+    private static List<String> parseStringList(JsonObject args, String key) {
+        List<String> out = new ArrayList<>();
+        if (args == null || !args.has(key)) return out;
+        JsonElement el = args.get(key);
+        if (el != null && el.isJsonArray()) {
+            for (JsonElement item : el.getAsJsonArray()) {
+                if (item != null && !item.isJsonNull()) {
+                    String s = item.getAsString().trim();
+                    if (!s.isEmpty()) out.add(s);
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * read_resource_xml: lists custom res/ folders & files or reads one XML
+     * file under files/resource/<folder>/<file>.xml.
+     */
+    private static final class ReadResourceXml implements Tool {
+        @Override
+        public String name() {
+            return "read_resource_xml";
+        }
+
+        @Override
+        public String description() {
+            return "Lists custom Android XML resource files in res/ (when "
+                    + "\"file\" is omitted), or reads the full XML content of "
+                    + "res/<folder>/<file>.xml (e.g. menu/main_menu.xml, "
+                    + "anim/fade_in.xml, animator/pulse.xml, "
+                    + "xml/file_paths.xml, color/nav_tint.xml).";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("folder", stringSchema(
+                    "Optional Android resource folder, e.g. menu, anim, "
+                            + "animator, xml, color, drawable, values-night"));
+            properties.add("file", stringSchema(
+                    "Optional XML file name inside folder (e.g. "
+                            + "main_menu.xml) to read its full XML content"));
+            return AgentTools.parameters(properties);
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            String f = stringArg(args, "file");
+            String d = stringArg(args, "folder");
+            return f.isEmpty()
+                    ? "Listed res/" + d + " files"
+                    : "Read res/" + d + "/" + f;
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String folder = stringArg(args, "folder");
+            String file = stringArg(args, "file");
+            JsonObject result = new JsonObject();
+            if (file.isEmpty()) {
+                JsonArray files =
+                        AgentResources.listRawResourceFiles(scId, folder);
+                result.add("files", files);
+                result.addProperty("count", files.size());
+                return result;
+            }
+            if (folder.isEmpty()) {
+                throw new ToolException("E_MISSING_FOLDER",
+                        "Pass \"folder\" (e.g. \"menu\", \"anim\", \"xml\") "
+                                + "alongside \"file\".");
+            }
+            String cleanFolder = AgentResources.normalizeResourceFolder(folder);
+            String cleanFile = AgentResources.normalizeXmlFileName(file);
+            result.addProperty("path",
+                    "res/" + cleanFolder + "/" + cleanFile);
+            result.addProperty("xml",
+                    AgentResources.readRawResourceXml(
+                            scId, cleanFolder, cleanFile));
+            return result;
+        }
+    }
+
+    /**
+     * write_resource_xml: validates and writes an arbitrary Android XML
+     * resource file under files/resource/<folder>/<file>.xml.
+     */
+    private static final class WriteResourceXml implements Tool {
+        @Override
+        public String name() {
+            return "write_resource_xml";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes creating or updating an Android XML resource "
+                    + "file under res/<folder>/<file>.xml (such as "
+                    + "menu/main_menu.xml for menu_inflate, anim/fade_in.xml "
+                    + "for start_xml_animation, animator/*.xml, "
+                    + "xml/network_security_config.xml, xml/shortcuts.xml, "
+                    + "color/*.xml color-state-lists, etc.). XML is "
+                    + "validated for well-formedness before saving.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("folder", stringSchema(
+                    "Android resource folder, e.g. menu, anim, animator, xml, "
+                            + "color, drawable, transition, navigation, "
+                            + "values-v31"));
+            properties.add("file", stringSchema(
+                    "XML file name, e.g. main_menu.xml or fade_in.xml"));
+            properties.add("xml", stringSchema(
+                    "Well-formed Android resource XML content"));
+            return AgentTools.parameters(properties, "folder", "file", "xml");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to write res/" + stringArg(args, "folder") + "/"
+                    + stringArg(args, "file");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String folder = AgentResources.normalizeResourceFolder(
+                    stringArg(args, "folder"));
+            String file = AgentResources.normalizeXmlFileName(
+                    stringArg(args, "file"));
+            String xml = stringArg(args, "xml");
+            org.w3c.dom.Document doc = AgentResources.parseXmlDocument(
+                    xml, "res/" + folder + "/" + file);
+            String rootTag = doc.getDocumentElement() != null
+                    ? doc.getDocumentElement().getTagName() : "xml";
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("folder", folder);
+            clean.addProperty("file", file);
+            clean.addProperty("xml", xml);
+            return new AgentProposal(name(), clean, scId,
+                    "Write res/" + folder + "/" + file,
+                    "Save res/" + folder + "/" + file + " (<" + rootTag
+                            + ">) in " + project.name + ".",
+                    xml);
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String folder = stringArg(proposal.args, "folder");
+            String file = stringArg(proposal.args, "file");
+            String xml = stringArg(proposal.args, "xml");
+            try {
+                java.io.File saved = AgentResources.writeRawResourceXml(
+                        scId, folder, file, xml);
+                JsonObject result = new JsonObject();
+                result.addProperty("path", "res/" + folder + "/" + file);
+                result.addProperty("bytes", saved.length());
+                result.addProperty("verified",
+                        "Wrote and verified res/" + folder + "/" + file
+                                + " (" + saved.length() + " bytes).");
+                return result;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_WRITE_RESOURCE_FAILED",
+                        "Writing res/" + folder + "/" + file + " failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /**
+     * delete_resource_xml: deletes a custom XML file from files/resource/.
+     */
+    private static final class DeleteResourceXml implements Tool {
+        @Override
+        public String name() {
+            return "delete_resource_xml";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes deleting a custom XML resource file from "
+                    + "res/<folder>/<file>.xml.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("folder", stringSchema(
+                    "Android resource folder, e.g. menu, anim, xml, color"));
+            properties.add("file", stringSchema(
+                    "XML file name to delete, e.g. main_menu.xml"));
+            return AgentTools.parameters(properties, "folder", "file");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to delete res/" + stringArg(args, "folder") + "/"
+                    + stringArg(args, "file");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String folder = AgentResources.normalizeResourceFolder(
+                    stringArg(args, "folder"));
+            String file = AgentResources.normalizeXmlFileName(
+                    stringArg(args, "file"));
+            // Verify it exists before proposing deletion.
+            AgentResources.readRawResourceXml(scId, folder, file);
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("folder", folder);
+            clean.addProperty("file", file);
+            return new AgentProposal(name(), clean, scId,
+                    "Delete res/" + folder + "/" + file,
+                    "Remove res/" + folder + "/" + file + " from "
+                            + project.name + ".",
+                    "A project backup is saved before deletion.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String folder = stringArg(proposal.args, "folder");
+            String file = stringArg(proposal.args, "file");
+            try {
+                AgentResources.deleteRawResourceXml(scId, folder, file);
+                JsonObject result = new JsonObject();
+                result.addProperty("deleted", "res/" + folder + "/" + file);
+                result.addProperty("verified",
+                        "Deleted res/" + folder + "/" + file + ".");
+                return result;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_DELETE_RESOURCE_FAILED",
+                        "Deleting res/" + folder + "/" + file + " failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /**
+     * list_font_and_sound_sources: lists project fonts/sounds alongside all
+     * available bundled fonts, synthesized sound presets, and user collections.
+     */
+    private static final class ListFontAndSoundSources implements Tool {
+        @Override
+        public String name() {
+            return "list_font_and_sound_sources";
+        }
+
+        @Override
+        public String description() {
+            return "Lists the working project's imported fonts and sounds, "
+                    + "plus all bundled fonts (gilroy, jetbrains_mono, "
+                    + "droid_sans_mono), synthesized sound presets (click, "
+                    + "pop, success, complete, error, notification, alarm), "
+                    + "and user Font/Sound Collections available for "
+                    + "import_project_font and import_project_sound.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            return AgentTools.parameters(new JsonObject());
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Listed project fonts, sounds & collections";
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            JsonObject result = new JsonObject();
+            JsonArray projFonts = new JsonArray();
+            for (com.besome.sketch.beans.ProjectResourceBean b
+                    : AgentResources.projectFonts(scId)) {
+                JsonObject o = new JsonObject();
+                o.addProperty("name", b.resName);
+                o.addProperty("file", b.resFullName);
+                projFonts.add(o);
+            }
+            JsonArray collFonts = new JsonArray();
+            for (com.besome.sketch.beans.ProjectResourceBean b
+                    : AgentResources.collectionFonts()) {
+                collFonts.add(b.resName);
+            }
+            JsonArray projSounds = new JsonArray();
+            for (com.besome.sketch.beans.ProjectResourceBean b
+                    : AgentResources.projectSounds(scId)) {
+                JsonObject o = new JsonObject();
+                o.addProperty("name", b.resName);
+                o.addProperty("file", b.resFullName);
+                projSounds.add(o);
+            }
+            JsonArray collSounds = new JsonArray();
+            for (com.besome.sketch.beans.ProjectResourceBean b
+                    : AgentResources.collectionSounds()) {
+                collSounds.add(b.resName);
+            }
+            result.add("project_fonts", projFonts);
+            result.add("bundled_fonts",
+                    namesJsonAll(AgentResources.BUNDLED_FONTS));
+            result.add("collection_fonts", collFonts);
+            result.add("project_sounds", projSounds);
+            result.add("sound_presets",
+                    namesJsonAll(AgentResources.SOUND_PRESETS));
+            result.add("collection_sounds", collSounds);
+            return result;
+        }
+    }
+
+    /**
+     * import_project_font: imports a .ttf/.otf font into the working project.
+     */
+    private static final class ImportProjectFont implements Tool {
+        @Override
+        public String name() {
+            return "import_project_font";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes importing a .ttf or .otf font into the working "
+                    + "project's Font Manager from bundled_font: gilroy, "
+                    + "jetbrains_mono, droid_sans_mono; collection_name "
+                    + "(from list_font_and_sound_sources); or file_path on "
+                    + "device. Once imported, apply it to widgets via "
+                    + "edit_screen's set_font or dynamically via "
+                    + "set_typeface.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("name", stringSchema(
+                    "Project font resource name (lowercase letters, digits, "
+                            + "underscores, min 3 chars, e.g. heading_sans "
+                            + "or code_mono)"));
+            properties.add("bundled_font", stringSchema(
+                    "Optional built-in font: gilroy, jetbrains_mono, or "
+                            + "droid_sans_mono"));
+            properties.add("collection_name", stringSchema(
+                    "Optional font name from the user's Sketchware Font "
+                            + "Collection"));
+            properties.add("file_path", stringSchema(
+                    "Optional path to a local .ttf or .otf file on device"));
+            return AgentTools.parameters(properties, "name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to import font " + stringArg(args, "name");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String fontName = stringArg(args, "name").trim()
+                    .toLowerCase(Locale.ROOT);
+            AgentResources.validateFontName(fontName);
+            String bundled = stringArg(args, "bundled_font");
+            String collection = stringArg(args, "collection_name");
+            String filePath = stringArg(args, "file_path");
+            String[] ext = new String[]{".ttf"};
+            byte[] bytes = AgentResources.loadFontBytes(
+                    bundled, collection, filePath, ext);
+
+            String sourceDesc = !bundled.isEmpty()
+                    ? "bundled font \"" + bundled + "\""
+                    : (!collection.isEmpty()
+                            ? "collection font \"" + collection + "\""
+                            : "file " + filePath);
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("name", fontName);
+            clean.addProperty("bundled_font", bundled);
+            clean.addProperty("collection_name", collection);
+            clean.addProperty("file_path", filePath);
+            return new AgentProposal(name(), clean, scId,
+                    "Import font " + fontName,
+                    "Add font \"" + fontName + ext[0] + "\" ("
+                            + (bytes.length / 1024) + " KB) from "
+                            + sourceDesc + " to " + project.name + ".",
+                    "Saved into Sketchware's Font Manager (assets/fonts/"
+                            + fontName + ext[0]
+                            + ") so widgets can use set_font=\"" + fontName
+                            + "\" and blocks can use set_typeface.");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String fontName = stringArg(proposal.args, "name");
+            String bundled = stringArg(proposal.args, "bundled_font");
+            String collection = stringArg(proposal.args, "collection_name");
+            String filePath = stringArg(proposal.args, "file_path");
+            String[] ext = new String[]{".ttf"};
+            byte[] bytes = AgentResources.loadFontBytes(
+                    bundled, collection, filePath, ext);
+            try {
+                com.besome.sketch.beans.ProjectResourceBean saved =
+                        AgentResources.importProjectFont(
+                                scId, fontName, bytes, ext[0]);
+                JsonObject result = new JsonObject();
+                result.addProperty("font", saved.resName);
+                result.addProperty("file", saved.resFullName);
+                result.addProperty("bytes", bytes.length);
+                result.addProperty("verified",
+                        "Imported font \"" + saved.resName + "\" ("
+                                + saved.resFullName
+                                + ") and verified read-back.");
+                return result;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_FONT_IMPORT_FAILED",
+                        "Importing font \"" + fontName + "\" failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /**
+     * delete_project_font: removes a font from the working project.
+     */
+    private static final class DeleteProjectFont implements Tool {
+        @Override
+        public String name() {
+            return "delete_project_font";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes deleting an imported font from the working "
+                    + "project, checking widget and block references first.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("name", stringSchema(
+                    "Project font name to delete"));
+            JsonObject clear = new JsonObject();
+            clear.addProperty("type", "boolean");
+            clear.addProperty("description",
+                    "When true, resets widgets using this font back to "
+                            + "default_font before deleting");
+            properties.add("clear_references", clear);
+            return AgentTools.parameters(properties, "name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to delete font " + stringArg(args, "name");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String fontName = stringArg(args, "name").trim();
+            boolean exists = false;
+            for (com.besome.sketch.beans.ProjectResourceBean b
+                    : AgentResources.projectFonts(scId)) {
+                if (b.resName.equals(fontName)) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                throw new ToolException("E_FONT_NOT_FOUND",
+                        "Project has no font named \"" + fontName + "\".");
+            }
+            boolean clear = args != null && args.has("clear_references")
+                    && !args.get("clear_references").isJsonNull()
+                    && args.get("clear_references").getAsBoolean();
+            List<String> refs = AgentResources.fontReferences(scId, fontName);
+            if (!refs.isEmpty() && !clear) {
+                throw new ToolException("E_FONT_IN_USE",
+                        "Font \"" + fontName + "\" is still used by: "
+                                + String.join("; ", refs)
+                                + ". Pass clear_references=true or update "
+                                + "those widgets/blocks first.");
+            }
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("name", fontName);
+            clean.addProperty("clear_references", clear);
+            return new AgentProposal(name(), clean, scId,
+                    "Delete font " + fontName,
+                    "Remove font \"" + fontName + "\" from " + project.name
+                            + (refs.isEmpty() ? "."
+                                    : " (resets " + refs.size()
+                                            + " reference(s))."),
+                    refs.isEmpty() ? "No widgets reference this font."
+                            : "References cleared:\n"
+                                    + String.join("\n", refs));
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String fontName = stringArg(proposal.args, "name");
+            boolean clear = proposal.args.has("clear_references")
+                    && proposal.args.get("clear_references").getAsBoolean();
+            try {
+                List<String> cleared = AgentResources.deleteProjectFont(
+                        scId, fontName, clear);
+                JsonObject result = new JsonObject();
+                result.addProperty("deleted_font", fontName);
+                result.addProperty("cleared_references", cleared.size());
+                result.addProperty("verified",
+                        "Deleted font \"" + fontName + "\".");
+                return result;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_FONT_DELETE_FAILED",
+                        "Deleting font \"" + fontName + "\" failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /**
+     * import_project_sound: imports or synthesizes a sound effect into the
+     * working project's Sound Manager (res/raw/).
+     */
+    private static final class ImportProjectSound implements Tool {
+        @Override
+        public String name() {
+            return "import_project_sound";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes adding a sound resource into the working "
+                    + "project's Sound Manager (res/raw/<name>) from a "
+                    + "built-in synthesized preset (click, pop, success, "
+                    + "complete, error, notification, alarm), a custom tone "
+                    + "(frequency_hz, duration_ms, waveform), "
+                    + "collection_name, or a local .mp3/.ogg/.wav/.m4a "
+                    + "file_path. Ready for MediaPlayer (mp_create) and "
+                    + "SoundPool (load_sound).";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("name", stringSchema(
+                    "Project sound resource name (lowercase letters, digits, "
+                            + "underscores, e.g. sfx_click or chime_done)"));
+            properties.add("preset", stringSchema(
+                    "Optional synthesized sound preset: click, pop, success, "
+                            + "complete, error, notification, or alarm"));
+            JsonObject freq = new JsonObject();
+            freq.addProperty("type", "number");
+            freq.addProperty("description",
+                    "Optional custom tone frequency in Hz (40-8000, e.g. "
+                            + "440 for A4)");
+            properties.add("frequency_hz", freq);
+            JsonObject dur = new JsonObject();
+            dur.addProperty("type", "integer");
+            dur.addProperty("description",
+                    "Optional custom tone duration in ms (30-5000, default "
+                            + "220)");
+            properties.add("duration_ms", dur);
+            properties.add("waveform", stringSchema(
+                    "Optional custom tone waveform: sine (default), "
+                            + "triangle, or square"));
+            properties.add("collection_name", stringSchema(
+                    "Optional sound name from the user's Sketchware Sound "
+                            + "Collection"));
+            properties.add("file_path", stringSchema(
+                    "Optional path to a local .mp3, .ogg, .wav, or .m4a "
+                            + "audio file on device"));
+            return AgentTools.parameters(properties, "name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to import sound " + stringArg(args, "name");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String soundName = stringArg(args, "name").trim()
+                    .toLowerCase(Locale.ROOT);
+            AgentResources.validateSoundName(soundName);
+            String preset = stringArg(args, "preset");
+            Double freq = args != null && args.has("frequency_hz")
+                    && !args.get("frequency_hz").isJsonNull()
+                    ? args.get("frequency_hz").getAsDouble() : null;
+            Integer dur = args != null && args.has("duration_ms")
+                    && !args.get("duration_ms").isJsonNull()
+                    ? args.get("duration_ms").getAsInt() : null;
+            String waveform = stringArg(args, "waveform");
+            String collection = stringArg(args, "collection_name");
+            String filePath = stringArg(args, "file_path");
+            String[] ext = new String[]{".wav"};
+            byte[] bytes = AgentResources.loadSoundBytes(
+                    preset, freq, dur, waveform, collection, filePath, ext);
+
+            String sourceDesc = !preset.isEmpty()
+                    ? "synthesized preset \"" + preset + "\""
+                    : (freq != null
+                            ? "synthesized " + freq + " Hz tone"
+                            : (!collection.isEmpty()
+                                    ? "collection sound \"" + collection + "\""
+                                    : "file " + filePath));
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("name", soundName);
+            clean.addProperty("preset", preset);
+            if (freq != null) clean.addProperty("frequency_hz", freq);
+            if (dur != null) clean.addProperty("duration_ms", dur);
+            clean.addProperty("waveform", waveform);
+            clean.addProperty("collection_name", collection);
+            clean.addProperty("file_path", filePath);
+            return new AgentProposal(name(), clean, scId,
+                    "Add sound " + soundName,
+                    "Add sound \"" + soundName + ext[0] + "\" ("
+                            + Math.max(1, bytes.length / 1024)
+                            + " KB) from " + sourceDesc + " to "
+                            + project.name + ".",
+                    "Saved into Sketchware's Sound Manager (res/raw/"
+                            + soundName + ext[0]
+                            + ") for MediaPlayer (mp_create) and SoundPool "
+                            + "(load_sound).");
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            JsonObject a = proposal.args;
+            String soundName = stringArg(a, "name");
+            String preset = stringArg(a, "preset");
+            Double freq = a.has("frequency_hz")
+                    && !a.get("frequency_hz").isJsonNull()
+                    ? a.get("frequency_hz").getAsDouble() : null;
+            Integer dur = a.has("duration_ms")
+                    && !a.get("duration_ms").isJsonNull()
+                    ? a.get("duration_ms").getAsInt() : null;
+            String waveform = stringArg(a, "waveform");
+            String collection = stringArg(a, "collection_name");
+            String filePath = stringArg(a, "file_path");
+            String[] ext = new String[]{".wav"};
+            byte[] bytes = AgentResources.loadSoundBytes(
+                    preset, freq, dur, waveform, collection, filePath, ext);
+            try {
+                com.besome.sketch.beans.ProjectResourceBean saved =
+                        AgentResources.importProjectSound(
+                                scId, soundName, bytes, ext[0]);
+                JsonObject result = new JsonObject();
+                result.addProperty("sound", saved.resName);
+                result.addProperty("file", saved.resFullName);
+                result.addProperty("bytes", bytes.length);
+                result.addProperty("verified",
+                        "Added sound \"" + saved.resName + "\" ("
+                                + saved.resFullName
+                                + ") and verified read-back.");
+                return result;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_SOUND_IMPORT_FAILED",
+                        "Importing sound \"" + soundName + "\" failed: "
+                                + String.valueOf(e.getMessage()));
+            }
+        }
+    }
+
+    /**
+     * delete_project_sound: removes a sound from the working project.
+     */
+    private static final class DeleteProjectSound implements Tool {
+        @Override
+        public String name() {
+            return "delete_project_sound";
+        }
+
+        @Override
+        public String description() {
+            return "Proposes deleting a sound from the working project's "
+                    + "Sound Manager, checking MediaPlayer and SoundPool "
+                    + "block references first.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("name", stringSchema(
+                    "Project sound name to delete"));
+            JsonObject clear = new JsonObject();
+            clear.addProperty("type", "boolean");
+            clear.addProperty("description",
+                    "When true, deletes the sound even if blocks still "
+                            + "name it");
+            properties.add("clear_references", clear);
+            return AgentTools.parameters(properties, "name");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "Wants to delete sound " + stringArg(args, "name");
+        }
+
+        @Override
+        public boolean mutates() {
+            return true;
+        }
+
+        @Override
+        public AgentProposal propose(Session session, JsonObject args)
+                throws ToolException {
+            String scId = requiredProject(session.workingProjectId);
+            String soundName = stringArg(args, "name").trim();
+            boolean exists = false;
+            for (com.besome.sketch.beans.ProjectResourceBean b
+                    : AgentResources.projectSounds(scId)) {
+                if (b.resName.equals(soundName)) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                throw new ToolException("E_SOUND_NOT_FOUND",
+                        "Project has no sound named \"" + soundName + "\".");
+            }
+            boolean clear = args != null && args.has("clear_references")
+                    && !args.get("clear_references").isJsonNull()
+                    && args.get("clear_references").getAsBoolean();
+            List<String> refs =
+                    AgentResources.soundReferences(scId, soundName);
+            if (!refs.isEmpty() && !clear) {
+                throw new ToolException("E_SOUND_IN_USE",
+                        "Sound \"" + soundName + "\" is still used by: "
+                                + String.join("; ", refs)
+                                + ". Pass clear_references=true or update "
+                                + "those blocks first.");
+            }
+            SketchwareProjects.ProjectInfo project =
+                    SketchwareProjects.project(scId);
+            JsonObject clean = new JsonObject();
+            clean.addProperty("name", soundName);
+            clean.addProperty("clear_references", clear);
+            return new AgentProposal(name(), clean, scId,
+                    "Delete sound " + soundName,
+                    "Remove sound \"" + soundName + "\" from "
+                            + project.name + ".",
+                    refs.isEmpty() ? "No blocks reference this sound."
+                            : "Referenced by:\n" + String.join("\n", refs));
+        }
+
+        @Override
+        public JsonObject execute(Session session, AgentProposal proposal)
+                throws ToolException {
+            String scId = requiredProject(proposal.workingProjectId);
+            String soundName = stringArg(proposal.args, "name");
+            boolean clear = proposal.args.has("clear_references")
+                    && proposal.args.get("clear_references").getAsBoolean();
+            try {
+                AgentResources.deleteProjectSound(scId, soundName, clear);
+                JsonObject result = new JsonObject();
+                result.addProperty("deleted_sound", soundName);
+                result.addProperty("verified",
+                        "Deleted sound \"" + soundName + "\".");
+                return result;
+            } catch (ToolException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ToolException("E_SOUND_DELETE_FAILED",
+                        "Deleting sound \"" + soundName + "\" failed: "
                                 + String.valueOf(e.getMessage()));
             }
         }
