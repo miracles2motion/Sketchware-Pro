@@ -1802,9 +1802,18 @@ stored and displayed raw JSON.
 route through `expr()` when given an object; `set_text` takes a
 reporter; `list_from_json` takes any expression for its JSON; and
 `textSlotValue` handles every expression shape, not just `var`.
-`buildWidgetAction`, `buildComponentAction` and `textSlotValue` became
-instance methods so they can reach `expr()` — that is also the bug I
-made two waves ago in reverse, and checked for here.
+
+**How they reach `expr()`.** `expr()` is an instance method of
+`Builder`; `translate()` is a *static* helper that lives outside it
+(Builder ends at `private static final class PathArg`). So the three
+helpers stay static and take the `Builder` as their first argument:
+`translate(builder, …)`, `buildWidgetAction(builder, …)`,
+`buildComponentAction(builder, …)`, `textSlotValue(builder, …)`. The
+one call site, `buildTranslated`, passes `this`. Making them instance
+methods instead breaks the build — `translate` cannot see them. Two
+further fixes came out of the red run: a `boolean` declared inside an
+`if` block cannot be read after it (`choseOnly`), and
+`describeExpr(` is not picked up by a search for `expr(`.
 
 **And the shapes are documented** in `set_event_handler`, read off the
 code rather than remembered (numeric functions are `{"fn":"random",
