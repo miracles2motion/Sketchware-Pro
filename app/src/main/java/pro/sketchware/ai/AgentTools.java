@@ -2837,20 +2837,24 @@ public final class AgentTools {
 
             String javaName = activity.getJavaName();
             eC store = a.a.a.jC.a(scId);
-            SketchwareActions.backupProjectOnce(scId);
-            store.a(javaName, def.first, def.second);
+            boolean registered = false;
             try {
+                SketchwareActions.backupProjectOnce(scId);
+                store.a(javaName, def.first, def.second);
+                registered = true;
                 if (bodyPlan != null) {
                     AgentLogic.apply(session.context, bodyPlan);
                 } else {
                     SketchwareActions.commitProject(scId);
                 }
             } catch (Exception e) {
-                try {
-                    store.n(javaName, def.first);
-                    SketchwareActions.commitProject(scId);
-                } catch (Exception ignored) {
-                    // Best-effort rollback.
+                if (registered) {
+                    try {
+                        store.n(javaName, def.first);
+                        SketchwareActions.commitProject(scId);
+                    } catch (Exception ignored) {
+                        // Best-effort rollback.
+                    }
                 }
                 if (e instanceof ToolException te) {
                     throw te;
