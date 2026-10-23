@@ -1234,14 +1234,20 @@ public final class AgentTools {
                     + "equivalents). Use a tint token, never a guessed hex, "
                     + "when the user asks for a shade of a theme colour. "
                     + "Example: [{\"op\":"
-                    + "\"add_widget\",\"type\":\"Button\",\"text\":\"Save\"},"
-                    + "{\"op\":\"set_background\",\"id\":\"button1\","
-                    + "\"color\":\"@primary\"}]. At most "
+                    + "\"add_widget\",\"type\":\"Button\",\"text\":\"Save\","
+                    + "\"token\":\"primary_button\"}]. At most "
                     + AgentEdits.MAX_OPS + " JSON ops per call — OR pass "
-                    + "compact 1-line-per-widget OpenUI Lang in \"openui\" "
-                    + "(full screen layout, e.g. root = Screen([main])\\n"
-                    + "main = Column([header, card], {p: 16, bg: \"#FFFFFF\"})) "
-                    + "or \"openui_patch\" (2-3 changed/added lines merged by "
+                    + "compact OpenUI Lang 1.0 in \"openui\" (full screen "
+                    + "using high-level OpenUI components: Screen, Stack, "
+                    + "Card, Form, FormControl, Input, TextArea, Select, "
+                    + "DatePicker, Chips, ColorSwatches, SwitchItem, Slider, "
+                    + "Button, Buttons, TextContent, Heading, Body, Caption, "
+                    + "Label, Text, BoldText, InlineHeader, CardHeader, "
+                    + "TextCallout, Callout, Tag, EmptyState, ListItem, "
+                    + "Stat, SearchBar, RecyclerList, SwipeRefresh, BottomNav "
+                    + "— all automatically styled with the project's Light & "
+                    + "Dark @color/openui_* and openui_* drawables) or "
+                    + "\"openui_patch\" (2-3 changed/added lines merged by "
                     + "statement name via OpenUI 1.0 mergeStatements; id = null "
                     + "deletes a widget; untouched widgets & events stay intact). "
                     + "The user must approve before anything changes.";
@@ -1261,10 +1267,12 @@ public final class AgentTools {
             opsSchema.add("items", item);
             properties.add("ops", opsSchema);
             properties.add("openui", stringSchema(
-                    "Optional full OpenUI Lang 1.0 screen layout (1 line per widget: "
-                            + "id = Type(childrenOrText, {w, h, p, m, bg, color, size, style, attrs}))."));
+                    "Preferred full OpenUI Lang 1.0 screen layout using OpenUI components "
+                            + "(Screen, Stack, Card, Form, FormControl, Input, Chips, ColorSwatches, "
+                            + "SwitchItem, Button, TextContent, Heading, Body, Caption, EmptyState, "
+                            + "SearchBar, RecyclerList, etc.) or Sketchware widget types."));
             properties.add("openui_patch", stringSchema(
-                    "Optional incremental OpenUI Lang 1.0 patch (only the changed/new "
+                    "Preferred incremental OpenUI Lang 1.0 patch (only the changed/new "
                             + "statement lines, or id = null to delete; merged into existing screen)."));
             return AgentTools.parameters(properties, "activity");
         }
@@ -1289,11 +1297,11 @@ public final class AgentTools {
             int maxAllowedOps;
             if (!openUiPatch.isEmpty()) {
                 ops = OpenUiScreenBridge.compileToOps(
-                        located.beans, openUiPatch, true);
+                        located.scId, located.beans, openUiPatch, true);
                 maxAllowedOps = OpenUiScreenBridge.MAX_COMPILED_OPS;
             } else if (!openUiFull.isEmpty()) {
                 ops = OpenUiScreenBridge.compileToOps(
-                        located.beans, openUiFull, false);
+                        located.scId, located.beans, openUiFull, false);
                 maxAllowedOps = OpenUiScreenBridge.MAX_COMPILED_OPS;
             } else {
                 ops = jsonArrayArg(args, "ops");
@@ -4734,20 +4742,25 @@ public final class AgentTools {
         // were left out here once, on the strength of a property audit
         // that never looked at blocks — and the user caught it.
         DESIGN_FIELDS.put("button", new String[]{"height", "background",
+                "background_drawable", "stroke_color", "stroke_width",
                 "text_color", "text_size", "text_style", "padding",
-                "margin", "corner_radius", "elevation"});
-        DESIGN_FIELDS.put("card", new String[]{"background", "padding",
-                "margin", "corner_radius", "elevation"});
+                "margin", "corner_radius", "elevation", "font"});
+        DESIGN_FIELDS.put("card", new String[]{"background",
+                "background_drawable", "stroke_color", "stroke_width",
+                "text_color", "padding", "margin", "corner_radius",
+                "elevation"});
         DESIGN_FIELDS.put("list_row", new String[]{"height", "background",
+                "background_drawable", "stroke_color", "stroke_width",
                 "padding", "margin", "title_size", "subtitle_size",
                 "corner_radius", "elevation"});
         DESIGN_FIELDS.put("input", new String[]{"height", "background",
+                "background_drawable", "stroke_color", "stroke_width",
                 "hint_color", "text_color", "text_size", "padding",
-                "margin", "corner_radius", "elevation"});
+                "margin", "corner_radius", "elevation", "font"});
         DESIGN_FIELDS.put("screen", new String[]{"background", "padding",
                 "gap"});
         DESIGN_FIELDS.put("text", new String[]{"text_size", "text_color",
-                "text_style", "margin"});
+                "text_style", "margin", "font", "line_spacing"});
     }
 
     /** The plain name of each component kind, for messages. */
@@ -4833,119 +4846,179 @@ public final class AgentTools {
 
         @Override
         public String description() {
-            return "Saves the project's design system: the components "
-                    + "every screen is built from, by name, with the "
-                    + "measurements each one uses. Call it after the "
-                    + "style is agreed and before the plan — the plan "
-                    + "builds screens out of these. Pass the COMPLETE "
-                    + "set (usually 7 to 10 components): "
-                    + "primary_button, secondary_button, ghost_button, "
-                    + "card, list_row, input, screen, title, body. Each "
-                    + "entry: {\"key\":\"primary_button\","
-                    + "\"label\":\"Big friendly button\","
-                    + "\"kind\":\"button\",\"props\":{\"height\":\"56\","
-                    + "\"background\":\"#FF8A3D\",\"text_color\":"
-                    + "\"#FFFFFF\",\"text_size\":\"16\",\"text_style\":"
-                    + "\"bold\",\"padding\":\"16\",\"margin\":\"8\"}}. "
-                    + "Kinds and their properties: button [height, "
-                    + "background, text_color, text_size, text_style, "
-                    + "padding, margin]; card [background, padding, "
-                    + "margin]; list_row [height, background, padding, "
-                    + "margin, title_size, subtitle_size]; input "
-                    + "[height, background, hint_color, text_color, "
-                    + "text_size, padding, margin]; screen [background, "
-                    + "padding, gap]; text [text_size, text_color, "
-                    + "text_style, margin]. Sizes are plain numbers (dp "
-                    + "or sp) and colours hex. corner_radius and "
-                    + "elevation are real and you CAN build them — they "
-                    + "are blocks, not properties: apply them in the "
-                    + "screen's initializeLogic with set_corner_radius "
-                    + "{target, value, color} (radius plus background "
-                    + "colour in one), set_radius_and_stroke, "
-                    + "set_elevation {target, value}, or on a CardView "
-                    + "set_card_radius / set_card_elevation / "
-                    + "set_card_color. No approval card — it changes "
-                    + "nothing in the project itself. Calling it again "
-                    + "replaces the set, so include everything that "
-                    + "should carry over. To change ONE component later "
-                    + "use edit_design_token — never rewrite the whole "
-                    + "set to change one row.";
+            return "Saves the project's customizable OpenUI Design System "
+                    + "(Light + Dark semantic colour tokens, corner/spacing "
+                    + "scales, and 13 standardized UI components). Call it "
+                    + "after the style is agreed and before set_plan. Pass "
+                    + "\"title\" plus your custom theme choices: "
+                    + "\"brand_color\" (any #RRGGBB, e.g. \"#C65D3B\" or "
+                    + "extracted from a screenshot), optional "
+                    + "\"secondary_color\", \"neutral_scale\" "
+                    + "(\"neutral\"|\"slate\"|\"gray\"|\"zinc\"|\"stone\"|"
+                    + "\"warm\"), \"corner_profile\" "
+                    + "(\"sharp\"|\"balanced\"|\"soft\"|\"pill\"), "
+                    + "\"density\" (\"compact\"|\"comfortable\"|\"spacious\"), "
+                    + "\"theme_mode\" (\"DayNight\"|\"Light\"|\"Dark\"), "
+                    + "optional \"font_heading\" / \"font_body\", optional "
+                    + "\"light_overrides\" / \"dark_overrides\" JSON objects "
+                    + "(e.g. {\"bg\":\"#FAF6F0\",\"fg\":\"#FFFFFF\"}), or "
+                    + "\"preset\" (a saved user preset or starter preset). "
+                    + "Optional \"components\" JSON array overrides specific "
+                    + "component specs if needed. When a project is active "
+                    + "(or as soon as create_project runs), this automatically "
+                    + "materializes contrast-verified values/colors.xml, "
+                    + "values-night/colors.xml, values/styles.xml (AppTheme), "
+                    + "color/openui_chip_text.xml, and res/drawable/openui_*.xml "
+                    + "so you do NOT need to hand-write theme colors or "
+                    + "bg_card/bg_input/bg_chip drawables.";
         }
 
         @Override
         public JsonObject parameters() {
             JsonObject properties = new JsonObject();
             properties.add("title", stringSchema(
-                    "The set's name, e.g. \"Kids Notes components\""));
+                    "Theme / design system name, e.g. \"Calm Terracotta\""));
+            properties.add("brand_color", stringSchema(
+                    "Primary brand/accent hex (#RRGGBB), e.g. \"#C65D3B\""));
+            properties.add("secondary_color", stringSchema(
+                    "Optional secondary accent hex (#RRGGBB)"));
+            properties.add("neutral_scale", stringSchema(
+                    "Surface/text undertone: neutral, slate, gray, zinc, stone, or warm"));
+            properties.add("corner_profile", stringSchema(
+                    "Shape scale: sharp (6-8dp), balanced (12-14dp), soft (16-20dp), or pill (999dp)"));
+            properties.add("density", stringSchema(
+                    "Spacing rhythm: compact, comfortable, or spacious"));
+            properties.add("theme_mode", stringSchema(
+                    "Theme mode: DayNight (default), Light, or Dark"));
+            properties.add("dynamic_colors", booleanSchema(
+                    "Allow Android wallpaper Dynamic Colors to override palette (default false)"));
+            properties.add("font_heading", stringSchema(
+                    "Optional project font resource name for headings, e.g. \"gilroy\""));
+            properties.add("font_body", stringSchema(
+                    "Optional project font resource name for body text"));
+            properties.add("light_overrides", stringSchema(
+                    "Optional JSON object of Light-mode hex overrides (bg, fg, sunk, text_primary, etc.)"));
+            properties.add("dark_overrides", stringSchema(
+                    "Optional JSON object of Dark-mode hex overrides (bg, fg, sunk, text_primary, etc.)"));
+            properties.add("preset", stringSchema(
+                    "Optional preset name or .json path from .sketchware/ai/design_systems/"));
             properties.add("components", stringSchema(
-                    "The components as a JSON array, one object each"));
-            return AgentTools.parameters(properties, "title", "components");
+                    "Optional JSON array of component token overrides"));
+            return AgentTools.parameters(properties, "title");
         }
 
         @Override
         public String activityLabel(JsonObject args) {
-            return "Saving the design system";
+            return "Saving the OpenUI design system";
         }
 
         @Override
         public JsonObject run(Session session, JsonObject args)
                 throws ToolException {
             String title = stringArg(args, "title");
-            JsonArray components;
-            try {
-                components = com.google.gson.JsonParser
-                        .parseString(stringArg(args, "components"))
-                        .getAsJsonArray();
-            } catch (Exception e) {
-                throw new ToolException("E_BAD_ARGS",
-                        "Pass the components as a JSON array in "
-                                + "\"components\".");
+            if (title.isEmpty()) {
+                title = "App Design System";
             }
-            if (components.size() < 4) {
-                throw new ToolException("E_DESIGN_TOO_THIN",
-                        "A design system needs at least four components "
-                                + "(a button, a card or list row, an "
-                                + "input, a screen) — this is what makes "
-                                + "every screen look like the same app.");
-            }
-            JsonArray tokens = new JsonArray();
-            for (int i = 0; i < components.size(); i++) {
-                JsonElement element = components.get(i);
-                if (!element.isJsonObject()) {
-                    throw new ToolException("E_BAD_TOKEN",
-                            "Component " + (i + 1) + " must be an object "
-                                    + "with key, label, kind and props.");
+            JsonArray customTokens = null;
+            String rawComponents = stringArg(args, "components");
+            if (!rawComponents.isEmpty()) {
+                JsonArray parsedArr;
+                try {
+                    parsedArr = com.google.gson.JsonParser
+                            .parseString(rawComponents)
+                            .getAsJsonArray();
+                } catch (Exception e) {
+                    throw new ToolException("E_BAD_ARGS",
+                            "Pass \"components\" as a valid JSON array.");
                 }
-                JsonObject token = element.getAsJsonObject();
-                checkDesignToken(token, i);
-                tokens.add(token);
+                customTokens = new JsonArray();
+                for (int i = 0; i < parsedArr.size(); i++) {
+                    JsonElement element = parsedArr.get(i);
+                    if (!element.isJsonObject()) {
+                        throw new ToolException("E_BAD_TOKEN",
+                                "Component " + (i + 1) + " must be an object "
+                                        + "with key, label, kind and props.");
+                    }
+                    JsonObject token = element.getAsJsonObject();
+                    checkDesignToken(token, i);
+                    customTokens.add(token);
+                }
             }
+
+            JsonObject themeInput = args.deepCopy();
+            themeInput.addProperty("title", title);
+            if (customTokens != null) {
+                themeInput.add("tokens", customTokens);
+            }
+            String rawLightOv = stringArg(args, "light_overrides");
+            if (!rawLightOv.isEmpty() && rawLightOv.trim().startsWith("{")) {
+                try {
+                    themeInput.add("light_overrides",
+                            com.google.gson.JsonParser.parseString(rawLightOv)
+                                    .getAsJsonObject());
+                } catch (Exception e) {
+                    throw new ToolException("E_BAD_ARGS",
+                            "light_overrides must be a JSON object of hex colours.");
+                }
+            }
+            String rawDarkOv = stringArg(args, "dark_overrides");
+            if (!rawDarkOv.isEmpty() && rawDarkOv.trim().startsWith("{")) {
+                try {
+                    themeInput.add("dark_overrides",
+                            com.google.gson.JsonParser.parseString(rawDarkOv)
+                                    .getAsJsonObject());
+                } catch (Exception e) {
+                    throw new ToolException("E_BAD_ARGS",
+                            "dark_overrides must be a JSON object of hex colours.");
+                }
+            }
+
+            OpenUiThemeEngine.ResolvedTheme resolved =
+                    OpenUiThemeEngine.resolveTheme(themeInput);
+            JsonObject fullSystem = OpenUiThemeEngine.buildDesignSystemJson(
+                    resolved, customTokens);
+            int tokenCount = fullSystem.getAsJsonArray("tokens").size();
+
             JsonObject result = new JsonObject();
             if (session.workingProjectId == null
                     || session.workingProjectId.isEmpty()) {
-                AgentJournal.setDraftDesignSystem(title, tokens);
+                AgentJournal.setDraftDesignSystemObject(fullSystem);
                 result.addProperty("saved", "draft");
+                result.addProperty("brand_color", resolved.brandColor);
+                result.addProperty("neutral_scale", resolved.neutralScale);
+                result.addProperty("corner_profile", resolved.cornerProfile);
+                result.addProperty("density", resolved.density);
+                result.addProperty("theme_mode", resolved.themeMode);
+                result.addProperty("components", tokenCount);
                 result.addProperty("message",
-                        "Design system held as a draft; it lands in the "
-                                + "project this work creates. Build every "
-                                + "screen from these components now.");
+                        "OpenUI Design System held as a draft; when "
+                                + "create_project runs it will automatically "
+                                + "materialize values/colors.xml, "
+                                + "values-night/colors.xml, values/styles.xml, "
+                                + "and res/drawable/openui_*.xml.");
                 return result;
             }
             String scId = requiredProject(session.workingProjectId);
-            AgentJournal.setDesignSystem(scId, title, tokens);
+            AgentJournal.setDesignSystemObject(scId, fullSystem);
+            JsonObject mat = OpenUiThemeEngine.materializeToProject(
+                    scId, fullSystem);
             result.addProperty("saved", true);
-            result.addProperty("components", tokens.size());
+            result.addProperty("components", tokenCount);
+            result.add("materialized", mat);
             result.addProperty("message",
-                    "Design system saved for this project. Every screen "
-                            + "you build now uses these components by "
-                            + "name — a primary_button is the same button "
-                            + "on every screen, so never invent new "
-                            + "measurements for one.");
+                    "OpenUI Design System saved and materialized to Android "
+                            + "resources (values/colors.xml, "
+                            + "values-night/colors.xml, values/styles.xml, "
+                            + "color/openui_chip_text.xml, and "
+                            + "res/drawable/openui_*.xml). Build screens using "
+                            + "OpenUI components (Stack, Card, Form, "
+                            + "FormControl, Input, Chips, Button, ListItem, "
+                            + "TextContent, Callout, EmptyState) or token=\"<key>\".");
             return result;
         }
     }
 
-    /** edit_design_token: changes one component of the design system. */
+    /** edit_design_token: changes one theme setting or one component token. */
     private static final class EditDesignToken implements Tool {
         @Override
         public String name() {
@@ -4954,59 +5027,79 @@ public final class AgentTools {
 
         @Override
         public String description() {
-            return "Changes ONE component of the project's design "
-                    + "system — the user asked for one thing to change, "
-                    + "so change that one thing. Pass its \"key\" "
-                    + "(e.g. primary_button) and the component's FULL "
-                    + "new entry (key, label, kind, props). Nothing else "
-                    + "in the set is touched. Use set_design_system only "
-                    + "when the whole set is being replaced. After the "
-                    + "change, OFFER to update screens already built — "
-                    + "never restyle them on your own.";
+            return "Changes ONE theme setting or ONE component of the "
+                    + "project's OpenUI design system and re-syncs Android "
+                    + "theme resources. Pass either: (a) a theme setting "
+                    + "\"key\" (brand_color, secondary_color, neutral_scale, "
+                    + "corner_profile, density, theme_mode, font_heading, "
+                    + "font_body, light:<token>, or dark:<token>) with "
+                    + "\"value\", OR (b) a component \"key\" (e.g. "
+                    + "primary_button) with its JSON \"component\" entry. "
+                    + "After the change, OFFER to update screens already "
+                    + "built if measurements changed — colour/drawable "
+                    + "changes via @color/openui_* and openui_* drawables "
+                    + "update automatically.";
         }
 
         @Override
         public JsonObject parameters() {
             JsonObject properties = new JsonObject();
             properties.add("key", stringSchema(
-                    "The component to change, e.g. primary_button"));
+                    "Theme key (e.g. brand_color, corner_profile) or component key (e.g. primary_button)"));
+            properties.add("value", stringSchema(
+                    "New value when editing an OpenUI theme key (e.g. \"#059669\", \"soft\")"));
             properties.add("component", stringSchema(
-                    "The component's full new entry, as JSON"));
-            return AgentTools.parameters(properties, "key", "component");
+                    "Full component JSON entry when editing a component token"));
+            return AgentTools.parameters(properties, "key");
         }
 
         @Override
         public String activityLabel(JsonObject args) {
-            return "Changing the " + stringArg(args, "key") + " component";
+            return "Updating design token " + stringArg(args, "key");
         }
 
         @Override
         public JsonObject run(Session session, JsonObject args)
                 throws ToolException {
             String key = stringArg(args, "key");
+            String scId = requiredProject(session.workingProjectId);
+            if (!AgentJournal.hasDesignSystem(scId)) {
+                throw new ToolException("E_NO_DESIGN_SYSTEM",
+                        "This project has no design system yet. Save it with "
+                                + "set_design_system first.");
+            }
+            String simpleValue = stringArg(args, "value");
+            String rawComp = stringArg(args, "component");
+            if (!simpleValue.isEmpty() && rawComp.isEmpty()) {
+                JsonObject updated = AgentJournal.updateOpenUiThemeField(
+                        scId, key, simpleValue);
+                JsonObject mat = OpenUiThemeEngine.materializeToProject(
+                        scId, updated);
+                JsonObject result = new JsonObject();
+                result.addProperty("changed", key);
+                result.addProperty("value", simpleValue);
+                result.add("materialized", mat);
+                result.addProperty("message",
+                        "Updated OpenUI theme \"" + key + "\" to \""
+                                + simpleValue
+                                + "\" and synced colors.xml, values-night/colors.xml, "
+                                + "styles.xml, and openui_* drawables.");
+                return result;
+            }
             JsonObject component;
             try {
                 component = com.google.gson.JsonParser
-                        .parseString(stringArg(args, "component"))
+                        .parseString(rawComp)
                         .getAsJsonObject();
             } catch (Exception e) {
                 throw new ToolException("E_BAD_ARGS",
-                        "Pass the component's new entry as JSON in "
-                                + "\"component\".");
+                        "Pass either \"value\" (for a theme setting) or a JSON "
+                                + "object in \"component\" (for a component token).");
             }
             checkDesignToken(component, 0);
             if (!key.equals(stringArg(component, "key"))) {
                 throw new ToolException("E_BAD_ARGS",
-                        "The \"key\" must match the component's own "
-                                + "\"key\" — one change at a time.");
-            }
-            String scId = requiredProject(session.workingProjectId);
-            if (!AgentJournal.hasDesignSystem(scId)) {
-                throw new ToolException("E_NO_DESIGN_SYSTEM",
-                        "This project has no design system yet, so there "
-                                + "is nothing to change. Propose the "
-                                + "whole set with set_design_system "
-                                + "first.");
+                        "The \"key\" must match the component's own \"key\".");
             }
             if (!AgentJournal.setDesignToken(scId, key, component)) {
                 JsonObject system = AgentJournal.designSystem(scId);
@@ -5033,10 +5126,8 @@ public final class AgentTools {
             result.addProperty("changed", key);
             result.addProperty("message",
                     "The " + key + " component is changed. Screens built "
-                            + "from now on use it. Screens already built "
-                            + "keep the old measurements until the user "
-                            + "asks — offer to update them, do not do it "
-                            + "on your own.");
+                            + "from now on use it. Offer to update screens "
+                            + "already built if needed.");
             return result;
         }
     }

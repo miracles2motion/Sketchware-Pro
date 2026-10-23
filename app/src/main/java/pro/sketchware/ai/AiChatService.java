@@ -156,7 +156,8 @@ public class AiChatService {
             entry.addProperty("role",
                     message.isFromUser() ? "user" : "assistant");
             if (hasImages) {
-                boolean inlineBytes = imageTurnsRemaining > 0;
+                boolean inlineBytes = imageTurnsRemaining > 0
+                        && !isModelKnownTextOnly(model);
                 if (inlineBytes) {
                     imageTurnsRemaining--;
                 }
@@ -719,6 +720,93 @@ public class AiChatService {
                         .startsWith(PREVIEW_INSPECTION_PREFIX);
     }
 
+    private static final java.util.Set<String> KNOWN_TEXT_ONLY_MODELS =
+            java.util.Collections.synchronizedSet(new java.util.HashSet<>());
+
+    /** Remembers that {@code model} rejected multimodal {@code image_url} input. */
+    public static void markModelVisionUnsupported(String model) {
+        if (model != null && !model.trim().isEmpty()) {
+            KNOWN_TEXT_ONLY_MODELS.add(model.trim().toLowerCase(java.util.Locale.ROOT));
+        }
+    }
+
+    /** True if {@code model} previously rejected multimodal {@code image_url} input. */
+    public static boolean isModelKnownTextOnly(String model) {
+        return model != null
+                && KNOWN_TEXT_ONLY_MODELS.contains(
+                        model.trim().toLowerCase(java.util.Locale.ROOT));
+    }
+
+    /** True if {@code messages} currently contains any {@code image_url} content array. */
+    public static boolean hasMultimodalImageParts(java.util.List<JsonObject> messages) {
+        if (messages == null) {
+            return false;
+        }
+        for (JsonObject msg : messages) {
+            if (msg == null || !msg.has("content") || !msg.get("content").isJsonArray()) {
+                continue;
+            }
+            for (com.google.gson.JsonElement el : msg.getAsJsonArray("content")) {
+                if (el != null && el.isJsonObject()
+                        && el.getAsJsonObject().has("image_url")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Strips {@code image_url} parts so text-only models receive valid plain-string
+     * {@code content} while preserving {@code [Attached chat image ... id="att_..."]}
+     * metadata on disk for {@code import_chat_image} and {@code set_app_icon}.
+     */
+    public static boolean downgradeMultimodalMessagesToText(
+            java.util.List<JsonObject> messages, String model) {
+        if (messages == null || messages.isEmpty()) {
+            return false;
+        }
+        boolean changed = messages.removeIf(AiChatService::isPreviewInspectionMessage);
+        for (JsonObject msg : messages) {
+            if (msg == null || !msg.has("content") || !msg.get("content").isJsonArray()) {
+                continue;
+            }
+            JsonArray arr = msg.getAsJsonArray("content");
+            boolean hadImage = false;
+            StringBuilder textOut = new StringBuilder();
+            for (com.google.gson.JsonElement el : arr) {
+                if (el == null || !el.isJsonObject()) {
+                    continue;
+                }
+                JsonObject part = el.getAsJsonObject();
+                if (part.has("image_url")) {
+                    hadImage = true;
+                } else if (part.has("text") && part.get("text").isJsonPrimitive()) {
+                    if (textOut.length() > 0) {
+                        textOut.append("\n");
+                    }
+                    textOut.append(part.get("text").getAsString());
+                }
+            }
+            if (hadImage) {
+                if (textOut.length() > 0) {
+                    textOut.append("\n");
+                }
+                textOut.append("[System note: The selected model (")
+                        .append(model == null ? "text-only" : model)
+                        .append(") rejected inline image_url pixels, so pixel ")
+                        .append("vision is unavailable in this turn. The attached ")
+                        .append("image file(s) ARE saved on disk by id and work ")
+                        .append("normally with import_chat_image and set_app_icon. ")
+                        .append("Tell the user if they want visual screenshot ")
+                        .append("inspection they can switch to a vision model.]");
+                msg.addProperty("content", textOut.toString());
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
     /** True when the provider rejected multimodal {@code image_url} input. */
     public static boolean isVisionUnsupported(AiError error) {
         if (error == null || error.message == null) {
@@ -729,7 +817,8 @@ public class AiChatService {
                 || m.contains("vision")
                 || m.contains("multimodal")
                 || m.contains("image_url")
-                || m.contains("modality");
+                || m.contains("modality")
+                || m.contains("content must be a string");
         boolean mentionsRejection = error.kind == ErrorKind.UNSUPPORTED
                 || m.contains("not support")
                 || m.contains("unsupported")
@@ -737,7 +826,8 @@ public class AiChatService {
                 || m.contains("only supported")
                 || m.contains("cannot")
                 || m.contains("invalid content")
-                || m.contains("expected string");
+                || m.contains("expected string")
+                || m.contains("must be a string");
         return mentionsVision && mentionsRejection;
     }
 

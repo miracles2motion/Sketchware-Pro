@@ -213,4 +213,62 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 - **Zero False-Positive `onBindCustomView` Warnings (`AgentLogic.danglingWidgetReferences`):** Includes custom-view item widgets (`host.customView`) when checking `onBindCustomView` handlers, plus space-separated event-key fixes in `componentUse` and `moreBlockUse`.
 - **Codegen Survival (`expectCode`) & Block/Screen Hardening (`AgentLogic`, `AgentEdits`, `OpenUiScreenBridge`, `SketchwareActions`):** Fixed 12 `COMPONENT_ACTIONS` (`pick_file`, `take_picture`, `launch_app`, `start_with_chooser`, `set_pref_file`, `stt_shutdown`, `storage_upload`, `storage_download`, `storage_delete`, `send_broadcast`, `ad_load`, `rewarded_load`) and 5 `WIDGET_ACTIONS` (`select_all_text`, `set_max_lines`, `set_selection`, `show_error`, `notify_pager_changed`) `expectCode` templates; auto-compiled `"@string/<name>"` in block text slots into `getResStr` (`getString(R.string.<name>)`); allowed empty `"blocks": []` on dialog button containers; added `external_dir` `DIRECTORY_*` alias, `onFilesPicked` `filePath (listStr)` `arg` guidance, `sp_create` max-streams default/hint, reporter-as-statement guidance (`read_file`, `play_sound`), complete `isTextExpr` + boolean-literal `stringEquals` coercion, `set_in_list` → `set_map_entry` routing on `list_map` when `"key"` is present, `@color/*` / `?attr/*` support on `set_root` & `set_fab`, and `set_visibility` in `edit_screen` + `OpenUiScreenBridge`.
 
+---
+
+## OpenUI Design System Standard & Runtime/Multimodal Hardening Roadmap (Phases 14–18)
+
+**Context:** Brings OpenUI's second half (`@openuidev/react-ui` semantic token engine + `openuiLibrary` pre-engineered component standard) natively into Sketchware Pro so generated apps are customizable to **any colour palette, mood, or screenshot** while enforcing standardized spacing, touch heights, Material 3 `backgroundTint` safety, and mathematical Light + Dark WCAG contrast — bundled alongside the `list_from_json` empty-string guard and text-only model image fallback into a single CI build at Phase 18.
+
+---
+
+### Phase 14 (DONE) — JSON-Driven OpenUI Spec, Customizable Theme Engine & Automatic Resource Materialization (`assets/openui/spec.json`, `scripts/check_openui_upstream.py`, `OpenUiThemeEngine.java`, `AgentJournal.java`, `AgentTools.java`, `SketchwareActions.java`)
+**Goal:** Replace loose freehand component notes in `set_design_system` with a 100% customizable, JSON-driven OpenUI semantic theme (`lightTheme` + `darkTheme` + layout/radius/typography scales) that automatically generates contrast-safe Android resources (`values/colors.xml`, `values-night/colors.xml`, `values/styles.xml`, `color/openui_chip_text.xml`, and `drawable/openui_*.xml`).
+1. **JSON-Driven Spec (`app/src/main/assets/openui/spec.json`) + On-Demand Upstream Checker (`scripts/check_openui_upstream.py`):**
+   - Stores OpenUI neutral scales, status pairs, spacing/radius/corner/density/typography scales, text roles, 31 component schemas, and 5 starter presets in `assets/openui/spec.json`, paired with `scripts/check_openui_upstream.py` watching only `spec`, `ThemeProvider`, and `genui-lib` in `thesysdev/openui` on demand (never wasting CI on upstream web/docs commits).
+   - User-defined preset folder `/sdcard/.sketchware/ai/design_systems/*.json` (`AiPaths.designSystemsDir()`) lets users save or drop in their own custom Design System JSON presets.
+2. **Customizable Theme Seed + Overrides (`OpenUiThemeEngine.java`):**
+   - Accepts **any custom brand/accent hex**, optional secondary/neutral undertone (`neutral`, `slate`, `gray`, `zinc`, `stone`, `warm`, or custom surface/background hexes, including colours extracted from an attached screenshot), **corner profile** (`sharp` 6dp, `balanced` 12dp, `soft` 20dp, `pill` 999dp), **density** (`compact` / `comfortable` / `spacious`), and **theme mode** (`DayNight`, `Light`, `Dark`), plus explicit per-token overrides.
+   - Uses WCAG 2.1 relative-luminance contrast math (`>= 4.5:1` for body/input text, `>= 3.0:1` for large/button text and interactive strokes) to derive matched **Light** and **Dark** semantic tokens modeled directly on OpenUI's `defaultTheme.ts`.
+3. **Automatic Project Materialization, `AppTheme` (`styles.xml`) Wiring & Dynamic-Color Guard:**
+   - Materializes `res/values/colors.xml` & `res/values-night/colors.xml`, `res/values/styles.xml` (`AppTheme`, `AppTheme.FullScreen`, `AppTheme.AppBarOverlay` with readable `@color/openui_text_on_accent` toolbar foreground, `AppTheme.PopupOverlay`, `AppTheme.DebugActivity`), `res/color/openui_chip_text.xml`, and 21 `res/drawable/openui_*.xml` shapes/selectors, enables Material 3 with `dynamic_colors = false` by default so wallpaper tints never override custom palettes, and applies `@color/openui_bg` root backgrounds to newly created Activity/Fragment/Drawer layouts (`SketchwareActions`).
+
+---
+
+### Phase 15 (DONE) — OpenUI High-Level Component Library & Material 3 Layout/Tint Safety (`OpenUiScreenBridge.java`, `AgentEdits.java`)
+**Goal:** Let `edit_screen` (`openui` / `openui_patch` and `token` in raw `ops`) compile OpenUI's standardized high-level components and `TextView` roles directly into clean, well-proportioned Sketchware `ViewBean` trees while eliminating Material 3 `<Button>` tinting and vertical-padding clipping bugs.
+1. **Standardized OpenUI Screen Components (`OpenUiScreenBridge.java`, `MAX_COMPILED_OPS = 300`):**
+   - Compiles OpenUI's layout, form, button, status, data, `TextView`-role (`TextContent`, `Heading`, `Title`, `Subtitle`, `Body`, `Caption`, `Label`, `Text`, `BoldText`, `InlineHeader`, `CardHeader`, `TextCallout`, `Callout`), and Android-native chrome (`Form` auto-wrapped in `ScrollView`, `FormControl`, `Input`, `TextArea`, `Select`, `DatePicker`, `Chips`, `SegmentedControl`, `ColorSwatches` with oval swatch drawables, `SwitchItem` / `Slider` / `SearchBar` preserving exact interactive widget IDs, `Card` auto-wrapping multi-child layouts inside `<id>_body` so `FrameLayout` children never overlap, `EmptyState`, `ListItem`, `Stat`, `Separator`, `CodeBlock`, `RecyclerList`, `SwipeRefresh`, `BottomNav`).
+2. **Material 3 `<Button>` Tint & Padding Safety + Token Enforcement (`AgentEdits.java`):**
+   - Automatically injects `app:backgroundTint="@null"`, `android:insetTop="0dp"`, `android:insetBottom="0dp"`, and `android:textAllCaps="false"` (plus `0dp` vertical padding & `minHeight` on compact `<= 44dp` buttons/chips/swatches) whenever a custom `backgroundResource` is set on a `Button` / `MaterialButton`.
+   - Supports `"token": "<key>"` in `add_widget` and `set_token`, and lazily materializes `openui_*` resources if referenced on a legacy project.
+
+---
+
+### Phase 16 (DONE) — Interactive Design System Page with Live Light/Dark Preview, Preset JSON Import/Save & Chat Parity (`AgentFragment.java`, `OpenUiChatRenderer.java`)
+**Goal:** Upgrade Agent Mode's user-facing **Design system** page and chat preview renderer so the user can visually inspect, preview, import/save custom JSON presets, and customize their app's OpenUI theme in both Light and Dark mode without touching XML.
+1. **Light / Dark Preview Switcher + Live Stage + One-Tap Customization (`AgentFragment.java`):**
+   - Live `☀ Light` / `☾ Dark` preview toggle + WCAG contrast badge (`AA x.x:1 ✓`), live rendered OpenUI mini-screen card, one-tap pills for `Brand #RRGGBB`, `Corners`, `Density`, `Neutral`, and `Mode`, **Presets / Custom JSON** (starter presets + `.sketchware/ai/design_systems/*.json` user presets + Paste Custom JSON + Save Preset JSON + Copy JSON), and one-tap **Sync theme to project** upgrade action.
+   - `OpenUiChatRenderer.java` recognizes all OpenUI screen aliases (`InlineHeader`, `BoldText`, `Heading`, `Body`, `Caption`, `Label`, `Chips`, `SegmentedControl`, `SwitchItem`, `Separator`, `Callout`, `Buttons`, `Form`) so chat previews and screen layouts share one unified vocabulary.
+
+---
+
+### Phase 17 (DONE) — Runtime Crash Guard (`strToListMap` / `strToMap`), Vision Fallback & Contrast Audit (`Fx.java`, `BlocksHandler.java`, `AiChatService.java`, `AgentLoop.java`, `AgentPreview.java`)
+**Goal:** Fix both field bugs from `HabitTracker` Export #2 and catch low-contrast or clipped screens automatically before build.
+1. **Null-Safe JSON Deserialization Across All 4 Gson Blocks (`Fx.java`, `BlocksHandler.java`):**
+   - `strToMap`, `strToListMap`, `GsonStringToListString`, and `GsonStringToListNumber` append `if (<var> == null) <var> = new HashMap<>() / new ArrayList<>();` right in generated Java so empty `""` SharedPreferences/files on first launch never leave a `null` list/map (fixing both newly built and pre-existing projects on recompile).
+2. **Graceful Text-Only Model Image Fallback (`AiChatService.java`, `AgentLoop.java`):**
+   - Detects when a text-only model (such as `nvidia/nemotron-3-ultra-550b-a55b` returning `HTTP 500`, `400`, `404`, `415`, or `422` on `image_url`) rejects image pixels: caches the model as text-only for the session, strips `image_url` to text metadata while keeping attachments on disk for `import_chat_image` / `set_app_icon`, and retries automatically without failing the turn.
+3. **Light & Dark Contrast + Clipping + CardView/Form Audit in `preview_screen` (`AgentPreview.java`):**
+   - Audits screens in both Light and Dark palettes for low WCAG contrast, hardcoded DayNight hexes, unguarded `<Button>` custom drawables, compact vertical button clipping, multi-child `CardView` overlap, and unscrollable multi-field forms, while resolving `@color/*` and `<selector>` shapes inside rendered preview PNGs.
+
+---
+
+### Phase 18 (DONE) — System Prompt Alignment, Full Static Audit, Documentation & Single Green CI Build
+**Goal:** Align the agent's prompt with the OpenUI Theme + Component workflow, verify every class statically, update `docs/AGENT_MODE.md`, and run GitHub Actions **once** for a single clean APK download.
+1. **Concise OpenUI Design-System Prompt Update (`AgentLoop.java`):**
+   - Overwrites legacy manual `set_corner_radius` Design System instructions with customizable OpenUI Theme tokens (`set_design_system` -> auto-materialized Light/Dark resources) and high-level OpenUI screen + `TextView` role components.
+2. **Static Verification & Single CI Push:**
+   - Verified via `scripts/check_openui_upstream.py`, `tree-sitter-java` + `javalang` AST checks, and `scripts/check_symbols.py` across all modified files before single bundled CI push.
+
+
 

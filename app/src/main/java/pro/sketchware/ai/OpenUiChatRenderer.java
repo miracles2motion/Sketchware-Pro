@@ -63,7 +63,7 @@ public final class OpenUiChatRenderer {
 
     private static final Set<String> ROOT_COMPONENTS = Collections.unmodifiableSet(
             new HashSet<>(Arrays.asList(
-                    "Stack", "Column", "VStack", "Row", "HStack", "Card",
+                    "Stack", "Column", "VStack", "Row", "HStack", "Card", "Form",
                     "StyleCard", "PaletteRow", "KpiRow", "Table")));
 
     /** Callbacks back into {@link ChatAdapter} / {@code AgentFragment}. */
@@ -390,27 +390,53 @@ public final class OpenUiChatRenderer {
             case "Stack":
             case "Column":
             case "VStack":
+            case "Form":
+            case "ListBlock":
                 return buildStack(ctx, node, runtime, message, streaming, markwon, host, actionHost, allRuntimes);
             case "Row":
             case "HStack":
+            case "Buttons":
                 return buildRow(ctx, node, runtime, message, streaming, markwon, host, actionHost, allRuntimes);
             case "Card":
                 return buildCard(ctx, node, runtime, message, streaming, markwon, host, actionHost, allRuntimes);
             case "Header":
             case "CardHeader":
+            case "InlineHeader":
                 return buildHeader(ctx, node);
+            case "Heading":
+            case "Title":
+            case "BoldText":
+                return buildTextView(ctx,
+                        node.namedOrString("text", 0, ""),
+                        "heading", streaming, markwon);
+            case "Caption":
+            case "Label":
+                return buildTextView(ctx,
+                        node.namedOrString("text", 0, ""),
+                        "caption", streaming, markwon);
+            case "Subtitle":
+            case "Body":
             case "Text":
             case "TextContent":
                 return buildTextView(ctx,
                         node.namedOrString("text", 0, ""),
-                        node.namedOrString("variant", 1, "body"),
+                        node.namedOrString("variant", 1,
+                                node.namedOrString("size", 1, "body")),
                         streaming, markwon);
+            case "Callout":
+            case "TextCallout":
+                return buildHeaderViews(ctx,
+                        node.namedOrString("title", 0, ""),
+                        node.namedOrString("description", 1, ""),
+                        node.namedOrString("variant", 2, ""));
             case "Badge":
             case "Tag":
                 return buildBadge(ctx,
                         node.namedOrString("label", 0, ""),
-                        node.namedOrString("color", 1, ""));
+                        node.namedOrString("color", 1,
+                                node.namedOrString("variant", 1, "")));
             case "Divider":
+            case "Separator":
                 return buildDivider(ctx);
             case "StyleCard":
                 return buildStyleCard(ctx, node, runtime, actionHost);
@@ -424,12 +450,16 @@ public final class OpenUiChatRenderer {
                 return buildTypePreview(ctx, node);
             case "TextInput":
             case "Input":
+            case "TextArea":
                 return buildTextInput(ctx, node, runtime, message, host, allRuntimes);
             case "Select":
                 return buildSelect(ctx, node, runtime);
             case "ChoiceChips":
+            case "Chips":
+            case "SegmentedControl":
                 return buildChoiceChips(ctx, node, runtime);
             case "Switch":
+            case "SwitchItem":
                 return buildSwitch(ctx, node, runtime, message, host, allRuntimes);
             case "Slider":
                 return buildSlider(ctx, node, runtime, message, host, allRuntimes);

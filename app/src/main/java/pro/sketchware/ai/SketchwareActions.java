@@ -215,6 +215,15 @@ public final class SketchwareActions {
         jC.b(scId).j();
         jC.a(scId).a(jC.b(scId));
         commitProject(scId);
+        OpenUiThemeEngine.applyActiveThemeToNewLayout(
+                scId, created.getXmlName(), false);
+        if (hasDrawer) {
+            OpenUiThemeEngine.applyActiveThemeToNewLayout(
+                    scId,
+                    ProjectFileBean.getXmlName(
+                            ProjectFileBean.getDrawerName(fileName)),
+                    false);
+        }
         if (SketchwareProjects.findActivity(scId, fileName) == null) {
             throw new ActionException("The screen was added but cannot "
                     + "be read back.");
@@ -455,6 +464,8 @@ public final class SketchwareActions {
         jC.b(scId).j();
         jC.a(scId).a(jC.b(scId));
         commitProject(scId);
+        OpenUiThemeEngine.applyActiveThemeToNewLayout(
+                scId, ProjectFileBean.getXmlName(fileName), true);
         boolean found = false;
         for (ProjectFileBean view : SketchwareProjects.customViews(scId)) {
             if (view.fileName.equalsIgnoreCase(fileName)) {

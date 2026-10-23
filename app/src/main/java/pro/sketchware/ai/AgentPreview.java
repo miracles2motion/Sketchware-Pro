@@ -338,6 +338,9 @@ public final class AgentPreview {
             }
         }
 
+        auditThemeAndAccessibility(scId, beans, beansById, viewsById,
+                pane, isCustomView, warnings);
+
         JsonObject out = new JsonObject();
         out.addProperty("screen", target.fileName);
         out.addProperty("kind", isCustomView ? "custom_view" : "activity");
@@ -394,9 +397,23 @@ public final class AgentPreview {
                                 + File.separator
                                 + bean.layout.backgroundResource + ".xml");
                 if (customBg.isFile()) {
+                    String rawXml = FileUtil.readFile(customBg.getAbsolutePath());
+                    if (rawXml != null && rawXml.contains("<selector")) {
+                        boolean isSelected = bean.inject != null
+                                && bean.inject.contains("android:selected=\"true\"");
+                        String targetDraw = resolveSelectorDrawableName(rawXml, isSelected);
+                        if (!targetDraw.isEmpty()) {
+                            File subBg = new File(
+                                    new FilePathUtil().getPathResource(scId)
+                                            + File.separator + "drawable"
+                                            + File.separator + targetDraw + ".xml");
+                            if (subBg.isFile()) {
+                                rawXml = FileUtil.readFile(subBg.getAbsolutePath());
+                            }
+                        }
+                    }
                     GradientDrawable shape = parseSimpleShapeXml(
-                            FileUtil.readFile(customBg.getAbsolutePath()),
-                            density);
+                            scId, rawXml, density);
                     if (shape != null) {
                         view.setBackground(shape);
                     }
@@ -526,7 +543,298 @@ public final class AgentPreview {
         }
     }
 
-    private static GradientDrawable parseSimpleShapeXml(String xml,
+    private static void auditThemeAndAccessibility(
+            String scId,
+            List<ViewBean> beans,
+            Map<String, ViewBean> beansById,
+            Map<String, View> viewsById,
+            View pane,
+            boolean isCustomView,
+            JsonArray warnings) {
+        if (beans == null || beans.isEmpty()) {
+            return;
+        }
+        OpenUiThemeEngine.ResolvedTheme theme =
+                OpenUiThemeEngine.resolveTheme(AgentJournal.designSystem(scId));
+        boolean isDayNight = "DayNight".equalsIgnoreCase(theme.themeMode);
+
+        // Count direct children per CardView & unscrollable input fields
+        Map<String, Integer> childCounts = new LinkedHashMap<>();
+        int unscrollableInputs = 0;
+
+        for (ViewBean bean : beans) {
+            if (bean == null || bean.id == null) {
+                continue;
+            }
+            if (bean.parent != null) {
+                childCounts.put(bean.parent,
+                        childCounts.getOrDefault(bean.parent, 0) + 1);
+            }
+            String tName = wq.b(bean.type);
+            View v = viewsById.get(bean.id);
+            if (!isCustomView && v != null && !isInsideScrollable(v, pane)
+                    && ("edittext".equals(tName) || "spinner".equals(tName)
+                            || "seekbar".equals(tName))) {
+                unscrollableInputs++;
+            }
+
+            // 1. Material 3 <Button> custom drawable tint & compact padding check
+            if (("button".equals(tName) || "materialbutton".equals(tName))
+                    && bean.layout != null
+                    && bean.layout.backgroundResource != null
+                    && !bean.layout.backgroundResource.isEmpty()) {
+                String inj = bean.inject == null ? "" : bean.inject;
+                if (!inj.contains("backgroundTint=\"@null\"")
+                        && !inj.contains("backgroundTint=@null")) {
+                    warnings.add(bean.id + " uses custom drawable \""
+                            + bean.layout.backgroundResource
+                            + "\" on <Button> without app:backgroundTint=\"@null\" "
+                            + "(Material 3 will paint solid colorPrimary over it).");
+                }
+                if (bean.layout.height > 0 && bean.layout.height <= 44
+                        && (bean.layout.paddingTop + bean.layout.paddingBottom) >= 16) {
+                    warnings.add(bean.id + " has compact height "
+                            + bean.layout.height + "dp with "
+                            + (bean.layout.paddingTop + bean.layout.paddingBottom)
+                            + "dp vertical padding — text may clip vertically.");
+                }
+            }
+
+            // 2. DayNight hardcoded hex & Light/Dark WCAG contrast check on text widgets
+            if (bean.text != null && ("textview".equals(tName)
+                    || "button".equals(tName) || "materialbutton".equals(tName)
+                    || "edittext".equals(tName) || "checkbox".equals(tName)
+                    || "switch".equals(tName) || "radiobutton".equals(tName))) {
+                boolean hasResTc = bean.text.resTextColor != null
+                        && !bean.text.resTextColor.isEmpty();
+                if (isDayNight && !hasResTc && bean.text.textColor != 0) {
+                    // Skip white text on solid accent buttons/swatches
+                    if (bean.text.textColor != 0xFFFFFFFF) {
+                        warnings.add(bean.id + " uses hardcoded hex text colour "
+                                + String.format(Locale.ROOT, "#%06X",
+                                        bean.text.textColor & 0xFFFFFF)
+                                + " in DayNight mode — prefer @color/openui_text_primary "
+                                + "or @color/openui_text_secondary so Dark mode stays readable.");
+                    }
+                }
+                Integer lightFg = resolveModeTextColor(scId, bean, theme.lightColors);
+                Integer darkFg = resolveModeTextColor(scId, bean, theme.darkColors);
+                Integer lightBg = resolveAncestorSurfaceColor(
+                        scId, bean, beansById, theme.lightColors, 0xFFFCFCFC);
+                Integer darkBg = resolveAncestorSurfaceColor(
+                        scId, bean, beansById, theme.darkColors, 0xFF121212);
+                double minRatio = (bean.text.textSize >= 18) ? 3.0 : 4.2;
+                if (lightFg != null && lightBg != null) {
+                    double rL = OpenUiThemeEngine.contrastRatio(lightFg, lightBg);
+                    if (rL < minRatio) {
+                        warnings.add(String.format(Locale.US,
+                                "%s has low Light-mode contrast (%.2f:1 < %.1f:1).",
+                                bean.id, rL, minRatio));
+                    }
+                }
+                if (isDayNight && darkFg != null && darkBg != null) {
+                    double rD = OpenUiThemeEngine.contrastRatio(darkFg, darkBg);
+                    if (rD < minRatio) {
+                        warnings.add(String.format(Locale.US,
+                                "%s has low Dark-mode contrast (%.2f:1 < %.1f:1).",
+                                bean.id, rD, minRatio));
+                    }
+                }
+            }
+        }
+
+        for (ViewBean bean : beans) {
+            if (bean != null && "cardview".equals(wq.b(bean.type))
+                    && childCounts.getOrDefault(bean.id, 0) >= 2) {
+                warnings.add(bean.id + " (CardView) has "
+                        + childCounts.get(bean.id)
+                        + " direct children — CardView is a FrameLayout, so "
+                        + "children overlap unless wrapped in one LinearLayout.");
+            }
+        }
+        if (!isCustomView && unscrollableInputs >= 4) {
+            warnings.add("Screen has " + unscrollableInputs
+                    + " input controls outside a ScrollView — wrap multi-field "
+                    + "forms in Form(...) or ScrollView so the keyboard never "
+                    + "hides lower fields.");
+        }
+    }
+
+    private static Integer resolveModeTextColor(String scId,
+                                                ViewBean bean,
+                                                Map<String, String> modeColors) {
+        if (bean == null || bean.text == null) {
+            return null;
+        }
+        String res = bean.text.resTextColor;
+        if (res != null && res.startsWith("@color/")) {
+            String key = res.substring("@color/".length()).trim();
+            if ("openui_chip_text".equals(key)) {
+                boolean sel = bean.inject != null
+                        && bean.inject.contains("android:selected=\"true\"");
+                key = sel ? "openui_text_on_accent" : "openui_text_primary";
+            }
+            if (modeColors != null && modeColors.containsKey(key)) {
+                return parseColorSafe(modeColors.get(key));
+            }
+            return AgentResources.resolveColorInt(scId, key);
+        }
+        if (bean.text.textColor != 0) {
+            return bean.text.textColor;
+        }
+        return modeColors != null
+                ? parseColorSafe(modeColors.get("openui_text_primary")) : null;
+    }
+
+    private static Integer resolveAncestorSurfaceColor(
+            String scId,
+            ViewBean start,
+            Map<String, ViewBean> beansById,
+            Map<String, String> modeColors,
+            int rootDefault) {
+        ViewBean cur = start;
+        int guard = 0;
+        while (cur != null && guard++ < 32) {
+            if (cur.layout != null) {
+                String bgDraw = cur.layout.backgroundResource;
+                if (bgDraw != null && !bgDraw.isEmpty()) {
+                    Integer fromDraw = resolveDrawableSurfaceColor(
+                            bgDraw, cur.inject, modeColors);
+                    if (fromDraw != null) {
+                        return fromDraw;
+                    }
+                }
+                String resBg = cur.layout.backgroundResColor;
+                if (resBg != null && resBg.startsWith("@color/")) {
+                    String key = resBg.substring("@color/".length()).trim();
+                    if (modeColors != null && modeColors.containsKey(key)) {
+                        return parseColorSafe(modeColors.get(key));
+                    }
+                    Integer c = AgentResources.resolveColorInt(scId, key);
+                    if (c != null && ((c >>> 24) & 0xFF) > 0) {
+                        return c;
+                    }
+                }
+                int rawBg = cur.layout.backgroundColor;
+                if (rawBg != 0 && rawBg != 0x00FFFFFF
+                        && ((rawBg >>> 24) & 0xFF) >= 0x80) {
+                    return rawBg;
+                }
+            }
+            if (cur.inject != null && cur.inject.contains("app:cardBackgroundColor=")) {
+                for (String line : cur.inject.split("\n")) {
+                    String t = line.trim();
+                    if (t.startsWith("app:cardBackgroundColor=")) {
+                        String val = t.substring("app:cardBackgroundColor=".length())
+                                .replace("\"", "").trim();
+                        if (val.startsWith("@color/")) {
+                            String k = val.substring("@color/".length());
+                            if (modeColors != null && modeColors.containsKey(k)) {
+                                return parseColorSafe(modeColors.get(k));
+                            }
+                        }
+                        Integer pc = parseColorSafe(val);
+                        if (pc != null) {
+                            return pc;
+                        }
+                    }
+                }
+            }
+            String p = cur.parent;
+            cur = (p == null || p.isEmpty() || "root".equalsIgnoreCase(p))
+                    ? null : beansById.get(p);
+        }
+        if (modeColors != null && modeColors.containsKey("openui_bg")) {
+            Integer bg = parseColorSafe(modeColors.get("openui_bg"));
+            if (bg != null) {
+                return bg;
+            }
+        }
+        return rootDefault;
+    }
+
+    private static Integer resolveDrawableSurfaceColor(
+            String bgDraw, String inject, Map<String, String> modeColors) {
+        if (modeColors == null || bgDraw == null) {
+            return null;
+        }
+        switch (bgDraw) {
+            case "openui_btn_primary":
+            case "openui_chip_selected":
+                return parseColorSafe(modeColors.get("openui_accent"));
+            case "openui_btn_destructive":
+                return parseColorSafe(modeColors.get("openui_danger_accent"));
+            case "openui_btn_secondary":
+            case "openui_sunk_input":
+            case "openui_card_sunk":
+            case "openui_chip_unselected":
+                return parseColorSafe(modeColors.get("openui_sunk"));
+            case "openui_chip_selector": {
+                boolean sel = inject != null
+                        && inject.contains("android:selected=\"true\"");
+                return parseColorSafe(modeColors.get(
+                        sel ? "openui_accent" : "openui_sunk"));
+            }
+            case "openui_card":
+                return parseColorSafe(modeColors.get("openui_fg"));
+            case "openui_callout_info":
+            case "openui_tag_info":
+                return parseColorSafe(modeColors.get("openui_info_bg"));
+            case "openui_callout_success":
+            case "openui_tag_success":
+                return parseColorSafe(modeColors.get("openui_success_bg"));
+            case "openui_callout_warning":
+            case "openui_tag_warning":
+                return parseColorSafe(modeColors.get("openui_alert_bg"));
+            case "openui_callout_danger":
+            case "openui_tag_danger":
+                return parseColorSafe(modeColors.get("openui_danger_bg"));
+            default:
+                if (bgDraw.startsWith("openui_swatch_")) {
+                    String hex = bgDraw.replace("openui_swatch_sel_", "")
+                            .replace("openui_swatch_", "");
+                    if (hex.length() == 6) {
+                        return parseColorSafe("#" + hex);
+                    }
+                }
+                return null;
+        }
+    }
+
+    private static String resolveSelectorDrawableName(String xml,
+                                                      boolean selectedState) {
+        try {
+            XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
+            factory.setNamespaceAware(false);
+            XmlPullParser parser = factory.newPullParser();
+            parser.setInput(new StringReader(xml));
+            String fallbackDraw = "";
+            int ev = parser.getEventType();
+            while (ev != XmlPullParser.END_DOCUMENT) {
+                if (ev == XmlPullParser.START_TAG && "item".equals(parser.getName())) {
+                    String draw = attr(parser, "android:drawable")
+                            .replace("@drawable/", "").trim();
+                    String stateSel = attr(parser, "android:state_selected");
+                    if (selectedState && "true".equalsIgnoreCase(stateSel) && !draw.isEmpty()) {
+                        return draw;
+                    }
+                    if (!selectedState && stateSel.isEmpty() && !draw.isEmpty()) {
+                        return draw;
+                    }
+                    if (fallbackDraw.isEmpty() && !draw.isEmpty()) {
+                        fallbackDraw = draw;
+                    }
+                }
+                ev = parser.next();
+            }
+            return fallbackDraw;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static GradientDrawable parseSimpleShapeXml(String scId,
+                                                        String xml,
                                                         float density) {
         if (xml == null || !xml.contains("<shape")) {
             return null;
@@ -549,7 +857,7 @@ public final class AgentPreview {
                         }
                         touched = true;
                     } else if ("solid".equals(tag)) {
-                        Integer c = parseColorSafe(attr(parser, "android:color"));
+                        Integer c = parseColorSafe(scId, attr(parser, "android:color"));
                         if (c != null) {
                             gd.setColor(c);
                             touched = true;
@@ -563,15 +871,15 @@ public final class AgentPreview {
                     } else if ("stroke".equals(tag)) {
                         int w = Math.round(parseDp(
                                 attr(parser, "android:width"), density));
-                        Integer c = parseColorSafe(attr(parser, "android:color"));
+                        Integer c = parseColorSafe(scId, attr(parser, "android:color"));
                         if (w > 0 && c != null) {
                             gd.setStroke(w, c);
                             touched = true;
                         }
                     } else if ("gradient".equals(tag)) {
-                        Integer s = parseColorSafe(
+                        Integer s = parseColorSafe(scId,
                                 attr(parser, "android:startColor"));
-                        Integer e = parseColorSafe(
+                        Integer e = parseColorSafe(scId,
                                 attr(parser, "android:endColor"));
                         if (s != null && e != null) {
                             gd.setColors(new int[]{s, e});
@@ -626,10 +934,18 @@ public final class AgentPreview {
     }
 
     private static Integer parseColorSafe(String raw) {
+        return parseColorSafe("", raw);
+    }
+
+    private static Integer parseColorSafe(String scId, String raw) {
         if (raw == null) {
             return null;
         }
         String s = raw.trim();
+        if (s.startsWith("@color/") && scId != null && !scId.isEmpty()) {
+            String name = s.substring("@color/".length()).trim();
+            return AgentResources.resolveColorInt(scId, name);
+        }
         if (s.startsWith("0x") || s.startsWith("0X")) {
             try {
                 return (int) Long.parseLong(s.substring(2), 16);

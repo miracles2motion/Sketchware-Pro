@@ -51,6 +51,7 @@ import pro.sketchware.ai.AgentKnowledgePack;
 import pro.sketchware.ai.AgentLoop;
 import pro.sketchware.ai.AgentMedia;
 import pro.sketchware.ai.AgentProposal;
+import pro.sketchware.ai.OpenUiThemeEngine;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -1234,33 +1235,182 @@ public class AgentFragment extends qA {
      * measurements, because a component is something you look at, not
      * something you read.
      */
+    private boolean designPreviewDarkMode = false;
+
     private void showDesignSystemDialog() {
         String scId = workingProjectOrToast();
         if (scId.isEmpty()) {
             return;
         }
-        com.google.gson.JsonObject system =
-                AgentJournal.designSystem(scId);
-        com.google.gson.JsonElement stored = system.get("tokens");
-        if (stored == null || !stored.isJsonArray()
-                || stored.getAsJsonArray().size() == 0) {
+        com.google.gson.JsonObject system = AgentJournal.designSystem(scId);
+        if (!AgentJournal.hasDesignSystem(scId)) {
             new MaterialAlertDialogBuilder(requireContext())
                     .setTitle(R.string.agent_design_system_title)
                     .setMessage(R.string.agent_design_system_empty)
+                    .setNeutralButton("Presets / Import JSON",
+                            (d, w) -> showDesignPresetsDialog(scId, null))
                     .setPositiveButton(R.string.agent_action_close, null)
                     .show();
             return;
         }
-        com.google.gson.JsonArray tokens = stored.getAsJsonArray();
+
+        OpenUiThemeEngine.ResolvedTheme resolved =
+                OpenUiThemeEngine.resolveTheme(system);
+        com.google.gson.JsonElement stored = system.get("tokens");
+        com.google.gson.JsonArray tokens = (stored != null && stored.isJsonArray()
+                && stored.getAsJsonArray().size() > 0)
+                ? stored.getAsJsonArray()
+                : OpenUiThemeEngine.generateStandardComponentTokens(resolved);
+        java.util.Map<String, String> activePalette = designPreviewDarkMode
+                ? resolved.darkColors : resolved.lightColors;
+
         android.content.Context context = requireContext();
         float density = context.getResources().getDisplayMetrics().density;
-        int pad = Math.round(18f * density);
+        int pad = Math.round(16f * density);
         LinearLayout listContainer = new LinearLayout(context);
         listContainer.setOrientation(LinearLayout.VERTICAL);
         listContainer.setPadding(pad, Math.round(8f * density), pad, pad);
 
         androidx.appcompat.app.AlertDialog[] holder =
                 new androidx.appcompat.app.AlertDialog[1];
+        Runnable reopen = () -> {
+            if (holder[0] != null) {
+                holder[0].dismiss();
+            }
+            showDesignSystemDialog();
+        };
+
+        // 1. Light / Dark Mode Preview Toggle + Contrast Badge
+        LinearLayout modeRow = new LinearLayout(context);
+        modeRow.setOrientation(LinearLayout.HORIZONTAL);
+        modeRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams modeRowLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        modeRowLp.bottomMargin = Math.round(10f * density);
+        modeRow.setLayoutParams(modeRowLp);
+
+        android.widget.TextView lightChip = buildSmallPillButton(
+                context, "☀ Light", !designPreviewDarkMode);
+        lightChip.setOnClickListener(v -> {
+            if (designPreviewDarkMode) {
+                designPreviewDarkMode = false;
+                reopen.run();
+            }
+        });
+        modeRow.addView(lightChip);
+
+        android.widget.TextView darkChip = buildSmallPillButton(
+                context, "☾ Dark", designPreviewDarkMode);
+        LinearLayout.LayoutParams darkLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        darkLp.leftMargin = Math.round(6f * density);
+        darkChip.setLayoutParams(darkLp);
+        darkChip.setOnClickListener(v -> {
+            if (!designPreviewDarkMode) {
+                designPreviewDarkMode = true;
+                reopen.run();
+            }
+        });
+        modeRow.addView(darkChip);
+
+        View spacer = new View(context);
+        spacer.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
+        modeRow.addView(spacer);
+
+        int accentInt = parseSafeColor(activePalette.get("openui_accent"), 0xFF3B82F6);
+        int onAccentInt = parseSafeColor(activePalette.get("openui_text_on_accent"), 0xFFFFFFFF);
+        double ratio = OpenUiThemeEngine.contrastRatio(onAccentInt, accentInt);
+        android.widget.TextView wcagBadge = new android.widget.TextView(context);
+        wcagBadge.setText(String.format(java.util.Locale.US, "WCAG %.1f:1 ✓", ratio));
+        wcagBadge.setTextSize(11.5f);
+        wcagBadge.setTypeface(wcagBadge.getTypeface(), android.graphics.Typeface.BOLD);
+        wcagBadge.setTextColor(resolveThemeColor(context,
+                com.google.android.material.R.attr.colorPrimary, 0xFF008DCD));
+        modeRow.addView(wcagBadge);
+        listContainer.addView(modeRow);
+
+        // 2. Live Rendered OpenUI Mini-Screen Preview Card
+        listContainer.addView(buildLiveThemeStage(context, resolved, activePalette));
+
+        // 3. One-Tap Theme Controls (100% Customizable)
+        android.widget.HorizontalScrollView controlsScroll =
+                new android.widget.HorizontalScrollView(context);
+        controlsScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout.LayoutParams csLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        csLp.topMargin = Math.round(10f * density);
+        csLp.bottomMargin = Math.round(8f * density);
+        controlsScroll.setLayoutParams(csLp);
+
+        LinearLayout controlsRow = new LinearLayout(context);
+        controlsRow.setOrientation(LinearLayout.HORIZONTAL);
+        controlsRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        android.widget.TextView brandPill = buildSmallPillButton(
+                context, "● Brand " + resolved.brandColor, false);
+        brandPill.setOnClickListener(v -> showBrandColorDialog(scId, resolved.brandColor, reopen));
+        controlsRow.addView(brandPill);
+
+        addSpacingPill(context, controlsRow, "Corners: " + resolved.cornerProfile,
+                v -> showOptionPickerDialog(scId, "corner_profile", "Corner profile",
+                        new String[]{"sharp", "balanced", "soft", "pill"},
+                        resolved.cornerProfile, reopen));
+        addSpacingPill(context, controlsRow, "Density: " + resolved.density,
+                v -> showOptionPickerDialog(scId, "density", "Spacing density",
+                        new String[]{"compact", "comfortable", "spacious"},
+                        resolved.density, reopen));
+        addSpacingPill(context, controlsRow, "Neutral: " + resolved.neutralScale,
+                v -> showOptionPickerDialog(scId, "neutral_scale", "Surface undertone",
+                        new String[]{"neutral", "slate", "gray", "zinc", "stone", "warm"},
+                        resolved.neutralScale, reopen));
+        addSpacingPill(context, controlsRow, "Mode: " + resolved.themeMode,
+                v -> showOptionPickerDialog(scId, "theme_mode", "App theme mode",
+                        new String[]{"DayNight", "Light", "Dark"},
+                        resolved.themeMode, reopen));
+        controlsScroll.addView(controlsRow);
+        listContainer.addView(controlsScroll);
+
+        // 4. Presets / Custom JSON & Sync to Project Action Row
+        LinearLayout actionRow = new LinearLayout(context);
+        actionRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams actLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        actLp.bottomMargin = Math.round(12f * density);
+        actionRow.setLayoutParams(actLp);
+
+        android.widget.TextView presetsBtn = buildSmallPillButton(
+                context, "Presets / Custom JSON", false);
+        LinearLayout.LayoutParams pLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        pLp.rightMargin = Math.round(6f * density);
+        presetsBtn.setLayoutParams(pLp);
+        presetsBtn.setGravity(Gravity.CENTER);
+        presetsBtn.setOnClickListener(v -> showDesignPresetsDialog(scId, reopen));
+        actionRow.addView(presetsBtn);
+
+        android.widget.TextView syncBtn = buildSmallPillButton(
+                context, "Sync theme to project", true);
+        LinearLayout.LayoutParams sLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        syncBtn.setLayoutParams(sLp);
+        syncBtn.setGravity(Gravity.CENTER);
+        syncBtn.setOnClickListener(v -> {
+            com.google.gson.JsonObject full = OpenUiThemeEngine.buildDesignSystemJson(
+                    resolved, tokens);
+            AgentJournal.setDesignSystemObject(scId, full);
+            OpenUiThemeEngine.materializeToProject(scId, full);
+            Toast.makeText(context,
+                    "Synced Light/Dark colors.xml, styles.xml & openui_* drawables",
+                    Toast.LENGTH_SHORT).show();
+        });
+        actionRow.addView(syncBtn);
+        listContainer.addView(actionRow);
+
+        // 5. Standardized Component Tokens List
         for (int i = 0; i < tokens.size(); i++) {
             com.google.gson.JsonElement element = tokens.get(i);
             if (!element.isJsonObject()) {
@@ -1295,9 +1445,7 @@ public class AgentFragment extends qA {
             LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT);
-            if (listContainer.getChildCount() > 0) {
-                rowLp.topMargin = Math.round(8f * density);
-            }
+            rowLp.topMargin = Math.round(8f * density);
             row.setLayoutParams(rowLp);
 
             View swatch = new View(context);
@@ -1305,7 +1453,9 @@ public class AgentFragment extends qA {
             swatch.setLayoutParams(new LinearLayout.LayoutParams(swSize, swSize));
             GradientDrawable swBg = new GradientDrawable();
             swBg.setCornerRadius(10f * density);
-            swBg.setColor(designColour(props, "background", "#008DCD"));
+            String swatchSourceKey = "text".equals(kind) ? "text_color" : "background";
+            swBg.setColor(designColourWithPalette(
+                    props, swatchSourceKey, activePalette, resolved.brandColor));
             swBg.setStroke(Math.max(1, Math.round(density)), 0x33888888);
             swatch.setBackground(swBg);
             row.addView(swatch);
@@ -1344,14 +1494,517 @@ public class AgentFragment extends qA {
             listContainer.addView(row);
         }
 
+        String dialogTitle = resolved.title.isEmpty()
+                ? getString(R.string.agent_design_system_title)
+                : resolved.title;
         android.widget.ScrollView scroll = new android.widget.ScrollView(context);
         scroll.addView(listContainer);
         holder[0] = new MaterialAlertDialogBuilder(context)
-                .setTitle(R.string.agent_design_system_title)
+                .setTitle(dialogTitle)
                 .setView(scroll)
                 .setNegativeButton(R.string.agent_action_close, null)
                 .create();
         holder[0].show();
+    }
+
+    private View buildLiveThemeStage(Context context,
+                                     OpenUiThemeEngine.ResolvedTheme resolved,
+                                     java.util.Map<String, String> pal) {
+        float d = context.getResources().getDisplayMetrics().density;
+        int bgInt = parseSafeColor(pal.get("openui_bg"), 0xFFFCFCFC);
+        int fgInt = parseSafeColor(pal.get("openui_fg"), 0xFFFFFFFF);
+        int sunkInt = parseSafeColor(pal.get("openui_sunk"), 0xFFF5F5F5);
+        int textPrim = parseSafeColor(pal.get("openui_text_primary"), 0xFF171717);
+        int textSec = parseSafeColor(pal.get("openui_text_secondary"), 0xFF525252);
+        int textTert = parseSafeColor(pal.get("openui_text_tertiary"), 0xFF737373);
+        int borderDef = parseSafeColor(pal.get("openui_border_default"), 0xFFE5E5E5);
+        int borderInt = parseSafeColor(pal.get("openui_border_interactive"), 0xFFD4D4D4);
+        int accent = parseSafeColor(pal.get("openui_accent"), 0xFF3B82F6);
+        int onAccent = parseSafeColor(pal.get("openui_text_on_accent"), 0xFFFFFFFF);
+
+        int cardRad = Math.round(Math.min(24, OpenUiThemeEngine.profileRadius(
+                resolved.cornerProfile, "card", 16)) * d);
+        int ctrlRad = Math.round(Math.min(999, OpenUiThemeEngine.profileRadius(
+                resolved.cornerProfile, "button", 12)) * d);
+        int chipRad = Math.round(Math.min(999, OpenUiThemeEngine.profileRadius(
+                resolved.cornerProfile, "chip", 999)) * d);
+
+        LinearLayout canvas = new LinearLayout(context);
+        canvas.setOrientation(LinearLayout.VERTICAL);
+        int pad = Math.round(14f * d);
+        canvas.setPadding(pad, pad, pad, pad);
+        GradientDrawable canvasBg = new GradientDrawable();
+        canvasBg.setCornerRadius(18f * d);
+        canvasBg.setColor(bgInt);
+        canvasBg.setStroke(Math.max(1, Math.round(d)), borderDef);
+        canvas.setBackground(canvasBg);
+
+        LinearLayout card = new LinearLayout(context);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(pad, pad, pad, pad);
+        GradientDrawable cardBg = new GradientDrawable();
+        cardBg.setCornerRadius(cardRad);
+        cardBg.setColor(fgInt);
+        cardBg.setStroke(Math.max(1, Math.round(d)), borderDef);
+        card.setBackground(cardBg);
+
+        android.widget.TextView heading = new android.widget.TextView(context);
+        heading.setText("Preview Card Heading");
+        heading.setTextSize(17f);
+        heading.setTypeface(heading.getTypeface(), android.graphics.Typeface.BOLD);
+        heading.setTextColor(textPrim);
+        card.addView(heading);
+
+        android.widget.TextView sub = new android.widget.TextView(context);
+        sub.setText("Paired Light & Dark tokens keep every surface readable.");
+        sub.setTextSize(12.5f);
+        sub.setTextColor(textSec);
+        sub.setPadding(0, Math.round(2f * d), 0, Math.round(10f * d));
+        card.addView(sub);
+
+        android.widget.TextView inputBox = new android.widget.TextView(context);
+        inputBox.setText("Input placeholder…");
+        inputBox.setTextSize(13.5f);
+        inputBox.setTextColor(textTert);
+        inputBox.setGravity(Gravity.CENTER_VERTICAL);
+        inputBox.setPadding(Math.round(12f * d), 0, Math.round(12f * d), 0);
+        GradientDrawable inBg = new GradientDrawable();
+        inBg.setCornerRadius(Math.round(OpenUiThemeEngine.profileRadius(
+                resolved.cornerProfile, "input", 12) * d));
+        inBg.setColor(sunkInt);
+        inBg.setStroke(Math.max(1, Math.round(d)), borderInt);
+        inputBox.setBackground(inBg);
+        LinearLayout.LayoutParams inLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Math.round(40f * d));
+        inLp.bottomMargin = Math.round(10f * d);
+        inputBox.setLayoutParams(inLp);
+        card.addView(inputBox);
+
+        LinearLayout chipsRow = new LinearLayout(context);
+        chipsRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams crLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        crLp.bottomMargin = Math.round(10f * d);
+        chipsRow.setLayoutParams(crLp);
+
+        android.widget.TextView c1 = new android.widget.TextView(context);
+        c1.setText("Selected");
+        c1.setTextSize(12f);
+        c1.setTypeface(c1.getTypeface(), android.graphics.Typeface.BOLD);
+        c1.setTextColor(onAccent);
+        c1.setPadding(Math.round(12f * d), Math.round(5f * d),
+                Math.round(12f * d), Math.round(5f * d));
+        GradientDrawable c1Bg = new GradientDrawable();
+        c1Bg.setCornerRadius(chipRad);
+        c1Bg.setColor(accent);
+        c1.setBackground(c1Bg);
+        chipsRow.addView(c1);
+
+        android.widget.TextView c2 = new android.widget.TextView(context);
+        c2.setText("Filter chip");
+        c2.setTextSize(12f);
+        c2.setTextColor(textPrim);
+        c2.setPadding(Math.round(12f * d), Math.round(5f * d),
+                Math.round(12f * d), Math.round(5f * d));
+        GradientDrawable c2Bg = new GradientDrawable();
+        c2Bg.setCornerRadius(chipRad);
+        c2Bg.setColor(sunkInt);
+        c2Bg.setStroke(Math.max(1, Math.round(d)), borderInt);
+        c2.setBackground(c2Bg);
+        LinearLayout.LayoutParams c2Lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        c2Lp.leftMargin = Math.round(6f * d);
+        c2.setLayoutParams(c2Lp);
+        chipsRow.addView(c2);
+        card.addView(chipsRow);
+
+        LinearLayout btnRow = new LinearLayout(context);
+        btnRow.setOrientation(LinearLayout.HORIZONTAL);
+
+        android.widget.TextView secBtn = new android.widget.TextView(context);
+        secBtn.setText("Secondary");
+        secBtn.setTextSize(13f);
+        secBtn.setTypeface(secBtn.getTypeface(), android.graphics.Typeface.BOLD);
+        secBtn.setTextColor(textPrim);
+        secBtn.setGravity(Gravity.CENTER);
+        GradientDrawable secBg = new GradientDrawable();
+        secBg.setCornerRadius(ctrlRad);
+        secBg.setColor(sunkInt);
+        secBg.setStroke(Math.max(1, Math.round(d)), borderInt);
+        secBtn.setBackground(secBg);
+        LinearLayout.LayoutParams sbLp = new LinearLayout.LayoutParams(
+                0, Math.round(40f * d), 1f);
+        sbLp.rightMargin = Math.round(8f * d);
+        secBtn.setLayoutParams(sbLp);
+        btnRow.addView(secBtn);
+
+        android.widget.TextView priBtn = new android.widget.TextView(context);
+        priBtn.setText("Primary Action");
+        priBtn.setTextSize(13f);
+        priBtn.setTypeface(priBtn.getTypeface(), android.graphics.Typeface.BOLD);
+        priBtn.setTextColor(onAccent);
+        priBtn.setGravity(Gravity.CENTER);
+        GradientDrawable priBg = new GradientDrawable();
+        priBg.setCornerRadius(ctrlRad);
+        priBg.setColor(accent);
+        priBtn.setBackground(priBg);
+        priBtn.setLayoutParams(new LinearLayout.LayoutParams(
+                0, Math.round(40f * d), 1.3f));
+        btnRow.addView(priBtn);
+
+        card.addView(btnRow);
+        canvas.addView(card);
+        return canvas;
+    }
+
+    private android.widget.TextView buildSmallPillButton(Context context,
+                                                         String text,
+                                                         boolean active) {
+        float d = context.getResources().getDisplayMetrics().density;
+        android.widget.TextView tv = new android.widget.TextView(context);
+        tv.setText(text);
+        tv.setTextSize(12.5f);
+        tv.setTypeface(tv.getTypeface(), android.graphics.Typeface.BOLD);
+        int padH = Math.round(12f * d);
+        int padV = Math.round(7f * d);
+        tv.setPadding(padH, padV, padH, padV);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(999f * d);
+        if (active) {
+            int prim = resolveThemeColor(context,
+                    com.google.android.material.R.attr.colorPrimary, 0xFF008DCD);
+            int onPrim = resolveThemeColor(context,
+                    com.google.android.material.R.attr.colorOnPrimary, 0xFFFFFFFF);
+            bg.setColor(prim);
+            tv.setTextColor(onPrim);
+        } else {
+            bg.setColor(resolveThemeColor(context,
+                    com.google.android.material.R.attr.colorSurfaceContainerHigh,
+                    0xFFE4ECF4));
+            bg.setStroke(Math.max(1, Math.round(d)), resolveThemeColor(context,
+                    com.google.android.material.R.attr.colorOutlineVariant,
+                    0xFFB1C0CE));
+            tv.setTextColor(resolveThemeColor(context,
+                    com.google.android.material.R.attr.colorOnSurface, 0xFF141C23));
+        }
+        tv.setBackground(bg);
+        return tv;
+    }
+
+    private void addSpacingPill(Context context,
+                                LinearLayout row,
+                                String text,
+                                View.OnClickListener listener) {
+        float d = context.getResources().getDisplayMetrics().density;
+        android.widget.TextView pill = buildSmallPillButton(context, text, false);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.leftMargin = Math.round(6f * d);
+        pill.setLayoutParams(lp);
+        pill.setOnClickListener(listener);
+        row.addView(pill);
+    }
+
+    private void showOptionPickerDialog(String scId,
+                                        String fieldKey,
+                                        String title,
+                                        String[] options,
+                                        String current,
+                                        Runnable onDone) {
+        int checked = 0;
+        for (int i = 0; i < options.length; i++) {
+            if (options[i].equalsIgnoreCase(current)) {
+                checked = i;
+                break;
+            }
+        }
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(title)
+                .setSingleChoiceItems(options, checked, (dialog, which) -> {
+                    dialog.dismiss();
+                    com.google.gson.JsonObject updated =
+                            AgentJournal.updateOpenUiThemeField(
+                                    scId, fieldKey, options[which]);
+                    OpenUiThemeEngine.materializeToProject(scId, updated);
+                    if (onDone != null) {
+                        onDone.run();
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void showBrandColorDialog(String scId,
+                                      String currentHex,
+                                      Runnable onDone) {
+        Context context = requireContext();
+        float d = context.getResources().getDisplayMetrics().density;
+        int pad = Math.round(20f * d);
+        LinearLayout box = new LinearLayout(context);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(pad, Math.round(10f * d), pad, 0);
+
+        EditText input = new EditText(context);
+        input.setSingleLine(true);
+        input.setHint("#RRGGBB (any custom colour)");
+        input.setText(currentHex);
+        box.addView(input);
+
+        String[] quickSwatches = {
+                "#059669", "#C65D3B", "#2563EB", "#7C3AED",
+                "#D97706", "#DC2626", "#0D9488", "#DB2777"
+        };
+        LinearLayout swRow = new LinearLayout(context);
+        swRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams srLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        srLp.topMargin = Math.round(12f * d);
+        swRow.setLayoutParams(srLp);
+        for (int i = 0; i < quickSwatches.length; i++) {
+            final String hex = quickSwatches[i];
+            View circle = new View(context);
+            int sz = Math.round(30f * d);
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(sz, sz);
+            if (i > 0) {
+                clp.leftMargin = Math.round(6f * d);
+            }
+            circle.setLayoutParams(clp);
+            GradientDrawable gd = new GradientDrawable();
+            gd.setShape(GradientDrawable.OVAL);
+            gd.setColor(parseSafeColor(hex, 0xFF3B82F6));
+            circle.setBackground(gd);
+            circle.setOnClickListener(v -> input.setText(hex));
+            swRow.addView(circle);
+        }
+        box.addView(swRow);
+
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Custom Brand Colour")
+                .setView(box)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.agent_action_save, (dlg, w) -> {
+                    String raw = input.getText() == null
+                            ? "" : input.getText().toString().trim();
+                    String norm = OpenUiThemeEngine.normalizeHex(raw, "");
+                    if (norm.isEmpty()) {
+                        Toast.makeText(context, "Enter a valid #RRGGBB colour",
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    com.google.gson.JsonObject updated =
+                            AgentJournal.updateOpenUiThemeField(
+                                    scId, "brand_color", norm);
+                    OpenUiThemeEngine.materializeToProject(scId, updated);
+                    if (onDone != null) {
+                        onDone.run();
+                    }
+                })
+                .show();
+    }
+
+    private void showDesignPresetsDialog(String scId, @Nullable Runnable onDone) {
+        Context context = requireContext();
+        List<String> labels = new ArrayList<>();
+        List<Runnable> actions = new ArrayList<>();
+
+        // User presets from /sdcard/.sketchware/ai/design_systems/*.json
+        List<File> userFiles = OpenUiThemeEngine.listUserPresets();
+        for (File f : userFiles) {
+            String name = f.getName().replace(".json", "");
+            labels.add("★ Saved Preset: " + name);
+            actions.add(() -> applyPresetJsonObject(
+                    scId, OpenUiThemeEngine.loadPresetByNameOrPath(f.getAbsolutePath()),
+                    onDone));
+        }
+
+        // Starter presets from assets/openui/spec.json
+        com.google.gson.JsonObject starters = OpenUiThemeEngine.starterPresets();
+        for (java.util.Map.Entry<String, com.google.gson.JsonElement> e
+                : starters.entrySet()) {
+            if (!e.getValue().isJsonObject()) {
+                continue;
+            }
+            com.google.gson.JsonObject presetObj = e.getValue().getAsJsonObject();
+            String title = AgentJournal.textOf(presetObj, "title");
+            String brand = AgentJournal.textOf(presetObj, "brand_color");
+            labels.add("Starter: " + title + " (" + brand + ")");
+            actions.add(() -> applyPresetJsonObject(scId, presetObj, onDone));
+        }
+
+        labels.add("Import / Paste Custom Design System JSON…");
+        actions.add(() -> showImportDesignJsonDialog(scId, onDone));
+
+        if (AgentJournal.hasDesignSystem(scId)) {
+            labels.add("Save Current Design System as Preset JSON…");
+            actions.add(() -> showSaveDesignPresetDialog(scId));
+        }
+
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Design System Presets & Custom JSON")
+                .setItems(labels.toArray(new String[0]), (d, which) -> {
+                    if (which >= 0 && which < actions.size()) {
+                        actions.get(which).run();
+                    }
+                })
+                .setNegativeButton(R.string.agent_action_close, null)
+                .show();
+    }
+
+    private void applyPresetJsonObject(String scId,
+                                       com.google.gson.JsonObject presetObj,
+                                       @Nullable Runnable onDone) {
+        if (presetObj == null) {
+            Toast.makeText(requireContext(), "Could not load preset JSON",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        com.google.gson.JsonArray customTokens = presetObj.has("tokens")
+                && presetObj.get("tokens").isJsonArray()
+                ? presetObj.getAsJsonArray("tokens") : null;
+        OpenUiThemeEngine.ResolvedTheme resolved =
+                OpenUiThemeEngine.resolveTheme(presetObj);
+        com.google.gson.JsonObject full =
+                OpenUiThemeEngine.buildDesignSystemJson(resolved, customTokens);
+        AgentJournal.setDesignSystemObject(scId, full);
+        OpenUiThemeEngine.materializeToProject(scId, full);
+        Toast.makeText(requireContext(),
+                "Applied \"" + resolved.title + "\" & synced resources",
+                Toast.LENGTH_SHORT).show();
+        if (onDone != null) {
+            onDone.run();
+        } else {
+            showDesignSystemDialog();
+        }
+    }
+
+    private void showImportDesignJsonDialog(String scId,
+                                            @Nullable Runnable onDone) {
+        Context context = requireContext();
+        float d = context.getResources().getDisplayMetrics().density;
+        int pad = Math.round(20f * d);
+        LinearLayout box = new LinearLayout(context);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(pad, Math.round(8f * d), pad, 0);
+
+        android.widget.TextView hint = new android.widget.TextView(context);
+        hint.setText("Paste any custom Design System JSON (e.g. {\"title\":\"My Theme\","
+                + "\"brand_color\":\"#E11D48\",\"corner_profile\":\"soft\","
+                + "\"light_overrides\":{\"bg\":\"#FFF8F6\"}}) or drop .json files in "
+                + ".sketchware/ai/design_systems/.");
+        hint.setTextSize(12.5f);
+        hint.setPadding(0, 0, 0, Math.round(8f * d));
+        box.addView(hint);
+
+        EditText et = new EditText(context);
+        et.setMinLines(5);
+        et.setMaxLines(10);
+        et.setGravity(Gravity.TOP | Gravity.START);
+        et.setHint("{\n  \"title\": \"My Custom Theme\",\n  \"brand_color\": \"#059669\"\n}");
+        box.addView(et);
+
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Import Custom Design System JSON")
+                .setView(box)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton("Apply & Sync", (dlg, w) -> {
+                    String raw = et.getText() == null
+                            ? "" : et.getText().toString().trim();
+                    try {
+                        com.google.gson.JsonObject parsed =
+                                com.google.gson.JsonParser.parseString(raw)
+                                        .getAsJsonObject();
+                        applyPresetJsonObject(scId, parsed, onDone);
+                    } catch (Exception ex) {
+                        Toast.makeText(context,
+                                "Invalid JSON: " + ex.getMessage(),
+                                Toast.LENGTH_LONG).show();
+                    }
+                })
+                .show();
+    }
+
+    private void showSaveDesignPresetDialog(String scId) {
+        Context context = requireContext();
+        com.google.gson.JsonObject current = AgentJournal.designSystem(scId);
+        String defaultName = AgentJournal.textOf(current, "title");
+        if (defaultName.isEmpty()) {
+            defaultName = "my_custom_theme";
+        }
+        float d = context.getResources().getDisplayMetrics().density;
+        int pad = Math.round(20f * d);
+        LinearLayout box = new LinearLayout(context);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(pad, Math.round(8f * d), pad, 0);
+
+        EditText et = new EditText(context);
+        et.setSingleLine(true);
+        et.setText(defaultName);
+        et.setHint("Preset name");
+        box.addView(et);
+
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Save Design System Preset")
+                .setView(box)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setNeutralButton("Copy JSON", (dlg, w) -> {
+                    ClipboardManager cm = (ClipboardManager) context
+                            .getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (cm != null) {
+                        cm.setPrimaryClip(ClipData.newPlainText(
+                                "design_system.json", current.toString()));
+                        Toast.makeText(context, "Copied Design System JSON",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setPositiveButton(R.string.agent_action_save, (dlg, w) -> {
+                    String name = et.getText() == null
+                            ? "" : et.getText().toString().trim();
+                    try {
+                        File saved = OpenUiThemeEngine.saveUserPreset(name, current);
+                        Toast.makeText(context,
+                                "Saved preset: " + saved.getName(),
+                                Toast.LENGTH_LONG).show();
+                    } catch (Exception ex) {
+                        Toast.makeText(context,
+                                "Could not save preset: " + ex.getMessage(),
+                                Toast.LENGTH_LONG).show();
+                    }
+                })
+                .show();
+    }
+
+    private static int parseSafeColor(String hex, int fallback) {
+        if (hex == null || hex.isEmpty()) {
+            return fallback;
+        }
+        try {
+            return android.graphics.Color.parseColor(hex.trim());
+        } catch (Exception e) {
+            return fallback;
+        }
+    }
+
+    private static int designColourWithPalette(
+            com.google.gson.JsonObject props,
+            String key,
+            java.util.Map<String, String> palette,
+            String fallbackHex) {
+        String raw = designValue(props, key);
+        if (raw.startsWith("@color/")) {
+            String cName = raw.substring("@color/".length()).trim();
+            if ("openui_chip_text".equals(cName)) {
+                cName = "openui_text_primary";
+            }
+            if (palette != null && palette.containsKey(cName)) {
+                return parseSafeColor(palette.get(cName),
+                        parseSafeColor(fallbackHex, 0xFF3B82F6));
+            }
+        }
+        return designColour(props, key, fallbackHex);
     }
 
     private static String summarizeTokenProps(String kind,
@@ -1384,13 +2037,18 @@ public class AgentFragment extends qA {
         android.content.Context context = requireContext();
         String label = AgentJournal.textOf(token, "label");
         String key = AgentJournal.textOf(token, "key");
+        OpenUiThemeEngine.ResolvedTheme resolved =
+                OpenUiThemeEngine.resolveTheme(AgentJournal.designSystem(scId));
+        java.util.Map<String, String> pal = designPreviewDarkMode
+                ? resolved.darkColors : resolved.lightColors;
+
         android.widget.LinearLayout layout =
                 new android.widget.LinearLayout(context);
         layout.setOrientation(android.widget.LinearLayout.VERTICAL);
         int pad = (int) (20 * context.getResources()
                 .getDisplayMetrics().density);
         layout.setPadding(pad, pad / 2, pad, 0);
-        android.view.View preview = designPreview(context, token);
+        android.view.View preview = designPreview(context, token, pal);
         if (preview != null) {
             layout.addView(preview);
         }
@@ -1404,7 +2062,8 @@ public class AgentFragment extends qA {
         new MaterialAlertDialogBuilder(context)
                 .setTitle(label.isEmpty() ? key : label)
                 .setView(layout)
-                .setNegativeButton(R.string.agent_action_close, null)
+                .setNegativeButton(R.string.agent_action_close, (d, w) ->
+                        showDesignSystemDialog())
                 .setPositiveButton("Edit", (dialog, which) ->
                         showDesignTokenEditor(scId, token))
                 .setNeutralButton("Ask agent", (dialog, which) ->
@@ -1502,17 +2161,20 @@ public class AgentFragment extends qA {
         }
     }
 
-    /** A component drawn with its own measurements (including corner_radius). */
+    /** A component drawn with its own measurements (including @color/openui_* & corner_radius). */
     private android.view.View designPreview(android.content.Context context,
-                                            com.google.gson.JsonObject token) {
+                                            com.google.gson.JsonObject token,
+                                            java.util.Map<String, String> palette) {
         String kind = AgentJournal.textOf(token, "kind")
                 .toLowerCase(java.util.Locale.ROOT);
         com.google.gson.JsonObject props = token.has("props")
                 && token.get("props").isJsonObject()
                 ? token.getAsJsonObject("props") : new com.google.gson.JsonObject();
         float density = context.getResources().getDisplayMetrics().density;
-        int backgroundColour = designColour(props, "background", "#008DCD");
-        int textColour = designColour(props, "text_color", "#FFFFFF");
+        int backgroundColour = designColourWithPalette(
+                props, "background", palette, "#008DCD");
+        int textColour = designColourWithPalette(
+                props, "text_color", palette, "#FFFFFF");
         int padding = designDp(context, props, "padding", 12);
         int radiusPx = designDp(context, props, "corner_radius",
                 "button".equals(kind) ? 14 : "card".equals(kind) ? 16 : 10);
@@ -1522,9 +2184,12 @@ public class AgentFragment extends qA {
         box.setOrientation(android.widget.LinearLayout.VERTICAL);
         GradientDrawable stageBg = new GradientDrawable();
         stageBg.setCornerRadius(16f * density);
-        stageBg.setColor(resolveThemeColor(context,
-                com.google.android.material.R.attr.colorSurfaceContainer,
-                0xFFE6EFF8));
+        int stageColor = palette != null && palette.containsKey("openui_bg")
+                ? parseSafeColor(palette.get("openui_bg"), 0xFFE6EFF8)
+                : resolveThemeColor(context,
+                        com.google.android.material.R.attr.colorSurfaceContainer,
+                        0xFFE6EFF8);
+        stageBg.setColor(stageColor);
         stageBg.setStroke(Math.max(1, Math.round(density)),
                 resolveThemeColor(context,
                         com.google.android.material.R.attr.colorOutlineVariant,
@@ -1536,6 +2201,11 @@ public class AgentFragment extends qA {
         GradientDrawable itemShape = new GradientDrawable();
         itemShape.setCornerRadius(radiusPx);
         itemShape.setColor(backgroundColour);
+        String strokeRef = designValue(props, "stroke_color");
+        if (!strokeRef.isEmpty()) {
+            itemShape.setStroke(Math.max(1, Math.round(density)),
+                    designColourWithPalette(props, "stroke_color", palette, "#D4D4D4"));
+        }
 
         switch (kind) {
             case "button" -> {
@@ -1555,27 +2225,33 @@ public class AgentFragment extends qA {
                         height));
             }
             case "card" -> {
+                int cardTc = props.has("text_color")
+                        ? textColour
+                        : parseSafeColor(palette != null
+                                ? palette.get("openui_text_primary") : null, 0xFF171717);
                 android.widget.TextView card =
                         new android.widget.TextView(context);
                 card.setText("Card preview");
-                card.setTextColor(textColour);
+                card.setTextColor(cardTc);
                 card.setTextSize(15f);
                 card.setBackground(itemShape);
                 card.setPadding(padding, padding, padding, padding);
                 box.addView(card);
             }
             case "list_row" -> {
+                int rowTc = parseSafeColor(palette != null
+                        ? palette.get("openui_text_primary") : null, 0xFF171717);
                 android.widget.TextView title =
                         new android.widget.TextView(context);
                 title.setText("List row title");
-                title.setTextColor(textColour);
+                title.setTextColor(rowTc);
                 title.setTypeface(title.getTypeface(),
                         android.graphics.Typeface.BOLD);
                 title.setTextSize(designSp(props, "title_size", 16));
                 android.widget.TextView subtitle =
                         new android.widget.TextView(context);
                 subtitle.setText("Supporting line");
-                subtitle.setTextColor(textColour);
+                subtitle.setTextColor(rowTc);
                 subtitle.setAlpha(0.75f);
                 subtitle.setTextSize(designSp(props, "subtitle_size", 13));
                 android.widget.LinearLayout row =
@@ -1593,14 +2269,15 @@ public class AgentFragment extends qA {
                         height));
             }
             case "input" -> {
-                itemShape.setStroke(Math.max(1, Math.round(density)), 0x44888888);
+                itemShape.setStroke(Math.max(1, Math.round(density)),
+                        designColourWithPalette(props, "stroke_color", palette, "#888888"));
                 android.widget.TextView input =
                         new android.widget.TextView(context);
                 input.setText("Type here…");
                 input.setGravity(Gravity.CENTER_VERTICAL);
                 input.setTextSize(designSp(props, "text_size", 15));
-                input.setTextColor(designColour(props, "hint_color",
-                        "#757575"));
+                input.setTextColor(designColourWithPalette(
+                        props, "hint_color", palette, "#757575"));
                 input.setBackground(itemShape);
                 input.setPadding(padding, 0, padding, 0);
                 int height = designDp(context, props, "height", 48);
@@ -1610,11 +2287,13 @@ public class AgentFragment extends qA {
                         height));
             }
             case "screen" -> {
+                int scTc = parseSafeColor(palette != null
+                        ? palette.get("openui_text_primary") : null, 0xFF171717);
                 android.widget.TextView screen =
                         new android.widget.TextView(context);
                 screen.setText("Screen surface");
                 screen.setGravity(android.view.Gravity.CENTER);
-                screen.setTextColor(textColour);
+                screen.setTextColor(scTc);
                 screen.setBackground(itemShape);
                 box.addView(screen, new android.widget.LinearLayout
                         .LayoutParams(
@@ -1626,7 +2305,8 @@ public class AgentFragment extends qA {
                         new android.widget.TextView(context);
                 text.setText("Sample typography Aa");
                 text.setTextSize(designSp(props, "text_size", 16));
-                text.setTextColor(designColour(props, "text_color", "#141C23"));
+                text.setTextColor(designColourWithPalette(
+                        props, "text_color", palette, "#141C23"));
                 box.addView(text);
             }
         }

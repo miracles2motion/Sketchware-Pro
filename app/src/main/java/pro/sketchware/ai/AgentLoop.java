@@ -52,36 +52,40 @@ public class AgentLoop {
                     + "set_style_brief as headed lines — Audience; Mood; "
                     + "Colours (with hex); Text sizes (title/body/button "
                     + "sp); Buttons and cards (height, corner roundness); "
-                    + "Spacing; Do; Avoid; (3) turn the style into "
-                    + "COMPONENTS and save them with set_design_system — "
-                    + "primary_button, secondary_button, card, list_row, "
-                    + "input, screen, title, body, each with the exact "
-                    + "measurements every instance uses (height, "
-                    + "background, text size, text colour, padding, "
-                    + "margin, corner radius, elevation). Propose the "
-                    + "whole set yourself from the style and show it to "
-                    + "the user; do not interview them property by "
-                    + "property. Corner radius and elevation are "
-                    + "BLOCKS, not properties: when you build a screen, "
-                    + "add them to its initializeLogic — "
-                    + "set_corner_radius {target, value, color} for any "
-                    + "view, set_card_radius / set_card_elevation / "
-                    + "set_card_color for a CardView, set_elevation "
-                    + "{target, value} — so a card is round on the "
-                    + "device, not only in the plan; (4) write the "
-                    + "implementation plan — the screens by name, what is "
-                    + "on each, what data it keeps and where, what each "
-                    + "button does, the order you will build it — save it "
-                    + "with set_plan, then tell the user the plan in chat "
-                    + "and let them change it; (5) only then create the "
-                    + "project and build. From then on, build EVERY "
-                    + "screen out of the saved components by name — a "
-                    + "primary_button is the same button on every screen, "
-                    + "so never invent fresh measurements per screen. If "
-                    + "the user asks to change one component, use "
-                    + "edit_design_token for that one thing and offer to "
-                    + "update screens already built; never restyle them "
-                    + "on your own. If the user says “you decide” "
+                    + "Spacing; Do; Avoid; (3) save the customizable "
+                    + "OpenUI Design System with set_design_system "
+                    + "(title, brand_color, optional secondary_color, "
+                    + "neutral_scale: neutral|slate|gray|zinc|stone|warm, "
+                    + "corner_profile: sharp|balanced|soft|pill, "
+                    + "density: compact|comfortable|spacious, "
+                    + "theme_mode: DayNight|Light|Dark, optional "
+                    + "font_heading/font_body or light_overrides/"
+                    + "dark_overrides — never lock every app to one "
+                    + "colour; derive brand_color, surfaces, and shapes "
+                    + "from the user's chosen style or screenshot!). "
+                    + "set_design_system automatically computes WCAG-paired "
+                    + "Light & Dark tokens and materializes values/colors.xml, "
+                    + "values-night/colors.xml, values/styles.xml (AppTheme), "
+                    + "color/openui_chip_text.xml, and 20 rounded/stroked "
+                    + "res/drawable/openui_*.xml drawables — so you do NOT "
+                    + "need to hand-write theme colors.xml or initializeLogic "
+                    + "set_corner_radius blocks for standard cards, inputs, "
+                    + "chips, or buttons; (4) write the implementation plan "
+                    + "— the screens by name, what is on each, what data it "
+                    + "keeps and where, what each button does, the order you "
+                    + "will build it — save it with set_plan, then tell the "
+                    + "user the plan in chat and let them change it; (5) only "
+                    + "then create the project and build. Build EVERY screen "
+                    + "(MainActivity, secondary forms, dialogs, and item_* "
+                    + "custom rows alike) using OpenUI screen components in "
+                    + "edit_screen's `openui` / `openui_patch` (or "
+                    + "token=\"<key>\") and @color/openui_* semantic colours "
+                    + "— NEVER hardcode dark #111827 or white #FFFFFF hexes "
+                    + "in DayNight apps. If the user asks to change a theme "
+                    + "setting or one component, use edit_design_token "
+                    + "(which re-syncs @color/openui_* and openui_* drawables "
+                    + "automatically) and offer to update screens if layout "
+                    + "measurements changed. If the user says “you decide” "
                     + "or does not answer, choose yourself, say which you "
                     + "chose and why in one line, save it, and carry on — "
                     + "never stall repeating a question, and never build "
@@ -344,14 +348,14 @@ public class AgentLoop {
             + "build_release_package for Play Store .aab App Bundles or "
             + "signed release .apk files; and export_project_backup for "
             + ".swb project archives."
-            + "\n\nOPENUI LANG 1.0 (INTERACTIVE CHAT UI & LOW-TOKEN SCREEN "
-            + "SHORTHAND): In assistant replies (`inlineMode`), keep normal "
-            + "explanations in Markdown and use a fenced ```openui-lang "
+            + "\n\nOPENUI LANG 1.0 (INTERACTIVE CHAT UI & DESIGN-SYSTEM "
+            + "SCREEN COMPILER): In assistant replies (`inlineMode`), keep "
+            + "normal explanations in Markdown and use a fenced ```openui-lang "
             + "block (`id = Component(...)` one assignment per line, entry "
             + "`root = Stack([...])`) whenever presenting visual style "
             + "directions, colour palettes, multi-field setup choices, or "
-            + "structured summaries/tables. Chat components (positional "
-            + "args): Stack(children, gap?), Row(children, gap?), "
+            + "structured summaries/tables. Chat components: "
+            + "Stack(children, gap?), Row(children, gap?), "
             + "Card(children, title?, subtitle?, accentColor?), "
             + "Header(title, subtitle?, badge?), Text(content, variant?), "
             + "Badge(label, color?), Divider(), StyleCard(name, tagline, "
@@ -370,12 +374,33 @@ public class AgentLoop {
             + "build cards in OpenUI — real project edits always call "
             + "tools. When reading or editing Sketchware screens, prefer "
             + "get_screen(activity, format=\"openui\") and edit_screen with "
-            + "`openui` (full 1-line-per-widget layout, e.g. "
-            + "`root = Screen([main])\\nmain = Column([header, card], "
-            + "{p: 16, bg: \"#FFFFFF\"})`) or `openui_patch` (only the 2-3 "
-            + "changed/added lines merged by statement name; `id = null` "
-            + "deletes a widget; untouched widgets and wired events stay "
-            + "intact) to cut screen tokens by ~65%."
+            + "`openui` or `openui_patch` (`id = null` deletes; untouched "
+            + "widgets & wired events stay intact). Use OpenUI's high-level "
+            + "screen & TextView-role components so every screen inherits "
+            + "paired Light & Dark @color/openui_* and openui_* drawables: "
+            + "Screen([...]), Stack([...], {direction, gap: \"s\"|\"m\"|\"l\", p}), "
+            + "Card([...], {variant: \"card\"|\"sunk\"}), "
+            + "Form([fields], buttons) (auto-wrapped in ScrollView!), "
+            + "FormControl(\"Label\", inputWidget, \"helper?\"), "
+            + "Input(\"Hint\", {type}), TextArea(\"Hint\", {rows}), "
+            + "Select(\"Hint\"), DatePicker(\"Pick date\"), "
+            + "Chips([\"A\",\"B\"], {ids: [\"chip_a\",\"chip_b\"], selectedIndex: 0}), "
+            + "ColorSwatches([\"#10B981\",\"#3B82F6\"], {ids: [\"sw_0\",\"sw_1\"], selectedIndex: 0}), "
+            + "SwitchItem(\"Title\", \"Subtitle?\") (keeps exact id on Switch!), "
+            + "Slider(\"Label\", {max: 100}) (keeps exact id on SeekBar!), "
+            + "SearchBar(\"Search...\") (keeps exact id on EditText!), "
+            + "Button(\"Save\", {variant: \"primary\"|\"secondary\"|\"tertiary\"|\"destructive\"}), "
+            + "Buttons([btn1, btn2]), Heading(\"Title\"), Body(\"Text\"), "
+            + "Caption(\"Muted\"), Label(\"Field label\"), "
+            + "TextContent(\"Copy\", {size: \"small\"|\"default\"|\"large\"|\"large-heavy\"}), "
+            + "Text(\"Value\", \"+12%\", {variant: \"number\", subtextVariant: \"metric\"}), "
+            + "InlineHeader(\"Title\", \"Sub\"), CardHeader(\"Title\", \"Sub\"), "
+            + "Callout(\"info\"|\"success\"|\"warning\"|\"danger\", \"Title\", \"Body\"), "
+            + "Tag(\"Active\", {variant: \"success\"}), "
+            + "EmptyState(\"No items yet\", \"Tap + to add one\", {icon}), "
+            + "ListItem(\"Title\", \"Subtitle\", {trailing}), "
+            + "Stat(\"Streak\", \"14d\", \"+2d\"), Separator(), "
+            + "RecyclerList(\"item_row\"), SwipeRefresh([list]), BottomNav({menu})."
             + "\n\nKEEPING DATA (so it is still there after the app "
             + "closes): add ONE shared_preferences component to the "
             + "screen with create_component — it is named file1, file2 "
@@ -601,11 +626,12 @@ public class AgentLoop {
         final long turnStartedAt = System.currentTimeMillis();
         final String[] journalProject = {workingProjectId};
         final boolean[] taskClosed = {false};
-        final boolean[] previewVisionDisabled = {false};
+        final boolean[] previewVisionDisabled = {
+                AiChatService.isModelKnownTextOnly(model)};
         List<JsonObject> messages = new ArrayList<>();
         messages.add(systemMessage(workingProjectId));
         int kept = 0;
-        int imageTurnsRemaining = 3;
+        int imageTurnsRemaining = previewVisionDisabled[0] ? 0 : 3;
         for (int i = history.size() - 1; i >= 0 && kept < 40; i--) {
             ChatMessage message = history.get(i);
             if (message.state == ChatMessage.State.STREAMING
@@ -656,13 +682,29 @@ public class AgentLoop {
                             messages, AgentTools.definitions());
                     break;
                 } catch (AiChatService.AgentRequestException e) {
-                    if (!cancelled && !previewVisionDisabled[0]
-                            && AiChatService.isVisionUnsupported(e.error)
-                            && removePreviewInspectionMessages(messages)) {
+                    int code = e.error.httpCode;
+                    boolean likelyVisionRejection =
+                            AiChatService.isVisionUnsupported(e.error)
+                            || ((code == 400 || code == 404 || code == 415
+                                    || code == 422 || code == 500)
+                                    && AiChatService.hasMultimodalImageParts(messages));
+                    if (!cancelled && likelyVisionRejection
+                            && AiChatService.downgradeMultimodalMessagesToText(
+                                    messages, model)) {
                         previewVisionDisabled[0] = true;
+                        AiChatService.markModelVisionUnsupported(model);
+                        JsonObject fb = new JsonObject();
+                        fb.addProperty("model", model);
+                        fb.addProperty("http_code", code);
+                        fb.addProperty("reason",
+                                AgentJournal.cap(
+                                        String.valueOf(e.error.message), 300));
+                        AgentJournal.record(journalProject[0],
+                                "vision_fallback_to_text", fb);
+                        dispatch(listener, () -> listener.onToolNote(
+                                "Model rejected image pixels — continuing with saved attachment metadata"));
                         continue;
                     }
-                    int code = e.error.httpCode;
                     boolean transientFailure = !cancelled && attempt < 2
                             && (e.error.kind
                                             == AiChatService.ErrorKind.NETWORK

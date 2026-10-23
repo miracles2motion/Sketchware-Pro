@@ -483,13 +483,13 @@ public class Fx {
                 opcode = (asd != null) ? asd : opcode;
                 break;
             case "strToMap":
-                opcode = String.format("%s = new Gson().fromJson(%s, new TypeToken<HashMap<String, Object>>(){}.getType());", params.get(1), params.get(0));
+                opcode = String.format("%1$s = new Gson().fromJson(%2$s, new TypeToken<HashMap<String, Object>>(){}.getType()); if (%1$s == null) %1$s = new HashMap<>();", params.get(1), params.get(0));
                 break;
             case "mapToStr", "listMapToStr":
                 opcode = String.format("new Gson().toJson(%s)", params.get(0));
                 break;
             case "strToListMap":
-                opcode = String.format("%s = new Gson().fromJson(%s, new TypeToken<ArrayList<HashMap<String, Object>>>(){}.getType());", params.get(1), params.get(0));
+                opcode = String.format("%1$s = new Gson().fromJson(%2$s, new TypeToken<ArrayList<HashMap<String, Object>>>(){}.getType()); if (%1$s == null) %1$s = new ArrayList<>();", params.get(1), params.get(0));
 
                 break;
             case "mathGetDip":

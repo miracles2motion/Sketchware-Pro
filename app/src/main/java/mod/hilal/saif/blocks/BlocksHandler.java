@@ -2346,7 +2346,8 @@ public class BlocksHandler {
         hashMap.put(
                 "code",
                 "%2$s = new Gson().fromJson(%1$s, new"
-                        + " TypeToken<ArrayList<String>>(){}.getType());");
+                        + " TypeToken<ArrayList<String>>(){}.getType());"
+                        + " if (%2$s == null) %2$s = new ArrayList<>();");
         hashMap.put("color", "#5cb722");
         hashMap.put("palette", "-1");
         hashMap.put("spec", "JSON %s to %m.listStr");
@@ -2359,7 +2360,8 @@ public class BlocksHandler {
         hashMap.put(
                 "code",
                 "%2$s = new Gson().fromJson(%1$s, new"
-                        + " TypeToken<ArrayList<Double>>(){}.getType());");
+                        + " TypeToken<ArrayList<Double>>(){}.getType());"
+                        + " if (%2$s == null) %2$s = new ArrayList<>();");
         hashMap.put("color", "#5cb722");
         hashMap.put("palette", "-1");
         hashMap.put("spec", "JSON %s to %m.listInt");

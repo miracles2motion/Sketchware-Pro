@@ -36,6 +36,9 @@ public final class AiPaths {
     /** Directory holding offscreen ViewPane preview renders. */
     public static final String PREVIEWS_DIR_NAME = "previews";
 
+    /** Directory holding user-saved and user-imported Design System JSON presets. */
+    public static final String DESIGN_SYSTEMS_DIR_NAME = "design_systems";
+
     /** Root of the Agent Mode storage tree. */
     public static File agentRoot() {
         return ensureDir(new File(wq.getAbsolutePathOf(wq.q)));
@@ -59,6 +62,11 @@ public final class AiPaths {
     /** Directory holding offscreen ViewPane preview PNGs (hidden from MediaStore). */
     public static File previewsDir() {
         return ensureHiddenDir(new File(agentRoot(), PREVIEWS_DIR_NAME));
+    }
+
+    /** Directory holding user-saved and imported Design System JSON presets. */
+    public static File designSystemsDir() {
+        return ensureDir(new File(agentRoot(), DESIGN_SYSTEMS_DIR_NAME));
     }
 
     private static File ensureHiddenDir(File dir) {

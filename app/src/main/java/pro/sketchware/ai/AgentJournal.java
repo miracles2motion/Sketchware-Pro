@@ -1316,6 +1316,10 @@ public final class AgentJournal {
         save(toScId, to);
         from.remove("designSystem");
         save(fromScId, from);
+        try {
+            OpenUiThemeEngine.materializeToProject(toScId, ds);
+        } catch (Throwable ignored) {
+        }
     }
 
     /**
@@ -1357,6 +1361,7 @@ public final class AgentJournal {
     private static String draftPlanSteps = "";
     private static String draftDesignTitle = "";
     private static JsonArray draftDesignTokens = new JsonArray();
+    private static JsonObject draftDesignSystemObj = null;
 
     /**
      * Remembers a design system agreed before any project was chosen;
@@ -1367,6 +1372,35 @@ public final class AgentJournal {
         draftDesignTitle = title == null ? "" : title.trim();
         draftDesignTokens = tokens == null
                 ? new JsonArray() : tokens.deepCopy();
+        JsonObject seed = new JsonObject();
+        seed.addProperty("title", draftDesignTitle);
+        seed.add("tokens", draftDesignTokens);
+        OpenUiThemeEngine.ResolvedTheme resolved =
+                OpenUiThemeEngine.resolveTheme(seed);
+        draftDesignSystemObj = OpenUiThemeEngine.buildDesignSystemJson(
+                resolved, draftDesignTokens);
+    }
+
+    /** Remembers a full OpenUI design system agreed before project creation. */
+    public static synchronized void setDraftDesignSystemObject(
+            JsonObject system) {
+        if (system == null) {
+            draftDesignSystemObj = null;
+            draftDesignTitle = "";
+            draftDesignTokens = new JsonArray();
+            return;
+        }
+        draftDesignSystemObj = system.deepCopy();
+        draftDesignTitle = text(system, "title");
+        JsonElement tok = system.get("tokens");
+        draftDesignTokens = tok != null && tok.isJsonArray()
+                ? tok.getAsJsonArray().deepCopy() : new JsonArray();
+    }
+
+    /** Current draft design system (or empty object when none). */
+    public static synchronized JsonObject draftOrEmptyDesignSystem() {
+        return draftDesignSystemObj != null
+                ? draftDesignSystemObj.deepCopy() : new JsonObject();
     }
 
     /**
@@ -1420,16 +1454,105 @@ public final class AgentJournal {
         if (scId == null || scId.isEmpty()) {
             return;
         }
-        JsonObject root = load(scId);
-        JsonObject system = new JsonObject();
-        system.addProperty("title",
+        JsonObject seed = new JsonObject();
+        seed.addProperty("title",
                 truncate(title == null ? "" : title.trim(), 120));
-        system.add("tokens", tokens == null ? new JsonArray() : tokens);
-        system.addProperty("updatedAt", System.currentTimeMillis());
-        root.add("designSystem", system);
+        seed.add("tokens", tokens == null ? new JsonArray() : tokens);
+        OpenUiThemeEngine.ResolvedTheme resolved =
+                OpenUiThemeEngine.resolveTheme(seed);
+        JsonObject system = OpenUiThemeEngine.buildDesignSystemJson(
+                resolved, tokens);
+        setDesignSystemObject(scId, system);
+    }
+
+    /** Saves a complete OpenUI designSystem object onto {@code scId}. */
+    public static synchronized void setDesignSystemObject(String scId,
+                                                          JsonObject system) {
+        if (scId == null || scId.isEmpty() || system == null) {
+            return;
+        }
+        JsonObject root = load(scId);
+        JsonObject copy = system.deepCopy();
+        copy.addProperty("updatedAt", System.currentTimeMillis());
+        root.add("designSystem", copy);
         save(scId, root);
-        record(scId, "design_system_saved", "title",
-                system.get("title").getAsString());
+        record(scId, "design_system_saved", "title", text(copy, "title"));
+    }
+
+    /**
+     * Updates a single OpenUI theme setting (e.g. {@code brand_color},
+     * {@code corner_profile}, {@code density}, {@code neutral_scale},
+     * {@code theme_mode}, {@code light:openui_bg}, {@code dark:openui_bg}),
+     * re-runs WCAG contrast pairing, saves, and returns the updated system.
+     */
+    public static synchronized JsonObject updateOpenUiThemeField(
+            String scId, String field, String value) {
+        if (scId == null || scId.isEmpty() || field == null || field.isEmpty()) {
+            return new JsonObject();
+        }
+        JsonObject current = designSystem(scId);
+        JsonObject themeNode = current.has("openuiTheme")
+                && current.get("openuiTheme").isJsonObject()
+                ? current.getAsJsonObject("openuiTheme").deepCopy()
+                : OpenUiThemeEngine.serializeResolvedTheme(
+                        OpenUiThemeEngine.resolveTheme(current));
+        String trimmedVal = value == null ? "" : value.trim();
+        if (field.startsWith("light:")) {
+            String colorKey = field.substring("light:".length());
+            JsonObject lc = themeNode.has("light_colors")
+                    && themeNode.get("light_colors").isJsonObject()
+                    ? themeNode.getAsJsonObject("light_colors")
+                    : new JsonObject();
+            lc.addProperty(colorKey, trimmedVal);
+            themeNode.add("light_colors", lc);
+        } else if (field.startsWith("dark:")) {
+            String colorKey = field.substring("dark:".length());
+            JsonObject dc = themeNode.has("dark_colors")
+                    && themeNode.get("dark_colors").isJsonObject()
+                    ? themeNode.getAsJsonObject("dark_colors")
+                    : new JsonObject();
+            dc.addProperty(colorKey, trimmedVal);
+            themeNode.add("dark_colors", dc);
+        } else {
+            themeNode.addProperty(field, trimmedVal);
+            // If brand_color changed, drop stale derived accent overrides so
+            // both Light & Dark accents re-harmonize cleanly.
+            if ("brand_color".equals(field)) {
+                if (themeNode.has("light_colors")
+                        && themeNode.get("light_colors").isJsonObject()) {
+                    JsonObject lc = themeNode.getAsJsonObject("light_colors");
+                    lc.remove("openui_accent");
+                    lc.remove("openui_accent_pressed");
+                    lc.remove("openui_accent_subtle");
+                    lc.remove("openui_text_on_accent");
+                    lc.remove("openui_text_brand");
+                    lc.remove("openui_border_accent");
+                }
+                if (themeNode.has("dark_colors")
+                        && themeNode.get("dark_colors").isJsonObject()) {
+                    JsonObject dc = themeNode.getAsJsonObject("dark_colors");
+                    dc.remove("openui_accent");
+                    dc.remove("openui_accent_pressed");
+                    dc.remove("openui_accent_subtle");
+                    dc.remove("openui_text_on_accent");
+                    dc.remove("openui_text_brand");
+                    dc.remove("openui_border_accent");
+                }
+            }
+        }
+        JsonObject wrapper = new JsonObject();
+        wrapper.addProperty("title", text(current, "title"));
+        wrapper.add("openuiTheme", themeNode);
+        OpenUiThemeEngine.ResolvedTheme resolved =
+                OpenUiThemeEngine.resolveTheme(wrapper);
+        JsonObject updated = OpenUiThemeEngine.buildDesignSystemJson(
+                resolved, null);
+        setDesignSystemObject(scId, updated);
+        JsonObject logEntry = new JsonObject();
+        logEntry.addProperty("field", field);
+        logEntry.addProperty("value", trimmedVal);
+        record(scId, "design_theme_changed", logEntry);
+        return updated;
     }
 
     /**
@@ -1482,6 +1605,9 @@ public final class AgentJournal {
     /** Whether this project has a design system of its own. */
     public static synchronized boolean hasDesignSystem(String scId) {
         JsonObject system = designSystem(scId == null ? "" : scId);
+        if (system.has("openuiTheme") && system.get("openuiTheme").isJsonObject()) {
+            return true;
+        }
         JsonElement tokens = system.get("tokens");
         return tokens != null && tokens.isJsonArray()
                 && tokens.getAsJsonArray().size() > 0;
@@ -1492,7 +1618,9 @@ public final class AgentJournal {
      * the project, or held as a draft for a project not yet created.
      */
     public static synchronized boolean hasDesignSystemOrDraft(String scId) {
-        return draftDesignTokens.size() > 0 || hasDesignSystem(scId);
+        return draftDesignSystemObj != null
+                || draftDesignTokens.size() > 0
+                || hasDesignSystem(scId);
     }
 
     /** Remembers a style agreed before any project was chosen. */
@@ -1508,7 +1636,10 @@ public final class AgentJournal {
     }
 
     public static synchronized boolean hasDrafts() {
-        return !draftStyleBrief.isEmpty() || !draftPlanSteps.isEmpty();
+        return !draftStyleBrief.isEmpty()
+                || !draftPlanSteps.isEmpty()
+                || draftDesignSystemObj != null
+                || draftDesignTokens.size() > 0;
     }
 
     /**
@@ -1527,14 +1658,26 @@ public final class AgentJournal {
         if (!draftPlanSteps.isEmpty() && !hasPlan(scId)) {
             setPlan(scId, draftPlanTitle, draftPlanSteps, 0, 0);
         }
-        if (draftDesignTokens.size() > 0 && !hasDesignSystem(scId)) {
+        JsonObject toMaterialize = null;
+        if (draftDesignSystemObj != null && !hasDesignSystem(scId)) {
+            setDesignSystemObject(scId, draftDesignSystemObj);
+            toMaterialize = draftDesignSystemObj;
+        } else if (draftDesignTokens.size() > 0 && !hasDesignSystem(scId)) {
             setDesignSystem(scId, draftDesignTitle, draftDesignTokens);
+            toMaterialize = designSystem(scId);
         }
         draftStyleBrief = "";
         draftPlanTitle = "";
         draftPlanSteps = "";
         draftDesignTitle = "";
         draftDesignTokens = new JsonArray();
+        draftDesignSystemObj = null;
+        if (toMaterialize != null) {
+            try {
+                OpenUiThemeEngine.materializeToProject(scId, toMaterialize);
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
     /** Empties the project's task log while keeping Style, Design System and Plan. */
@@ -1603,31 +1746,63 @@ public final class AgentJournal {
                     + "the user; keep to it): ").append(style);
         }
         JsonObject design = root.getAsJsonObject("designSystem");
-        if (design != null && design.has("tokens")) {
-            JsonElement tokens = design.get("tokens");
-            if (tokens != null && tokens.isJsonArray()
-                    && tokens.getAsJsonArray().size() > 0) {
-                out.append("\n\nDesign system for this project (build ")
-                        .append("every screen from these components by ")
-                        .append("name — the same button is the same ")
-                        .append("button everywhere):");
-                for (JsonElement element : tokens.getAsJsonArray()) {
-                    if (!element.isJsonObject()) {
-                        continue;
-                    }
-                    JsonObject token = element.getAsJsonObject();
-                    out.append("\n• ").append(text(token, "key"))
-                            .append(" (“")
-                            .append(text(token, "label")).append("”)");
-                    JsonElement props = token.get("props");
-                    if (props != null && props.isJsonObject()) {
-                        for (java.util.Map.Entry<String, JsonElement> field
-                                : props.getAsJsonObject().entrySet()) {
-                            out.append(" ").append(field.getKey())
-                                    .append("=")
-                                    .append(field.getValue().isJsonPrimitive()
-                                            ? field.getValue().getAsString()
-                                            : "");
+        if (design != null) {
+            if (design.has("openuiTheme")
+                    && design.get("openuiTheme").isJsonObject()) {
+                JsonObject ot = design.getAsJsonObject("openuiTheme");
+                out.append("\n\nActive OpenUI Theme (already materialized in "
+                        + "values/colors.xml, values-night/colors.xml, "
+                        + "values/styles.xml, and res/drawable/openui_*.xml): ")
+                        .append("brand=").append(text(ot, "brand_color"))
+                        .append(", neutral=").append(text(ot, "neutral_scale"))
+                        .append(", corners=").append(text(ot, "corner_profile"))
+                        .append(", density=").append(text(ot, "density"))
+                        .append(", mode=").append(text(ot, "theme_mode"));
+                if (!text(ot, "font_heading").isEmpty()) {
+                    out.append(", font=").append(text(ot, "font_heading"));
+                }
+                out.append(". Ready-made colours: @color/openui_bg, "
+                        + "@color/openui_fg, @color/openui_sunk, "
+                        + "@color/openui_accent, @color/openui_text_on_accent, "
+                        + "@color/openui_text_primary, "
+                        + "@color/openui_text_secondary, "
+                        + "@color/openui_text_tertiary, "
+                        + "@color/openui_border_default, "
+                        + "@color/openui_border_interactive, "
+                        + "@color/openui_info_bg/_text, "
+                        + "@color/openui_success_bg/_text, "
+                        + "@color/openui_alert_bg/_text, "
+                        + "@color/openui_danger_bg/_text; drawables: "
+                        + "openui_card, openui_card_sunk, openui_sunk_input, "
+                        + "openui_btn_primary, openui_btn_secondary, "
+                        + "openui_btn_destructive, openui_chip_selector, "
+                        + "openui_callout_*, openui_tag_*.");
+            }
+            if (design.has("tokens")) {
+                JsonElement tokens = design.get("tokens");
+                if (tokens != null && tokens.isJsonArray()
+                        && tokens.getAsJsonArray().size() > 0) {
+                    out.append("\nDesign system components (prefer OpenUI "
+                            + "screen components or token=\"<key>\" so every "
+                            + "screen matches):");
+                    for (JsonElement element : tokens.getAsJsonArray()) {
+                        if (!element.isJsonObject()) {
+                            continue;
+                        }
+                        JsonObject token = element.getAsJsonObject();
+                        out.append("\n• ").append(text(token, "key"))
+                                .append(" (“")
+                                .append(text(token, "label")).append("”)");
+                        JsonElement props = token.get("props");
+                        if (props != null && props.isJsonObject()) {
+                            for (java.util.Map.Entry<String, JsonElement> field
+                                    : props.getAsJsonObject().entrySet()) {
+                                out.append(" ").append(field.getKey())
+                                        .append("=")
+                                        .append(field.getValue().isJsonPrimitive()
+                                                ? field.getValue().getAsString()
+                                                : "");
+                            }
                         }
                     }
                 }

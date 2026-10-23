@@ -332,6 +332,7 @@ public final class AgentEdits {
                                         + "\"match_parent\", \"wrap_content\" "
                                         + "or a dp number.");
                     }
+                    ensureCustomDrawableButtonSafety(bean);
                 }
                 case "set_orientation" -> {
                     ViewBean bean = requireWidget(op, byId);
@@ -451,6 +452,9 @@ public final class AgentEdits {
                     String image = stripDrawablePrefix(stringOf(op, "image"));
                     if (image.isEmpty() || "none".equalsIgnoreCase(image)) {
                         bean.layout.backgroundResource = null;
+                        if (isButtonWidget(bean.type)) {
+                            bean.inject = removeAutoButtonNullTint(bean.inject);
+                        }
                         op.addProperty("image", "none");
                         lines.add("Clear " + bean.id + " background image");
                     } else {
@@ -462,6 +466,7 @@ public final class AgentEdits {
                         requireDrawableExists(scId, image, bean.id, frozen);
                         op.addProperty("image", image);
                         bean.layout.backgroundResource = image;
+                        ensureCustomDrawableButtonSafety(bean);
                         lines.add("Set " + bean.id + " background image to "
                                 + image);
                     }
@@ -626,8 +631,23 @@ public final class AgentEdits {
                     ViewBean bean = requireWidget(op, byId);
                     String attributes = customAttributes(op, bean);
                     bean.inject = attributes;
+                    ensureCustomDrawableButtonSafety(bean);
                     lines.add("Set " + bean.id + " custom attributes: "
                             + attributes.replace("\n", ", "));
+                }
+                case "set_token" -> {
+                    ViewBean bean = requireWidget(op, byId);
+                    String tokenKey = stringOf(op, "token");
+                    if (tokenKey.isEmpty()) {
+                        tokenKey = stringOf(op, "key");
+                    }
+                    if (tokenKey.isEmpty()) {
+                        throw new AgentTools.ToolException("E_BAD_OP",
+                                "set_token needs \"token\" (e.g. "
+                                        + "primary_button, card, input, chip).");
+                    }
+                    applyDesignTokenToBean(scId, bean, tokenKey, frozen);
+                    lines.add("Apply design token " + tokenKey + " to " + bean.id);
                 }
                 case "set_alpha" -> {
                     ViewBean bean = requireWidget(op, byId);
@@ -1678,6 +1698,10 @@ public final class AgentEdits {
         bean.parent = onScreen ? ROOT_PARENT : parent.id;
         bean.parentType = onScreen ? rootParentType : parent.type;
         bean.index = nextIndex(work, bean.parent, null);
+        String tokenKey = stringOf(op, "token");
+        if (!tokenKey.isEmpty()) {
+            applyDesignTokenToBean(scId, bean, tokenKey, frozen);
+        }
         String text = stringOf(op, "text");
         if (!text.isEmpty()) {
             bean.text.text = text;
@@ -1707,6 +1731,7 @@ public final class AgentEdits {
                 bean.text.textColor = parseColor(scId, textColor);
             }
         }
+        ensureCustomDrawableButtonSafety(bean);
         work.add(bean);
         byId.put(id, bean);
         lines.add("Add " + typeName(type)
@@ -1961,6 +1986,224 @@ public final class AgentEdits {
      * {@code Ox} writes the real XML resource/theme reference while keeping a
      * valid preview integer on {@code ViewBean}.
      */
+    private static boolean isButtonWidget(int type) {
+        return type == ViewBean.VIEW_TYPE_WIDGET_BUTTON
+                || type == ViewBeans.VIEW_TYPE_WIDGET_MATERIALBUTTON;
+    }
+
+    /**
+     * Material 3 inflates {@code <Button>} as {@code MaterialButton}, which
+     * paints solid {@code colorPrimary} over custom {@code android:background}
+     * drawables and adds 6dp vertical insets that clip compact 36-44dp chips
+     * or buttons unless {@code app:backgroundTint="@null"} and {@code insetTop/Bottom="0dp"}
+     * are injected.
+     */
+    private static void ensureCustomDrawableButtonSafety(ViewBean bean) {
+        if (bean == null || !isButtonWidget(bean.type) || bean.layout == null) {
+            return;
+        }
+        String bgRes = bean.layout.backgroundResource;
+        if (bgRes == null || bgRes.trim().isEmpty()) {
+            return;
+        }
+        String inj = bean.inject == null ? "" : bean.inject;
+        if (!inj.contains("app:backgroundTint=")
+                && !inj.contains("android:backgroundTint=")) {
+            inj = upsertInjectAttr(inj, "app:backgroundTint", "@null");
+        }
+        if (!inj.contains("android:insetTop=")) {
+            inj = upsertInjectAttr(inj, "android:insetTop", "0dp");
+        }
+        if (!inj.contains("android:insetBottom=")) {
+            inj = upsertInjectAttr(inj, "android:insetBottom", "0dp");
+        }
+        if (!inj.contains("android:textAllCaps=")) {
+            inj = upsertInjectAttr(inj, "android:textAllCaps", "false");
+        }
+        // Prevent vertical clipping on compact buttons/chips/swatches (<= 44dp)
+        if (bean.layout.height > 0 && bean.layout.height <= 44) {
+            if (bean.layout.paddingTop == 8 && bean.layout.paddingBottom == 8) {
+                bean.layout.paddingTop = 0;
+                bean.layout.paddingBottom = 0;
+            }
+            if (!inj.contains("android:minHeight=")) {
+                inj = upsertInjectAttr(inj, "android:minHeight", "0dp");
+            }
+        }
+        // Circular/square swatches (<= 44dp wide) need 0 horizontal minWidth/padding too
+        if (bean.layout.width > 0 && bean.layout.width <= 44) {
+            if (bean.layout.paddingLeft == 8 && bean.layout.paddingRight == 8) {
+                bean.layout.paddingLeft = 0;
+                bean.layout.paddingRight = 0;
+            }
+            if (!inj.contains("android:minWidth=")) {
+                inj = upsertInjectAttr(inj, "android:minWidth", "0dp");
+            }
+            if (!inj.contains("android:insetLeft=")) {
+                inj = upsertInjectAttr(inj, "android:insetLeft", "0dp");
+            }
+            if (!inj.contains("android:insetRight=")) {
+                inj = upsertInjectAttr(inj, "android:insetRight", "0dp");
+            }
+        }
+        bean.inject = inj;
+    }
+
+    private static String removeAutoButtonNullTint(String inj) {
+        if (inj == null || inj.isEmpty()) {
+            return inj;
+        }
+        if (inj.contains("app:backgroundTint=\"@null\"")) {
+            return upsertInjectAttr(inj, "app:backgroundTint", null);
+        }
+        return inj;
+    }
+
+    private static void applyDesignTokenToBean(String scId,
+                                               ViewBean bean,
+                                               String tokenKey,
+                                               boolean frozen)
+            throws AgentTools.ToolException {
+        JsonObject props = OpenUiThemeEngine.findComponentToken(scId, tokenKey);
+        if (props == null) {
+            throw new AgentTools.ToolException("E_NO_TOKEN",
+                    "Unknown design token \"" + tokenKey + "\".");
+        }
+        ensureOpenUiMaterialized(scId, frozen);
+
+        String h = stringOf(props, "height");
+        if (!h.isEmpty()) {
+            try {
+                bean.layout.height = Integer.parseInt(h.replace("dp", "").trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        String bgDraw = stripDrawablePrefix(stringOf(props, "background_drawable"));
+        if (!bgDraw.isEmpty()) {
+            try {
+                requireDrawableExists(scId, bgDraw, bean.id, frozen);
+                bean.layout.backgroundResource = bgDraw;
+            } catch (AgentTools.ToolException ignored) {
+            }
+        }
+        String bg = stringOf(props, "background");
+        if (!bg.isEmpty() && bgDraw.isEmpty()) {
+            ResColor rc = resolveResColor(scId, bg, frozen);
+            if (rc != null) {
+                bean.layout.backgroundResColor = rc.resRef;
+                bean.layout.backgroundColor = rc.fallbackInt;
+            } else {
+                bean.layout.backgroundColor = parseColor(scId, bg);
+            }
+        }
+        if (bean.type == ViewBeans.VIEW_TYPE_LAYOUT_CARDVIEW) {
+            String cr = stringOf(props, "corner_radius");
+            String el = stringOf(props, "elevation");
+            String sc = stringOf(props, "stroke_color");
+            String sw = stringOf(props, "stroke_width");
+            if (!bg.isEmpty()) {
+                bean.inject = upsertInjectAttr(bean.inject,
+                        "app:cardBackgroundColor", bg);
+            }
+            if (!cr.isEmpty()) {
+                bean.inject = upsertInjectAttr(bean.inject,
+                        "app:cardCornerRadius",
+                        cr.endsWith("dp") ? cr : cr + "dp");
+            }
+            if (!el.isEmpty()) {
+                bean.inject = upsertInjectAttr(bean.inject,
+                        "app:cardElevation",
+                        el.endsWith("dp") ? el : el + "dp");
+            }
+            if (!sc.isEmpty()) {
+                bean.inject = upsertInjectAttr(bean.inject,
+                        "app:strokeColor", sc);
+            }
+            if (!sw.isEmpty()) {
+                bean.inject = upsertInjectAttr(bean.inject,
+                        "app:strokeWidth",
+                        sw.endsWith("dp") ? sw : sw + "dp");
+            }
+        }
+        String tc = stringOf(props, "text_color");
+        if (!tc.isEmpty() && bean.text != null) {
+            if (tc.startsWith("@color/openui_chip_text")) {
+                // ColorStateList selector goes cleanly on android:textColor
+                bean.text.resTextColor = tc;
+            } else {
+                ResColor rc = resolveResColor(scId, tc, frozen);
+                if (rc != null) {
+                    bean.text.resTextColor = rc.resRef;
+                    bean.text.textColor = rc.fallbackInt;
+                } else {
+                    bean.text.textColor = parseColor(scId, tc);
+                }
+            }
+        }
+        String hc = stringOf(props, "hint_color");
+        if (!hc.isEmpty() && bean.text != null) {
+            ResColor rc = resolveResColor(scId, hc, frozen);
+            if (rc != null) {
+                bean.text.resHintColor = rc.resRef;
+                bean.text.hintColor = rc.fallbackInt;
+            } else {
+                bean.text.hintColor = parseColor(scId, hc);
+            }
+        }
+        String ts = stringOf(props, "text_size");
+        if (!ts.isEmpty() && bean.text != null) {
+            try {
+                bean.text.textSize = Integer.parseInt(ts.replace("sp", "").trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        String tstyle = stringOf(props, "text_style");
+        if (!tstyle.isEmpty() && bean.text != null) {
+            bean.text.textType = switch (tstyle.toLowerCase(Locale.ROOT)) {
+                case "bold" -> com.besome.sketch.beans.TextBean.TEXT_TYPE_BOLD;
+                case "italic" -> com.besome.sketch.beans.TextBean.TEXT_TYPE_ITALIC;
+                case "bold_italic" -> com.besome.sketch.beans.TextBean.TEXT_TYPE_BOLDITALIC;
+                default -> com.besome.sketch.beans.TextBean.TEXT_TYPE_NORMAL;
+            };
+        }
+        String pad = stringOf(props, "padding");
+        if (!pad.isEmpty()) {
+            try {
+                int p = Integer.parseInt(pad.replace("dp", "").trim());
+                bean.layout.paddingLeft = p;
+                bean.layout.paddingRight = p;
+                if (!(isButtonWidget(bean.type) && bean.layout.height > 0
+                        && bean.layout.height <= 44)) {
+                    bean.layout.paddingTop = p;
+                    bean.layout.paddingBottom = p;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        String mar = stringOf(props, "margin");
+        if (!mar.isEmpty()) {
+            try {
+                int m = Integer.parseInt(mar.replace("dp", "").trim());
+                bean.layout.marginBottom = m;
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        ensureCustomDrawableButtonSafety(bean);
+    }
+
+    private static void ensureOpenUiMaterialized(String scId, boolean frozen) {
+        if (frozen || scId == null || scId.isEmpty()) {
+            return;
+        }
+        if (AgentResources.resolveColorInt(scId, "openui_bg") == null) {
+            try {
+                OpenUiThemeEngine.materializeToProject(
+                        scId, AgentJournal.designSystem(scId));
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
     private static ResColor resolveResColor(String scId, String raw,
                                             boolean frozen)
             throws AgentTools.ToolException {
@@ -1973,6 +2216,15 @@ public final class AgentEdits {
             if (!name.matches("^[a-zA-Z][a-zA-Z0-9_]*$")) {
                 throw new AgentTools.ToolException("E_BAD_COLOR",
                         "Invalid @color reference \"" + trimmed + "\".");
+            }
+            if (name.startsWith("openui_")) {
+                ensureOpenUiMaterialized(scId, frozen);
+                if ("openui_chip_text".equals(name)) {
+                    Integer primary = AgentResources.resolveColorInt(
+                            scId, "openui_text_primary");
+                    return new ResColor("@color/" + name,
+                            primary != null ? primary : 0xFF1A1A1A);
+                }
             }
             Integer resolved = AgentResources.resolveColorInt(scId, name);
             if (resolved == null) {
@@ -2703,11 +2955,13 @@ public final class AgentEdits {
     // the property panel tell the model the same story.
 
     private static final Set<String> ATTRS_VIEW = attrs(
-            "android:background", "android:backgroundTint", "android:alpha",
+            "android:background", "android:backgroundTint",
+            "app:backgroundTint", "android:alpha",
             "android:visibility", "android:padding", "android:layout_margin",
             "android:elevation", "android:rotation", "android:scaleX",
             "android:scaleY", "android:translationX",
-            "android:translationY");
+            "android:translationY", "android:minWidth", "android:minHeight",
+            "android:contentDescription", "android:selected");
 
     private static final Set<String> ATTRS_TEXT_VIEW = attrs(
             "android:text", "android:textSize", "android:textColor",
@@ -2718,11 +2972,13 @@ public final class AgentEdits {
             "android:imeOptions", "android:drawableLeft",
             "android:drawableTop", "android:drawableRight",
             "android:drawableBottom", "android:drawablePadding",
-            "android:drawableTint");
+            "android:drawableTint", "android:lineSpacingExtra",
+            "android:letterSpacing", "android:includeFontPadding",
+            "android:textAllCaps");
 
     private static final Set<String> ATTRS_IMAGE_VIEW = attrs(
             "android:src", "android:scaleType", "android:tint",
-            "android:adjustViewBounds", "android:cropToPadding");
+            "app:tint", "android:adjustViewBounds", "android:cropToPadding");
 
     private static final Set<String> ATTRS_LINEAR_LAYOUT = attrs(
             "android:orientation", "android:gravity", "android:weightSum",
@@ -2730,14 +2986,16 @@ public final class AgentEdits {
 
     private static final Set<String> ATTRS_VIEW_GROUP = attrs(
             "android:clipChildren", "android:clipToPadding",
-            "android:animateLayoutChanges");
+            "android:animateLayoutChanges", "android:fillViewport");
 
     private static final Set<String> ATTRS_PROGRESS_BAR = attrs(
             "android:max", "android:progress", "android:indeterminate",
-            "android:indeterminateTint", "android:progressTint");
+            "android:indeterminateTint", "android:progressTint",
+            "android:progressBackgroundTint");
 
     private static final Set<String> ATTRS_COMPOUND_BUTTON = attrs(
-            "android:checked", "android:button", "android:buttonTint");
+            "android:checked", "android:button", "android:buttonTint",
+            "app:buttonTint", "app:thumbTint", "app:trackTint");
 
     private static final Set<String> ATTRS_CARD_VIEW = attrs(
             "app:cardBackgroundColor", "app:cardCornerRadius",
@@ -2748,7 +3006,10 @@ public final class AgentEdits {
     private static final Set<String> ATTRS_MATERIAL_BUTTON = attrs(
             "app:icon", "app:iconTint", "app:iconGravity", "app:iconPadding",
             "app:strokeColor", "app:strokeWidth", "app:cornerRadius",
-            "app:rippleColor");
+            "app:rippleColor", "app:backgroundTint",
+            "android:insetTop", "android:insetBottom",
+            "android:insetLeft", "android:insetRight",
+            "android:stateListAnimator", "android:textAllCaps");
 
     /** What a plain name means, when the model uses it on the wrong thing. */
     private static final Map<String, String> ATTR_OWNERS =
@@ -2805,10 +3066,16 @@ public final class AgentEdits {
         if (classInfo.b("CardView")) {
             set.addAll(ATTRS_CARD_VIEW);
         }
-        if (classInfo.b("MaterialButton")) {
+        if (classInfo.b("MaterialButton")
+                || bean.type == ViewBean.VIEW_TYPE_WIDGET_BUTTON) {
             set.addAll(ATTRS_MATERIAL_BUTTON);
         }
         switch (bean.type) {
+            case ViewBeans.VIEW_TYPE_LAYOUT_BOTTOMNAVIGATIONVIEW ->
+                    Collections.addAll(set, "app:menu",
+                            "app:itemIconTint", "app:itemTextColor",
+                            "app:labelVisibilityMode",
+                            "app:itemActiveIndicatorStyle");
             case ViewBeans.VIEW_TYPE_WIDGET_CIRCLEIMAGEVIEW ->
                     Collections.addAll(set, "app:civ_border_width",
                             "app:civ_border_color",
@@ -3030,6 +3297,9 @@ public final class AgentEdits {
                 || "app_icon".equals(image)
                 || "ic_add_white".equals(image)) {
             return;
+        }
+        if (image.startsWith("openui_")) {
+            ensureOpenUiMaterialized(scId, frozen);
         }
         SketchwareProjects.Resources res =
                 SketchwareProjects.resources(scId);
