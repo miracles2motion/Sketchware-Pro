@@ -939,11 +939,12 @@ public class AgentLoop {
                                     + ModelCatalog.displayName(model)
                                     + " " + reason + " — switching to "
                                     + ModelCatalog.displayName(next);
+                            final String switchedTo = next;
                             dispatch(listener,
                                     () -> listener.onSystemNote(note));
                             dispatch(listener,
                                     () -> listener
-                                            .onResolvedModel(next));
+                                            .onResolvedModel(switchedTo));
                             model = next;
                             failedOver = true;
                             attempt = -1;
