@@ -38,6 +38,8 @@ public final class ModelCatalog {
         public String id = "";
         /** null = unknown; known tools capability beats name guessing. */
         public Boolean tools;
+        /** True when this key was told the model needs payment (402). */
+        public Boolean paid;
         /** null = unknown. */
         public Boolean vision;
         /** 0 = unknown. */
@@ -477,6 +479,9 @@ public final class ModelCatalog {
         if (known.free) {
             parts.add("Free");
         }
+        if (known.paid != null && known.paid) {
+            parts.add("Paid · needs credits");
+        }
         String lat = latencyLabel(known.latencyMs);
         if (!lat.isEmpty()) {
             parts.add(lat);
@@ -562,6 +567,16 @@ public final class ModelCatalog {
     /** A turn finished cleanly on this model: forget its cooldown. */
     public static void markSuccess(String provider, String modelId) {
         COOLDOWNS.remove(provider + "|" + modelId);
+    }
+
+    /**
+     * The key answered 402 for this model: it needs credits this key
+     * does not have. Remembered permanently so ✨ Auto never burns a
+     * turn on it again — the model stays visible in the picker with a
+     * Paid badge, because the user may add credits later.
+     */
+    public static void markPaid(String provider, String modelId) {
+        update(provider, modelId, info -> info.paid = true);
     }
 
     private static boolean cooling(String provider, String modelId) {
@@ -660,7 +675,40 @@ public final class ModelCatalog {
                                        boolean showAll,
                                        boolean needsVision,
                                        String avoidId) {
+        return pickAutoModel(provider, fetched, showAll, needsVision,
+                avoidId, false);
+    }
+
+    /**
+     * With {@code freeOnly}, models the provider prices at zero are
+     * preferred and known-paid ones are skipped in both passes — used
+     * once a key proves it cannot reach paid models, so ✨ Auto stops
+     * walking the paid catalog and lands straight on a free model.
+     */
+    public static String pickAutoModel(String provider,
+                                       List<String> fetched,
+                                       boolean showAll,
+                                       boolean needsVision,
+                                       String avoidId,
+                                       boolean freeOnly) {
         List<String> candidates = visibleModels(provider, fetched, showAll);
+        String best = pickAutoScored(candidates, provider, needsVision,
+                avoidId, freeOnly, true);
+        if (best.isEmpty()) {
+            // No free candidates matched: fall back to any model this
+            // key has not proven paid.
+            best = pickAutoScored(candidates, provider, needsVision,
+                    avoidId, freeOnly, false);
+        }
+        return best;
+    }
+
+    private static String pickAutoScored(List<String> candidates,
+                                         String provider,
+                                         boolean needsVision,
+                                         String avoidId,
+                                         boolean freeOnly,
+                                         boolean requireFree) {
         String best = "";
         int bestScore = Integer.MIN_VALUE;
         for (String id : candidates) {
@@ -669,6 +717,14 @@ public final class ModelCatalog {
                 continue;
             }
             ModelInfo known = info(provider, id);
+            // A key that was told "payment required" is never told
+            // twice: paid models are out of Auto for good.
+            if (known != null && known.paid != null && known.paid) {
+                continue;
+            }
+            if (requireFree && (known == null || !known.free)) {
+                continue;
+            }
             boolean tools = known == null || known.tools == null
                     || known.tools;
             if (!tools) {

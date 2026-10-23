@@ -813,6 +813,13 @@ public class AgentLoop {
         // a 400 from the new model then means "rejected the handover
         // payload", which is switchable, not a dead end.
         boolean failedOver = false;
+        // Paid-model learning and the switch budget: a free key meets
+        // 402 on every paid model, so after three of those the router
+        // goes free-only, and no turn ever walks more than six models.
+        final int[] paidCount = {0};
+        final int[] switchCount = {0};
+        final boolean[] paidConfirmed = {false};
+        final boolean[] paidNoteSent = {false};
         while (!cancelled) {
             AiChatService.AgentReply reply = null;
             long requestedAt = System.currentTimeMillis();
@@ -916,16 +923,53 @@ public class AgentLoop {
                                             == AiChatService.ErrorKind.NETWORK
                                     || e.error.kind
                                             == AiChatService.ErrorKind.QUOTA);
+                    boolean paid = code == 402
+                            && e.error.kind
+                                    == AiChatService.ErrorKind.QUOTA;
                     if (failoverEligible && autoRequested) {
-                        ModelCatalog.cooldown(autoProvider, model,
-                                System.currentTimeMillis()
-                                        + 5L * 60_000L);
+                        if (paid) {
+                            // 402 = this key cannot buy this model.
+                            // Remember it forever, journal it, and do
+                            // NOT spam a chat note per paid model —
+                            // one summary says it once.
+                            ModelCatalog.markPaid(autoProvider, model);
+                            paidCount[0]++;
+                            if (paidCount[0] >= 3) {
+                                paidConfirmed[0] = true;
+                            }
+                        } else {
+                            ModelCatalog.cooldown(autoProvider, model,
+                                    System.currentTimeMillis()
+                                            + 5L * 60_000L);
+                        }
+                        switchCount[0]++;
+                        if (switchCount[0] > 6) {
+                            // A router that never settles is worse
+                            // than an honest stop.
+                            String giveUp = "✨ Auto tried "
+                                    + switchCount[0]
+                                    + " models without a working one. "
+                                    + "Check credits on your key, or "
+                                    + "pick a specific model.";
+                            AgentJournal.setReadCache(journalProject[0],
+                                    readFacts.toString());
+                            closeTask(journalProject[0], false,
+                                    "✨ Auto exhausted its model chain",
+                                    taskClosed, listener);
+                            dispatch(listener, () -> listener
+                                    .onError(new AiChatService.AiError(
+                                            AiChatService.ErrorKind.EMPTY,
+                                            0, giveUp)));
+                            return;
+                        }
+                        boolean needsVisionNow =
+                                AiChatService.hasMultimodalImageParts(
+                                        messages);
                         String next = ModelCatalog.pickAutoModel(
                                 autoProvider, autoModelPool, autoShowAll,
-                                AiChatService.hasMultimodalImageParts(
-                                        messages),
-                                model);
-                        if (next.isEmpty()) {
+                                needsVisionNow, model,
+                                paidConfirmed[0]);
+                        if (next.isEmpty() && !paidConfirmed[0]) {
                             // Any other visible healthy model is still
                             // better than a dead turn.
                             next = ModelCatalog.pickAutoModel(
@@ -940,22 +984,43 @@ public class AgentLoop {
                             switched.addProperty("to", next);
                             switched.addProperty("http_code", code);
                             switched.addProperty("mid_turn", true);
+                            if (paid) {
+                                switched.addProperty("reason",
+                                        "needs credits (402)");
+                            }
                             AgentJournal.record(journalProject[0],
                                     "model_failover", switched);
-                            String reason = handoverRejected
-                                    ? "rejected the handover (400)"
-                                    : "busy (" + (code == 0 ? "network"
-                                    : String.valueOf(code)) + ")";
-                            String note = "✨ Auto: "
-                                    + ModelCatalog.displayName(model)
-                                    + " " + reason + " — switching to "
-                                    + ModelCatalog.displayName(next);
                             final String switchedTo = next;
-                            dispatch(listener,
-                                    () -> listener.onSystemNote(note));
-                            dispatch(listener,
-                                    () -> listener
-                                            .onResolvedModel(switchedTo));
+                            if (paid) {
+                                if (paidConfirmed[0]
+                                        && !paidNoteSent[0]) {
+                                    paidNoteSent[0] = true;
+                                    String summary = "✨ Auto: "
+                                            + paidCount[0]
+                                            + " models need credits "
+                                            + "on this key — using the "
+                                            + "best free model instead";
+                                    dispatch(listener, () -> listener
+                                            .onSystemNote(summary));
+                                }
+                            } else {
+                                String reason = handoverRejected
+                                        ? "rejected the handover (400)"
+                                        : modelGone
+                                        ? "is no longer available (404)"
+                                        : "busy (" + (code == 0
+                                        ? "network"
+                                        : String.valueOf(code)) + ")";
+                                String note = "✨ Auto: "
+                                        + ModelCatalog.displayName(model)
+                                        + " " + reason
+                                        + " — switching to "
+                                        + ModelCatalog.displayName(next);
+                                dispatch(listener, () -> listener
+                                        .onSystemNote(note));
+                            }
+                            dispatch(listener, () -> listener
+                                    .onResolvedModel(switchedTo));
                             model = next;
                             failedOver = true;
                             attempt = -1;
@@ -968,19 +1033,26 @@ public class AgentLoop {
                         // used, but never switch behind their back.
                         // The cooldown still applies: the picker shows
                         // the rate-limited badge and ✨ Auto avoids it.
+                        if (paid) {
+                            ModelCatalog.markPaid(autoProvider, model);
+                        }
                         ModelCatalog.cooldown(autoProvider, model,
                                 System.currentTimeMillis()
                                         + 5L * 60_000L);
                         String suggest = ModelCatalog.pickAutoModel(
                                 autoProvider, autoModelPool, autoShowAll,
                                 AiChatService.hasMultimodalImageParts(
-                                        messages), model);
+                                        messages), model, paid);
                         if (!suggest.isEmpty()) {
                             String hint = ModelCatalog.displayName(model)
-                                    + " hit " + (code == 0
+                                    + (paid
+                                    ? " needs credits your key does "
+                                    + "not have (402) — pick a Free "
+                                    + "model, or try "
+                                    : " hit " + (code == 0
                                     ? "a network error"
                                     : String.valueOf(code))
-                                    + " — tap the model bar to try "
+                                    + " — tap the model bar to try ")
                                     + ModelCatalog.displayName(suggest)
                                     + ", or switch to ✨ Auto.";
                             dispatch(listener,
