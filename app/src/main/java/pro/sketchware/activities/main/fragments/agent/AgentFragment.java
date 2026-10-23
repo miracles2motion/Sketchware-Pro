@@ -1402,10 +1402,8 @@ public class AgentFragment extends qA {
             com.google.gson.JsonObject full = OpenUiThemeEngine.buildDesignSystemJson(
                     resolved, tokens);
             AgentJournal.setDesignSystemObject(scId, full);
-            OpenUiThemeEngine.materializeToProject(scId, full);
-            Toast.makeText(context,
-                    "Synced Light/Dark colors.xml, styles.xml & openui_* drawables",
-                    Toast.LENGTH_SHORT).show();
+            syncThemeResourcesWithToast(context, scId, full,
+                    "Synced Light/Dark colors.xml, styles.xml & openui_* drawables");
         });
         actionRow.addView(syncBtn);
         listContainer.addView(actionRow);
@@ -1728,7 +1726,7 @@ public class AgentFragment extends qA {
                     com.google.gson.JsonObject updated =
                             AgentJournal.updateOpenUiThemeField(
                                     scId, fieldKey, options[which]);
-                    OpenUiThemeEngine.materializeToProject(scId, updated);
+                    syncThemeResourcesWithToast(requireContext(), scId, updated, null);
                     if (onDone != null) {
                         onDone.run();
                     }
@@ -1798,7 +1796,7 @@ public class AgentFragment extends qA {
                     com.google.gson.JsonObject updated =
                             AgentJournal.updateOpenUiThemeField(
                                     scId, "brand_color", norm);
-                    OpenUiThemeEngine.materializeToProject(scId, updated);
+                    syncThemeResourcesWithToast(context, scId, updated, null);
                     if (onDone != null) {
                         onDone.run();
                     }
@@ -1870,14 +1868,32 @@ public class AgentFragment extends qA {
         com.google.gson.JsonObject full =
                 OpenUiThemeEngine.buildDesignSystemJson(resolved, customTokens);
         AgentJournal.setDesignSystemObject(scId, full);
-        OpenUiThemeEngine.materializeToProject(scId, full);
-        Toast.makeText(requireContext(),
-                "Applied \"" + resolved.title + "\" & synced resources",
-                Toast.LENGTH_SHORT).show();
+        syncThemeResourcesWithToast(requireContext(), scId, full,
+                "Applied \"" + resolved.title + "\" & synced resources");
         if (onDone != null) {
             onDone.run();
         } else {
             showDesignSystemDialog();
+        }
+    }
+
+    private static void syncThemeResourcesWithToast(
+            Context context,
+            String scId,
+            com.google.gson.JsonObject full,
+            @Nullable String successMessage) {
+        if (scId == null || scId.isEmpty()) {
+            return;
+        }
+        try {
+            OpenUiThemeEngine.materializeToProject(scId, full);
+            if (successMessage != null && !successMessage.isEmpty()) {
+                Toast.makeText(context, successMessage, Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            Toast.makeText(context,
+                    "Theme saved, resource sync warning: " + e.getMessage(),
+                    Toast.LENGTH_LONG).show();
         }
     }
 
