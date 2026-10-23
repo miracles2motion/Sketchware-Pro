@@ -345,6 +345,27 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
    - Run `tree-sitter-java`, cross-class method/arity/visibility/import/checked-exception checks, `scripts/check_symbols.py`, and `scripts/check_openui_upstream.py`, update `docs/AGENT_MODE.md` + `docs/AGENT_ROADMAP.md`, and push **once** for a single verified GREEN APK.
    - **Shipped:** `ask_choice`, the Model Picker, the Key Switcher and Design-System Presets are now Material 3 card sheets (`showCardSheet`) — rounded filled/outlined cards with bold title + subtitle, radio-style active ring, and **live colour swatch circles + Light→Dark gradient strips** wherever a choice carries hexes; every `ask_choice` also offers **🎨 Pick a custom colour…** (Sketchware colour wheel), **⌨ Type my own…**, and **✨ You decide**; full static audit (tree-sitter parse of all 16 touched classes + cross-file symbol contract + strings/layout checks) before the single green CI push.
 
+## Wave 53 / Phases 25–30 — SkyCast Field Fixes: Strength Router, Honest Handover, Clean Pickers (`ModelCatalog.java`, `AgentLoop.java`, `AgentFragment.java`, `AgentSettingsActivity.java`, `agent_chat.xml`)
 
+**Context:** Every finding from `SkyCast-agent-export-20261023-2038.json` (Auto picked `gemini-3-flash-preview` because it was *fastest*, a mid-turn 429 handed the conversation to `gemini-3.1-flash-lite`, which 400-rejected the carried-over payload; the choice cards had colour words but no hexes so no swatches drew; the choice sheet never closed on tap; welcome pills clipped; picker controls buried under 300 cards). All fixes shipped in ONE commit and ONE green `Android CI` build.
 
+---
 
+### Phase 25 (DONE) — Strength × Aliveness Router
+- `pickAutoModel` no longer ranks by speed. Family strength first (Claude/GPT/Gemini-Pro/DeepSeek/Grok/Kimi/Qwen-Max/large-Llama/Mistral-Large above Flash/Lite/Mini tiers; `preview`/`exp`/`beta` penalized), then known-tools bonus, context size, recency of errors (−40 when the model errored in the last 30 min), latency only breaking ties. A clean turn calls `markSuccess` (clears cooldown); `auto_route` reason now reads "strongest healthy model".
+
+### Phase 26 (DONE) — Escalating Cooldowns & Rate-Limit Visibility
+- `cooldown()` doubles the remaining window on every consecutive failure (5 → 10 → 20 … capped at 60 min); `coolingForMillis()` powers a `⏳ Rate-limited · Xm left` badge on picker cards, and cooling models sink to the bottom of the list.
+
+### Phase 27 (DONE) — Honest Handover (Auto switches, manual never)
+- Mid-turn failover is gated on ✨ Auto. A manually picked model that 429s/5xxs keeps the turn: the error bubble surfaces, a system note names what Auto would have tried ("tap the model bar to try X, or switch to ✨ Auto"), and the model still earns its cooldown badge. Auto's switches are now a persistent SYSTEM chat message with friendly names (`✨ Auto: gemini-3-flash-preview busy (429) — switching to …`) plus a live header callback.
+
+### Phase 28 (DONE) — Sanitizer Hardening (the SkyCast 400)
+- `sanitizeMessagesForModel` now rewrites `content: null` → `""` (Gemini's OpenAI-compat endpoint 400s on null content on assistant tool-call messages) and strips `name` from `role:"tool"` messages. A 400 that arrives right after a handover is reclassified as switchable (`handoverRejected`), so the turn recovers instead of dying and re-picking the same broken pair next turn.
+
+### Phase 29 (DONE) — Clean Pickers & Live Header
+- Model cards are name + badge only (`Untested — long-press to test or hide`); `Test` / `✕ Hide` moved to a long-press options sheet; ids shown via `displayName` (`models/gemini-3.1-flash-lite` → `gemini-3.1-flash-lite`). The picker is now pinned-header + scroll: `✨ Auto` card and the `⚡ Verify · ⏱ · Hidden` controls stay fixed on screen. Settings' model dropdown shows the same badges (two-line `BadgeAdapter`). The chat-bar header goes live: `✨ Auto · <model>` on route and on every mid-turn switch.
+- Welcome quick actions stack vertically (three full pills) — the horizontal `HorizontalScrollView` that clipped "Inspect & improve project" is gone. A failed turn's empty `…` placeholder becomes the error text itself instead of a ghost bubble.
+
+### Phase 30 (DONE) — Swatches Always Draw & Sheets Close
+- The system prompt now requires hex codes inside every colour/style `ask_choice` option ("the app draws swatches from those hexes"), and as a code safety net `showChoiceQuestion` approximates swatches from ~30 colour words (soft blue, mint, charcoal, frost…) when an option still arrives without hexes. Every answer tap — option or "✨ You decide" — closes the sheet immediately (first tap wins; no second-tap overwrite), while 🎨 / ⌨ launchers keep it open and close it only when they succeed.

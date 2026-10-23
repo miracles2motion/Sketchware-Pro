@@ -50,7 +50,14 @@ public class AgentLoop {
                     + "look with ask_choice, offering two to four WHOLE "
                     + "directions in the user's own terms (each one a "
                     + "complete look: colours, type, shapes, mood — not a "
-                    + "label like “modern”); (2) save the agreed look with "
+                    + "label like “modern”. EVERY option about colours "
+                    + "or style MUST spell out its real hex codes inside "
+                    + "the option text, e.g. “Soft blue/purple gradient "
+                    + "(#B39DDB → #90CAF9), thin font, frosted glass” — "
+                    + "the app draws swatches from those hexes, so an "
+                    + "option without hexes shows no colours. Use 2–4 "
+                    + "hexes per option (background → accent).”; "
+                    + "(2) save the agreed look with "
                     + "set_style_brief as headed lines — Audience; Mood; "
                     + "Colours (with hex); Text sizes (title/body/button "
                     + "sp); Buttons and cards (height, corner roundness); "
@@ -565,6 +572,20 @@ public class AgentLoop {
         /** Task or plan progress changed; UI strip/badges should refresh. */
         default void onStateChanged() {
         }
+
+        /**
+         * A lasting note in the chat itself — e.g. a mid-turn model
+         * switch — not a transient activity line.
+         */
+        default void onSystemNote(String line) {
+        }
+
+        /**
+         * The router resolved the model actually doing this turn (✨
+         * Auto): the chat-bar header should show it next to "Auto".
+         */
+        default void onResolvedModel(String modelId) {
+        }
     }
 
     private final Context context;
@@ -738,12 +759,15 @@ public class AgentLoop {
             if (!chosen.isEmpty()) {
                 JsonObject routed = new JsonObject();
                 routed.addProperty("reason", needsVision
-                        ? "vision needed" : "fastest tools model");
+                        ? "vision needed" : "strongest healthy model");
                 routed.addProperty("chosen", chosen);
                 AgentJournal.record(journalProject[0], "auto_route", routed);
-                String note = "✨ Auto → " + chosen
+                String note = "✨ Auto → "
+                        + ModelCatalog.displayName(chosen)
                         + (needsVision ? " (vision)" : "");
                 dispatch(listener, () -> listener.onToolNote(note));
+                dispatch(listener, () -> listener
+                        .onResolvedModel(chosen));
                 model = chosen;
             } else {
                 // Nothing to route to: say so instead of sending the
@@ -773,6 +797,10 @@ public class AgentLoop {
         // second request for the same change is the user asking for
         // it on purpose, so it is let through.
         final java.util.Set<String> insisted = new java.util.HashSet<>();
+        // True once this turn has already switched models mid-flight:
+        // a 400 from the new model then means "rejected the handover
+        // payload", which is switchable, not a dead end.
+        boolean failedOver = false;
         while (!cancelled) {
             AiChatService.AgentReply reply = null;
             long requestedAt = System.currentTimeMillis();
@@ -848,19 +876,29 @@ public class AgentLoop {
                     // messages list with its completed tool calls —
                     // to the next healthy model. A quota hit (429)
                     // fails over on the first hit; a dead provider
-                    // gets its two quick retries first.
+                    // gets its two quick retries first. A 400 that
+                    // arrives right after a handover means the new
+                    // model rejected the carried-over payload, so it
+                    // counts as switchable too (the sanitizer has
+                    // already normalized the history). A manually
+                    // picked model is NEVER abandoned silently: the
+                    // user chose it, so the error surfaces and a hint
+                    // names what ✨ Auto would have tried instead.
+                    boolean handoverRejected = code == 400 && failedOver;
                     boolean failoverEligible = !cancelled
                             && (code == 429
                                     || e.error.kind
                                             == AiChatService.ErrorKind.QUOTA
+                                    || handoverRejected
                                     || attempt >= 1)
                             && (code == 429 || code == 500 || code == 502
                                     || code == 503 || code == 504
+                                    || handoverRejected
                                     || e.error.kind
                                             == AiChatService.ErrorKind.NETWORK
                                     || e.error.kind
                                             == AiChatService.ErrorKind.QUOTA);
-                    if (failoverEligible) {
+                    if (failoverEligible && autoRequested) {
                         ModelCatalog.cooldown(autoProvider, model,
                                 System.currentTimeMillis()
                                         + 5L * 60_000L);
@@ -886,15 +924,48 @@ public class AgentLoop {
                             switched.addProperty("mid_turn", true);
                             AgentJournal.record(journalProject[0],
                                     "model_failover", switched);
-                            String note = model
-                                    + " busy (" + (code == 0 ? "network"
-                                    : String.valueOf(code))
-                                    + ") — switching to " + next;
+                            String reason = handoverRejected
+                                    ? "rejected the handover (400)"
+                                    : "busy (" + (code == 0 ? "network"
+                                    : String.valueOf(code)) + ")";
+                            String note = "✨ Auto: "
+                                    + ModelCatalog.displayName(model)
+                                    + " " + reason + " — switching to "
+                                    + ModelCatalog.displayName(next);
                             dispatch(listener,
-                                    () -> listener.onToolNote(note));
+                                    () -> listener.onSystemNote(note));
+                            dispatch(listener,
+                                    () -> listener
+                                            .onResolvedModel(next));
                             model = next;
+                            failedOver = true;
                             attempt = -1;
                             continue;
+                        }
+                    } else if (failoverEligible) {
+                        // Manual pick: the user chose this model, so it
+                        // is their call what happens next — surface the
+                        // failure and name the model ✨ Auto would have
+                        // used, but never switch behind their back.
+                        // The cooldown still applies: the picker shows
+                        // the rate-limited badge and ✨ Auto avoids it.
+                        ModelCatalog.cooldown(autoProvider, model,
+                                System.currentTimeMillis()
+                                        + 5L * 60_000L);
+                        String suggest = ModelCatalog.pickAutoModel(
+                                autoProvider, autoModelPool, autoShowAll,
+                                AiChatService.hasMultimodalImageParts(
+                                        messages), model);
+                        if (!suggest.isEmpty()) {
+                            String hint = ModelCatalog.displayName(model)
+                                    + " hit " + (code == 0
+                                    ? "a network error"
+                                    : String.valueOf(code))
+                                    + " — tap the model bar to try "
+                                    + ModelCatalog.displayName(suggest)
+                                    + ", or switch to ✨ Auto.";
+                            dispatch(listener,
+                                    () -> listener.onSystemNote(hint));
                         }
                     }
                     // A provider failure is part of the story: the export
@@ -974,6 +1045,8 @@ public class AgentLoop {
                     // A finished turn makes the read cache redundant:
                     // the answer is in the chat and the index is fresh.
                     AgentJournal.clearReadCache(journalProject[0]);
+                    // A clean answer proves the model is alive again.
+                    ModelCatalog.markSuccess(autoProvider, model);
                     String thinking = reply.thinking == null ? "" : reply.thinking;
                     dispatch(listener, () -> listener.onAnswer(answer, thinking));
                 }

@@ -340,7 +340,12 @@ public final class ModelCatalog {
     private static final String[] EXTRA_NON_CHAT_MARKERS = {
             "whisper", "imagen", "flux", "dall-e", "sora", "veo",
             "stable-diffusion", "sdxl", "embed", "rerank", "moderation",
-            "guard", "ocr", "aqa", "distil"
+            "guard", "ocr", "aqa", "distil",
+            // Music / video / speech generation families — never chat
+            // or agent models, no matter what the metadata claims.
+            "lyria", "music", "suno", "udio", "kling", "runway",
+            "pika", "luma", "heygen", "motion", "gen-3", "tts",
+            "speech", "voice", "audio"
     };
 
     /**
@@ -529,10 +534,30 @@ public final class ModelCatalog {
     private static final Map<String, Long> COOLDOWNS =
             new java.util.concurrent.ConcurrentHashMap<>();
 
-    /** Puts a model on cooldown after a 503/429/timeout. */
+    /**
+     * Puts a model on cooldown after a 503/429/timeout. When the model
+     * was already cooling down, the remaining window doubles (5 → 10 →
+     * 20 … capped at 60 minutes) so a model that keeps failing drops
+     * out of ✨ Auto's rotation on its own.
+     */
     public static void cooldown(String provider, String modelId,
                                 long untilMillis) {
-        COOLDOWNS.put(provider + "|" + modelId, untilMillis);
+        String key = provider + "|" + modelId;
+        long now = System.currentTimeMillis();
+        long existing = COOLDOWNS.getOrDefault(key, 0L);
+        long window;
+        if (existing > now) {
+            window = Math.min((existing - now) * 2,
+                    60L * 60_000L);
+        } else {
+            window = Math.max(0L, untilMillis - now);
+        }
+        COOLDOWNS.put(key, now + window);
+    }
+
+    /** A turn finished cleanly on this model: forget its cooldown. */
+    public static void markSuccess(String provider, String modelId) {
+        COOLDOWNS.remove(provider + "|" + modelId);
     }
 
     private static boolean cooling(String provider, String modelId) {
@@ -540,11 +565,86 @@ public final class ModelCatalog {
         return until != null && until > System.currentTimeMillis();
     }
 
+    /** Milliseconds left on a model's cooldown (0 when none). */
+    public static long coolingForMillis(String provider, String modelId) {
+        Long until = COOLDOWNS.get(provider + "|" + modelId);
+        if (until == null) {
+            return 0L;
+        }
+        return Math.max(0L, until - System.currentTimeMillis());
+    }
+
+    /**
+     * A short human name for picker rows, notes and the chat-bar
+     * header: {@code models/gemini-3.1-flash-lite} becomes
+     * {@code gemini-3.1-flash-lite}.
+     */
+    public static String displayName(String modelId) {
+        if (modelId == null) {
+            return "";
+        }
+        String name = modelId;
+        int slash = name.lastIndexOf('/');
+        if (slash >= 0 && slash < name.length() - 1) {
+            name = name.substring(slash + 1);
+        }
+        return name;
+    }
+
+    /**
+     * How strong a model family is for real agent work, 0–110.
+     * Frontier / large-context stable models score highest; small fast
+     * variants and experimental previews score low. Speed is a
+     * tiebreaker, never the goal — a weak model that fumbles the job
+     * costs more of the user's time than a strong model's extra
+     * seconds.
+     */
+    private static int strengthScore(String id) {
+        String m = id.toLowerCase(Locale.ROOT);
+        int score = 50;
+        if (m.contains("claude")) {
+            score = m.contains("opus") ? 110
+                    : m.contains("haiku") ? 60 : 100;
+        } else if (m.contains("gpt")) {
+            score = m.contains("nano") ? 30
+                    : m.contains("mini") ? 60 : 100;
+        } else if (m.contains("gemini")) {
+            score = m.contains("pro") ? 95
+                    : m.contains("lite") ? 35
+                    : m.contains("flash") ? 55 : 70;
+        } else if (m.contains("deepseek")) {
+            score = 85;
+        } else if (m.contains("grok")) {
+            score = 85;
+        } else if (m.contains("kimi")) {
+            score = 80;
+        } else if (m.contains("qwen")) {
+            score = m.contains("max") ? 90
+                    : m.contains("mini") ? 55 : 70;
+        } else if (m.contains("llama")) {
+            score = m.contains("405b") || m.contains("400b") ? 85
+                    : m.contains("70b") ? 75
+                    : m.contains("8b") || m.contains("3b") ? 40 : 65;
+        } else if (m.contains("mistral")) {
+            score = m.contains("large") ? 80
+                    : m.contains("small") ? 50 : 65;
+        } else if (m.contains("glm")) {
+            score = 75;
+        }
+        if (m.contains("preview") || m.contains("-exp")
+                || m.contains("beta") || m.contains("thinking")) {
+            score -= 20;
+        }
+        return score;
+    }
+
     /**
      * The ✨ Auto choice: among the provider's visible chat models that
-     * are not cooling down, dead, or the one that just failed — prefer
-     * known Tools ✓ models, require known vision when the turn carries
-     * images, and among equals prefer the fastest measured model.
+     * are not cooling down, dead, or the one that just failed — rank by
+     * family strength first, then context size and fresh metadata,
+     * with measured latency only breaking ties. Models that errored
+     * recently rank lower (aliveness), so a quota-choked frontier
+     * model yields to the strongest model that is actually answering.
      * Returns "" when nothing qualifies.
      */
     public static String pickAutoModel(String provider,
@@ -554,8 +654,7 @@ public final class ModelCatalog {
                                        String avoidId) {
         List<String> candidates = visibleModels(provider, fetched, showAll);
         String best = "";
-        long bestLatency = Long.MAX_VALUE;
-        boolean bestToolsKnown = false;
+        int bestScore = Integer.MIN_VALUE;
         for (String id : candidates) {
             if (id.equals(avoidId) || cooling(provider, id)
                     || isDead(provider, id)) {
@@ -564,7 +663,6 @@ public final class ModelCatalog {
             ModelInfo known = info(provider, id);
             boolean tools = known == null || known.tools == null
                     || known.tools;
-            boolean toolsKnown = known != null && known.tools != null;
             if (!tools) {
                 continue;
             }
@@ -573,18 +671,26 @@ public final class ModelCatalog {
             if (needsVision && !vision) {
                 continue;
             }
-            long latency = known != null && known.latencyMs > 0
-                    ? known.latencyMs : Long.MAX_VALUE - 1;
-            boolean better;
-            if (toolsKnown != bestToolsKnown) {
-                better = toolsKnown;
-            } else {
-                better = latency < bestLatency;
+            int score = strengthScore(id);
+            if (known != null) {
+                if (known.tools != null) {
+                    score += 10;
+                }
+                score += (int) Math.min(20L,
+                        known.contextLength / 100_000L);
+                if (known.lastError != null
+                        && !known.lastError.isEmpty()
+                        && System.currentTimeMillis()
+                        - known.updatedAt < 30L * 60_000L) {
+                    score -= 40;
+                }
+                if (known.latencyMs > 0) {
+                    score -= (int) Math.min(5L, known.latencyMs / 1500L);
+                }
             }
-            if (best.isEmpty() || better) {
+            if (score > bestScore) {
                 best = id;
-                bestLatency = latency;
-                bestToolsKnown = toolsKnown;
+                bestScore = score;
             }
         }
         return best;
@@ -611,8 +717,26 @@ public final class ModelCatalog {
                     message.remove(key);
                 }
             }
+            // Gemini's OpenAI-compatible endpoint answers 400 "invalid
+            // argument" to content:null and to name on tool results —
+            // both perfectly legal for OpenAI. Normalize hard.
+            if (message.has("content")
+                    && message.get("content").isJsonNull()) {
+                message.addProperty("content", "");
+            }
+            String role = message.has("role")
+                    && message.get("role").isJsonPrimitive()
+                    ? message.get("role").getAsString() : "";
+            if ("tool".equals(role) && message.has("name")) {
+                message.remove("name");
+            }
             if (message.has("tool_calls")
                     && message.get("tool_calls").isJsonArray()) {
+                if ("assistant".equals(role)
+                        && (!message.has("content")
+                        || message.get("content").isJsonNull())) {
+                    message.addProperty("content", "");
+                }
                 for (JsonElement element
                         : message.getAsJsonArray("tool_calls")) {
                     if (!element.isJsonObject()) {

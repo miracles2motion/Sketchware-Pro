@@ -100,8 +100,7 @@ public class AgentSettingsActivity extends AppCompatActivity {
         // The fetched list is cached per provider: it is simply here,
         // reopening Settings must never demand a fresh query first.
         // The same chat-model filter as the chat picker applies.
-        binding.modelInput.setAdapter(new ArrayAdapter<>(
-                this, android.R.layout.simple_list_item_1,
+        binding.modelInput.setAdapter(new BadgeAdapter(
                 new ArrayList<>(ModelCatalog.visibleModels(
                         provider.name(), settings.models,
                         settings.showAllModels))));
@@ -110,6 +109,40 @@ public class AgentSettingsActivity extends AppCompatActivity {
                 ? getString(R.string.agent_settings_key_hint_custom)
                 : getString(R.string.agent_settings_where_key, provider.keyPage));
         hideStatus();
+    }
+
+
+    /** Dropdown rows that show the capability badge under each name. */
+    private class BadgeAdapter extends ArrayAdapter<String> {
+        BadgeAdapter(List<String> models) {
+            super(AgentSettingsActivity.this,
+                    android.R.layout.simple_list_item_2, models);
+        }
+
+        @Override
+        public View getView(int position, View convertView,
+                            android.view.ViewGroup parent) {
+            View view = super.getView(position, convertView, parent);
+            String id = getItem(position);
+            android.widget.TextView name =
+                    view.findViewById(android.R.id.text1);
+            android.widget.TextView badge =
+                    view.findViewById(android.R.id.text2);
+            if (name != null) {
+                name.setText(ModelCatalog.displayName(id));
+                name.setTextSize(14f);
+            }
+            if (badge != null) {
+                String text = ModelCatalog.badgeText(selected.name(), id);
+                if (text.isEmpty()) {
+                    text = "Untested";
+                }
+                badge.setText(text);
+                badge.setTextSize(11f);
+                badge.setAlpha(0.85f);
+            }
+            return view;
+        }
     }
 
     /** Draws the selected provider's key list, one row per key. */
@@ -290,8 +323,7 @@ public class AgentSettingsActivity extends AppCompatActivity {
                 // the chat-capable, non-hidden ones (user can flip
                 // "Show all models" to see the rest).
                 config.settings(selected).models = new ArrayList<>(models);
-                binding.modelInput.setAdapter(new ArrayAdapter<>(
-                        AgentSettingsActivity.this, android.R.layout.simple_list_item_1,
+                binding.modelInput.setAdapter(new BadgeAdapter(
                         new ArrayList<>(ModelCatalog.visibleModels(
                                 selected.name(), models,
                                 config.settings(selected).showAllModels))));
@@ -332,8 +364,7 @@ public class AgentSettingsActivity extends AppCompatActivity {
     /** Fills the model dropdown through the chat-model filter. */
     private void refreshModelAdapter() {
         AiProviderConfig.Settings settings = config.settings(selected);
-        binding.modelInput.setAdapter(new ArrayAdapter<>(
-                this, android.R.layout.simple_list_item_1,
+        binding.modelInput.setAdapter(new BadgeAdapter(
                 new ArrayList<>(ModelCatalog.visibleModels(
                         selected.name(), settings.models,
                         settings.showAllModels))));

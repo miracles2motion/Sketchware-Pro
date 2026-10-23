@@ -744,6 +744,29 @@ public class AgentFragment extends qA {
                     }
 
                     @Override
+                    public void onSystemNote(String line) {
+                        runOnUi(() -> {
+                            if (line != null && !line.trim().isEmpty()) {
+                                appendMessage(new ChatMessage(
+                                        ChatMessage.Role.SYSTEM,
+                                        line.trim()));
+                            }
+                        });
+                    }
+
+                    @Override
+                    public void onResolvedModel(String modelId) {
+                        runOnUi(() -> {
+                            if (binding != null && modelId != null
+                                    && !modelId.isEmpty()) {
+                                binding.modelLabel.setText("✨ Auto · "
+                                        + ModelCatalog.displayName(
+                                        modelId));
+                            }
+                        });
+                    }
+
+                    @Override
                     public void onAnswer(String text, String thinking) {
                         runOnUi(() -> {
                             liveStepLabel = "";
@@ -2967,14 +2990,15 @@ public class AgentFragment extends qA {
      * gradient strip where colours are involved — unmistakably
      * buttons, never a bare text list the user has to guess at.
      */
-    private void showCardSheet(Context context, String title,
-                               List<CardRow> rows) {
-        showCardSheet(context, title, rows, null);
+    private androidx.appcompat.app.AlertDialog showCardSheet(
+            Context context, String title, List<CardRow> rows) {
+        return showCardSheet(context, title, rows, null);
     }
 
-    private void showCardSheet(Context context, String title,
-                               List<CardRow> rows,
-                               @Nullable Runnable onCancel) {
+    private androidx.appcompat.app.AlertDialog showCardSheet(
+            Context context, String title,
+            List<CardRow> rows,
+            @Nullable Runnable onCancel) {
         float d = context.getResources().getDisplayMetrics().density;
         LinearLayout container = new LinearLayout(context);
         container.setOrientation(LinearLayout.VERTICAL);
@@ -3104,7 +3128,7 @@ public class AgentFragment extends qA {
         if (onCancel != null) {
             builder.setOnCancelListener(dialogI -> onCancel.run());
         }
-        builder.show();
+        return builder.show();
     }
 
     /**
@@ -3399,6 +3423,8 @@ public class AgentFragment extends qA {
             java.util.regex.Pattern hex =
                     java.util.regex.Pattern.compile(
                             "#[0-9A-Fa-f]{8}|#[0-9A-Fa-f]{6}");
+            androidx.appcompat.app.AlertDialog[] sheet =
+                    new androidx.appcompat.app.AlertDialog[1];
             List<CardRow> rows = new ArrayList<>();
             for (String option : options) {
                 java.util.regex.Matcher matcher = hex.matcher(option);
@@ -3406,8 +3432,46 @@ public class AgentFragment extends qA {
                 while (matcher.find() && swatches.size() < 4) {
                     Integer color = OpenUiThemeEngine.parseHexColor(
                             matcher.group());
-                    if (color != null) {
+                    if (color != null && !swatches.contains(color)) {
                         swatches.add(color);
+                    }
+                }
+                if (swatches.isEmpty()) {
+                    // The model described colours in words without hexes
+                    // — draw approximations anyway; a style choice must
+                    // never arrive as bare text.
+                    String lower = option.toLowerCase(
+                            java.util.Locale.ROOT);
+                    String[][] words = {
+                            {"soft blue", "B39DDB"}, {"navy", "3949AB"},
+                            {"purple", "B39DDB"}, {"lavender", "D1C4E9"},
+                            {"violet", "B39DDB"}, {"mint", "B2DFDB"},
+                            {"teal", "80CBC4"}, {"pastel green", "C8E6C9"},
+                            {"emerald", "81C784"}, {"green", "A5D6A7"},
+                            {"burgundy", "A1887F"}, {"maroon", "8D6E63"},
+                            {"coral", "FF8A65"}, {"red", "EF9A9A"},
+                            {"orange", "FFCC80"}, {"amber", "FFD54F"},
+                            {"gold", "FFD54F"}, {"yellow", "FFF59D"},
+                            {"pink", "F48FB1"}, {"rose", "F48FB1"},
+                            {"brown", "BCAAA4"}, {"grey", "B0BEC5"},
+                            {"gray", "B0BEC5"}, {"cream", "FFF8E1"},
+                            {"white", "F5F5F5"}, {"charcoal", "455A64"},
+                            {"dark", "455A64"}, {"black", "37474F"},
+                            {"frost", "E3F2FD"}, {"blue", "90CAF9"}
+                    };
+                    for (String[] word : words) {
+                        if (swatches.size() >= 4) {
+                            break;
+                        }
+                        if (lower.contains(word[0])) {
+                            Integer color =
+                                    OpenUiThemeEngine.parseHexColor(
+                                            "#" + word[1]);
+                            if (color != null
+                                    && !swatches.contains(color)) {
+                                swatches.add(color);
+                            }
+                        }
                     }
                 }
                 int[] gradient = swatches.size() >= 2
@@ -3429,6 +3493,12 @@ public class AgentFragment extends qA {
                         false, "Pick",
                         () -> {
                             pickedChoice = option;
+                            // First tap wins and the sheet closes — a
+                            // second tap must never overwrite the
+                            // answer that was already sent.
+                            if (sheet[0] != null) {
+                                sheet[0].dismiss();
+                            }
                             latch.countDown();
                         }));
             }
@@ -3440,12 +3510,22 @@ public class AgentFragment extends qA {
                     "Opens Sketchware's colour wheel; the hex goes to "
                             + "the agent", null, null, false, "",
                     () -> {
-                        showColorPickerForChoice(latch);
+                        showColorPickerForChoice(latch,
+                                () -> {
+                                    if (sheet[0] != null) {
+                                        sheet[0].dismiss();
+                                    }
+                                });
                     }));
             rows.add(new CardRow("⌨ Type my own…",
                     "Answer in your own words", null, null, false, "",
                     () -> {
-                        showTypedChoice(latch);
+                        showTypedChoice(latch,
+                                () -> {
+                                    if (sheet[0] != null) {
+                                        sheet[0].dismiss();
+                                    }
+                                });
                     }));
             rows.add(new CardRow("✨ You decide",
                     "The agent picks the best option and says why",
@@ -3453,16 +3533,20 @@ public class AgentFragment extends qA {
                     () -> {
                         pickedChoice = "You decide — pick the best "
                                 + "option yourself and say why";
+                        if (sheet[0] != null) {
+                            sheet[0].dismiss();
+                        }
                         latch.countDown();
                     }));
-            showCardSheet(activity,
+            sheet[0] = showCardSheet(activity,
                     question.isEmpty() ? "Choose one" : question, rows,
                     latch::countDown);
         });
     }
 
     /** The custom-colour answer to an ask_choice question. */
-    private void showColorPickerForChoice(CountDownLatch latch) {
+    private void showColorPickerForChoice(CountDownLatch latch,
+                                          Runnable onAnswered) {
         android.app.Activity activity = getActivity();
         View anchor = binding != null ? binding.getRoot() : null;
         if (activity == null || anchor == null) {
@@ -3480,6 +3564,7 @@ public class AgentFragment extends qA {
                     picked[0] = true;
                     pickedChoice = "#"
                             + String.format("%06X", color & 0xFFFFFF);
+                    onAnswered.run();
                     latch.countDown();
                 }
 
@@ -3488,6 +3573,7 @@ public class AgentFragment extends qA {
                     picked[0] = true;
                     pickedChoice = "#"
                             + String.format("%06X", color & 0xFFFFFF);
+                    onAnswered.run();
                     latch.countDown();
                 }
             });
@@ -3508,7 +3594,8 @@ public class AgentFragment extends qA {
     }
 
     /** The free-text answer to an ask_choice question. */
-    private void showTypedChoice(CountDownLatch latch) {
+    private void showTypedChoice(CountDownLatch latch,
+                                 Runnable onAnswered) {
         android.app.Activity activity = getActivity();
         if (activity == null) {
             latch.countDown();
@@ -3535,6 +3622,7 @@ public class AgentFragment extends qA {
                             pickedChoice = text.isEmpty()
                                     ? "You decide — pick the best option "
                                     + "yourself and say why" : text;
+                            onAnswered.run();
                             latch.countDown();
                         })
                 .setOnCancelListener(d -> latch.countDown())
@@ -3682,6 +3770,13 @@ public class AgentFragment extends qA {
         // tap-to-retry line appears under it instead of a dead end.
         failedBubble = streamingMessage;
         if (failedBubble != null) {
+            if (failedBubble.text == null
+                    || failedBubble.text.trim().isEmpty()
+                    || "…".equals(failedBubble.text.trim())) {
+                // An empty placeholder says nothing — it becomes the
+                // failure itself, so no ghost "…" bubble survives.
+                failedBubble.text = explainError(error);
+            }
             failedBubble.state = ChatMessage.State.ERROR;
             streamingMessage = null;
             adapter.notifyDataSetChanged();
@@ -3887,8 +3982,15 @@ public class AgentFragment extends qA {
 
         LinearLayout container = new LinearLayout(context);
         container.setOrientation(LinearLayout.VERTICAL);
-        container.setPadding(Math.round(12f * d), Math.round(4f * d),
+        container.setPadding(Math.round(12f * d), 0,
                 Math.round(12f * d), Math.round(12f * d));
+        // Pinned zone: the Auto card and the controls row stay fixed
+        // on screen while the model list scrolls underneath — the
+        // controls must never sit below 300 model cards.
+        LinearLayout header = new LinearLayout(context);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setPadding(Math.round(12f * d), Math.round(4f * d),
+                Math.round(12f * d), 0);
         androidx.appcompat.app.AlertDialog[] holder =
                 new androidx.appcompat.app.AlertDialog[1];
         Runnable reopen = () -> {
@@ -3932,8 +4034,9 @@ public class AgentFragment extends qA {
         autoRow.addView(autoTitle);
         android.widget.TextView autoSub = new android.widget.TextView(context);
         autoSub.setText("Vision + Tools when screenshots need it · "
-                + "fastest Tools ✓ model otherwise · automatic "
-                + "failover when a provider is busy");
+                + "strongest healthy model otherwise (speed only "
+                + "breaks ties) · automatic failover when a provider "
+                + "is busy");
         autoSub.setTextAppearance(com.google.android.material.R.style
                 .TextAppearance_Material3_BodySmall);
         autoSub.setAlpha(0.8f);
@@ -3952,9 +4055,14 @@ public class AgentFragment extends qA {
                 onChosen.run();
             }
         });
-        container.addView(autoRow);
+        header.addView(autoRow);
 
-        for (String id : visible) {
+        // Rate-limited models sink to the bottom of the list.
+        java.util.List<String> ordered = new ArrayList<>(visible);
+        ordered.sort(java.util.Comparator.comparingLong(
+                id -> ModelCatalog.coolingForMillis(provider.name(),
+                        id)));
+        for (String id : ordered) {
             container.addView(buildModelCardRow(context, d,
                     provider.name(), id, id.equals(settings.model),
                     settings, holder, reopen, onChosen));
@@ -4026,13 +4134,17 @@ public class AgentFragment extends qA {
             reopen.run();
         });
         footer.addView(timerBtn);
-        container.addView(footer);
+        header.addView(footer);
 
         android.widget.ScrollView scroll = new android.widget.ScrollView(context);
         scroll.addView(container);
+        LinearLayout root = new LinearLayout(context);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.addView(header);
+        root.addView(scroll);
         holder[0] = new MaterialAlertDialogBuilder(context)
                 .setTitle(R.string.agent_pick_model)
-                .setView(scroll)
+                .setView(root)
                 .setNegativeButton(R.string.agent_action_close, null)
                 .create();
         holder[0].show();
@@ -4076,15 +4188,20 @@ public class AgentFragment extends qA {
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         android.widget.TextView title = new android.widget.TextView(context);
-        title.setText(id);
+        title.setText(ModelCatalog.displayName(id));
         title.setTextAppearance(com.google.android.material.R.style
                 .TextAppearance_Material3_BodyMedium);
         title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
         textCol.addView(title);
 
         String badge = ModelCatalog.badgeText(providerName, id);
-        if (badge.isEmpty()) {
-            badge = "Untested — tap Test";
+        long cooling = ModelCatalog.coolingForMillis(providerName, id);
+        if (cooling > 0) {
+            long mins = (cooling + 59_999L) / 60_000L;
+            badge = "⏳ Rate-limited · " + mins + "m left"
+                    + (badge.isEmpty() ? "" : " · " + badge);
+        } else if (badge.isEmpty()) {
+            badge = "Untested — long-press to test or hide";
         }
         android.widget.TextView subtitle = new android.widget.TextView(context);
         subtitle.setText(badge);
@@ -4094,50 +4211,52 @@ public class AgentFragment extends qA {
         textCol.addView(subtitle);
         row.addView(textCol);
 
-        android.widget.TextView testChip = buildSmallPillButton(
-                context, "Test", false);
-        testChip.setOnClickListener(v -> {
-            testChip.setEnabled(false);
-            testChip.setText("…");
-            List<String> one = new ArrayList<>();
-            one.add(id);
-            probeModelsInBackground(providerName, one, () -> {
-                if (binding != null && binding.chatList != null) {
-                    binding.chatList.post(reopen);
-                }
-            });
-        });
-        row.addView(testChip);
-
-        android.widget.TextView hideChip = buildSmallPillButton(
-                context, "✕", false);
-        LinearLayout.LayoutParams hideLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        hideLp.leftMargin = Math.round(6f * d);
-        hideChip.setLayoutParams(hideLp);
-        hideChip.setOnClickListener(v -> {
-            ModelCatalog.setHidden(providerName, id, true);
-            Toast.makeText(context,
-                    id + " hidden permanently — restore it from the "
-                            + "Hidden list in this picker",
-                    Toast.LENGTH_SHORT).show();
-            reopen.run();
-        });
-        row.addView(hideChip);
-
+        // Clean card: tap = select; the rare actions (test, hide) live
+        // on long-press so 300 cards never turn into a workbench.
         row.setOnClickListener(v -> {
             settings.model = id;
             providerConfig.save(requireContext());
             updateProviderUi();
             appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM,
-                    getString(R.string.agent_switched_model, id)));
+                    getString(R.string.agent_switched_model,
+                            ModelCatalog.displayName(id))));
             if (holder[0] != null) {
                 holder[0].dismiss();
             }
             if (onChosen != null) {
                 onChosen.run();
             }
+        });
+        row.setOnLongClickListener(v -> {
+            List<CardRow> actions = new ArrayList<>();
+            actions.add(new CardRow("⚡ Test this model",
+                    "1-tool ping + vision check + latency",
+                    null, null, false, "",
+                    () -> {
+                        List<String> one = new ArrayList<>();
+                        one.add(id);
+                        probeModelsInBackground(providerName, one,
+                                () -> {
+                                    if (binding != null
+                                            && binding.chatList != null) {
+                                        binding.chatList.post(reopen);
+                                    }
+                                });
+                    }));
+            actions.add(new CardRow("✕ Hide permanently",
+                    "Gone from this picker — restore under Hidden",
+                    null, null, false, "",
+                    () -> {
+                        ModelCatalog.setHidden(providerName, id, true);
+                        Toast.makeText(context,
+                                ModelCatalog.displayName(id)
+                                        + " hidden — restore from the "
+                                        + "Hidden list",
+                                Toast.LENGTH_SHORT).show();
+                        reopen.run();
+                    }));
+            showCardSheet(context, ModelCatalog.displayName(id), actions);
+            return true;
         });
         return row;
     }

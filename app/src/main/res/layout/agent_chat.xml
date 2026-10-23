@@ -241,21 +241,18 @@
                 app:iconSize="18dp"
                 tools:visibility="visible" />
 
-            <!-- Generic starter chips when a provider is ready. -->
-            <HorizontalScrollView
+            <!-- Generic starter chips when a provider is ready.
+                 Stacked full pills: nothing can clip horizontally and
+                 there is no hidden scrolling to discover. -->
+            <LinearLayout
                 android:id="@+id/empty_quick_row"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:scrollbars="none"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
                 android:visibility="gone"
                 tools:visibility="visible">
-
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/quick_chip_design"
@@ -264,6 +261,7 @@
                         android:layout_height="36dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
+                        android:layout_marginBottom="4dp"
                         android:paddingHorizontal="14dp"
                         android:text="@string/agent_quick_design_screen"
                         android:textSize="12sp"
@@ -277,7 +275,7 @@
                         style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="wrap_content"
                         android:layout_height="36dp"
-                        android:layout_marginStart="8dp"
+                        android:layout_marginBottom="4dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
                         android:paddingHorizontal="14dp"
@@ -293,7 +291,6 @@
                         style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="wrap_content"
                         android:layout_height="36dp"
-                        android:layout_marginStart="8dp"
                         android:insetTop="0dp"
                         android:insetBottom="0dp"
                         android:paddingHorizontal="14dp"
@@ -303,8 +300,7 @@
                         app:icon="@drawable/ic_mtrl_checklist"
                         app:iconPadding="6dp"
                         app:iconSize="15dp" />
-                </LinearLayout>
-            </HorizontalScrollView>
+            </LinearLayout>
         </LinearLayout>
 
         <androidx.recyclerview.widget.RecyclerView
