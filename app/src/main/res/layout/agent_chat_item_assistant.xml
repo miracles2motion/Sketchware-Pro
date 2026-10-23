@@ -17,6 +17,7 @@
         app:cardCornerRadius="18dp">
 
         <LinearLayout
+            android:id="@+id/message_content_box"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="vertical">
@@ -60,6 +61,15 @@
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:textIsSelectable="true"
                 tools:text="I'll start by creating the project and a login screen." />
+
+            <LinearLayout
+                android:id="@+id/openui_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="10dp"
+                android:visibility="gone" />
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 

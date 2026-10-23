@@ -33,8 +33,8 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 | Pro Project Settings (`minSdk`, `targetSdk`, `ViewBinding`, custom `Application` class, version/package), ProGuard/R8 & StringFog | `MyProjectSettingActivity`, `ProjectSettings`, `VersionDialog`, `ManageProguardActivity`, `ProguardHandler`, `ManageStringFogFragment`, `StringfogHandler` | **Phase 7 (DONE)** |
 | Show Source Code Inspector, Runtime Logcat Crash Reader, Collections Manager, `.aab` App Bundles, Keystore Signing & `.swb` Backups | `SrcViewerActivity`, `Jx`, `LogReaderActivity`, `CompileErrorSaver`, `ManageCollectionActivity`, `AppBundleCompiler`, `TestkeySignBridge`, `BackupFactory` | **Phase 8 (DONE)** |
 | OpenUI Lang 1.0 Core Engine (Streaming Parser, Reactive `$variable` State, `@` Built-ins, `Action` Executor & `mergeStatements` Patcher) | `OpenUiLang`, `ChatMessage`, `AgentChatLog`, `AgentExport` | **Phase 9 (DONE)** |
-| Interactive Generative UI Inside Chat (`inlineMode` Native Material 3 Views, Style/Palette Cards, Two-Way Controls & `@ToAssistant` Actions) | `OpenUiChatRenderer`, `ChatAdapter`, `AgentFragment` | **Phase 10 (NEXT)** |
-| Low-Token Screen Builder, Incremental Patcher & Compact Screen Reader (`OpenUI Lang` ↔ `ViewBean` Bridge) | `OpenUiScreenBridge`, `AgentTools`, `SketchwareActions`, `AgentEdits` | Phase 11 |
+| Interactive Generative UI Inside Chat (`inlineMode` Native Material 3 Views, Style/Palette Cards, Two-Way Controls & `@ToAssistant` Actions) | `OpenUiChatRenderer`, `ChatAdapter`, `AgentFragment` | **Phase 10 (DONE)** |
+| Low-Token Screen Builder, Incremental Patcher & Compact Screen Reader (`OpenUI Lang` ↔ `ViewBean` Bridge) | `OpenUiScreenBridge`, `AgentTools`, `SketchwareActions`, `AgentEdits` | **Phase 11 (NEXT)** |
 | Context-Smart OpenUI Prompting, GitHub Actions CI Slim-Down & Final Bundle Verification | `AgentLoop`, `.github/workflows/agent-bootstrap.yml`, `.github/workflows/android.yml` | Phase 12 |
 
 ---
@@ -165,7 +165,7 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 ---
 
-### Phase 10 — Interactive Generative UI Inside Chat (`OpenUiChatRenderer.java` + `ChatAdapter`)
+### Phase 10 (DONE) — Interactive Generative UI Inside Chat (`OpenUiChatRenderer.java` + `ChatAdapter`)
 **Goal:** Render live, native Material 3 interactive cards, style/palette pickers, forms, and summaries inside assistant chat bubbles while preserving native Approval/Build cards and Markdown prose.
 1. **Native Android Component Library (`OpenUiChatRenderer`):**
    - Layout & typography: `Stack`, `Row`, `Card`, `Header`, `Text`, `Badge`, `Divider`.

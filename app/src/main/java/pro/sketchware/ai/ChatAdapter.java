@@ -15,6 +15,8 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -85,6 +87,22 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
 
     public void setOnInstallListener(OnInstallListener listener) {
         this.installListener = listener;
+    }
+
+    /** Interactive OpenUI Lang bubble events (state save, @ToAssistant, @OpenUrl). */
+    public interface OnOpenUiListener {
+        void onOpenUiStateChanged(ChatMessage message);
+
+        void onOpenUiSendToAssistant(ChatMessage message, String promptText,
+                                     JsonElement context, JsonObject formState);
+
+        void onOpenUiOpenUrl(String url);
+    }
+
+    private OnOpenUiListener openUiListener;
+
+    public void setOnOpenUiListener(OnOpenUiListener listener) {
+        this.openUiListener = listener;
     }
 
     private void fireClick(View view, int position) {
@@ -334,17 +352,86 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                     updateThinkingHeader(binding, message.thinkingExpanded);
                 });
             }
-            if (message.state == ChatMessage.State.STREAMING
-                    || message.state == ChatMessage.State.PENDING) {
-                // Still arriving: raw text now, formatting at completion.
-                binding.messageText.setText(message.text);
-            } else {
-                markwon(binding.messageText).setMarkdown(
-                        binding.messageText, message.text);
-            }
+            renderBody(message);
             // No words yet: the dots pill speaks alone, no empty shell.
             binding.messageCard.setVisibility(
                     message.text.isEmpty() ? View.GONE : View.VISIBLE);
+        }
+
+        private void renderBody(ChatMessage message) {
+            boolean streaming = message.state == ChatMessage.State.STREAMING
+                    || message.state == ChatMessage.State.PENDING;
+            boolean hasOpenUi = OpenUiLang.containsOpenUi(message.text);
+            int targetWidth = hasOpenUi
+                    ? ViewGroup.LayoutParams.MATCH_PARENT
+                    : ViewGroup.LayoutParams.WRAP_CONTENT;
+            ViewGroup.LayoutParams cardLp = binding.messageCard.getLayoutParams();
+            if (cardLp != null && cardLp.width != targetWidth) {
+                cardLp.width = targetWidth;
+                binding.messageCard.setLayoutParams(cardLp);
+            }
+            ViewGroup.LayoutParams boxLp = binding.messageContentBox.getLayoutParams();
+            if (boxLp != null && boxLp.width != targetWidth) {
+                boxLp.width = targetWidth;
+                binding.messageContentBox.setLayoutParams(boxLp);
+            }
+
+            if (!hasOpenUi) {
+                binding.openuiContainer.setVisibility(View.GONE);
+                if (binding.openuiContainer.getChildCount() > 0) {
+                    binding.openuiContainer.removeAllViews();
+                    binding.openuiContainer.setTag(null);
+                }
+                binding.messageText.setVisibility(View.VISIBLE);
+                if (streaming) {
+                    // Still arriving: raw text now, formatting at completion.
+                    binding.messageText.setText(message.text);
+                } else {
+                    markwon(binding.messageText).setMarkdown(
+                            binding.messageText, message.text);
+                }
+                return;
+            }
+
+            binding.messageText.setVisibility(View.GONE);
+            binding.openuiContainer.setVisibility(View.VISIBLE);
+            OpenUiChatRenderer.render(
+                    binding.openuiContainer,
+                    message,
+                    streaming,
+                    markwon(binding.messageText),
+                    new OpenUiChatRenderer.Host() {
+                        @Override
+                        public void onStateChanged(ChatMessage msg) {
+                            if (owner != null && owner.openUiListener != null) {
+                                owner.openUiListener.onOpenUiStateChanged(msg);
+                            }
+                        }
+
+                        @Override
+                        public void onSendToAssistant(ChatMessage msg, String promptText,
+                                                      JsonElement context, JsonObject formState) {
+                            if (owner != null && owner.openUiListener != null) {
+                                owner.openUiListener.onOpenUiSendToAssistant(
+                                        msg, promptText, context, formState);
+                            }
+                        }
+
+                        @Override
+                        public void onOpenUrl(String url) {
+                            if (owner != null && owner.openUiListener != null) {
+                                owner.openUiListener.onOpenUiOpenUrl(url);
+                            }
+                        }
+
+                        @Override
+                        public void onProseClick(View anchor, ChatMessage msg) {
+                            if (owner != null) {
+                                owner.fireClick(anchor,
+                                        AssistantHolder.this.getAbsoluteAdapterPosition());
+                            }
+                        }
+                    });
         }
 
         /** The header label, with its open/closed chevron. */
@@ -357,7 +444,7 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
 
         /** Text-only update while streaming; everything else stays put. */
         void updateText(ChatMessage message) {
-            binding.messageText.setText(message.text);
+            renderBody(message);
             if (!message.text.isEmpty()) {
                 binding.messageCard.setVisibility(View.VISIBLE);
             }

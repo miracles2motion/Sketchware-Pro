@@ -161,6 +161,26 @@ public class AgentFragment extends qA {
         adapter.setOnMessageClickListener(this::onMessageClicked);
         adapter.setOnApprovalListener(this::onApprovalDecision);
         adapter.setOnInstallListener(this::onInstallRequest);
+        adapter.setOnOpenUiListener(new ChatAdapter.OnOpenUiListener() {
+            @Override
+            public void onOpenUiStateChanged(ChatMessage message) {
+                persistChat();
+            }
+
+            @Override
+            public void onOpenUiSendToAssistant(
+                    ChatMessage message,
+                    String promptText,
+                    com.google.gson.JsonElement context,
+                    com.google.gson.JsonObject formState) {
+                sendOpenUiInteraction(promptText, context, formState);
+            }
+
+            @Override
+            public void onOpenUiOpenUrl(String url) {
+                openExternalUrl(url);
+            }
+        });
         LinearLayoutManager layoutManager = new LinearLayoutManager(getContext());
         // A short conversation sits above the input bar, not at the top of an
         // empty screen.
@@ -552,6 +572,90 @@ public class AgentFragment extends qA {
         streamingMessage = reply;
         appendMessage(reply);
         startRequest();
+    }
+
+    /** Submits an {@code @ToAssistant} action from an interactive OpenUI bubble. */
+    private void sendOpenUiInteraction(String promptText,
+                                       com.google.gson.JsonElement context,
+                                       com.google.gson.JsonObject formState) {
+        if (generating) {
+            if (getContext() != null) {
+                Toast.makeText(getContext(),
+                        "Wait for the current reply to finish first.",
+                        Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+        String base = promptText == null ? "" : promptText.trim();
+        if (base.isEmpty()) {
+            return;
+        }
+        if (providerConfig == null || !providerConfig.isConfigured()) {
+            appendMessage(ChatMessage.error(getString(R.string.agent_provider_missing)));
+            return;
+        }
+
+        StringBuilder full = new StringBuilder(base);
+        StringBuilder details = new StringBuilder();
+        if (formState != null && formState.size() > 0) {
+            for (java.util.Map.Entry<String, com.google.gson.JsonElement> entry
+                    : formState.entrySet()) {
+                com.google.gson.JsonElement v = entry.getValue();
+                if (v == null || v.isJsonNull()) {
+                    continue;
+                }
+                String rendered = v.isJsonPrimitive()
+                        ? v.getAsString() : v.toString();
+                if (rendered.trim().isEmpty()) {
+                    continue;
+                }
+                if (details.length() > 0) {
+                    details.append(" · ");
+                }
+                details.append(entry.getKey()).append(": ").append(rendered);
+            }
+        }
+        if (context != null && !context.isJsonNull()) {
+            String ctxText = context.isJsonPrimitive()
+                    ? context.getAsString() : context.toString();
+            if (!ctxText.trim().isEmpty() && !ctxText.equals("{}")) {
+                if (details.length() > 0) {
+                    details.append(" · ");
+                }
+                details.append(ctxText);
+            }
+        }
+        if (details.length() > 0) {
+            full.append("\n(").append(details).append(')');
+        }
+
+        String finalText = full.toString();
+        ChatMessage userMsg = ChatMessage.user(finalText);
+        appendMessage(userMsg);
+        persistChat();
+        lastUserText = finalText;
+        ChatMessage reply = ChatMessage.assistant("");
+        streamingMessage = reply;
+        appendMessage(reply);
+        startRequest();
+    }
+
+    private void openExternalUrl(String url) {
+        if (getContext() == null || url == null || url.trim().isEmpty()) {
+            return;
+        }
+        String clean = url.trim();
+        if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
+            clean = "https://" + clean;
+        }
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(clean));
+            startActivity(intent);
+        } catch (Exception e) {
+            Toast.makeText(getContext(),
+                    "Couldn't open link: " + clean,
+                    Toast.LENGTH_SHORT).show();
+        }
     }
 
     /** Sends the current history (ending in {@link #lastUserText}) off. */
