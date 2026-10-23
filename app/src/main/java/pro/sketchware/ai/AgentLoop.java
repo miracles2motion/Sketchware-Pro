@@ -1455,22 +1455,40 @@ public class AgentLoop {
         }
         if (message.role != ChatMessage.Role.ASSISTANT
                 || message.openUiState == null
-                || message.openUiState.isEmpty()) {
+                || message.openUiState.size() == 0) {
             return message.text;
         }
-        StringBuilder sb = new StringBuilder(message.text);
-        sb.append("\n[OpenUI state: ");
-        boolean first = true;
-        for (java.util.Map.Entry<String, Object> e : message.openUiState.entrySet()) {
-            if (!first) {
-                sb.append(", ");
+        StringBuilder pairs = new StringBuilder();
+        for (java.util.Map.Entry<String, JsonElement> e
+                : message.openUiState.entrySet()) {
+            JsonElement val = e.getValue();
+            if (val == null || val.isJsonNull()) {
+                continue;
             }
-            first = false;
-            sb.append('$').append(e.getKey()).append('=')
-                    .append(OpenUiLang.stringify(e.getValue()));
+            if (e.getKey().startsWith("seg_") && val.isJsonObject()) {
+                for (java.util.Map.Entry<String, JsonElement> inner
+                        : val.getAsJsonObject().entrySet()) {
+                    if (inner.getValue() == null || inner.getValue().isJsonNull()) {
+                        continue;
+                    }
+                    if (pairs.length() > 0) {
+                        pairs.append(", ");
+                    }
+                    pairs.append('$').append(inner.getKey()).append('=')
+                            .append(inner.getValue().toString());
+                }
+            } else {
+                if (pairs.length() > 0) {
+                    pairs.append(", ");
+                }
+                pairs.append('$').append(e.getKey()).append('=')
+                        .append(val.toString());
+            }
         }
-        sb.append(']');
-        return sb.toString();
+        if (pairs.length() == 0) {
+            return message.text;
+        }
+        return message.text + "\n[OpenUI state: " + pairs + "]";
     }
 
     /** Delivers a callback on the main thread. */
