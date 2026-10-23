@@ -1418,7 +1418,10 @@ public final class AgentTools {
                         rootClassUpdate =
                                 op.get("resolved_class_name").getAsString();
                     }
-                    if (op.has("background_hex")) {
+                    if (op.has("background_res")) {
+                        rootUpdates.put("android:background",
+                                op.get("background_res").getAsString());
+                    } else if (op.has("background_hex")) {
                         rootUpdates.put("android:background",
                                 op.get("background_hex").getAsString());
                     }
@@ -1457,9 +1460,13 @@ public final class AgentTools {
                                     op.get("background_hex").getAsString()
                                             .substring(1), 16))
                             : null;
+                    String backgroundRes = op.has("background_res")
+                            ? op.get("background_res").getAsString()
+                            : null;
                     com.besome.sketch.beans.ViewBean snapshot =
                             SketchwareActions.setFab(located.scId,
-                                    located.activity, icon, background);
+                                    located.activity, icon, background,
+                                    backgroundRes);
                     if (previousFab == null) {
                         previousFab = snapshot;
                     }
@@ -5164,6 +5171,11 @@ public final class AgentTools {
                 SketchwareProjects.ProjectInfo created =
                         SketchwareActions.createProject(
                                 session.context, name, pkg);
+                // Sketchware Pro reuses deleted numeric sc_ids; wipe any
+                // leftover journal/chat from a deleted project before
+                // binding the new one.
+                AgentJournal.resetProject(created.scId);
+                AgentChatLog.clear(created.scId);
                 JsonObject result = new JsonObject();
                 result.addProperty("created_project", created.appName);
                 result.addProperty("package", created.packageName);

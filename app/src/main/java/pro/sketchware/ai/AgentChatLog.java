@@ -138,10 +138,32 @@ public final class AgentChatLog {
                 stored.remove(0);
             }
         }
+        JsonObject wrapper = new JsonObject();
+        try {
+            SketchwareProjects.ProjectInfo info =
+                    SketchwareProjects.project(scId);
+            if (info != null && !info.packageName.isEmpty()) {
+                wrapper.addProperty("projectPackage", info.packageName);
+            }
+        } catch (Exception ignored) {
+        }
+        wrapper.add("messages", stored);
         try (FileWriter writer = new FileWriter(file(scId))) {
-            GSON.toJson(stored, writer);
+            GSON.toJson(wrapper, writer);
         } catch (Exception ignored) {
             // Losing the chat copy must never break the chat itself.
+        }
+    }
+
+    /** Deletes any stored conversation for {@code scId} (e.g. on project creation). */
+    public static synchronized void clear(String scId) {
+        if (scId == null || scId.isEmpty()) {
+            return;
+        }
+        File f = file(scId);
+        if (f.exists()) {
+            //noinspection ResultOfMethodCallIgnored
+            f.delete();
         }
     }
 
@@ -160,12 +182,35 @@ public final class AgentChatLog {
         if (!file.exists()) {
             return messages;
         }
+        SketchwareProjects.ProjectInfo info = SketchwareProjects.project(scId);
         try (FileReader reader = new FileReader(file)) {
             JsonElement parsed = JsonParser.parseReader(reader);
-            if (parsed == null || !parsed.isJsonArray()) {
+            if (parsed == null) {
                 return messages;
             }
-            for (JsonElement element : parsed.getAsJsonArray()) {
+            JsonArray arr = null;
+            if (parsed.isJsonArray()) {
+                arr = parsed.getAsJsonArray();
+            } else if (parsed.isJsonObject()) {
+                JsonObject obj = parsed.getAsJsonObject();
+                String storedPkg = obj.has("projectPackage")
+                        && !obj.get("projectPackage").isJsonNull()
+                        ? obj.get("projectPackage").getAsString() : "";
+                if (info != null && !info.packageName.isEmpty()
+                        && !storedPkg.isEmpty()
+                        && !storedPkg.equals(info.packageName)) {
+                    //noinspection ResultOfMethodCallIgnored
+                    file.delete();
+                    return messages;
+                }
+                if (obj.has("messages") && obj.get("messages").isJsonArray()) {
+                    arr = obj.getAsJsonArray("messages");
+                }
+            }
+            if (arr == null) {
+                return messages;
+            }
+            for (JsonElement element : arr) {
                 if (!element.isJsonObject()) {
                     continue;
                 }

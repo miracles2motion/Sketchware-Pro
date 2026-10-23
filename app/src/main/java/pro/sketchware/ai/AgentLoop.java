@@ -839,7 +839,8 @@ public class AgentLoop {
                     String label = proposalLabel(call);
                     dispatch(listener, () -> listener.onToolNote(label));
                     result = proposeAndExecute(call, session, listener,
-                            journalProject[0], insisted);
+                            journalProject[0], insisted, turnStartedAt,
+                            lastUserText);
                     if (cancelled) {
                         closeTask(journalProject[0], false, "you stopped it",
                                 taskClosed, listener);
@@ -852,11 +853,13 @@ public class AgentLoop {
                         // The task follows the work: whatever the turn
                         // opened under the old project closes there,
                         // and the created project gets the task — and
-                        // any style brief agreed along the way — so
+                        // any style/design/plan agreed along the way — so
                         // its log is never empty after an interruption.
                         AgentJournal.endTurn(previousProject, true, "");
-                        AgentJournal.beginTurn(workingProjectId, lastUserText);
                         AgentJournal.moveStyleBriefIfAgreedSince(
+                                previousProject, workingProjectId,
+                                turnStartedAt);
+                        AgentJournal.moveDesignSystemIfAgreedSince(
                                 previousProject, workingProjectId,
                                 turnStartedAt);
                         AgentJournal.movePlanIfAgreedSince(
@@ -865,6 +868,7 @@ public class AgentLoop {
                         // Style/plan agreed before any project was
                         // chosen become this project's own.
                         AgentJournal.depositDrafts(workingProjectId);
+                        AgentJournal.beginTurn(workingProjectId, lastUserText);
                         result.remove("bind_project");
                         String bound = workingProjectId;
                         dispatch(listener,
@@ -1147,7 +1151,9 @@ public class AgentLoop {
                                          AgentTools.Session session,
                                          Listener listener,
                                          String journalProject,
-                                         java.util.Set<String> insisted) {
+                                         java.util.Set<String> insisted,
+                                         long turnStartedAt,
+                                         String lastUserText) {
         String fingerprint = AgentTools.fingerprint(call.name,
                 call.arguments);
         AgentTools.ProposalResult proposed = AgentTools.propose(call.name,
@@ -1224,10 +1230,20 @@ public class AgentLoop {
                         session.allowModify));
         if (result.has("bind_project")) {
             // A project this step created journals under itself, not
-            // under wherever the turn happened to start.
+            // under wherever the turn happened to start. Deposit any
+            // drafts/artefacts first so the new project's first task
+            // picks up its own plan title instead of a short confirmation.
             String created = result.get("bind_project").getAsString();
             if (!created.isEmpty()) {
                 journal = created;
+                AgentJournal.moveStyleBriefIfAgreedSince(
+                        journalProject, created, turnStartedAt);
+                AgentJournal.moveDesignSystemIfAgreedSince(
+                        journalProject, created, turnStartedAt);
+                AgentJournal.movePlanIfAgreedSince(
+                        journalProject, created, turnStartedAt);
+                AgentJournal.depositDrafts(created);
+                AgentJournal.beginTurn(created, lastUserText);
             }
         }
         if (result.has("error")) {

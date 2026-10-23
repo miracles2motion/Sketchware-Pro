@@ -772,6 +772,7 @@ public final class OpenUiScreenBridge {
         Boolean checked;
         Boolean enabled;
         Boolean clickable;
+        String visibility;
         Integer progress;
         Integer max;
         Boolean indeterminate;
@@ -1031,6 +1032,15 @@ public final class OpenUiScreenBridge {
         Boolean clickable = propBool(props, "clickable");
         if (clickable != null) {
             pw.clickable = clickable;
+        }
+        String vis = propStr(props, "visibility", "vis");
+        if (vis != null && !vis.isEmpty()) {
+            pw.visibility = vis;
+        } else {
+            Boolean visibleBool = propBool(props, "visible");
+            if (visibleBool != null) {
+                pw.visibility = visibleBool ? "visible" : "gone";
+            }
         }
         Integer prog = propInt(props, "progress");
         if (prog != null) {
@@ -1323,6 +1333,14 @@ public final class OpenUiScreenBridge {
             op.addProperty("op", "set_clickable");
             op.addProperty("id", pw.id);
             op.addProperty("clickable", pw.clickable);
+            ops.add(op);
+        }
+
+        if (pw.visibility != null) {
+            JsonObject op = new JsonObject();
+            op.addProperty("op", "set_visibility");
+            op.addProperty("id", pw.id);
+            op.addProperty("visibility", pw.visibility);
             ops.add(op);
         }
 

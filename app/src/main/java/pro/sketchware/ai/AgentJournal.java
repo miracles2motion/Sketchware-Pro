@@ -55,13 +55,154 @@ public final class AgentJournal {
         return new File(dir, scId + ".json");
     }
 
-    /** The whole record for a project (never null). */
-    public static synchronized JsonObject load(String scId) {
+    private static JsonObject emptyRoot() {
         JsonObject root = new JsonObject();
         root.addProperty("styleBrief", "");
         root.add("tasks", new JsonArray());
         root.add("plan", new JsonObject());
         root.add("log", new JsonArray());
+        return root;
+    }
+
+    private static String compactAlnum(String s) {
+        if (s == null) {
+            return "";
+        }
+        return s.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
+    }
+
+    private static boolean namesMatchProject(
+            String candidate, SketchwareProjects.ProjectInfo info) {
+        if (candidate == null || info == null) {
+            return false;
+        }
+        String c = compactAlnum(candidate);
+        if (c.isEmpty()) {
+            return false;
+        }
+        String ws = compactAlnum(info.name);
+        String app = compactAlnum(info.appName);
+        return (!ws.isEmpty() && (c.contains(ws) || ws.contains(c)))
+                || (!app.isEmpty() && (c.contains(app) || app.contains(c)));
+    }
+
+    /**
+     * Purges ghost tasks/plans left behind when Sketchware Pro deletes a
+     * project and later reuses its numeric {@code sc_id} for a new project.
+     * Returns {@code true} if {@code root} was healed and should be re-saved.
+     */
+    private static boolean healReusedScId(
+            String scId, JsonObject root, SketchwareProjects.ProjectInfo info) {
+        if (info == null) {
+            return false;
+        }
+        boolean changed = false;
+        JsonArray tasks = root.getAsJsonArray("tasks");
+        int lastCreateIdx = -1;
+        long createStartedAt = 0L;
+        for (int i = 0; i < tasks.size(); i++) {
+            JsonElement el = tasks.get(i);
+            if (!el.isJsonObject()) {
+                continue;
+            }
+            JsonObject task = el.getAsJsonObject();
+            JsonElement stepsEl = task.get("steps");
+            if (stepsEl != null && stepsEl.isJsonArray()) {
+                for (JsonElement sEl : stepsEl.getAsJsonArray()) {
+                    if (!sEl.isJsonObject()) {
+                        continue;
+                    }
+                    JsonObject step = sEl.getAsJsonObject();
+                    if ("create_project".equals(text(step, "tool"))
+                            && "done".equals(text(step, "outcome"))) {
+                        lastCreateIdx = i;
+                        createStartedAt = number(task, "startedAt");
+                        break;
+                    }
+                }
+            }
+        }
+        String ghostPlanTitle = "";
+        JsonObject planObj = root.getAsJsonObject("plan");
+        if (planObj != null && planObj.has("title")) {
+            String pTitle = text(planObj, "title");
+            if (!pTitle.isEmpty() && !namesMatchProject(pTitle, info)) {
+                // Check if step 1 explicitly names creating a different project
+                // or if an earlier deleted project occupied this sc_id.
+                boolean planNamesOtherProject = lastCreateIdx > 0;
+                if (!planNamesOtherProject && planObj.has("steps")
+                        && planObj.get("steps").isJsonArray()) {
+                    JsonArray pSteps = planObj.getAsJsonArray("steps");
+                    if (pSteps.size() > 0 && pSteps.get(0).isJsonObject()) {
+                        String firstStep = text(
+                                pSteps.get(0).getAsJsonObject(), "text");
+                        if (firstStep.toLowerCase(Locale.ROOT)
+                                .contains("create project")
+                                && !namesMatchProject(firstStep, info)) {
+                            planNamesOtherProject = true;
+                        }
+                    }
+                }
+                if (planNamesOtherProject) {
+                    ghostPlanTitle = pTitle;
+                    root.add("plan", new JsonObject());
+                    changed = true;
+                }
+            }
+        }
+        if (lastCreateIdx > 0) {
+            JsonArray kept = new JsonArray();
+            int nextId = 1;
+            for (int i = lastCreateIdx; i < tasks.size(); i++) {
+                JsonElement el = tasks.get(i);
+                if (!el.isJsonObject()) {
+                    continue;
+                }
+                JsonObject t = el.getAsJsonObject();
+                t.addProperty("id", nextId++);
+                if (i == lastCreateIdx && !ghostPlanTitle.isEmpty()
+                        && ghostPlanTitle.equals(text(t, "title"))) {
+                    String cleanTitle = !info.appName.isEmpty()
+                            ? info.appName : info.name;
+                    if (!cleanTitle.isEmpty()) {
+                        t.addProperty("title", cleanTitle);
+                    }
+                }
+                kept.add(t);
+            }
+            root.add("tasks", kept);
+            long briefAt = number(root, "styleBriefAt");
+            if (createStartedAt > 0L && briefAt > 0L
+                    && briefAt < createStartedAt - 600_000L) {
+                root.addProperty("styleBrief", "");
+                root.addProperty("styleBriefAt", 0L);
+            }
+            changed = true;
+        }
+        if (!info.packageName.isEmpty()
+                && !info.packageName.equals(text(root, "projectPackage"))) {
+            root.addProperty("projectPackage", info.packageName);
+            changed = true;
+        }
+        return changed;
+    }
+
+    /** Wipes any existing journal record for {@code scId} (e.g. on project creation). */
+    public static synchronized void resetProject(String scId) {
+        if (scId == null || scId.isEmpty()) {
+            return;
+        }
+        pendingTitles.remove(scId);
+        File f = file(scId);
+        if (f.exists()) {
+            //noinspection ResultOfMethodCallIgnored
+            f.delete();
+        }
+    }
+
+    /** The whole record for a project (never null). */
+    public static synchronized JsonObject load(String scId) {
+        JsonObject root = emptyRoot();
         if (scId == null || scId.isEmpty()) {
             return root;
         }
@@ -69,10 +210,21 @@ public final class AgentJournal {
         if (!file.exists()) {
             return root;
         }
+        SketchwareProjects.ProjectInfo info = SketchwareProjects.project(scId);
         try (FileReader reader = new FileReader(file)) {
             JsonElement parsed = JsonParser.parseReader(reader);
             if (parsed != null && parsed.isJsonObject()) {
                 JsonObject stored = parsed.getAsJsonObject();
+                String storedPkg = text(stored, "projectPackage");
+                if (info != null && !info.packageName.isEmpty()
+                        && !storedPkg.isEmpty()
+                        && !storedPkg.equals(info.packageName)) {
+                    // Sketchware reused a deleted project's numeric sc_id for
+                    // a different package: discard the deleted project's record.
+                    //noinspection ResultOfMethodCallIgnored
+                    file.delete();
+                    return emptyRoot();
+                }
                 // Keep every stored field (styleBriefAt, step
                 // fingerprints, anything a later version adds): building
                 // a fresh root and copying a fixed field list silently
@@ -94,6 +246,9 @@ public final class AgentJournal {
                 if (!root.has("log") || !root.get("log").isJsonArray()) {
                     root.add("log", new JsonArray());
                 }
+                if (healReusedScId(scId, root, info)) {
+                    save(scId, root);
+                }
             }
         } catch (Exception ignored) {
             // A damaged record reads as empty rather than failing work.
@@ -102,6 +257,14 @@ public final class AgentJournal {
     }
 
     private static void save(String scId, JsonObject root) {
+        try {
+            SketchwareProjects.ProjectInfo info =
+                    SketchwareProjects.project(scId);
+            if (info != null && !info.packageName.isEmpty()) {
+                root.addProperty("projectPackage", info.packageName);
+            }
+        } catch (Exception ignored) {
+        }
         try (FileWriter writer = new FileWriter(file(scId))) {
             GSON.toJson(root, writer);
         } catch (Exception ignored) {
@@ -1104,13 +1267,54 @@ public final class AgentJournal {
         }
         JsonObject from = load(fromScId);
         JsonObject plan = from.getAsJsonObject("plan");
-        if (number(plan, "updatedAt") < sinceMillis) {
+        String pTitle = text(plan, "title");
+        SketchwareProjects.ProjectInfo toInfo =
+                SketchwareProjects.project(toScId);
+        SketchwareProjects.ProjectInfo fromInfo =
+                SketchwareProjects.project(fromScId);
+        boolean matchesNewProject = !pTitle.isEmpty()
+                && namesMatchProject(pTitle, toInfo)
+                && !namesMatchProject(pTitle, fromInfo);
+        if (number(plan, "updatedAt") < sinceMillis && !matchesNewProject) {
             return;
         }
         JsonObject to = load(toScId);
         to.add("plan", plan);
         save(toScId, to);
         from.add("plan", new JsonObject());
+        save(fromScId, from);
+    }
+
+    /** Moves a design system agreed for {@code toScId} off {@code fromScId}. */
+    public static synchronized void moveDesignSystemIfAgreedSince(
+            String fromScId, String toScId, long sinceMillis) {
+        if (fromScId == null || fromScId.isEmpty()
+                || toScId == null || toScId.isEmpty()
+                || fromScId.equals(toScId)
+                || !hasDesignSystem(fromScId) || hasDesignSystem(toScId)) {
+            return;
+        }
+        JsonObject from = load(fromScId);
+        JsonElement dsEl = from.get("designSystem");
+        if (dsEl == null || !dsEl.isJsonObject()) {
+            return;
+        }
+        JsonObject ds = dsEl.getAsJsonObject();
+        String dsTitle = text(ds, "title");
+        SketchwareProjects.ProjectInfo toInfo =
+                SketchwareProjects.project(toScId);
+        SketchwareProjects.ProjectInfo fromInfo =
+                SketchwareProjects.project(fromScId);
+        boolean matchesNewProject = !dsTitle.isEmpty()
+                && namesMatchProject(dsTitle, toInfo)
+                && !namesMatchProject(dsTitle, fromInfo);
+        if (number(ds, "updatedAt") < sinceMillis && !matchesNewProject) {
+            return;
+        }
+        JsonObject to = load(toScId);
+        to.add("designSystem", ds);
+        save(toScId, to);
+        from.remove("designSystem");
         save(fromScId, from);
     }
 

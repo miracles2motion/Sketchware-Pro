@@ -1813,18 +1813,24 @@ public class AgentFragment extends qA {
                                             R.string.agent_key_in_use)
                                     : "");
                 }
-                new MaterialAlertDialogBuilder(requireContext())
-                        .setTitle(R.string.agent_history_title)
-                        .setItems(labels, (dialog, which) -> {
-                            SketchwareProjects.ProjectInfo chosen =
-                                    withChats.get(which);
-                            if (!chosen.scId.equals(
-                                    providerConfig.workingProjectId())) {
-                                chooseProject(chosen.scId, chosen.name);
-                            }
-                        })
-                        .setNegativeButton(android.R.string.cancel, null)
-                        .show();
+                MaterialAlertDialogBuilder historyDialog =
+                        new MaterialAlertDialogBuilder(requireContext())
+                                .setTitle(R.string.agent_history_title)
+                                .setItems(labels, (dialog, which) -> {
+                                    SketchwareProjects.ProjectInfo chosen =
+                                            withChats.get(which);
+                                    if (!chosen.scId.equals(
+                                            providerConfig.workingProjectId())) {
+                                        chooseProject(chosen.scId, chosen.name);
+                                    }
+                                })
+                                .setNegativeButton(android.R.string.cancel, null);
+                if (!currentId.isEmpty()) {
+                    historyDialog.setNeutralButton(
+                            R.string.agent_working_on_none,
+                            (dialog, which) -> chooseProject("", ""));
+                }
+                historyDialog.show();
             });
         });
     }
@@ -2074,8 +2080,14 @@ public class AgentFragment extends qA {
         android.widget.ScrollView scroll =
                 new android.widget.ScrollView(requireContext());
         scroll.addView(body);
+        SketchwareProjects.ProjectInfo projInfo =
+                SketchwareProjects.project(scId);
+        String logTitle = getString(R.string.agent_task_log_title);
+        if (projInfo != null && !projInfo.name.isEmpty()) {
+            logTitle = logTitle + " · " + projInfo.name;
+        }
         new MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.agent_task_log_title)
+                .setTitle(logTitle)
                 .setView(scroll)
                 .setNegativeButton(R.string.agent_action_close, null)
                 .setNeutralButton(R.string.agent_task_log_clear,

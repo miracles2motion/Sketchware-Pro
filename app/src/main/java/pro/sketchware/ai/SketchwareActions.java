@@ -958,6 +958,12 @@ public final class SketchwareActions {
      */
     public static ViewBean setFab(String scId, ProjectFileBean activity,
                                   String icon, Integer background) {
+        return setFab(scId, activity, icon, background, null);
+    }
+
+    public static ViewBean setFab(String scId, ProjectFileBean activity,
+                                  String icon, Integer background,
+                                  String backgroundRes) {
         ViewBean fab = jC.a(scId).h(activity.getXmlName());
         ViewBean snapshot = new ViewBean();
         snapshot.copy(fab);
@@ -966,6 +972,9 @@ public final class SketchwareActions {
         }
         if (background != null) {
             fab.layout.backgroundColor = background;
+            fab.layout.backgroundResColor = backgroundRes;
+        } else if (backgroundRes != null) {
+            fab.layout.backgroundResColor = backgroundRes;
         }
         return snapshot;
     }

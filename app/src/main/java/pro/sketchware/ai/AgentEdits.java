@@ -656,6 +656,27 @@ public final class AgentEdits {
                             ? "Make " + bean.id + " clickable"
                             : "Make " + bean.id + " ignore taps");
                 }
+                case "set_visibility" -> {
+                    ViewBean bean = requireWidget(op, byId);
+                    String vis = stringOf(op, "visibility");
+                    if (vis.isEmpty()) {
+                        vis = stringOf(op, "state");
+                    }
+                    if (vis.isEmpty() && op.has("visible")) {
+                        vis = boolOf(op, "visible") ? "visible" : "gone";
+                    }
+                    vis = vis.trim().toLowerCase(Locale.ROOT);
+                    if (!vis.equals("visible") && !vis.equals("invisible")
+                            && !vis.equals("gone")) {
+                        throw new AgentTools.ToolException("E_BAD_VALUE",
+                                "Visibility is \"visible\", \"invisible\" "
+                                        + "or \"gone\".");
+                    }
+                    bean.inject = upsertInjectAttr(bean.inject,
+                            "android:visibility",
+                            "visible".equals(vis) ? null : vis);
+                    lines.add("Set " + bean.id + " visibility to " + vis);
+                }
                 case "set_input_type" -> {
                     ViewBean bean = requireWidget(op, byId);
                     if (bean.type != ViewBean.VIEW_TYPE_WIDGET_EDITTEXT
@@ -743,11 +764,22 @@ public final class AgentEdits {
                     }
                     if (op.has("background")) {
                         String raw = stringOf(op, "background");
-                        int color = parseColor(scId, raw);
-                        op.addProperty("background_hex",
-                                String.format(Locale.ROOT, "#%08X", color));
-                        lines.add("Set the screen background to "
-                                + colorWord(scId, raw, color));
+                        ResColor rc = resolveResColor(scId, raw, frozen);
+                        if (rc != null) {
+                            op.addProperty("background_res", rc.resRef);
+                            op.addProperty("background_hex",
+                                    String.format(Locale.ROOT, "#%08X",
+                                            rc.fallbackInt));
+                            lines.add("Set the screen background to "
+                                    + rc.resRef);
+                        } else {
+                            int color = parseColor(scId, raw);
+                            op.addProperty("background_hex",
+                                    String.format(Locale.ROOT, "#%08X",
+                                            color));
+                            lines.add("Set the screen background to "
+                                    + colorWord(scId, raw, color));
+                        }
                         changed = true;
                     }
                     if (op.has("orientation")) {
@@ -837,11 +869,22 @@ public final class AgentEdits {
                     }
                     if (op.has("background")) {
                         String raw = stringOf(op, "background");
-                        int color = parseColor(scId, raw);
-                        op.addProperty("background_hex",
-                                String.format(Locale.ROOT, "#%08X", color));
-                        lines.add("Set the floating button's background to "
-                                + colorWord(scId, raw, color));
+                        ResColor rc = resolveResColor(scId, raw, frozen);
+                        if (rc != null) {
+                            op.addProperty("background_res", rc.resRef);
+                            op.addProperty("background_hex",
+                                    String.format(Locale.ROOT, "#%08X",
+                                            rc.fallbackInt));
+                            lines.add("Set the floating button's background to "
+                                    + rc.resRef);
+                        } else {
+                            int color = parseColor(scId, raw);
+                            op.addProperty("background_hex",
+                                    String.format(Locale.ROOT, "#%08X",
+                                            color));
+                            lines.add("Set the floating button's background to "
+                                    + colorWord(scId, raw, color));
+                        }
                         changed = true;
                     }
                     if (!changed) {
@@ -1000,7 +1043,7 @@ public final class AgentEdits {
                                 + "set_progress, "
                                 + "set_indeterminate, set_alpha, "
                                 + "set_attributes, set_clickable, "
-                                + "set_root, set_fab, "
+                                + "set_visibility, set_root, set_fab, "
                                 + "remove_widget, "
                                 + "move_widget.");
             }
@@ -1533,10 +1576,15 @@ public final class AgentEdits {
         String typeName = stringOf(op, "type");
         Integer type = typeByName(typeName);
         if (type == null) {
+            String frameHint = "framelayout".equalsIgnoreCase(typeName)
+                    || (typeName != null && typeName.endsWith(".FrameLayout"))
+                    ? " (for a stacked container like FrameLayout, use "
+                            + "RelativeLayout or CardView)"
+                    : "";
             throw new AgentTools.ToolException("E_BAD_TYPE",
-                    "Unknown widget type \"" + typeName + "\". Widget "
-                            + "types are the ones in Sketchware's own "
-                            + "palette: " + availableTypeNames()
+                    "Unknown widget type \"" + typeName + "\"" + frameHint
+                            + ". Widget types are the ones in Sketchware's "
+                            + "own palette: " + availableTypeNames()
                             + ". Pick the closest one from that list — "
                             + "there is no other kind of widget to add.");
         }
@@ -1720,6 +1768,7 @@ public final class AgentEdits {
                     "setbackgroundcolour" -> "set_background";
             case "settextcolor", "settextcolour" -> "set_text_color";
             case "settextsize" -> "set_text_size";
+            case "setvisibility", "visibility" -> "set_visibility";
             case "removewidget", "deletewidget", "remove", "delete" ->
                     "remove_widget";
             case "movewidget", "move", "reparent" -> "move_widget";
@@ -1809,19 +1858,50 @@ public final class AgentEdits {
      * class Sketchware has no palette entry for) and kept trying.
      */
     private static String availableTypeNames() {
-        ArrayList<String> names = new ArrayList<>();
+        java.util.LinkedHashSet<String> unique =
+                new java.util.LinkedHashSet<>();
         for (Map.Entry<String, Integer> entry : TYPE_BY_NAME.entrySet()) {
-            names.add(entry.getKey());
+            unique.add(entry.getKey());
         }
         for (int candidate = 19; candidate <= 48; candidate++) {
             String name = ViewBeans.getViewTypeName(candidate);
             if (!name.isEmpty()) {
-                names.add(name);
+                unique.add(name);
             }
         }
-        names.add("FloatingActionButton");
+        unique.add("FloatingActionButton");
+        ArrayList<String> names = new ArrayList<>(unique);
         Collections.sort(names, String.CASE_INSENSITIVE_ORDER);
         return String.join(", ", names);
+    }
+
+    private static String upsertInjectAttr(
+            String existing, String attrName, String newValue) {
+        StringBuilder out = new StringBuilder();
+        if (existing != null && !existing.isEmpty()) {
+            for (String line : existing.split("\n")) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty()) {
+                    continue;
+                }
+                int eq = trimmed.indexOf('=');
+                String key = eq > 0 ? trimmed.substring(0, eq).trim() : "";
+                if (attrName.equals(key)) {
+                    continue;
+                }
+                if (out.length() > 0) {
+                    out.append("\n");
+                }
+                out.append(trimmed);
+            }
+        }
+        if (newValue != null && !newValue.isEmpty()) {
+            if (out.length() > 0) {
+                out.append("\n");
+            }
+            out.append(attrName).append("=\"").append(newValue).append("\"");
+        }
+        return out.toString();
     }
 
     /** Widget type names in {@link ViewBean} type order. */

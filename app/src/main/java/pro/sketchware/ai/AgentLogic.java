@@ -159,6 +159,7 @@ public final class AgentLogic {
             "pref_has",
             "progress_of",
             "public_dir",
+            "external_dir",
             "rating_of",
             "read_file",
             "replace_all",
@@ -339,6 +340,15 @@ public final class AgentLogic {
             return null;
         }
         String trimmed = raw.trim();
+        if (trimmed.startsWith("@string/")
+                && trimmed.length() > "@string/".length()) {
+            String resName = trimmed.substring("@string/".length()).trim();
+            if (resName.matches("[a-z][a-z0-9_]*")) {
+                JsonObject resObj = new JsonObject();
+                resObj.addProperty("res_string", resName);
+                return resObj;
+            }
+        }
         if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
             return null;
         }
@@ -530,16 +540,17 @@ public final class AgentLogic {
                 "edittext", "d", ".setLines(",
                 "Set {t} to show {1} lines"));
         WIDGET_ACTIONS.put("select_all_text", new WA(
-                "EditTextSelectAll", "edittext", "", ".selectAll(",
+                "EditTextSelectAll", "edittext", "",
+                "((EditText){t}).selectAll()",
                 "Select all the text in {t}"));
         WIDGET_ACTIONS.put("set_max_lines", new WA("EditTextSetMaxLines",
-                "edittext", "d", ".setMaxLines(",
+                "edittext", "d", "((EditText){t}).setMaxLines(",
                 "Set {t} to show at most {1} lines"));
         WIDGET_ACTIONS.put("set_selection", new WA("EditTextSetSelection",
-                "edittext", "dd", ".setSelection(",
+                "edittext", "dd", "((EditText){t}).setSelection(",
                 "Select text in {t} from {1} to {2}"));
         WIDGET_ACTIONS.put("show_error", new WA("EditTextShowError",
-                "edittext", "s", ".setError(",
+                "edittext", "s", "((EditText){t}).setError(",
                 "Show the error “{1}” on {t}"));
         WIDGET_ACTIONS.put("set_single_line", new WA("EditTextSingleLine",
                 "edittext", "b", ".setSingleLine(",
@@ -742,8 +753,8 @@ public final class AgentLogic {
                 + "alive on each side"));
         WIDGET_ACTIONS.put("notify_pager_changed", new WA(
                 "ViewPagerNotifyOnDtatChange", "viewpager", "",
-                ".notifyDataSetChanged(", "Tell {t} its pages "
-                + "changed"));
+                "((PagerAdapter){t}.getAdapter()).notifyDataSetChanged()",
+                "Tell {t} its pages changed"));
         WIDGET_ACTIONS.put("recycler_layout", new WA(
                 "recyclerSetLayoutManager", "recyclerview", "",
                 ".setLayoutManager(new LinearLayoutManager(this));",
@@ -1101,11 +1112,11 @@ public final class AgentLogic {
                 intent, "s", ".removeExtra(",
                 "Remove “{1}” from {c}"));
         COMPONENT_ACTIONS.put("launch_app", new CA("launchApp",
-                intent, "s", ".getLaunchIntentForPackage(",
+                intent, "s", " = getPackageManager().getLaunchIntentForPackage(",
                 "Point {c} at the app “{1}”"));
         COMPONENT_ACTIONS.put("start_with_chooser", new CA(
                 "startActivityWithChooser", intent, "s",
-                "Intent.createChooser(", "Open {c} with a chooser "
+                "Intent.createChooser({c},", "Open {c} with a chooser "
                 + "titled “{1}”"));
         COMPONENT_ACTIONS.put("save_pref", new CA("fileSetData",
                 prefs, "ss", ".edit().putString(",
@@ -1114,7 +1125,7 @@ public final class AgentLogic {
                 prefs, "s", ".edit().remove(",
                 "In {c}, remove “{1}”"));
         COMPONENT_ACTIONS.put("set_pref_file", new CA("fileSetFileName",
-                prefs, "s", ".getSharedPreferences(",
+                prefs, "s", " = getApplicationContext().getSharedPreferences(",
                 "Point {c} at preferences file “{1}”"));
         COMPONENT_ACTIONS.put("calendar_now", new CA("calendarGetNow",
                 calendar, "", " = Calendar.getInstance();",
@@ -1209,10 +1220,10 @@ public final class AgentLogic {
                 ad, "A", ".show(", "Show the ad in {c}"));
         COMPONENT_ACTIONS.put("take_picture", new CA(
                 "camerastarttakepicture", camera, "",
-                "startActivityForResult(", "Take a picture with {c}"));
+                "startActivityForResult({c},", "Take a picture with {c}"));
         COMPONENT_ACTIONS.put("pick_file", new CA(
                 "filepickerstartpickfiles", picker, "",
-                "startActivityForResult(", "Pick a file with {c}"));
+                "startActivityForResult({c},", "Pick a file with {c}"));
         COMPONENT_ACTIONS.put("crop_image", new CA("imageCrop",
                 0, "sd", "SketchwareUtil.CropImage(",
                 "Crop the image at “{1}” to {2}"));
@@ -1241,7 +1252,7 @@ public final class AgentLogic {
                 "speechToTextStopListening", stt, "",
                 ".stopListening(", "Stop listening with {c}"));
         COMPONENT_ACTIONS.put("stt_shutdown", new CA(
-                "speechToTextShutdown", stt, "", ".shutdown();",
+                "speechToTextShutdown", stt, "", ".destroy();",
                 "Shut down {c}"));
         COMPONENT_ACTIONS.put("bt_enable", new CA(
                 "bluetoothConnectActivateBluetooth", bluetooth, "",
@@ -1340,15 +1351,16 @@ public final class AgentLogic {
                 "Send a password reset to “{1}”"));
         COMPONENT_ACTIONS.put("storage_upload", new CA(
                 "firebasestorageUploadFile", storage, "ss",
-                ".putFile(Uri.fromFile(new File(",
+                ".child(",
                 "Upload the file “{1}” to “{2}” in {c}"));
         COMPONENT_ACTIONS.put("storage_download", new CA(
                 "firebasestorageDownloadFile", storage, "ss",
-                "getReferenceFromUrl(",
+                "_firebase_storage.getReferenceFromUrl(",
                 "Download “{1}” to “{2}” in {c}"));
         COMPONENT_ACTIONS.put("storage_delete", new CA(
                 "firebasestorageDelete", storage, "s",
-                "getReferenceFromUrl(", "Delete “{1}” in {c}"));
+                "_firebase_storage.getReferenceFromUrl(",
+                "Delete “{1}” in {c}"));
         COMPONENT_ACTIONS.put("bt_ready", new CA(
                 "bluetoothConnectReadyConnection", bluetooth, "s",
                 ".readyConnection(",
@@ -1381,7 +1393,7 @@ public final class AgentLogic {
                 + "{2}",
                 new String[]{"REQUEST_PARAM", "REQUEST_BODY"}));
         COMPONENT_ACTIONS.put("send_broadcast", new CA(
-                "sendBroadcast", intent, "", "sendBroadcast(",
+                "sendBroadcast", intent, "", "sendBroadcast({c})",
                 "Send {c} as a broadcast"));
     }
 
@@ -1927,7 +1939,8 @@ public final class AgentLogic {
             ArrayList<String> callers = new ArrayList<>();
             for (Map.Entry<String, ArrayList<BlockBean>> entry
                     : allActivityBlocks(store, javaName).entrySet()) {
-                if ((def.first + "_moreBlock").equals(entry.getKey())) {
+                if (("moreBlock " + def.bareName).equals(entry.getKey())
+                        || (def.first + "_moreBlock").equals(entry.getKey())) {
                     // Self-recursion inside the MoreBlock being removed
                     // vanishes with the MoreBlock itself.
                     continue;
@@ -3538,9 +3551,17 @@ public final class AgentLogic {
                     lines.add(indent(depth) + "When " + componentId
                             + "'s “" + shownText + "” (" + which
                             + ") button is tapped:");
-                    ArrayList<BlockBean> body = buildList(
-                            arrayOf(op, "blocks"), depth + 1, "blocks");
-                    bean.subStack1 = Integer.parseInt(body.get(0).id);
+                    JsonArray btnBlocks = op.has("blocks")
+                            && op.get("blocks").isJsonArray()
+                            ? op.getAsJsonArray("blocks") : null;
+                    if (btnBlocks != null && btnBlocks.size() > 0) {
+                        ArrayList<BlockBean> body = buildList(
+                                btnBlocks, depth + 1, "blocks");
+                        bean.subStack1 = Integer.parseInt(body.get(0).id);
+                    } else {
+                        bean.subStack1 = -1;
+                        lines.add(indent(depth + 1) + "(dismiss)");
+                    }
                     return bean;
                 }
                 case "switch" -> {
@@ -5485,11 +5506,18 @@ public final class AgentLogic {
 
         /** " (this event passes: childKey, childValue)" or none. */
         private String eventArgsHint() {
-            if (eventArgs.isEmpty()) {
+            java.util.LinkedHashSet<String> all =
+                    new java.util.LinkedHashSet<>(eventArgs.keySet());
+            for (Map.Entry<String, String> ref
+                    : moreBlockRefParams.entrySet()) {
+                if (!eventArgs.containsKey(ref.getKey())) {
+                    all.add(ref.getKey() + " (" + ref.getValue() + ")");
+                }
+            }
+            if (all.isEmpty()) {
                 return " (this event passes no values)";
             }
-            return " (this event passes: "
-                    + String.join(", ", eventArgs.keySet()) + ")";
+            return " (this event passes: " + String.join(", ", all) + ")";
         }
 
         /**
@@ -5636,6 +5664,28 @@ public final class AgentLogic {
                 String name = stringOf(object, "arg");
                 Character letter = eventArgs.get(name);
                 if (letter == null) {
+                    String refType = moreBlockRefParams.get(name);
+                    if ("listStr".equals(refType)
+                            || "listInt".equals(refType)) {
+                        throw badValue(what, "\"" + name
+                                + "\" in this event is a list ("
+                                + refType + "), not a single value; "
+                                + "read the first item with "
+                                + "{\"list_get\": \"" + name
+                                + "\", \"index\": 0}");
+                    }
+                    if ("listMap".equals(refType)) {
+                        throw badValue(what, "\"" + name
+                                + "\" in this event is a list of maps; "
+                                + "read a field with {\"list_map_value\": \""
+                                + name + "\", \"index\": 0, \"key\": "
+                                + "\"...\"}");
+                    }
+                    if (refType != null) {
+                        throw badValue(what, "\"" + name
+                                + "\" in this event is a " + refType
+                                + " reference, not a scalar value");
+                    }
                     throw badValue(what, "this event does not pass a "
                             + "value called \"" + name + "\""
                             + eventArgsHint());
@@ -5967,15 +6017,22 @@ public final class AgentLogic {
                         's', what));
                 return "@" + bean.id;
             }
-            if (object.has("public_dir")) {
-                // A public folder on shared storage; the stored
-                // value is the Environment constant name itself.
+            if (object.has("public_dir") || object.has("external_dir")) {
+                // A public folder on shared storage (or the root external
+                // storage dir when {"external_dir":""} is passed without
+                // a DIRECTORY_* constant).
                 if (slot != 's') {
                     throw badValue(what, "that text does not fit "
                             + "here");
                 }
-                String constant = stringOf(object, "public_dir")
+                String dirKey = object.has("public_dir")
+                        ? "public_dir" : "external_dir";
+                String constant = stringOf(object, dirKey)
                         .toUpperCase(Locale.ROOT);
+                if ("external_dir".equals(dirKey) && constant.isEmpty()) {
+                    BlockBean bean = newBean("getExternalStorageDir", "s");
+                    return "@" + bean.id;
+                }
                 java.util.Set<String> allowed = java.util.Set.of(
                         "DIRECTORY_MUSIC", "DIRECTORY_PODCASTS",
                         "DIRECTORY_RINGTONES", "DIRECTORY_ALARMS",
@@ -5983,7 +6040,7 @@ public final class AgentLogic {
                         "DIRECTORY_MOVIES", "DIRECTORY_DOWNLOADS",
                         "DIRECTORY_DCIM", "DIRECTORY_DOCUMENT");
                 if (!allowed.contains(constant)) {
-                    throw badValue(what, "\"public_dir\" must be "
+                    throw badValue(what, "\"" + dirKey + "\" must be "
                             + "one of: " + String.join(", ", allowed));
                 }
                 BlockBean bean = newBean("getPublicDir", "s");
@@ -7234,7 +7291,10 @@ public final class AgentLogic {
                             throw badValue(what, "a comparison does "
                                     + "not fit here");
                         }
-                        if ("=".equals(operation)
+                        boolean textSide = "=".equals(operation)
+                                && (isTextExpr(object.get("a"))
+                                        || isTextExpr(object.get("b")));
+                        if ("=".equals(operation) && !textSide
                                 && (isBoolExpr(object.get("a"))
                                         || isBoolExpr(object.get("b")))) {
                             // True/false equality (a checkbox
@@ -7248,17 +7308,17 @@ public final class AgentLogic {
                                     'b', what));
                             return "@" + bean.id;
                         }
-                        if ("=".equals(operation)
-                                && (isTextExpr(object.get("a"))
-                                        || isTextExpr(object.get("b")))) {
+                        if (textSide) {
                             // Text equality is its own editor block;
                             // the numeric "=" would emit ==, which
                             // compares string objects, not text.
                             BlockBean bean = newBean("stringEquals",
                                     "b");
-                            bean.parameters.add(expr(object.get("a"),
+                            bean.parameters.add(expr(
+                                    coerceBoolLiteralToText(object.get("a")),
                                     's', what));
-                            bean.parameters.add(expr(object.get("b"),
+                            bean.parameters.add(expr(
+                                    coerceBoolLiteralToText(object.get("b")),
                                     's', what));
                             return "@" + bean.id;
                         }
@@ -7537,9 +7597,12 @@ public final class AgentLogic {
                 return "the rotation of the photo at "
                         + describeExpr(object.get("jpeg_rotation"));
             }
-            if (object.has("public_dir")) {
-                return "the public "
-                        + stringOf(object, "public_dir") + " folder";
+            if (object.has("public_dir") || object.has("external_dir")) {
+                String dirKey = object.has("public_dir")
+                        ? "public_dir" : "external_dir";
+                String c = stringOf(object, dirKey);
+                return c.isEmpty() ? "the device storage folder"
+                        : "the public " + c + " folder";
             }
             if (object.has("list_map_value")) {
                 return "the “" + describeExpr(object.get("key"))
@@ -7837,6 +7900,28 @@ public final class AgentLogic {
             return false;
         }
 
+        private static JsonElement coerceBoolLiteralToText(
+                JsonElement element) {
+            if (element == null || element.isJsonNull()) {
+                return element;
+            }
+            if (element.isJsonPrimitive()
+                    && element.getAsJsonPrimitive().isBoolean()) {
+                return new com.google.gson.JsonPrimitive(
+                        element.getAsBoolean() ? "true" : "false");
+            }
+            if (element.isJsonObject()) {
+                JsonObject obj = element.getAsJsonObject();
+                if (obj.size() == 1 && obj.has("bool")
+                        && obj.get("bool").isJsonPrimitive()) {
+                    return new com.google.gson.JsonPrimitive(
+                            obj.get("bool").getAsBoolean()
+                                    ? "true" : "false");
+                }
+            }
+            return element;
+        }
+
         /** True when an expression yields text (for "=" routing). */
         private boolean isTextExpr(JsonElement element) {
             if (element == null || element.isJsonNull()) {
@@ -7848,11 +7933,35 @@ public final class AgentLogic {
             if (!element.isJsonObject()) {
                 return false;
             }
-            JsonObject object = element.getAsJsonObject();
+            JsonObject object = cleanExprObject(element.getAsJsonObject());
             if (object.has("text_of") || object.has("url_of")
                     || object.has("text")
-                    || object.has("asd_string")) {
+                    || object.has("asd_string")
+                    || object.has("list_map_value")
+                    || object.has("map_get")
+                    || object.has("pref_get")
+                    || object.has("read_file")
+                    || object.has("res_string")
+                    || object.has("extra")
+                    || object.has("json_of_map")
+                    || object.has("json_of_list")
+                    || object.has("json_of_list_map")
+                    || object.has("public_dir")
+                    || object.has("external_dir")
+                    || object.has("asset_text")
+                    || object.has("otp_text_of")
+                    || object.has("pattern_text_of")
+                    || object.has("pattern_md5_of")
+                    || object.has("pattern_sha1_of")
+                    || object.has("replace_all")) {
                 return true;
+            }
+            if (object.has("list_get") || object.has("item_of")) {
+                String listName = object.has("list_get")
+                        ? stringOf(object, "list_get")
+                        : stringOf(object, "item_of");
+                Integer lk = lists.get(listName);
+                return lk != null && lk == 2;
             }
             if (object.has("call_more_block")
                     || object.has("more_block")) {
@@ -7880,7 +7989,15 @@ public final class AgentLogic {
                 return fn.equals("concat") || fn.equals("upper")
                         || fn.equals("lower") || fn.equals("trim")
                         || fn.equals("to_text")
-                        || fn.equals("substring");
+                        || fn.equals("substring")
+                        || fn.equals("substring_from")
+                        || fn.equals("replace")
+                        || fn.equals("replace_first")
+                        || fn.equals("reverse_text")
+                        || fn.equals("format_number")
+                        || fn.equals("last_segment")
+                        || fn.equals("external_dir")
+                        || fn.equals("app_dir");
             }
             if (object.has("var")) {
                 String name = stringOf(object, "var");
@@ -8174,6 +8291,14 @@ public final class AgentLogic {
                                   String activityName)
             throws AgentTools.ToolException {
         String kind = blockKindOf(op);
+        if (("set_in_list".equals(kind) || "insert_in_list".equals(kind))
+                && op.has("key")) {
+            Integer lk = lists.get(listNameOf(op));
+            if (lk != null && lk == 3) {
+                kind = "insert_in_list".equals(kind)
+                        ? "insert_map_entry" : "set_map_entry";
+            }
+        }
         Stmt stmt = new Stmt();
         switch (kind) {
             case "toast" -> {
@@ -9936,6 +10061,38 @@ public final class AgentLogic {
                     buildComponentAction(builder, op, byId, variables,
                             lists, components, activityName,
                             componentAction, stmt);
+                } else if ("read_file".equals(kind)
+                        || "file_exists".equals(kind)
+                        || "is_file".equals(kind)
+                        || "is_folder".equals(kind)
+                        || "file_length".equals(kind)) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "\"" + kind + "\" is a value expression, not a "
+                                    + "standalone block. Pass {\"" + kind
+                                    + "\": <path>} inside a slot that reads "
+                                    + "it — e.g. {\"block\":\"list_from_json\","
+                                    + "\"list\":\"myList\",\"text\":"
+                                    + "{\"read_file\":<path>}} or "
+                                    + "{\"block\":\"set_variable\","
+                                    + "\"variable\":\"content\",\"value\":"
+                                    + "{\"read_file\":<path>}}.");
+                } else if ("play_sound".equals(kind)
+                        || "sp_play".equals(kind)
+                        || "soundpool_play".equals(kind)
+                        || "load_sound".equals(kind)) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "\"" + kind + "\" in Sketchware SoundPool returns "
+                                    + "a number (sound ID / stream ID), so use "
+                                    + "it inside set_variable on a number "
+                                    + "variable — e.g. {\"block\":"
+                                    + "\"set_variable\",\"variable\":"
+                                    + "\"streamId\",\"value\":{\"play_sound\":"
+                                    + "\"sound_pool\",\"a\":{\"var\":\"soundId\"},"
+                                    + "\"b\":0}} (after loading soundId with "
+                                    + "{\"load_sound\":\"sound_pool\","
+                                    + "\"sound\":\"sfx_pop\"}), or use a "
+                                    + "MediaPlayer component with mp_create + "
+                                    + "mp_start.");
                 } else {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
                     (kind.isEmpty()
@@ -10450,7 +10607,9 @@ public final class AgentLogic {
             sentence = sentence.replace("{" + (i + 1) + "}", shown);
         }
         stmt.sentence = sentence;
-        stmt.expectCode = widget.id + action.expect;
+        stmt.expectCode = action.expect.contains("{t}")
+                ? action.expect.replace("{t}", widget.id)
+                : widget.id + action.expect;
     }
 
     /**
@@ -10677,6 +10836,34 @@ public final class AgentLogic {
                     String[] fields = {"value", "value2", "value3"};
                     String field = fields[Math.min(numberField++,
                             fields.length - 1)];
+                    if ("soundpoolCreate".equals(action.opCode)
+                            && "value".equals(field)) {
+                        if (!op.has("value") && op.has("max_streams")) {
+                            field = "max_streams";
+                        }
+                        if (!op.has(field)) {
+                            stmt.params.add("1");
+                            shown = "1";
+                            break;
+                        }
+                        try {
+                            String value = numericField(builder, op, field);
+                            stmt.params.add(value);
+                            shown = describeSlot(builder, op, field);
+                            break;
+                        } catch (AgentTools.ToolException bad) {
+                            throw new AgentTools.ToolException("E_BAD_BLOCK",
+                                    "sp_create sets the maximum simultaneous "
+                                            + "streams (a number like 1 or 4), "
+                                            + "not a sound name. To load a raw "
+                                            + "sound ID into a number variable, "
+                                            + "use set_variable with "
+                                            + "{\"load_sound\":\"" + componentId
+                                            + "\",\"sound\":\"your_sound\"}, or "
+                                            + "use a MediaPlayer component "
+                                            + "(mp_create + mp_start).");
+                        }
+                    }
                     String value = numericField(builder, op, field);
                     stmt.params.add(value);
                     shown = describeSlot(builder, op, field);
@@ -10838,8 +11025,15 @@ public final class AgentLogic {
             sentence = sentence.replace("{" + (i + 1) + "}", shown);
         }
         stmt.sentence = sentence;
-        stmt.expectCode = (action.componentType != 0 ? componentId
-                : "") + action.expect;
+        if (action.expect.contains("{c}")) {
+            stmt.expectCode = action.expect.replace("{c}", componentId);
+        } else if (action.componentType != 0
+                && (action.expect.startsWith(".")
+                        || action.expect.startsWith(" "))) {
+            stmt.expectCode = componentId + action.expect;
+        } else {
+            stmt.expectCode = action.expect;
+        }
     }
 
     // -- stored-shape helpers ----------------------------------------------
@@ -11745,9 +11939,37 @@ public final class AgentLogic {
                     if (blocks == null) {
                         continue;
                     }
+                    java.util.Set<String> eventIds = ids;
+                    String entryKey = entry.getKey();
+                    if (entryKey != null
+                            && entryKey.endsWith(" onBindCustomView")) {
+                        String hostId = entryKey.substring(0,
+                                entryKey.length()
+                                        - " onBindCustomView".length());
+                        ViewBean host = activityWidgets.get(hostId);
+                        if (host != null && host.customView != null
+                                && !host.customView.isEmpty()
+                                && !"none".equals(host.customView)) {
+                            eventIds = new java.util.HashSet<>(ids);
+                            try {
+                                ArrayList<ViewBean> itemViews = store.d(
+                                        ProjectFileBean.getXmlName(
+                                                host.customView));
+                                if (itemViews != null) {
+                                    for (ViewBean item : itemViews) {
+                                        if (item != null && item.id != null) {
+                                            eventIds.add(item.id);
+                                        }
+                                    }
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
                     for (BlockBean bean : blocks) {
                         String referenced = widgetReferenceOf(bean);
-                        if (referenced == null || ids.contains(referenced)) {
+                        if (referenced == null
+                                || eventIds.contains(referenced)) {
                             continue;
                         }
                         String finding =
@@ -11951,11 +12173,14 @@ public final class AgentLogic {
         }
         try {
             eC store = jC.a(scId);
-            String ownPrefix = componentId + "_";
+            String ownPrefixSpace = componentId + " ";
+            String ownPrefixUnderscore = componentId + "_";
             for (Map.Entry<String, ArrayList<BlockBean>> entry
                     : allActivityBlocks(store, javaName).entrySet()) {
                 if (entry.getKey() != null
-                        && entry.getKey().startsWith(ownPrefix)) {
+                        && (entry.getKey().startsWith(ownPrefixSpace)
+                                || entry.getKey().startsWith(
+                                        ownPrefixUnderscore))) {
                     continue;
                 }
                 ArrayList<BlockBean> blocks = entry.getValue();

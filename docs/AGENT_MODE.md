@@ -2042,6 +2042,16 @@ logs exposed the rest of the same class:
 3. **Provider Settings, Project Picker & Visual Design/Plan Sheets (`agent_settings.xml`, `AgentSettingsActivity`, `AgentFragment`)**:
    - Added top back-navigation header and 3 Material 3 section cards in `AgentSettingsActivity`, custom project icon loading in `ProjectPickerAdapter`, visual swatch rows + rounded live `corner_radius` component previews + direct property editing (`AgentJournal.setDesignToken`) in the Design System dialog, and a live Sketchware Primary progress bar + rounded step cards in the Implementation Plan dialog.
 
+## Wave 50 — Field Diagnostic Audit (`HabitTracker` Export): Task Log Isolation & Block/Screen Hardening
+
+1. **Task Log, Plan, Style, Design System & Chat Reused-`scId` Isolation (`AgentJournal`, `AgentChatLog`, `AgentLoop`, `AgentTools`, `AgentFragment`)**:
+   - Eliminates cross-project ghost entries when Sketchware Pro deletes a project and reuses its numeric `sc_id`: `CreateProject.execute` wipes `AgentJournal` and `AgentChatLog` for `created.scId`, both stores stamp `"projectPackage"` on save and discard mismatched records on load, `AgentJournal.healReusedScId` cleans legacy reused-`scId` records already on device, and `AgentLoop` deposits drafts + moves style/design/plan before opening the first task of a newly created project.
+2. **Custom-View `onBindCustomView` Reference Validation (`AgentLogic.danglingWidgetReferences`)**:
+   - Includes widgets from `host.customView` when checking `onBindCustomView` handlers so custom-row widgets (`tv_name`, `iv_checkbox`, etc.) never trigger false-positive missing-widget warnings, and aligns `componentUse` / `moreBlockUse` with `allActivityBlocks`'s space-separated keys.
+3. **Codegen `expectCode`, `@string/*` Block Slots & Screen/Block Ergonomics (`AgentLogic`, `AgentEdits`, `OpenUiScreenBridge`, `SketchwareActions`)**:
+   - Fixed 12 `COMPONENT_ACTIONS` (including `pick_file` and `take_picture`) and 5 `WIDGET_ACTIONS` `expectCode` templates against `Fx` / `BlocksHandler`, auto-decoded `"@string/<name>"` in block text slots into `getResStr` (`getString(R.string.<name>)`), permitted empty `"blocks": []` on dialog buttons, supported `{"external_dir": "DIRECTORY_*"}`, improved `onFilesPicked` `filePath (listStr)` / `sp_create` / `read_file` / `play_sound` diagnostics, completed `isTextExpr` + boolean-literal `stringEquals` coercion, routed `set_in_list` with `"key"` on `list_map` to `set_map_entry`, added `@color/*` & `?attr/*` support on `set_root` / `set_fab`, and added `set_visibility` to `edit_screen` + `OpenUiScreenBridge`.
+
+
 
 
 
