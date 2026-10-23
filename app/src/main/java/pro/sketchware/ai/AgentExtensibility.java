@@ -223,20 +223,21 @@ public final class AgentExtensibility {
         return null;
     }
 
-    public static JsonArray listCustomBlocksJson(String scId) {
+    /**
+     * The blocks defined in THIS project (full spec/code). The IDE's
+     * global stock More-Block table (~3 000 rows shipped with the app,
+     * identical on every install) is intentionally NOT here — it made
+     * every export ~2 MB of stock noise; it is summarized separately
+     * by {@link #countUserBlockTable()} and
+     * {@link #listUserBlockNamesJson(int)}.
+     */
+    public static JsonArray listProjectCustomBlocksJson(String scId) {
         JsonArray out = new JsonArray();
         LinkedHashMap<String, CustomBlockDef> merged =
                 new LinkedHashMap<>();
-        for (HashMap<String, Object> m : readUserBlockMaps()) {
-            String name = mapStr(m, "name");
-            if (!name.isEmpty()) {
-                merged.put(name, fromMap(m, "user_blocks"));
-            }
-        }
         for (ExtraBlockInfo info : readProjectCustomBlocks(scId)) {
             if (info != null && info.getName() != null
-                    && !info.getName().isEmpty()
-                    && !merged.containsKey(info.getName())) {
+                    && !info.getName().isEmpty()) {
                 merged.put(info.getName(), new CustomBlockDef(
                         info.getName(), " ", "",
                         info.getSpec(), info.getSpec2(), info.getCode(),
@@ -266,6 +267,33 @@ public final class AgentExtensibility {
             }
             o.addProperty("source", def.source);
             out.add(o);
+        }
+        return out;
+    }
+
+    /** How many rows the IDE's global More-Block table holds. */
+    public static int countUserBlockTable() {
+        return readUserBlockMaps().size();
+    }
+
+    /**
+     * The global table's block names only (first {@code cap}), for
+     * exports and tool results that must stay small; full specs stay
+     * available through {@link #findCustomBlock(String, String)}.
+     */
+    public static JsonArray listUserBlockNamesJson(int cap) {
+        JsonArray out = new JsonArray();
+        int added = 0;
+        for (HashMap<String, Object> m : readUserBlockMaps()) {
+            String name = mapStr(m, "name");
+            if (name.isEmpty()) {
+                continue;
+            }
+            if (cap > 0 && added >= cap) {
+                break;
+            }
+            out.add(name);
+            added++;
         }
         return out;
     }

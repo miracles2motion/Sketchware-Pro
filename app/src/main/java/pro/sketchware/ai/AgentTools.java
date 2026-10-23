@@ -10800,7 +10800,14 @@ public final class AgentTools {
                     ? "" : session.workingProjectId.trim();
             JsonObject result = new JsonObject();
             result.add("custom_blocks",
-                    AgentExtensibility.listCustomBlocksJson(scId));
+                    AgentExtensibility.listProjectCustomBlocksJson(scId));
+            // The global stock table is ~3 000 rows: a full dump here
+            // would flood the context for no gain — names + count,
+            // full spec on demand via find/get custom block.
+            result.add("my_blocks",
+                    AgentExtensibility.listUserBlockNamesJson(150));
+            result.addProperty("my_blocks_count",
+                    AgentExtensibility.countUserBlockTable());
             result.add("custom_components",
                     AgentExtensibility.listCustomComponentsJson());
             result.add("custom_events_and_listeners",

@@ -735,7 +735,14 @@ public final class AgentExport {
                 state.add("native_libraries",
                         AgentSources.inspectNativeLibraries(scId));
                 state.add("custom_blocks",
-                        AgentExtensibility.listCustomBlocksJson(scId));
+                        AgentExtensibility
+                                .listProjectCustomBlocksJson(scId));
+                JsonObject myBlocks = new JsonObject();
+                myBlocks.addProperty("count", AgentExtensibility
+                        .countUserBlockTable());
+                myBlocks.add("first_names", AgentExtensibility
+                        .listUserBlockNamesJson(150));
+                state.add("my_blocks", myBlocks);
                 state.add("xml_commands",
                         AgentExtensibility.listXmlCommandsJson(scId));
                 state.add("manifest_and_settings",
