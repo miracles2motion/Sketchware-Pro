@@ -3102,7 +3102,7 @@ public class AgentFragment extends qA {
                         .setView(scroll)
                         .setNegativeButton(R.string.agent_action_close, null);
         if (onCancel != null) {
-            builder.setOnCancelListener(d -> onCancel.run());
+            builder.setOnCancelListener(dialogI -> onCancel.run());
         }
         builder.show();
     }
@@ -3979,9 +3979,11 @@ public class AgentFragment extends qA {
                     Math.min(6, visible.size()));
             verifyBtn.setEnabled(false);
             verifyBtn.setText("Probing…");
-            probeModelsInBackground(provider.name(), top,
-                    () -> binding != null && binding.chatList != null
-                            && binding.chatList.post(reopen));
+            probeModelsInBackground(provider.name(), top, () -> {
+                if (binding != null && binding.chatList != null) {
+                    binding.chatList.post(reopen);
+                }
+            });
         });
         footer.addView(verifyBtn);
 

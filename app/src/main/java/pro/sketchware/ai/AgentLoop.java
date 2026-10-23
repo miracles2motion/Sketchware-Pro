@@ -877,7 +877,7 @@ public class AgentLoop {
                                     false, model);
                         }
                         if (!next.isEmpty()) {
-                            AiChatService.sanitizeMessagesForModel(
+                            ModelCatalog.sanitizeMessagesForModel(
                                     messages, next);
                             JsonObject switched = new JsonObject();
                             switched.addProperty("from", model);
