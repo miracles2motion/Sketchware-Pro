@@ -34,8 +34,8 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 | Show Source Code Inspector, Runtime Logcat Crash Reader, Collections Manager, `.aab` App Bundles, Keystore Signing & `.swb` Backups | `SrcViewerActivity`, `Jx`, `LogReaderActivity`, `CompileErrorSaver`, `ManageCollectionActivity`, `AppBundleCompiler`, `TestkeySignBridge`, `BackupFactory` | **Phase 8 (DONE)** |
 | OpenUI Lang 1.0 Core Engine (Streaming Parser, Reactive `$variable` State, `@` Built-ins, `Action` Executor & `mergeStatements` Patcher) | `OpenUiLang`, `ChatMessage`, `AgentChatLog`, `AgentExport` | **Phase 9 (DONE)** |
 | Interactive Generative UI Inside Chat (`inlineMode` Native Material 3 Views, Style/Palette Cards, Two-Way Controls & `@ToAssistant` Actions) | `OpenUiChatRenderer`, `ChatAdapter`, `AgentFragment` | **Phase 10 (DONE)** |
-| Low-Token Screen Builder, Incremental Patcher & Compact Screen Reader (`OpenUI Lang` ↔ `ViewBean` Bridge) | `OpenUiScreenBridge`, `AgentTools`, `SketchwareActions`, `AgentEdits` | **Phase 11 (NEXT)** |
-| Context-Smart OpenUI Prompting, GitHub Actions CI Slim-Down & Final Bundle Verification | `AgentLoop`, `.github/workflows/agent-bootstrap.yml`, `.github/workflows/android.yml` | Phase 12 |
+| Low-Token Screen Builder, Incremental Patcher & Compact Screen Reader (`OpenUI Lang` ↔ `ViewBean` Bridge) | `OpenUiScreenBridge`, `AgentTools`, `SketchwareActions`, `AgentEdits` | **Phase 11 (DONE)** |
+| Context-Smart OpenUI Prompting, GitHub Actions CI Slim-Down & Final Bundle Verification | `AgentLoop`, `.github/workflows/agent-bootstrap.yml`, `.github/workflows/android.yml` | **Phase 12 (NEXT)** |
 
 ---
 
@@ -178,7 +178,7 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 ---
 
-### Phase 11 — Low-Token Screen Builder, Incremental Patcher & Compact Reader (`OpenUiScreenBridge.java`)
+### Phase 11 (DONE) — Low-Token Screen Builder, Incremental Patcher & Compact Reader (`OpenUiScreenBridge.java`)
 **Goal:** Cut screen-building and screen-reading context tokens by ~60–65% while producing 100% standard Sketchware Pro `ViewBean`s behind the Design Gate and Approval Card.
 1. **OpenUI ↔ `ViewBean` Translator:**
    - Translates compact 1-line widget statements (`root = Column([topBar, heroCard, list])`) into validated Sketchware Pro `ViewBean` hierarchies across Activities, Fragments, Drawers, and Custom Views — preserving Design System tokens, `@color/*`, `?attr/*`, `@string/*`, and per-widget validated `ViewBean.inject` attributes.

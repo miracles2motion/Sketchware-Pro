@@ -966,6 +966,10 @@ public final class AgentTools {
             JsonObject properties = new JsonObject();
             properties.add("activity", stringSchema(
                     "The activity name, e.g. MainActivity"));
+            properties.add("format", stringSchema(
+                    "Optional widget format: \"openui\" (compact 1-line-per-widget "
+                            + "OpenUI Lang, ~65% fewer tokens, ready for openui_patch), "
+                            + "\"tree\" (indented summary), or \"both\" (default)."));
             return AgentTools.parameters(properties, "activity");
         }
 
@@ -1065,11 +1069,23 @@ public final class AgentTools {
                                     + "\"_drawer_<widgetId>\".");
                 }
             }
-            JsonArray widgets = new JsonArray();
-            for (String line : SketchwareProjects.screenLines(scId, activity, 120)) {
-                widgets.add(line);
+            String fmt = stringArg(args, "format").toLowerCase(Locale.ROOT);
+            boolean wantOpenUi = fmt.isEmpty() || "both".equals(fmt)
+                    || "openui".equals(fmt) || "openui-lang".equals(fmt);
+            boolean wantTree = !"openui".equals(fmt) && !"openui-lang".equals(fmt);
+            ArrayList<com.besome.sketch.beans.ViewBean> screenBeans =
+                    SketchwareProjects.screenBeans(scId, activity);
+            if (wantTree) {
+                JsonArray widgets = new JsonArray();
+                for (String line : SketchwareProjects.screenLines(scId, activity, 120)) {
+                    widgets.add(line);
+                }
+                result.add("widgets", widgets);
             }
-            result.add("widgets", widgets);
+            if (wantOpenUi) {
+                result.addProperty("openui",
+                        OpenUiScreenBridge.toOpenUi(screenBeans));
+            }
             JsonArray events = new JsonArray();
             for (String line : SketchwareProjects.eventLines(scId, activity)) {
                 events.add(line);
@@ -1221,8 +1237,14 @@ public final class AgentTools {
                     + "\"add_widget\",\"type\":\"Button\",\"text\":\"Save\"},"
                     + "{\"op\":\"set_background\",\"id\":\"button1\","
                     + "\"color\":\"@primary\"}]. At most "
-                    + AgentEdits.MAX_OPS + " operations per call. The user "
-                    + "must approve before anything changes.";
+                    + AgentEdits.MAX_OPS + " JSON ops per call — OR pass "
+                    + "compact 1-line-per-widget OpenUI Lang in \"openui\" "
+                    + "(full screen layout, e.g. root = Screen([main])\\n"
+                    + "main = Column([header, card], {p: 16, bg: \"#FFFFFF\"})) "
+                    + "or \"openui_patch\" (2-3 changed/added lines merged by "
+                    + "statement name via OpenUI 1.0 mergeStatements; id = null "
+                    + "deletes a widget; untouched widgets & events stay intact). "
+                    + "The user must approve before anything changes.";
         }
 
         @Override
@@ -1233,12 +1255,18 @@ public final class AgentTools {
             JsonObject opsSchema = new JsonObject();
             opsSchema.addProperty("type", "array");
             opsSchema.addProperty("description",
-                    "The operations, in order");
+                    "Optional JSON operations in order (provide ops, openui, or openui_patch)");
             JsonObject item = new JsonObject();
             item.addProperty("type", "object");
             opsSchema.add("items", item);
             properties.add("ops", opsSchema);
-            return AgentTools.parameters(properties, "activity", "ops");
+            properties.add("openui", stringSchema(
+                    "Optional full OpenUI Lang 1.0 screen layout (1 line per widget: "
+                            + "id = Type(childrenOrText, {w, h, p, m, bg, color, size, style, attrs}))."));
+            properties.add("openui_patch", stringSchema(
+                    "Optional incremental OpenUI Lang 1.0 patch (only the changed/new "
+                            + "statement lines, or id = null to delete; merged into existing screen)."));
+            return AgentTools.parameters(properties, "activity");
         }
 
         @Override
@@ -1255,12 +1283,27 @@ public final class AgentTools {
         public AgentProposal propose(Session session, JsonObject args)
                 throws ToolException {
             LocatedScreen located = locate(session, args);
-            JsonArray ops = jsonArrayArg(args, "ops");
+            String openUiPatch = stringArg(args, "openui_patch");
+            String openUiFull = stringArg(args, "openui");
+            JsonArray ops;
+            int maxAllowedOps;
+            if (!openUiPatch.isEmpty()) {
+                ops = OpenUiScreenBridge.compileToOps(
+                        located.beans, openUiPatch, true);
+                maxAllowedOps = OpenUiScreenBridge.MAX_COMPILED_OPS;
+            } else if (!openUiFull.isEmpty()) {
+                ops = OpenUiScreenBridge.compileToOps(
+                        located.beans, openUiFull, false);
+                maxAllowedOps = OpenUiScreenBridge.MAX_COMPILED_OPS;
+            } else {
+                ops = jsonArrayArg(args, "ops");
+                maxAllowedOps = AgentEdits.MAX_OPS;
+            }
             if (ops == null || ops.size() == 0
-                    || ops.size() > AgentEdits.MAX_OPS) {
+                    || ops.size() > maxAllowedOps) {
                 throw new ToolException("E_OPS_LIMIT",
-                        "Give between 1 and " + AgentEdits.MAX_OPS
-                                + " operations per edit.");
+                        "Give between 1 and " + maxAllowedOps
+                                + " operations per edit (or pass openui / openui_patch).");
             }
             AgentEdits.Outcome outcome = AgentEdits.simulate(
                     located.scId, located.beans, ops, false,

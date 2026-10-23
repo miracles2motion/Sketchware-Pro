@@ -183,7 +183,9 @@ public final class AgentEdits {
                                     == ViewBean.VIEW_TYPE_LAYOUT_VSCROLLVIEW
                             || addedType
                                     == ViewBean.VIEW_TYPE_LAYOUT_HSCROLLVIEW;
-                    if (mainContainerId == null && scroll) {
+                    if (mainContainerId == null && scroll
+                            && !hasExplicitContainerChildInOps(
+                                    ops, stringOf(op, "id"))) {
                         // A scrolling page: the ScrollView can hold only
                         // one child, so the main layout goes inside it.
                         applyAdd(scId, op, work, byId, lines, frozen,
@@ -1179,6 +1181,29 @@ public final class AgentEdits {
     }
 
     /** True when a layout holds a text input: a form. */
+    private static boolean hasExplicitContainerChildInOps(JsonArray ops,
+                                                          String parentId) {
+        if (parentId == null || parentId.isEmpty()) {
+            return false;
+        }
+        for (JsonElement el : ops) {
+            if (el == null || !el.isJsonObject()) {
+                continue;
+            }
+            JsonObject candidate = el.getAsJsonObject();
+            if (!"add_widget".equals(normalizeKind(candidate.deepCopy()))) {
+                continue;
+            }
+            if (parentId.equals(stringOf(candidate, "parent"))) {
+                Integer t = typeByName(stringOf(candidate, "type"));
+                if (t != null && isContainer(t)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private static boolean formContainer(ArrayList<ViewBean> work,
                                          String parentId) {
         if (parentId == null || ROOT_PARENT.equals(parentId)) {
