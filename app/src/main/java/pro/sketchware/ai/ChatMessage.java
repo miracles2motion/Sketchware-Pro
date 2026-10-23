@@ -1,5 +1,7 @@
 package pro.sketchware.ai;
 
+import com.google.gson.JsonObject;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -81,6 +83,8 @@ public class ChatMessage {
     public String thinking = "";
     /** Whether the thinking block is expanded in the transcript. */
     public boolean thinkingExpanded;
+    /** Persisted reactive {@code $variable} state for inline OpenUI Lang blocks in this bubble. */
+    public JsonObject openUiState;
 
     // Approval cards (role == APPROVAL): plain words only, never beans.
     public String approvalTitle = "";

@@ -25,13 +25,17 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 | Multimodal Vision Chat + Screenshot-to-Screen + Chat-Image-to-Asset + Offscreen `ViewPane` Preview | `AgentFragment`, `AiChatService`, `ChatMessage`, `AgentMedia`, `AgentPreview`, `LayoutPreviewActivity`, `ViewPane` | **Phase 2 (DONE)** |
 | Image Manager, Built-in Icon Pack, Vector/Shape Icon Creator & Adaptive Launcher Icons | `AgentAssets`, `ManageImageActivity`, `ImportIconActivity`, `IconCreatorActivity`, `jC.d(scId)` | **Phase 2 (DONE)** |
 | View Manager: Fragments, DialogFragments, BottomSheetFragments, Drawer Layouts (`_drawer_*`), Root Layout Injection, Raw XML Import, `remove_component`, `delete_custom_view` | `ManageViewActivity`, `AddViewActivity`, `InjectRootLayoutManager`, `ViewBeanParser`, `eC` | **Phase 3 (DONE)** |
-| Resource Editor (`strings.xml`, `colors.xml`, `styles.xml`, `arrays.xml`) & Raw Resource Manager (`res/drawable`, `menu`, `anim`, `xml`, `values-night`) | `ResourcesEditorActivity`, `StringsEditorManager`, `ColorsEditorManager`, `StylesEditorManager`, `ArraysEditorManager`, `ManageResourceActivity` | Phase 4 |
-| Font Manager (`assets/fonts`) & Sound Manager (`res/raw`) | `ManageFontActivity`, `ManageSoundActivity`, `jC.d(scId)` | Phase 4 |
-| Java & Kotlin Manager (`.java` / `.kt` classes) & Assets Manager (`assets/`) & Native Libs (`.so`) | `ManageJavaActivity`, `KotlinCompilerBridge`, `ManageAssetsActivity`, `ManageNativelibsActivity` | Phase 5 |
-| Full Pro Events, Component Callbacks, Custom Blocks, Command Blocks (`ManageXMLCommandActivity`) & Developer Custom Components/Events | `EventsHandler`, `ManageEvent`, `CustomBlocksManager`, `BlocksManager`, `ManageXMLCommandActivity`, `CommandBlock`, `ComponentsHandler` | Phase 6 |
-| AndroidManifest Injection & AppCompat XML Injection (`Toolbar`, `AppBarLayout`, `CoordinatorLayout`, `FAB`) | `AndroidManifestInjection`, `AndroidManifestInjector`, `ManageAppCompatActivity`, `AppCompatInjection` | Phase 7 |
-| Pro Project Settings (`minSdk`, `targetSdk`, `ViewBinding`, custom `Application` class, version/package), ProGuard/R8 & StringFog | `MyProjectSettingActivity`, `ProjectSettings`, `VersionDialog`, `ManageProguardActivity`, `ProguardHandler`, `ManageStringFogFragment`, `StringfogHandler` | Phase 7 |
-| Show Source Code Inspector, Runtime Logcat Crash Reader, Collections Manager, `.aab` App Bundles, Keystore Signing & `.swb` Backups | `SrcViewerActivity`, `Jx`, `LogReaderActivity`, `CompileErrorSaver`, `ManageCollectionActivity`, `AppBundleCompiler`, `TestkeySignBridge`, `BackupFactory` | Phase 8 |
+| Resource Editor (`strings.xml`, `colors.xml`, `styles.xml`, `arrays.xml`) & Raw Resource Manager (`res/drawable`, `menu`, `anim`, `xml`, `values-night`) | `ResourcesEditorActivity`, `StringsEditorManager`, `ColorsEditorManager`, `StylesEditorManager`, `ArraysEditorManager`, `ManageResourceActivity` | **Phase 4 (DONE)** |
+| Font Manager (`assets/fonts`) & Sound Manager (`res/raw`) | `ManageFontActivity`, `ManageSoundActivity`, `jC.d(scId)` | **Phase 4 (DONE)** |
+| Java & Kotlin Manager (`.java` / `.kt` classes) & Assets Manager (`assets/`) & Native Libs (`.so`) | `ManageJavaActivity`, `KotlinCompilerBridge`, `ManageAssetsActivity`, `ManageNativelibsActivity` | **Phase 5 (DONE)** |
+| Full Pro Events, Component Callbacks, Custom Blocks, Command Blocks (`ManageXMLCommandActivity`) & Developer Custom Components/Events | `EventsHandler`, `ManageEvent`, `CustomBlocksManager`, `BlocksManager`, `ManageXMLCommandActivity`, `CommandBlock`, `ComponentsHandler` | **Phase 6 (DONE)** |
+| AndroidManifest Injection & AppCompat XML Injection (`Toolbar`, `AppBarLayout`, `CoordinatorLayout`, `FAB`) | `AndroidManifestInjection`, `AndroidManifestInjector`, `ManageAppCompatActivity`, `AppCompatInjection` | **Phase 7 (DONE)** |
+| Pro Project Settings (`minSdk`, `targetSdk`, `ViewBinding`, custom `Application` class, version/package), ProGuard/R8 & StringFog | `MyProjectSettingActivity`, `ProjectSettings`, `VersionDialog`, `ManageProguardActivity`, `ProguardHandler`, `ManageStringFogFragment`, `StringfogHandler` | **Phase 7 (DONE)** |
+| Show Source Code Inspector, Runtime Logcat Crash Reader, Collections Manager, `.aab` App Bundles, Keystore Signing & `.swb` Backups | `SrcViewerActivity`, `Jx`, `LogReaderActivity`, `CompileErrorSaver`, `ManageCollectionActivity`, `AppBundleCompiler`, `TestkeySignBridge`, `BackupFactory` | **Phase 8 (DONE)** |
+| OpenUI Lang 1.0 Core Engine (Streaming Parser, Reactive `$variable` State, `@` Built-ins, `Action` Executor & `mergeStatements` Patcher) | `OpenUiLang`, `ChatMessage`, `AgentChatLog`, `AgentExport` | **Phase 9 (DONE)** |
+| Interactive Generative UI Inside Chat (`inlineMode` Native Material 3 Views, Style/Palette Cards, Two-Way Controls & `@ToAssistant` Actions) | `OpenUiChatRenderer`, `ChatAdapter`, `AgentFragment` | **Phase 10 (NEXT)** |
+| Low-Token Screen Builder, Incremental Patcher & Compact Screen Reader (`OpenUI Lang` ↔ `ViewBean` Bridge) | `OpenUiScreenBridge`, `AgentTools`, `SketchwareActions`, `AgentEdits` | Phase 11 |
+| Context-Smart OpenUI Prompting, GitHub Actions CI Slim-Down & Final Bundle Verification | `AgentLoop`, `.github/workflows/agent-bootstrap.yml`, `.github/workflows/android.yml` | Phase 12 |
 
 ---
 
@@ -141,3 +145,61 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
    - Lists, saves, imports (auto-provisioning missing variables, lists, and image/sound/font resources), and deletes reusable **Widget Collections** (`Rp`), **MoreBlock Collections** (`Pp`), and **Block Collections** (`Mp`).
 4. **Release Packaging (`build_release_package`, `export_project_backup`):**
    - Builds and signs Play Store `.aab` Android App Bundles (`AppBundleCompiler` + `ZipSigner` / `CustomKeySigner`) and signed release `.apk` files (`runZipalign` + `TestkeySignBridge` / `ApkSigner` V1+V2+V3), and exports `.swb` project backups (`BackupFactory`).
+
+---
+
+## OpenUI Lang 1.0 Upgrade Roadmap (Phases 9–12 — Batched Locally, Single CI Push at Completion)
+
+> **Workflow policy:** Commit each phase locally (`git commit` only, **no `git push`**) while building Phases 9–12. Only push once Phase 12 (including the GitHub Actions slim-down and full static audit) is complete so CI runs a single clean build.
+
+### Phase 9 (DONE) — OpenUI Lang 1.0 Core Engine (`OpenUiLang.java`)
+**Goal:** Pure-Java, zero-dependency implementation of the MIT OpenUI Lang 1.0 specification for progressive streaming, reactive local state, incremental patching, and lossless diagnostics.
+1. **Streaming & Inline Fence Extractor (`splitSegments`):**
+   - Splits assistant replies into interleaved `MARKDOWN` prose and `OPENUI` (` ```openui ` / ` ```openui-lang `) segments, supporting unclosed fences mid-stream and OpenUI 1.0 `]]>openui:` stored message markers without polluting visible text.
+2. **Line-Oriented AST Parser, Forward References & Incremental Patching (`mergeStatements`):**
+   - Parses `id = Component(args...)`, `$var = default` reactive state declarations, `id = null` deletions, positional arguments (plus forgiving `key: value` recovery), ternary/arithmetic/boolean/member-pluck expressions, `@Name(args)` built-ins/actions, and `Action([...])` lists.
+   - Implements OpenUI 1.0 entry resolution (`root`, with fallback to first root-capable component + `no-root` warning after stream completion), top-down forward references (`PendingRef` placeholders while streaming), "last definition wins", and `mergeStatements(previous, patch)` incremental merging.
+3. **Reactive State Runtime, Built-in `@` Functions & Persistence (`ChatMessage`, `AgentChatLog`, `AgentExport`):**
+   - Evaluates `$variable` two-way bindings, `@Count`, `@Sum`, `@Avg`, `@Min`, `@Max`, `@First`, `@Last`, `@Filter`, `@Sort`, `@Round`, `@Abs`, `@Floor`, `@Ceil`, `@Percent`, and `@Each`, and executes `@Set`, `@Reset`, `@OpenUrl`, and `@ToAssistant(message, context)` locally with zero LLM calls on tap.
+   - Persists `$variable` state per chat message in `AgentChatLog` and records parsed OpenUI summaries, state snapshots, and parser diagnostics in `AgentExport`.
+
+---
+
+### Phase 10 — Interactive Generative UI Inside Chat (`OpenUiChatRenderer.java` + `ChatAdapter`)
+**Goal:** Render live, native Material 3 interactive cards, style/palette pickers, forms, and summaries inside assistant chat bubbles while preserving native Approval/Build cards and Markdown prose.
+1. **Native Android Component Library (`OpenUiChatRenderer`):**
+   - Layout & typography: `Stack`, `Row`, `Card`, `Header`, `Text`, `Badge`, `Divider`.
+   - Design & Anti-Gravity brainstorming: `StyleCard`, `PaletteRow`, `ColorSwatch`, `TypePreview` wired to project Design System tokens when present.
+   - Two-way `$variable`-bound interactive controls (zero tokens per tap): `TextInput`, `Select`, `ChoiceChips`, `Switch`, `Slider`.
+   - Data & summaries: `KpiRow`, `Table`, `ProgressBar`, `BreakdownBar`.
+   - Actions: `Button` executing local `@Set`/`@Reset`, `@OpenUrl`, or `@ToAssistant(message, context)` (sending user choices + form state straight back into `AgentFragment` as a clean user turn).
+2. **Progressive Streaming in `ChatAdapter`:**
+   - Renders mixed Markdown + native OpenUI views inside `AssistantHolder` smoothly as lines stream in, keeping Approval cards (`TYPE_APPROVAL`), Build/Install cards, Design System page, Plan sheet, and Task Log untouched.
+
+---
+
+### Phase 11 — Low-Token Screen Builder, Incremental Patcher & Compact Reader (`OpenUiScreenBridge.java`)
+**Goal:** Cut screen-building and screen-reading context tokens by ~60–65% while producing 100% standard Sketchware Pro `ViewBean`s behind the Design Gate and Approval Card.
+1. **OpenUI ↔ `ViewBean` Translator:**
+   - Translates compact 1-line widget statements (`root = Column([topBar, heroCard, list])`) into validated Sketchware Pro `ViewBean` hierarchies across Activities, Fragments, Drawers, and Custom Views — preserving Design System tokens, `@color/*`, `?attr/*`, `@string/*`, and per-widget validated `ViewBean.inject` attributes.
+2. **2-Line Incremental Screen Patching:**
+   - Merges small OpenUI widget patches (`mergeStatements`) into existing screens without regenerating untouched widgets or breaking existing widget IDs and wired `BlockBean` events.
+3. **Compact Screen Reader:**
+   - Allows `get_screen` (and compact context summaries) to serialize `ViewBean` trees as 1-line-per-widget OpenUI statements (~2.5–3× smaller in conversation history than verbose JSON).
+
+---
+
+### Phase 12 — Context-Smart Prompting, CI Workflow Slim-Down & Final Bundle Audit
+**Goal:** Keep total prompt/context usage leaner than before, prevent GitHub Actions from ever disabling repo workflows again, and verify the entire Phases 9–12 bundle before a single push.
+1. **Context-Smart OpenUI System Prompting (`AgentLoop`):**
+   - Concise, scoped OpenUI Lang 1.0 signature block for chat UI (`inlineMode`) and screen shorthand (`editMode`), keeping net multi-turn token usage substantially lower than JSON-only sessions.
+2. **GitHub Actions Slim-Down (`.github/workflows/`):**
+   - Add `concurrency: cancel-in-progress: true`, stop force-pushing the ~140 MB release APK into Git LFS on every build, avoid duplicate `assembleRelease` runs per push, and gate branch-external bot jobs (`notifyTelegram`, `aggregateAndSend`, `updateAppData`) cleanly.
+3. **Full Audit, Documentation (`AGENT_MODE.md`) & Single CI Push:**
+   - Run static symbol/type/arity/contract verification across all classes, update `docs/AGENT_MODE.md`, push once to `origin/arena/8a5fd688-sketchware-pro`, and verify CI green before any APK download.
+
+---
+
+## Upcoming Post-Phase-12 Milestone (Queued Next)
+- **Modern Sketchware-Themed UI Redesign:** Refresh Agent Mode's visual polish, spacing, cards, and chrome to feel modern, crisp, and cohesive while staying true to Sketchware Pro's native theme identity.
+

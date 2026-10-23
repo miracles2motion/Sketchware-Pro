@@ -130,6 +130,9 @@ public final class AgentChatLog {
                     entry.add("attachments", imgs);
                 }
             }
+            if (message.openUiState != null && message.openUiState.size() > 0) {
+                entry.add("openUiState", message.openUiState.deepCopy());
+            }
             stored.add(entry);
             while (stored.size() > MAX_MESSAGES) {
                 stored.remove(0);
@@ -260,6 +263,11 @@ public final class AgentChatLog {
                 if (entry.has("thinking")) {
                     message.thinking =
                             entry.get("thinking").getAsString();
+                }
+                if (entry.has("openUiState")
+                        && entry.get("openUiState").isJsonObject()) {
+                    message.openUiState =
+                            entry.getAsJsonObject("openUiState").deepCopy();
                 }
                 messages.add(message);
             }

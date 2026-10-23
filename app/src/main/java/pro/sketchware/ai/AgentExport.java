@@ -154,6 +154,11 @@ public final class AgentExport {
                 build.addProperty("superseded", message.buildSuperseded);
                 entry.add("build", build);
             }
+            JsonObject openUiSummary = OpenUiLang.buildDiagnosticSummary(
+                    message.text, message.openUiState);
+            if (openUiSummary != null) {
+                entry.add("openui", openUiSummary);
+            }
             chat.add(entry);
         }
         root.add("chat", chat);
