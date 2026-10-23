@@ -4573,6 +4573,7 @@ public final class AgentTools {
                 // Agreed before any project exists: held as a draft
                 // and deposited into the project this work creates.
                 AgentJournal.setDraftStyleBrief(brief);
+                AgentJournal.setStyleBrief(AgentJournal.DRAFT_KEY, brief);
                 result.addProperty("saved", "draft");
                 result.addProperty("message",
                         "Style remembered as a draft. When the project "
@@ -4805,6 +4806,8 @@ public final class AgentTools {
             JsonObject result = new JsonObject();
             if (noProject) {
                 AgentJournal.setDraftPlan(title, steps);
+                AgentJournal.setPlan(AgentJournal.DRAFT_KEY, title,
+                        steps, 0, 0);
                 result.addProperty("saved", "draft");
                 result.addProperty("message",
                         "Plan remembered as a draft. When the project "
@@ -5097,6 +5100,8 @@ public final class AgentTools {
             if (session.workingProjectId == null
                     || session.workingProjectId.isEmpty()) {
                 AgentJournal.setDraftDesignSystemObject(fullSystem);
+                AgentJournal.setDesignSystemObject(
+                        AgentJournal.DRAFT_KEY, fullSystem);
                 result.addProperty("saved", "draft");
                 result.addProperty("brand_color", resolved.brandColor);
                 result.addProperty("neutral_scale", resolved.neutralScale);

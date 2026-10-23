@@ -408,10 +408,19 @@ public final class AgentJournal {
      * <p>Nothing here is written by the model — it is written by app
      * code as things actually happen, so it is evidence, not a story.
      */
+    /**
+     * Journal home for a conversation that has not created its project
+     * yet: style/plan/design drafts and the task log live here, and
+     * {@link #depositDrafts(String)} moves everything into the real
+     * project the moment it exists. The UI reads the same key, so
+     * Design system, Plan and Task log all work before creation.
+     */
+    public static final String DRAFT_KEY = "__draft__";
+
     public static synchronized void record(String scId, String kind,
                                            JsonObject payload) {
         if (scId == null || scId.isEmpty()) {
-            return;
+            scId = DRAFT_KEY;
         }
         JsonObject root = load(scId);
         JsonElement existing = root.get("log");
@@ -1892,6 +1901,57 @@ public final class AgentJournal {
         draftDesignTitle = "";
         draftDesignTokens = new JsonArray();
         draftDesignSystemObj = null;
+        // The UI-visible draft journal (__draft__) migrates the same
+        // way: whatever the user saw in Design system / Plan before
+        // creation must become the project's own, and its task log
+        // entries join the project's history.
+        if (!scId.equals(DRAFT_KEY)) {
+            if (styleBrief(scId).isEmpty()
+                    && !styleBrief(DRAFT_KEY).isEmpty()) {
+                setStyleBrief(scId, styleBrief(DRAFT_KEY));
+            }
+            JsonObject draftPlan = plan(DRAFT_KEY);
+            if (!hasPlan(scId) && draftPlan.has("steps")
+                    && draftPlan.getAsJsonArray("steps").size() > 0) {
+                StringBuilder stepsText = new StringBuilder();
+                for (JsonElement step
+                        : draftPlan.getAsJsonArray("steps")) {
+                    if (stepsText.length() > 0) {
+                        stepsText.append('\n');
+                    }
+                    stepsText.append(step.isJsonPrimitive()
+                            ? step.getAsString() : step.toString());
+                }
+                setPlan(scId, text(draftPlan, "title"),
+                        stepsText.toString(), 0, 0);
+            }
+            if (!hasDesignSystem(scId) && hasDesignSystem(DRAFT_KEY)) {
+                JsonObject system = designSystem(DRAFT_KEY);
+                setDesignSystemObject(scId, system);
+                if (toMaterialize == null) {
+                    toMaterialize = system;
+                }
+            }
+            JsonObject draftRoot = load(DRAFT_KEY);
+            JsonElement draftLog = draftRoot.get("log");
+            if (draftLog != null && draftLog.isJsonArray()
+                    && draftLog.getAsJsonArray().size() > 0) {
+                JsonObject targetRoot = load(scId);
+                JsonElement targetLog = targetRoot.get("log");
+                JsonArray merged = targetLog != null
+                        && targetLog.isJsonArray()
+                        ? targetLog.getAsJsonArray() : new JsonArray();
+                for (JsonElement entry
+                        : draftLog.getAsJsonArray()) {
+                    merged.add(entry);
+                }
+                targetRoot.add("log", merged);
+                save(scId, targetRoot);
+            }
+            // Spent: the draft journal goes away with the project.
+            //noinspection ResultOfMethodCallIgnored
+            file(DRAFT_KEY).delete();
+        }
         if (toMaterialize != null) {
             try {
                 OpenUiThemeEngine.materializeToProject(scId, toMaterialize);

@@ -687,7 +687,12 @@ public class AgentLoop {
             AgentJournal.record(workingProjectId, "user_message", asked);
         }
         final long turnStartedAt = System.currentTimeMillis();
-        final String[] journalProject = {workingProjectId};
+        // Pre-project turns keep their history too: routing decisions,
+        // errors and the task log land in the draft journal and ride
+        // into the project when it is created.
+        final String[] journalProject = {
+                workingProjectId == null || workingProjectId.isEmpty()
+                        ? AgentJournal.DRAFT_KEY : workingProjectId};
         final boolean[] taskClosed = {false};
         final boolean[] previewVisionDisabled = {
                 AiChatService.isModelKnownTextOnly(model)};

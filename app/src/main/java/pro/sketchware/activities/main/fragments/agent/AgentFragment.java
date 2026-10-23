@@ -1242,6 +1242,18 @@ public class AgentFragment extends qA {
         return scId;
     }
 
+    /**
+     * Journal home for the Style → Design system → Plan gate: the
+     * working project, or the conversation's draft journal when no
+     * project exists yet. The gate runs BEFORE creation, so these
+     * pages must work before creation too.
+     */
+    private String journalTarget() {
+        String scId = providerConfig == null
+                ? "" : providerConfig.workingProjectId();
+        return scId.isEmpty() ? AgentJournal.DRAFT_KEY : scId;
+    }
+
     /** The Plan button: the project's agreed style direction. */
     /**
      * The design system: a list of the project's components. Tapping one
@@ -1252,10 +1264,7 @@ public class AgentFragment extends qA {
     private boolean designPreviewDarkMode = false;
 
     private void showDesignSystemDialog() {
-        String scId = workingProjectOrToast();
-        if (scId.isEmpty()) {
-            return;
-        }
+        String scId = journalTarget();
         com.google.gson.JsonObject system = AgentJournal.designSystem(scId);
         if (!AgentJournal.hasDesignSystem(scId)) {
             new MaterialAlertDialogBuilder(requireContext())
@@ -2018,6 +2027,15 @@ public class AgentFragment extends qA {
         if (scId == null || scId.isEmpty()) {
             return;
         }
+        if (AgentJournal.DRAFT_KEY.equals(scId)) {
+            // Nothing to materialize into yet — the theme rides into
+            // the project automatically when it is created.
+            Toast.makeText(context,
+                    "Saved. It becomes the project's theme the moment "
+                            + "the project is created.",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
         try {
             OpenUiThemeEngine.materializeToProject(scId, full);
             if (successMessage != null && !successMessage.isEmpty()) {
@@ -2625,16 +2643,18 @@ public class AgentFragment extends qA {
      * user can hand the conversation to someone helping them.
      */
     private void exportConversation() {
-        String scId = workingProjectOrToast();
-        if (scId.isEmpty()) {
-            return;
-        }
+        // Exportable at any time — with or without a project — because
+        // it is the diagnostic source of truth, pre-project failures
+        // included.
+        String scId = journalTarget();
         List<ChatMessage> snapshot = new ArrayList<>(messages);
         String provider = providerConfig.activeProvider().name();
         String model = providerConfig.activeSettings().model;
+        boolean draft = AgentJournal.DRAFT_KEY.equals(scId);
         SketchwareProjects.ProjectInfo info =
-                SketchwareProjects.project(scId);
-        String projectName = info == null ? scId : info.name;
+                draft ? null : SketchwareProjects.project(scId);
+        String projectName = draft ? "chat-draft"
+                : (info == null ? scId : info.name);
         io.execute(() -> {
             java.io.File file;
             try {
@@ -2673,10 +2693,7 @@ public class AgentFragment extends qA {
 
     /** The Plan button: the agreed build order and its progress. */
     private void showPlanDialog() {
-        String scId = workingProjectOrToast();
-        if (scId.isEmpty()) {
-            return;
-        }
+        String scId = journalTarget();
         com.google.gson.JsonObject plan = AgentJournal.plan(scId);
         String title = plan.has("title")
                 ? plan.get("title").getAsString() : "";
@@ -2848,10 +2865,7 @@ public class AgentFragment extends qA {
 
     /** The Task log button: the recorded work. */
     private void showTaskLogDialog() {
-        String scId = workingProjectOrToast();
-        if (scId.isEmpty()) {
-            return;
-        }
+        String scId = journalTarget();
         android.widget.TextView body =
                 new android.widget.TextView(requireContext());
         body.setText(AgentJournal.logText(scId));
