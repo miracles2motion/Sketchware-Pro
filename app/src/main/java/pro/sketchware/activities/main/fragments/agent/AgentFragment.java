@@ -1327,7 +1327,7 @@ public class AgentFragment extends qA {
         wcagBadge.setTextSize(11.5f);
         wcagBadge.setTypeface(wcagBadge.getTypeface(), android.graphics.Typeface.BOLD);
         wcagBadge.setTextColor(resolveThemeColor(context,
-                com.google.android.material.R.attr.colorPrimary, 0xFF008DCD));
+                pro.sketchware.R.attr.colorPrimary, 0xFF008DCD));
         modeRow.addView(wcagBadge);
         listContainer.addView(modeRow);
 
@@ -1674,7 +1674,7 @@ public class AgentFragment extends qA {
         bg.setCornerRadius(999f * d);
         if (active) {
             int prim = resolveThemeColor(context,
-                    com.google.android.material.R.attr.colorPrimary, 0xFF008DCD);
+                    pro.sketchware.R.attr.colorPrimary, 0xFF008DCD);
             int onPrim = resolveThemeColor(context,
                     com.google.android.material.R.attr.colorOnPrimary, 0xFFFFFFFF);
             bg.setColor(prim);
