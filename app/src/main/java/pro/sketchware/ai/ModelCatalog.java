@@ -345,7 +345,11 @@ public final class ModelCatalog {
             // or agent models, no matter what the metadata claims.
             "lyria", "music", "suno", "udio", "kling", "runway",
             "pika", "luma", "heygen", "motion", "gen-3", "tts",
-            "speech", "voice", "audio"
+            "speech", "voice", "audio",
+            // OpenRouter endpoint-locked variants: ":batch" only works
+            // through the Batch API adapter, never chat/completions —
+            // picking it just burns a 404 every turn.
+            ":batch"
     };
 
     /**
@@ -601,6 +605,10 @@ public final class ModelCatalog {
      */
     private static int strengthScore(String id) {
         String m = id.toLowerCase(Locale.ROOT);
+        int colon = m.indexOf(':');
+        if (colon > 0) {
+            m = m.substring(0, colon);
+        }
         int score = 50;
         if (m.contains("claude")) {
             score = m.contains("opus") ? 110

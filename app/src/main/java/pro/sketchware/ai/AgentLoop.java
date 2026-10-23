@@ -892,15 +892,21 @@ public class AgentLoop {
                     // user chose it, so the error surfaces and a hint
                     // names what ✨ Auto would have tried instead.
                     boolean handoverRejected = code == 400 && failedOver;
+                    boolean modelGone = code == 404
+                            || e.error.kind
+                                    == AiChatService.ErrorKind.MODEL_GONE;
                     boolean failoverEligible = !cancelled
                             && (code == 429
                                     || e.error.kind
                                             == AiChatService.ErrorKind.QUOTA
                                     || handoverRejected
+                                    || modelGone
                                     || attempt >= 1)
                             && (code == 429 || code == 500 || code == 502
                                     || code == 503 || code == 504
+                                    || code == 404
                                     || handoverRejected
+                                    || modelGone
                                     || e.error.kind
                                             == AiChatService.ErrorKind.NETWORK
                                     || e.error.kind
@@ -997,6 +1003,29 @@ public class AgentLoop {
                     // the retry is briefed, not blind.
                     AgentJournal.setReadCache(journalProject[0],
                             readFacts.toString());
+                    // The catalog must learn from every dead turn, or
+                    // ✨ Auto re-picks the same broken model forever:
+                    // a 404 / MODEL_GONE retires the model (hidden +
+                    // lastError, exactly like a failed probe), and any
+                    // other error puts it on an escalating cooldown so
+                    // the next route lands on a different model.
+                    boolean retired = code == 404
+                            || e.error.kind
+                                    == AiChatService.ErrorKind.MODEL_GONE;
+                    if (retired) {
+                        ModelCatalog.update(autoProvider, model,
+                                info -> {
+                                    info.hidden = true;
+                                    info.lastError =
+                                            "Retired: cannot chat (404)";
+                                    info.updatedAt =
+                                            System.currentTimeMillis();
+                                });
+                    } else {
+                        ModelCatalog.cooldown(autoProvider, model,
+                                System.currentTimeMillis()
+                                        + 5L * 60_000L);
+                    }
                     closeTask(journalProject[0], false,
                             cancelled ? "you stopped it" : stopReason(e.error),
                             taskClosed, listener);
