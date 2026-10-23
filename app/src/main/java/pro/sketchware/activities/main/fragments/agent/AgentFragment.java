@@ -17,6 +17,7 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.widget.BaseAdapter;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -127,6 +128,8 @@ public class AgentFragment extends qA {
                     this::onImagesPicked);
     /** The project whose stored conversation is on screen, if any. */
     private String chatProjectId = "";
+    /** Cached display name of the bound project for empty-state copy. */
+    private String workingProjectDisplayName = "";
     /**
      * The one live "what the agent is doing" line, replaced in place
      * as the turn moves on and removed once the turn is over. These
@@ -186,6 +189,7 @@ public class AgentFragment extends qA {
         // empty screen.
         layoutManager.setStackFromEnd(true);
         binding.chatList.setLayoutManager(layoutManager);
+        binding.chatList.setItemAnimator(null);
         binding.chatList.setAdapter(adapter);
 
         binding.scrollDownButton.setOnClickListener(v -> scrollToEndAndDismissKeyboard());
@@ -210,6 +214,18 @@ public class AgentFragment extends qA {
         }));
 
         binding.chooseModelButton.setOnClickListener(v -> openSettings());
+        binding.quickChipDesign.setOnClickListener(v -> prefillComposer(
+                "Let's design and build a new screen "));
+        binding.quickChipScreenshot.setOnClickListener(v -> {
+            if (binding.chatInput.getText() == null
+                    || binding.chatInput.getText().toString().trim().isEmpty()) {
+                binding.chatInput.setText("Recreate this screenshot as a screen");
+                binding.chatInput.setSelection(binding.chatInput.getText().length());
+            }
+            pickAttachmentImages();
+        });
+        binding.quickChipInspect.setOnClickListener(v -> prefillComposer(
+                "Inspect this project and suggest improvements"));
         binding.settingsButton.setOnClickListener(v -> openSettings());
         binding.modelPickerArea.setOnClickListener(v -> showModelPicker());
         // History is conversations: the projects that have a saved
@@ -327,6 +343,7 @@ public class AgentFragment extends qA {
         if (removed && adapter != null) {
             adapter.notifyDataSetChanged();
         }
+        updateEmptyState();
     }
 
     /** 95 seconds reads as "1m 35s"; under a minute it stays "42s". */
@@ -892,10 +909,13 @@ public class AgentFragment extends qA {
         }
         String scId = providerConfig.workingProjectId();
         if (scId.isEmpty()) {
+            workingProjectDisplayName = "";
+            binding.workingOnOverline.setText(R.string.agent_working_overline_empty);
             binding.workingOnName.setText(R.string.agent_working_on_choose);
             binding.workingOnSubtitle.setText(R.string.agent_working_on_hint);
             binding.workingOnIcon.setImageResource(R.drawable.sketch_app_icon);
             setCardCompact(false);
+            updateEmptyState();
             refreshStrip();
             return;
         }
@@ -917,11 +937,18 @@ public class AgentFragment extends qA {
                     return;
                 }
                 if (project == null) {
+                    workingProjectDisplayName = "";
+                    binding.workingOnOverline.setText(
+                            R.string.agent_working_overline_empty);
                     binding.workingOnName.setText(R.string.agent_working_on_choose);
                     binding.workingOnSubtitle.setText(R.string.agent_working_on_hint);
                     binding.workingOnIcon.setImageResource(R.drawable.sketch_app_icon);
                     setCardCompact(false);
                 } else {
+                    workingProjectDisplayName = project.appName != null
+                            && !project.appName.isEmpty()
+                            ? project.appName : project.name;
+                    binding.workingOnOverline.setText(R.string.agent_working_overline);
                     binding.workingOnName.setText(project.name);
                     binding.workingOnSubtitle.setText(
                             project.appName + " · " + project.packageName);
@@ -935,6 +962,7 @@ public class AgentFragment extends qA {
                     // the chat gets the room.
                     setCardCompact(true);
                 }
+                updateEmptyState();
                 refreshStrip();
             });
         });
@@ -1020,9 +1048,14 @@ public class AgentFragment extends qA {
             binding.chatList.scrollToPosition(messages.size() - 1);
         }
         updateWorkingOnCard();
-        appendMessage(ChatMessage.error(getString(scId.isEmpty()
-                ? R.string.agent_working_on_cleared
-                : R.string.agent_working_on_set, name)));
+        if (!scId.isEmpty() && messages.isEmpty()) {
+            // Keep the clean welcome card visible when switching into an untouched project
+            updateEmptyState();
+        } else {
+            appendMessage(ChatMessage.error(getString(scId.isEmpty()
+                    ? R.string.agent_working_on_cleared
+                    : R.string.agent_working_on_set, name)));
+        }
     }
 
     /** Stores the on-screen conversation under its project. */
@@ -1219,32 +1252,135 @@ public class AgentFragment extends qA {
             return;
         }
         com.google.gson.JsonArray tokens = stored.getAsJsonArray();
-        String[] labels = new String[tokens.size()];
+        android.content.Context context = requireContext();
+        float density = context.getResources().getDisplayMetrics().density;
+        int pad = Math.round(18f * density);
+        LinearLayout listContainer = new LinearLayout(context);
+        listContainer.setOrientation(LinearLayout.VERTICAL);
+        listContainer.setPadding(pad, Math.round(8f * density), pad, pad);
+
+        androidx.appcompat.app.AlertDialog[] holder =
+                new androidx.appcompat.app.AlertDialog[1];
         for (int i = 0; i < tokens.size(); i++) {
             com.google.gson.JsonElement element = tokens.get(i);
             if (!element.isJsonObject()) {
-                labels[i] = "Component";
                 continue;
             }
             com.google.gson.JsonObject token = element.getAsJsonObject();
             String label = AgentJournal.textOf(token, "label");
-            labels[i] = label.isEmpty()
-                    ? AgentJournal.textOf(token, "key") : label;
+            String key = AgentJournal.textOf(token, "key");
+            String kind = AgentJournal.textOf(token, "kind");
+            String title = label.isEmpty() ? key : label;
+            com.google.gson.JsonObject props = token.has("props")
+                    && token.get("props").isJsonObject()
+                    ? token.getAsJsonObject("props")
+                    : new com.google.gson.JsonObject();
+
+            LinearLayout row = new LinearLayout(context);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            int rowPadH = Math.round(14f * density);
+            int rowPadV = Math.round(12f * density);
+            row.setPadding(rowPadH, rowPadV, rowPadH, rowPadV);
+            GradientDrawable rowBg = new GradientDrawable();
+            rowBg.setCornerRadius(16f * density);
+            rowBg.setColor(resolveThemeColor(context,
+                    com.google.android.material.R.attr.colorSurfaceContainerLow,
+                    0xFFE6EFF8));
+            rowBg.setStroke(Math.max(1, Math.round(density)),
+                    resolveThemeColor(context,
+                            com.google.android.material.R.attr.colorOutlineVariant,
+                            0xFFB1C0CE));
+            row.setBackground(rowBg);
+            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            if (listContainer.getChildCount() > 0) {
+                rowLp.topMargin = Math.round(8f * density);
+            }
+            row.setLayoutParams(rowLp);
+
+            View swatch = new View(context);
+            int swSize = Math.round(36f * density);
+            swatch.setLayoutParams(new LinearLayout.LayoutParams(swSize, swSize));
+            GradientDrawable swBg = new GradientDrawable();
+            swBg.setCornerRadius(10f * density);
+            swBg.setColor(designColour(props, "background", "#008DCD"));
+            swBg.setStroke(Math.max(1, Math.round(density)), 0x33888888);
+            swatch.setBackground(swBg);
+            row.addView(swatch);
+
+            LinearLayout textCol = new LinearLayout(context);
+            textCol.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout.LayoutParams colLp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            colLp.leftMargin = Math.round(12f * density);
+            textCol.setLayoutParams(colLp);
+
+            android.widget.TextView tvTitle = new android.widget.TextView(context);
+            tvTitle.setText(title);
+            tvTitle.setTextAppearance(com.google.android.material.R.style
+                    .TextAppearance_Material3_BodyLarge);
+            tvTitle.setTypeface(tvTitle.getTypeface(), android.graphics.Typeface.BOLD);
+            textCol.addView(tvTitle);
+
+            String summaryLine = summarizeTokenProps(kind, props);
+            if (!summaryLine.isEmpty()) {
+                android.widget.TextView tvSub = new android.widget.TextView(context);
+                tvSub.setText(summaryLine);
+                tvSub.setTextAppearance(com.google.android.material.R.style
+                        .TextAppearance_Material3_BodySmall);
+                tvSub.setAlpha(0.78f);
+                textCol.addView(tvSub);
+            }
+            row.addView(textCol);
+
+            row.setOnClickListener(v -> {
+                if (holder[0] != null) {
+                    holder[0].dismiss();
+                }
+                showDesignTokenDialog(scId, token);
+            });
+            listContainer.addView(row);
         }
-        new MaterialAlertDialogBuilder(requireContext())
+
+        android.widget.ScrollView scroll = new android.widget.ScrollView(context);
+        scroll.addView(listContainer);
+        holder[0] = new MaterialAlertDialogBuilder(context)
                 .setTitle(R.string.agent_design_system_title)
-                .setItems(labels, (dialog, which) -> {
-                    com.google.gson.JsonElement chosen = tokens.get(which);
-                    if (chosen.isJsonObject()) {
-                        showDesignTokenDialog(chosen.getAsJsonObject());
-                    }
-                })
+                .setView(scroll)
                 .setNegativeButton(R.string.agent_action_close, null)
-                .show();
+                .create();
+        holder[0].show();
     }
 
-    /** One component: what it is made of, and what it looks like. */
-    private void showDesignTokenDialog(com.google.gson.JsonObject token) {
+    private static String summarizeTokenProps(String kind,
+                                              com.google.gson.JsonObject props) {
+        StringBuilder sb = new StringBuilder();
+        if (kind != null && !kind.isEmpty()) {
+            sb.append(kind.replace('_', ' '));
+        }
+        String bg = designValue(props, "background");
+        if (!bg.isEmpty()) {
+            if (sb.length() > 0) sb.append(" · ");
+            sb.append(bg);
+        }
+        String h = designValue(props, "height");
+        if (!h.isEmpty()) {
+            if (sb.length() > 0) sb.append(" · ");
+            sb.append(h).append(h.endsWith("dp") ? "" : "dp");
+        }
+        String ts = designValue(props, "text_size");
+        if (!ts.isEmpty()) {
+            if (sb.length() > 0) sb.append(" · ");
+            sb.append(ts).append(ts.endsWith("sp") ? "" : "sp");
+        }
+        return sb.toString();
+    }
+
+    /** One component: what it is made of, what it looks like, and direct editing. */
+    private void showDesignTokenDialog(String scId,
+                                       com.google.gson.JsonObject token) {
         android.content.Context context = requireContext();
         String label = AgentJournal.textOf(token, "label");
         String key = AgentJournal.textOf(token, "key");
@@ -1268,14 +1404,105 @@ public class AgentFragment extends qA {
         new MaterialAlertDialogBuilder(context)
                 .setTitle(label.isEmpty() ? key : label)
                 .setView(layout)
-                .setPositiveButton(R.string.agent_action_close, null)
-                .setNeutralButton("Change this", (dialog, which) ->
+                .setNegativeButton(R.string.agent_action_close, null)
+                .setPositiveButton("Edit", (dialog, which) ->
+                        showDesignTokenEditor(scId, token))
+                .setNeutralButton("Ask agent", (dialog, which) ->
                         askAgent("Change the " + key + " component in "
                                 + "the design system."))
                 .show();
     }
 
-    /** A component drawn with its own measurements, so it can be seen. */
+    /** Direct user-editable form for any component in the Design System. */
+    private void showDesignTokenEditor(String scId,
+                                       com.google.gson.JsonObject token) {
+        Context context = requireContext();
+        String key = AgentJournal.textOf(token, "key");
+        String label = AgentJournal.textOf(token, "label");
+        com.google.gson.JsonObject props = token.has("props")
+                && token.get("props").isJsonObject()
+                ? token.getAsJsonObject("props").deepCopy()
+                : new com.google.gson.JsonObject();
+
+        float density = context.getResources().getDisplayMetrics().density;
+        int pad = Math.round(20f * density);
+        LinearLayout form = new LinearLayout(context);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(pad, Math.round(8f * density), pad, 0);
+
+        java.util.LinkedHashMap<String, EditText> inputs =
+                new java.util.LinkedHashMap<>();
+        String[] standardKeys = {"background", "text_color", "height",
+                "text_size", "corner_radius", "padding", "margin"};
+        java.util.LinkedHashSet<String> allKeys = new java.util.LinkedHashSet<>();
+        for (MapKeyHelper k : MapKeyHelper.from(props, standardKeys)) {
+            allKeys.add(k.key);
+        }
+        for (String propKey : allKeys) {
+            android.widget.TextView cap = new android.widget.TextView(context);
+            cap.setText(propKey.replace('_', ' '));
+            cap.setTextAppearance(com.google.android.material.R.style
+                    .TextAppearance_Material3_LabelMedium);
+            cap.setPadding(0, Math.round(8f * density), 0, Math.round(2f * density));
+            form.addView(cap);
+
+            EditText et = new EditText(context);
+            et.setSingleLine(true);
+            et.setText(designValue(props, propKey));
+            form.addView(et);
+            inputs.put(propKey, et);
+        }
+
+        android.widget.ScrollView scroll = new android.widget.ScrollView(context);
+        scroll.addView(form);
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Edit " + (label.isEmpty() ? key : label))
+                .setView(scroll)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.agent_action_save, (d, w) -> {
+                    for (java.util.Map.Entry<String, EditText> e : inputs.entrySet()) {
+                        String val = e.getValue().getText() == null
+                                ? "" : e.getValue().getText().toString().trim();
+                        if (val.isEmpty()) {
+                            props.remove(e.getKey());
+                        } else {
+                            props.addProperty(e.getKey(), val);
+                        }
+                    }
+                    com.google.gson.JsonObject updated = token.deepCopy();
+                    updated.add("props", props);
+                    AgentJournal.setDesignToken(scId, key, updated);
+                    Toast.makeText(context, "Saved " + (label.isEmpty() ? key : label),
+                            Toast.LENGTH_SHORT).show();
+                    showDesignTokenDialog(scId, updated);
+                })
+                .show();
+    }
+
+    private static final class MapKeyHelper {
+        final String key;
+
+        MapKeyHelper(String key) {
+            this.key = key;
+        }
+
+        static List<MapKeyHelper> from(com.google.gson.JsonObject props,
+                                       String[] defaults) {
+            List<MapKeyHelper> out = new ArrayList<>();
+            for (java.util.Map.Entry<String, com.google.gson.JsonElement> e
+                    : props.entrySet()) {
+                out.add(new MapKeyHelper(e.getKey()));
+            }
+            for (String d : defaults) {
+                if (!props.has(d)) {
+                    out.add(new MapKeyHelper(d));
+                }
+            }
+            return out;
+        }
+    }
+
+    /** A component drawn with its own measurements (including corner_radius). */
     private android.view.View designPreview(android.content.Context context,
                                             com.google.gson.JsonObject token) {
         String kind = AgentJournal.textOf(token, "kind")
@@ -1283,16 +1510,33 @@ public class AgentFragment extends qA {
         com.google.gson.JsonObject props = token.has("props")
                 && token.get("props").isJsonObject()
                 ? token.getAsJsonObject("props") : new com.google.gson.JsonObject();
-        // designColour parses the hex and returns an int, so anything
-        // wanting a colour uses these directly — no second parse.
-        int backgroundColour = designColour(props, "background", "#E0E0E0");
-        int textColour = designColour(props, "text_color", "#000000");
+        float density = context.getResources().getDisplayMetrics().density;
+        int backgroundColour = designColour(props, "background", "#008DCD");
+        int textColour = designColour(props, "text_color", "#FFFFFF");
         int padding = designDp(context, props, "padding", 12);
+        int radiusPx = designDp(context, props, "corner_radius",
+                "button".equals(kind) ? 14 : "card".equals(kind) ? 16 : 10);
+
         android.widget.LinearLayout box =
                 new android.widget.LinearLayout(context);
         box.setOrientation(android.widget.LinearLayout.VERTICAL);
-        box.setBackgroundColor(android.graphics.Color.parseColor("#F5F5F5"));
-        box.setPadding(padding, padding, padding, padding);
+        GradientDrawable stageBg = new GradientDrawable();
+        stageBg.setCornerRadius(16f * density);
+        stageBg.setColor(resolveThemeColor(context,
+                com.google.android.material.R.attr.colorSurfaceContainer,
+                0xFFE6EFF8));
+        stageBg.setStroke(Math.max(1, Math.round(density)),
+                resolveThemeColor(context,
+                        com.google.android.material.R.attr.colorOutlineVariant,
+                        0xFFB1C0CE));
+        box.setBackground(stageBg);
+        int stagePad = Math.round(16f * density);
+        box.setPadding(stagePad, stagePad, stagePad, stagePad);
+
+        GradientDrawable itemShape = new GradientDrawable();
+        itemShape.setCornerRadius(radiusPx);
+        itemShape.setColor(backgroundColour);
+
         switch (kind) {
             case "button" -> {
                 android.widget.TextView button =
@@ -1300,9 +1544,10 @@ public class AgentFragment extends qA {
                 button.setText("Button");
                 button.setGravity(android.view.Gravity.CENTER);
                 button.setTextColor(textColour);
-                button.setTextSize(designSp(props, "text_size", 16));
-                button.setBackgroundColor(
-                        backgroundColour);
+                button.setTypeface(button.getTypeface(),
+                        android.graphics.Typeface.BOLD);
+                button.setTextSize(designSp(props, "text_size", 15));
+                button.setBackground(itemShape);
                 int height = designDp(context, props, "height", 48);
                 box.addView(button, new android.widget.LinearLayout
                         .LayoutParams(
@@ -1312,11 +1557,10 @@ public class AgentFragment extends qA {
             case "card" -> {
                 android.widget.TextView card =
                         new android.widget.TextView(context);
-                card.setText("Card");
+                card.setText("Card preview");
                 card.setTextColor(textColour);
                 card.setTextSize(15f);
-                card.setBackgroundColor(
-                        backgroundColour);
+                card.setBackground(itemShape);
                 card.setPadding(padding, padding, padding, padding);
                 box.addView(card);
             }
@@ -1325,18 +1569,22 @@ public class AgentFragment extends qA {
                         new android.widget.TextView(context);
                 title.setText("List row title");
                 title.setTextColor(textColour);
+                title.setTypeface(title.getTypeface(),
+                        android.graphics.Typeface.BOLD);
                 title.setTextSize(designSp(props, "title_size", 16));
                 android.widget.TextView subtitle =
                         new android.widget.TextView(context);
                 subtitle.setText("Supporting line");
+                subtitle.setTextColor(textColour);
+                subtitle.setAlpha(0.75f);
                 subtitle.setTextSize(designSp(props, "subtitle_size", 13));
                 android.widget.LinearLayout row =
                         new android.widget.LinearLayout(context);
                 row.setOrientation(android.widget.LinearLayout.VERTICAL);
-                row.setBackgroundColor(
-                        backgroundColour);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setBackground(itemShape);
                 int height = designDp(context, props, "height", 64);
-                row.setPadding(padding, padding, padding, padding);
+                row.setPadding(padding, padding / 2, padding, padding / 2);
                 row.addView(title);
                 row.addView(subtitle);
                 box.addView(row, new android.widget.LinearLayout
@@ -1345,15 +1593,16 @@ public class AgentFragment extends qA {
                         height));
             }
             case "input" -> {
+                itemShape.setStroke(Math.max(1, Math.round(density)), 0x44888888);
                 android.widget.TextView input =
                         new android.widget.TextView(context);
-                input.setText("Type here");
-                input.setTextSize(designSp(props, "text_size", 16));
+                input.setText("Type here…");
+                input.setGravity(Gravity.CENTER_VERTICAL);
+                input.setTextSize(designSp(props, "text_size", 15));
                 input.setTextColor(designColour(props, "hint_color",
                         "#757575"));
-                input.setBackgroundColor(
-                        backgroundColour);
-                input.setPadding(padding, padding, padding, padding);
+                input.setBackground(itemShape);
+                input.setPadding(padding, 0, padding, 0);
                 int height = designDp(context, props, "height", 48);
                 box.addView(input, new android.widget.LinearLayout
                         .LayoutParams(
@@ -1363,23 +1612,21 @@ public class AgentFragment extends qA {
             case "screen" -> {
                 android.widget.TextView screen =
                         new android.widget.TextView(context);
-                screen.setText("Screen");
+                screen.setText("Screen surface");
                 screen.setGravity(android.view.Gravity.CENTER);
                 screen.setTextColor(textColour);
-                screen.setBackgroundColor(
-                        backgroundColour);
+                screen.setBackground(itemShape);
                 box.addView(screen, new android.widget.LinearLayout
                         .LayoutParams(
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                        (int) (120 * context.getResources()
-                                .getDisplayMetrics().density)));
+                        (int) (110 * density)));
             }
             default -> {
                 android.widget.TextView text =
                         new android.widget.TextView(context);
-                text.setText("Aa");
+                text.setText("Sample typography Aa");
                 text.setTextSize(designSp(props, "text_size", 16));
-                text.setTextColor(textColour);
+                text.setTextColor(designColour(props, "text_color", "#141C23"));
                 box.addView(text);
             }
         }
@@ -1666,6 +1913,7 @@ public class AgentFragment extends qA {
             }
             com.google.gson.JsonArray steps = latest.getAsJsonArray("steps");
             int[] progress = AgentJournal.planProgress(scId);
+            float density = getResources().getDisplayMetrics().density;
             android.widget.TextView summary =
                     new android.widget.TextView(requireContext());
             summary.setText(getString(R.string.agent_plan_progress,
@@ -1673,10 +1921,43 @@ public class AgentFragment extends qA {
                     + " · Tap a step to mark or unmark done");
             summary.setTextAppearance(com.google.android.material.R.style
                     .TextAppearance_Material3_LabelLarge);
-            summary.setPadding(0, 0, 0, pad / 2);
+            summary.setPadding(0, 0, 0, Math.round(6f * density));
             container.addView(summary);
 
-            int rowPadV = (int) (10 * getResources().getDisplayMetrics().density);
+            // Live Sketchware Primary progress bar
+            FrameLayout barTrack = new FrameLayout(requireContext());
+            int barH = Math.round(6f * density);
+            LinearLayout.LayoutParams trackLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, barH);
+            trackLp.bottomMargin = Math.round(12f * density);
+            barTrack.setLayoutParams(trackLp);
+            GradientDrawable trackBg = new GradientDrawable();
+            trackBg.setCornerRadius(999f);
+            trackBg.setColor(resolveThemeColor(requireContext(),
+                    com.google.android.material.R.attr.colorSurfaceContainerHighest,
+                    0xFFDBE3ED));
+            barTrack.setBackground(trackBg);
+            if (progress[1] > 0 && progress[0] > 0) {
+                LinearLayout fillWrap = new LinearLayout(requireContext());
+                fillWrap.setOrientation(LinearLayout.HORIZONTAL);
+                fillWrap.setWeightSum(progress[1]);
+                View fill = new View(requireContext());
+                fill.setLayoutParams(new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.MATCH_PARENT, progress[0]));
+                GradientDrawable fillBg = new GradientDrawable();
+                fillBg.setCornerRadius(999f);
+                fillBg.setColor(resolveThemeColor(requireContext(),
+                        pro.sketchware.R.attr.colorPrimary, 0xFF008DCD));
+                fill.setBackground(fillBg);
+                fillWrap.addView(fill);
+                barTrack.addView(fillWrap, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT));
+            }
+            container.addView(barTrack);
+
+            int rowPadH = Math.round(12f * density);
+            int rowPadV = Math.round(10f * density);
             for (int i = 0; i < steps.size(); i++) {
                 final int stepIndex = i;
                 com.google.gson.JsonObject step =
@@ -1694,15 +1975,31 @@ public class AgentFragment extends qA {
                         + AgentJournal.cleanStepText(rawText));
                 row.setTextAppearance(com.google.android.material.R.style
                         .TextAppearance_Material3_BodyMedium);
+                GradientDrawable stepBg = new GradientDrawable();
+                stepBg.setCornerRadius(12f * density);
+                if ("current".equals(state)) {
+                    stepBg.setColor(resolveThemeColor(requireContext(),
+                            pro.sketchware.R.attr.colorPrimaryContainer,
+                            0xFFCAE6FF));
+                    row.setTypeface(row.getTypeface(),
+                            android.graphics.Typeface.BOLD);
+                } else {
+                    stepBg.setColor(resolveThemeColor(requireContext(),
+                            com.google.android.material.R.attr.colorSurfaceContainerLow,
+                            0xFFECF4FE));
+                }
+                row.setBackground(stepBg);
                 if ("done".equals(state)) {
-                    row.setAlpha(0.72f);
+                    row.setAlpha(0.68f);
                 }
-                row.setPadding(0, rowPadV, 0, rowPadV);
-                android.util.TypedValue ripple = new android.util.TypedValue();
-                if (requireContext().getTheme().resolveAttribute(
-                        android.R.attr.selectableItemBackground, ripple, true)) {
-                    row.setBackgroundResource(ripple.resourceId);
+                row.setPadding(rowPadH, rowPadV, rowPadH, rowPadV);
+                LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT);
+                if (i > 0) {
+                    rlp.topMargin = Math.round(6f * density);
                 }
+                row.setLayoutParams(rlp);
                 row.setOnClickListener(v -> {
                     AgentJournal.togglePlanStepDone(scId, stepIndex);
                     rebuildRows[0].run();
@@ -1834,12 +2131,16 @@ public class AgentFragment extends qA {
                 row = LayoutInflater.from(parent.getContext())
                         .inflate(R.layout.agent_project_row, parent, false);
             }
+            ImageView icon = row.findViewById(R.id.picker_icon);
             android.widget.TextView name =
                     row.findViewById(R.id.picker_name);
             android.widget.TextView subtitle =
                     row.findViewById(R.id.picker_subtitle);
             View check = row.findViewById(R.id.picker_check);
             if (position == 0) {
+                if (icon != null) {
+                    icon.setImageResource(R.drawable.sketch_app_icon);
+                }
                 name.setText(R.string.agent_working_on_none);
                 subtitle.setText(R.string.agent_picker_none_hint);
                 check.setVisibility(
@@ -1847,6 +2148,14 @@ public class AgentFragment extends qA {
             } else {
                 SketchwareProjects.ProjectInfo project =
                         projects.get(position - 1);
+                if (icon != null) {
+                    Bitmap custom = loadCustomProjectIcon(project.scId);
+                    if (custom != null) {
+                        icon.setImageBitmap(custom);
+                    } else {
+                        icon.setImageResource(R.drawable.sketch_app_icon);
+                    }
+                }
                 name.setText(project.appName.isEmpty()
                         ? project.name : project.appName);
                 subtitle.setText(project.name + " · " + project.packageName);
@@ -2697,6 +3006,7 @@ public class AgentFragment extends qA {
         if (open != keyboardOpen) {
             keyboardOpen = open;
             updateScrollButtonVisibility();
+            updateEmptyState();
         }
     }
 
@@ -2763,6 +3073,7 @@ public class AgentFragment extends qA {
         if (binding != null) {
             binding.chatList.scrollToPosition(messages.size() - 1);
         }
+        updateEmptyState();
     }
 
     /** Replaces the transcript with the current provider state. */
@@ -2772,16 +3083,12 @@ public class AgentFragment extends qA {
         }
         messages.clear();
         streamingMessage = null;
-        if (providerConfig == null || !providerConfig.isConfigured()) {
-            messages.add(new ChatMessage(ChatMessage.Role.SYSTEM,
-                    getString(R.string.agent_provider_empty_title)));
-            messages.add(new ChatMessage(ChatMessage.Role.SYSTEM,
-                    getString(R.string.agent_provider_empty_body)));
-        } else {
+        if (providerConfig != null && providerConfig.isConfigured()) {
             restoreWorkingConversation();
         }
         adapter.notifyDataSetChanged();
         updateProviderUi();
+        updateEmptyState();
         updateActionButton();
     }
 
@@ -2821,6 +3128,85 @@ public class AgentFragment extends qA {
         binding.modelLabel.setText(configured
                 ? providerConfig.activeSettings().model
                 : getString(R.string.agent_no_provider));
+        updateEmptyState();
+    }
+
+    private void updateEmptyState() {
+        if (binding == null) {
+            return;
+        }
+        boolean configured = providerConfig != null && providerConfig.isConfigured();
+        boolean hasConversation = !messages.isEmpty();
+        boolean showHero = !hasConversation && !generating && !keyboardOpen;
+        binding.emptyStateContainer.setVisibility(showHero ? View.VISIBLE : View.GONE);
+        if (!showHero) {
+            return;
+        }
+        if (!configured) {
+            binding.emptyStateTitle.setText(R.string.agent_provider_empty_title);
+            binding.emptyStateSubtitle.setText(R.string.agent_provider_empty_body);
+            binding.chooseModelButton.setVisibility(View.VISIBLE);
+            binding.emptyQuickRow.setVisibility(View.GONE);
+        } else {
+            binding.emptyStateTitle.setText(R.string.agent_ready_title);
+            if (workingProjectDisplayName != null
+                    && !workingProjectDisplayName.isEmpty()) {
+                binding.emptyStateSubtitle.setText(getString(
+                        R.string.agent_ready_subtitle_project,
+                        workingProjectDisplayName));
+            } else {
+                binding.emptyStateSubtitle.setText(
+                        R.string.agent_ready_subtitle_no_project);
+            }
+            binding.chooseModelButton.setVisibility(View.GONE);
+            binding.emptyQuickRow.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void prefillComposer(String prompt) {
+        if (binding == null) {
+            return;
+        }
+        binding.chatInput.setText(prompt);
+        binding.chatInput.setSelection(prompt.length());
+        binding.chatInput.requestFocus();
+        if (getContext() != null) {
+            InputMethodManager imm = (InputMethodManager)
+                    requireContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(binding.chatInput, InputMethodManager.SHOW_IMPLICIT);
+            }
+        }
+    }
+
+    private static Bitmap loadCustomProjectIcon(String scId) {
+        if (scId == null || scId.isEmpty()) {
+            return null;
+        }
+        try {
+            File iconFile = new File(wq.e() + File.separator + scId
+                    + File.separator + "icon.png");
+            if (iconFile.isFile()) {
+                return AgentMedia.decodeThumbnail(iconFile.getAbsolutePath(), 96);
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private static int resolveThemeColor(Context context, int attr, int fallback) {
+        android.util.TypedValue tv = new android.util.TypedValue();
+        if (context != null && context.getTheme().resolveAttribute(attr, tv, true)) {
+            if (tv.resourceId != 0) {
+                try {
+                    return androidx.core.content.ContextCompat.getColor(
+                            context, tv.resourceId);
+                } catch (Exception ignored) {
+                }
+            }
+            return tv.data;
+        }
+        return fallback;
     }
 
     private void openSettings() {
@@ -2834,7 +3220,7 @@ public class AgentFragment extends qA {
             return;
         }
         binding.sendButton.setIconResource(
-                generating ? R.drawable.ic_mtrl_close : R.drawable.agent_ic_send);
+                generating ? R.drawable.ic_mtrl_stop : R.drawable.agent_ic_send);
         binding.sendButton.setContentDescription(
                 getString(generating ? R.string.agent_action_stop : R.string.agent_action_send));
         boolean hasText = binding.chatInput.getText() != null

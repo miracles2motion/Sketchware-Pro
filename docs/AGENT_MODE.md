@@ -2033,6 +2033,16 @@ logs exposed the rest of the same class:
 4. **Context-Smart OpenUI Prompting & GitHub Actions Slim-Down (`AgentLoop`, `.github/workflows/android.yml`, `.github/workflows/agent-bootstrap.yml`)**:
    - Concise `inlineMode` + `openui` / `openui_patch` guidance and live `[OpenUI state: $var=...]` history forwarding in `AgentLoop`, plus workflow safeguards (`concurrency: cancel-in-progress: true`, `agent-bootstrap.yml` converted to `workflow_dispatch` only with `.apk` Git LFS uploads removed, and Telegram/`updateAppData` jobs gated off `arena/*` branches so each push runs a single clean `Build APKs` job).
 
+## Wave 49 / Phase 13 — Modern Sketchware-Themed Agent UI Redesign
+
+1. **Studio Header, Welcome Hero & Composer (`agent_chat.xml`, `AgentFragment`, `agent_*` drawables)**:
+   - Upgraded Working-On project capsule (`20dp` radius, `1dp` `colorOutlineVariant` stroke, rounded `12dp` `ShapeableImageView` app icon, `WORKING PROJECT` overline), sleek `agent_model_pill_bg` spark + model selector pill, centered empty-state hero card (provider setup CTA or project-aware prompt with generic starter chips), zero-stagger `setItemAnimator(null)` streaming, primary-accented floating task/resume strip, and `24dp` outlined composer card with compact tonal pills (`Style`, `Design system`, `Plan`, `Task log`) and circular Send/Stop action button.
+2. **Bubbles, Collapsible Reasoning, Heartbeat Pills & Approval/Build Cards (`agent_chat_item_*.xml`, `ChatAdapter`)**:
+   - Crisp `20dp` `colorSurfaceContainerLow` assistant cards with `colorOnSurface` typography, `agent_thinking_box_bg` collapsible reasoning container, Sketchware-primary typing dots, `agent_system_pill_bg` centered tool activity pills, tappable `Tap to retry` pill, and modernized Approval/Build cards with `PROPOSED CHANGE` spark header, monospace `agent_details_well_bg` Details well, pill Approve/Reject buttons, and `agent_install_banner_bg` Build → Install banner.
+3. **Provider Settings, Project Picker & Visual Design/Plan Sheets (`agent_settings.xml`, `AgentSettingsActivity`, `AgentFragment`)**:
+   - Added top back-navigation header and 3 Material 3 section cards in `AgentSettingsActivity`, custom project icon loading in `ProjectPickerAdapter`, visual swatch rows + rounded live `corner_radius` component previews + direct property editing (`AgentJournal.setDesignToken`) in the Design System dialog, and a live Sketchware Primary progress bar + rounded step cards in the Implementation Plan dialog.
+
+
 
 
 

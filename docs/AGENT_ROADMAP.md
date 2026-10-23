@@ -35,8 +35,8 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 | OpenUI Lang 1.0 Core Engine (Streaming Parser, Reactive `$variable` State, `@` Built-ins, `Action` Executor & `mergeStatements` Patcher) | `OpenUiLang`, `ChatMessage`, `AgentChatLog`, `AgentExport` | **Phase 9 (DONE)** |
 | Interactive Generative UI Inside Chat (`inlineMode` Native Material 3 Views, Style/Palette Cards, Two-Way Controls & `@ToAssistant` Actions) | `OpenUiChatRenderer`, `ChatAdapter`, `AgentFragment` | **Phase 10 (DONE)** |
 | Low-Token Screen Builder, Incremental Patcher & Compact Screen Reader (`OpenUI Lang` ↔ `ViewBean` Bridge) | `OpenUiScreenBridge`, `AgentTools`, `SketchwareActions`, `AgentEdits` | **Phase 11 (DONE)** |
-| Context-Smart OpenUI Prompting, GitHub Actions CI Slim-Down & Final Bundle Verification | `AgentLoop`, `.github/workflows/agent-bootstrap.yml`, `.github/workflows/android.yml` | **Phase 12 (DONE locally)** |
-| **Post-OpenUI Milestone:** Modern Sketchware-Themed Agent UI Redesign | `AgentFragment`, `ChatAdapter`, `res/layout/agent_*`, `res/drawable/agent_*` | **NEXT (Queued)** |
+| Context-Smart OpenUI Prompting, GitHub Actions CI Slim-Down & Final Bundle Verification | `AgentLoop`, `.github/workflows/agent-bootstrap.yml`, `.github/workflows/android.yml` | **Phase 12 (DONE)** |
+| **Post-OpenUI Milestone:** Modern Sketchware-Themed Agent UI Redesign | `AgentFragment`, `AgentSettingsActivity`, `ChatAdapter`, `res/layout/agent_*`, `res/drawable/agent_*` | **Phase 13 (DONE)** |
 
 ---
 
@@ -190,7 +190,7 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 ---
 
-### Phase 12 (DONE locally) — Context-Smart Prompting, CI Workflow Slim-Down & Final Bundle Audit
+### Phase 12 (DONE) — Context-Smart Prompting, CI Workflow Slim-Down & Final Bundle Audit
 **Goal:** Keep total prompt/context usage leaner than before, prevent GitHub Actions from ever disabling repo workflows again, and verify the entire Phases 9–12 bundle before a single push.
 1. **Context-Smart OpenUI System Prompting (`AgentLoop`):**
    - Concise, scoped OpenUI Lang 1.0 signature block for chat UI (`inlineMode`) and screen shorthand (`editMode`), keeping net multi-turn token usage substantially lower than JSON-only sessions.
@@ -201,6 +201,8 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 ---
 
-## Upcoming Post-Phase-12 Milestone (Queued Next)
-- **Modern Sketchware-Themed UI Redesign:** Refresh Agent Mode's visual polish, spacing, cards, and chrome to feel modern, crisp, and cohesive while staying true to Sketchware Pro's native theme identity.
+## Phase 13 (DONE) — Modern Sketchware-Themed Agent UI Redesign
+- **Cohesive Sketchware Material 3 Studio Chrome (`agent_chat.xml`, `AgentFragment`):** Outlined `colorSurfaceContainerLow` Working-On project capsule with `WORKING PROJECT` overline and rounded `12dp` `ShapeableImageView` project icon; sleek `agent_model_pill_bg` spark + model selector pill alongside `Conversations`, `Export`, and `Settings` icon actions; centered Welcome / Empty-State hero card with `agent_ic_spark` PrimaryContainer emblem, `Set up AI provider` CTA when unconfigured, and generic quick-starter chips (`Design a new screen`, `Recreate a screenshot`, `Inspect & improve project`) when ready; zero-stagger `setItemAnimator(null)` streaming; upgraded floating task/resume status strip; and outlined `24dp` studio composer with compact `17dp` tonal tool pills (`Style`, `Design system`, `Plan`, `Task log`) and `42dp` circular Send/Stop button.
+- **Refined Chat Bubbles, Reasoning Box & Approval/Build Cards (`agent_chat_item_*.xml`, `ChatAdapter`):** High-contrast `colorOnSurface` assistant cards (`20dp` radius, `1dp` `colorOutlineVariant` hairline), rounded `agent_thinking_box_bg` collapsible reasoning block, Sketchware-blue `agent_typing_dot` pulse pill, centered `agent_system_pill_bg` live tool heartbeat pills, tappable `Tap to retry` pill, and upgraded Approval/Build cards with `PROPOSED CHANGE` spark header, monospace `agent_details_well_bg` collapsible Details well, emerald/coral pill buttons, and `agent_install_banner_bg` Build → Install banner.
+- **Redesigned Settings, Project Picker & Interactive Sheets (`agent_settings.xml`, `AgentSettingsActivity`, `AgentFragment`):** Top navigation bar + 3-card Material 3 settings layout (`Provider & API keys`, `Model selection`, `Project permissions`), custom project icons in `agent_project_row.xml`, visual swatch + live `corner_radius` Design System cards with direct user property editing (`AgentJournal.setDesignToken`), and a live Sketchware Primary progress bar + rounded step cards on the Implementation Plan sheet.
 

@@ -29,4 +29,9 @@
 
     <color name="color_error_bg">#261008</color>
 
+    <color name="agent_approve_green">#2BA36E</color>
+    <color name="agent_reject_red">#F28B82</color>
+    <color name="agent_reject_bg">#24F28B82</color>
+    <color name="agent_accent_soft">#248DCDFF</color>
+
 </resources>

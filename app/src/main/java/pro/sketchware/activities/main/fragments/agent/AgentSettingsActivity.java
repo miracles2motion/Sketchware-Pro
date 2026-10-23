@@ -41,6 +41,7 @@ public class AgentSettingsActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         binding = AgentSettingsBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
+        binding.settingsBackButton.setOnClickListener(v -> finish());
 
         config = AiProviderConfig.load(this);
 

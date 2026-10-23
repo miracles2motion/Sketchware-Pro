@@ -1063,4 +1063,16 @@ ACTION_VIEW
     <string name="agent_attach_failed">Couldn\'t attach that image.</string>
     <string name="agent_vision_title">Image input not supported</string>
     <string name="agent_error_unsupported_vision">This model can\'t read images. Switch to a vision-capable model (such as Gemini Flash/Pro, Qwen VL, Llama Vision, or GPT-4o) and tap Retry.</string>
+    <string name="agent_ready_title">What shall we build?</string>
+    <string name="agent_ready_subtitle_no_project">Pick an existing project above or describe a brand-new app idea to design and build together.</string>
+    <string name="agent_ready_subtitle_project">Design screens, wire blocks, import assets, or attach a screenshot for %1$s.</string>
+    <string name="agent_quick_design_screen">Design a new screen</string>
+    <string name="agent_quick_screenshot">Recreate a screenshot</string>
+    <string name="agent_quick_review">Inspect &amp; improve project</string>
+    <string name="agent_working_overline">WORKING PROJECT</string>
+    <string name="agent_working_overline_empty">PROJECT</string>
+    <string name="agent_proposal_badge">PROPOSED CHANGE</string>
+    <string name="agent_settings_section_provider">Provider &amp; API keys</string>
+    <string name="agent_settings_section_model">Model selection</string>
+    <string name="agent_settings_section_access">Project permissions</string>
 </resources>

@@ -6,16 +6,18 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <!-- "Working on" card: tap to bind the agent to a project. Shows the
-         empty "choose" state until one is picked. -->
+    <!-- "Working on" project capsule: tap to bind the agent to a project. -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/working_on_card"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="16dp"
         android:layout_marginTop="8dp"
-        app:cardBackgroundColor="?attr/colorSurfaceContainer"
-        app:cardCornerRadius="16dp"
+        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+        app:cardCornerRadius="20dp"
+        app:cardElevation="0dp"
+        app:strokeColor="?attr/colorOutlineVariant"
+        app:strokeWidth="1dp"
         tools:visibility="visible">
 
         <LinearLayout
@@ -24,7 +26,8 @@
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:padding="12dp">
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="10dp">
 
             <com.google.android.material.imageview.ShapeableImageView
                 android:id="@+id/working_on_icon"
@@ -32,7 +35,8 @@
                 android:layout_height="40dp"
                 android:contentDescription="@null"
                 android:scaleType="centerCrop"
-                android:src="@drawable/sketch_app_icon" />
+                android:src="@drawable/sketch_app_icon"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.Material3.Corner.Medium" />
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -42,57 +46,74 @@
                 android:orientation="vertical">
 
                 <TextView
+                    android:id="@+id/working_on_overline"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:letterSpacing="0.06"
+                    android:text="@string/agent_working_overline_empty"
+                    android:textAppearance="?attr/textAppearanceLabelSmall"
+                    android:textColor="?attr/colorPrimary" />
+
+                <TextView
                     android:id="@+id/working_on_name"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
                     android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
+                    android:textColor="?attr/colorOnSurface"
                     tools:text="Sketchware Pro Demo" />
 
                 <TextView
                     android:id="@+id/working_on_subtitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
+                    android:layout_marginTop="1dp"
+                    android:ellipsize="end"
+                    android:maxLines="1"
                     android:textAppearance="?attr/textAppearanceBodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant"
-                    tools:text="InternalDemo (1.4)" />
+                    tools:text="InternalDemo · pro.demo.app" />
             </LinearLayout>
 
             <ImageView
                 android:id="@+id/working_on_expand"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@null"
+                android:padding="5dp"
                 android:scaleType="centerInside"
                 android:src="@drawable/selector_ic_expand_more_24"
-                app:tint="?attr/colorControlNormal" />
+                app:tint="?attr/colorOnSurfaceVariant" />
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- Provider/model bar: icon, the model in use (tap to switch), settings. -->
+    <!-- Top studio bar: spark · tappable model pill ▾ · Conversations · Export · Settings -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingHorizontal="16dp"
+        android:paddingStart="16dp"
         android:paddingTop="8dp"
-        android:paddingBottom="2dp">
+        android:paddingEnd="10dp"
+        android:paddingBottom="4dp">
 
         <LinearLayout
             android:id="@+id/model_picker_area"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginEnd="6dp"
             android:layout_weight="1"
-            android:background="?attr/selectableItemBackground"
+            android:background="@drawable/agent_model_pill_bg"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingVertical="6dp">
+            android:paddingHorizontal="12dp">
 
             <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
                 android:contentDescription="@null"
                 android:src="@drawable/agent_ic_spark"
                 app:tint="?attr/colorPrimary" />
@@ -101,18 +122,17 @@
                 android:id="@+id/model_label"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="10dp"
+                android:layout_marginStart="8dp"
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textAppearance="?attr/textAppearanceLabelLarge"
                 android:textColor="?attr/colorOnSurface"
                 tools:text="gemini-2.5-flash" />
 
-            <!-- Says, without words, that the model name opens a list. -->
             <ImageView
-                android:layout_width="18dp"
-                android:layout_height="18dp"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
                 android:layout_marginStart="4dp"
                 android:contentDescription="@null"
                 android:src="@drawable/ic_mtrl_arrow_down"
@@ -122,26 +142,29 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/history_button"
             style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:contentDescription="@string/agent_action_history"
-            app:icon="@drawable/ic_mtrl_history" />
+            app:icon="@drawable/ic_mtrl_history"
+            app:iconTint="?attr/colorOnSurfaceVariant" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/export_button"
             style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:contentDescription="@string/agent_action_export"
-            app:icon="@drawable/ic_mtrl_upload" />
+            app:icon="@drawable/ic_mtrl_upload"
+            app:iconTint="?attr/colorOnSurfaceVariant" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/settings_button"
             style="@style/Widget.Material3.Button.IconButton"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:contentDescription="@string/agent_action_settings"
-            app:icon="@drawable/ic_mtrl_settings" />
+            app:icon="@drawable/ic_mtrl_settings"
+            app:iconTint="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
 
     <FrameLayout
@@ -149,24 +172,156 @@
         android:layout_height="0dp"
         android:layout_weight="1">
 
+        <!-- Modern centered welcome / empty state when no turns are on screen. -->
+        <LinearLayout
+            android:id="@+id/empty_state_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:paddingHorizontal="28dp"
+            android:paddingVertical="16dp"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                app:cardBackgroundColor="?attr/colorPrimaryContainer"
+                app:cardCornerRadius="28dp"
+                app:cardElevation="0dp"
+                app:strokeWidth="0dp">
+
+                <ImageView
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:layout_gravity="center"
+                    android:contentDescription="@null"
+                    android:src="@drawable/agent_ic_spark"
+                    app:tint="?attr/colorPrimary" />
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                android:id="@+id/empty_state_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:gravity="center"
+                android:text="@string/agent_ready_title"
+                android:textAppearance="?attr/textAppearanceTitleLarge"
+                android:textColor="?attr/colorOnSurface" />
+
+            <TextView
+                android:id="@+id/empty_state_subtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center"
+                android:lineSpacingExtra="2dp"
+                android:text="@string/agent_ready_subtitle_no_project"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <!-- Shown inside the hero when no provider has been configured yet. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/choose_model_button"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="42dp"
+                android:layout_marginTop="16dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingHorizontal="20dp"
+                android:text="@string/agent_action_setup_provider"
+                android:visibility="gone"
+                app:cornerRadius="21dp"
+                app:icon="@drawable/ic_mtrl_settings"
+                app:iconPadding="8dp"
+                app:iconSize="18dp"
+                tools:visibility="visible" />
+
+            <!-- Generic starter chips when a provider is ready. -->
+            <HorizontalScrollView
+                android:id="@+id/empty_quick_row"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:scrollbars="none"
+                android:visibility="gone"
+                tools:visibility="visible">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/quick_chip_design"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:paddingHorizontal="14dp"
+                        android:text="@string/agent_quick_design_screen"
+                        android:textSize="12sp"
+                        app:cornerRadius="18dp"
+                        app:icon="@drawable/ic_mtrl_palette"
+                        app:iconPadding="6dp"
+                        app:iconSize="15dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/quick_chip_screenshot"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:layout_marginStart="8dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:paddingHorizontal="14dp"
+                        android:text="@string/agent_quick_screenshot"
+                        android:textSize="12sp"
+                        app:cornerRadius="18dp"
+                        app:icon="@drawable/ic_mtrl_image"
+                        app:iconPadding="6dp"
+                        app:iconSize="15dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/quick_chip_inspect"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:layout_marginStart="8dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:paddingHorizontal="14dp"
+                        android:text="@string/agent_quick_review"
+                        android:textSize="12sp"
+                        app:cornerRadius="18dp"
+                        app:icon="@drawable/ic_mtrl_checklist"
+                        app:iconPadding="6dp"
+                        app:iconSize="15dp" />
+                </LinearLayout>
+            </HorizontalScrollView>
+        </LinearLayout>
+
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/chat_list"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:clipToPadding="false"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="8dp"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="10dp"
             android:scrollbars="vertical"
             tools:listitem="@layout/agent_chat_item_assistant" />
 
-        <!-- Scrolls smoothly to the newest message; also dismisses the
-             keyboard. Shown when the end of the chat is out of view or the
-             keyboard is open. -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/scroll_down_button"
             style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
             android:layout_gravity="bottom|end"
             android:layout_marginEnd="16dp"
             android:layout_marginBottom="10dp"
@@ -176,29 +331,16 @@
             tools:visibility="visible" />
     </FrameLayout>
 
-    <!-- Shown until a provider has been set up. -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/choose_model_button"
-        style="@style/Widget.Material3.Button.TonalButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginBottom="8dp"
-        android:text="@string/agent_action_setup_provider"
-        android:visibility="gone"
-        tools:visibility="visible" />
-
     <LinearLayout
         android:id="@+id/input_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingHorizontal="16dp"
-        android:paddingTop="8dp"
+        android:paddingHorizontal="14dp"
+        android:paddingTop="6dp"
         android:paddingBottom="12dp">
 
-        <!-- Slim task strip: present only while a task is running or
-             sits paused. Resume continues it; the x tucks it away. -->
+        <!-- Floating working / paused task strip above the composer -->
         <LinearLayout
             android:id="@+id/task_strip"
             android:layout_width="match_parent"
@@ -214,6 +356,12 @@
             android:visibility="gone"
             tools:visibility="visible">
 
+            <View
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:layout_marginEnd="10dp"
+                android:background="@drawable/agent_typing_dot" />
+
             <TextView
                 android:id="@+id/task_strip_text"
                 android:layout_width="0dp"
@@ -221,35 +369,44 @@
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textAppearance="?attr/textAppearanceBodySmall"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                tools:text="“Add a login screen” stopped after 2 of 5 steps — the provider's limit was hit" />
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textColor="?attr/colorOnSurface"
+                tools:text="Step 2/5 · Editing MainActivity" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/task_strip_resume"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:text="@string/agent_task_resume" />
+                android:layout_height="32dp"
+                android:layout_marginStart="6dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minHeight="0dp"
+                android:paddingHorizontal="12dp"
+                android:text="@string/agent_task_resume"
+                android:textSize="12sp"
+                app:cornerRadius="16dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/task_strip_dismiss"
                 style="@style/Widget.Material3.Button.IconButton"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
                 android:contentDescription="@string/agent_task_dismiss"
-                app:icon="@drawable/ic_mtrl_close" />
+                app:icon="@drawable/ic_mtrl_close"
+                app:iconSize="18dp" />
         </LinearLayout>
 
-        <!-- One rounded message box: the text field, the in-box actions
-             (Plan, Task log — more can join the row later), and send. -->
+        <!-- Studio composer card: crisp outlined container, zero EditText underline -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/composer_card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardBackgroundColor="?attr/colorSurfaceContainerHighest"
+            app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
             app:cardCornerRadius="24dp"
-            app:cardElevation="0dp">
+            app:cardElevation="0dp"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -271,7 +428,7 @@
                         android:gravity="center_vertical"
                         android:orientation="horizontal"
                         android:paddingHorizontal="14dp"
-                        android:paddingTop="10dp"
+                        android:paddingTop="12dp"
                         android:paddingBottom="2dp" />
                 </HorizontalScrollView>
 
@@ -283,29 +440,31 @@
                     android:gravity="center_vertical"
                     android:hint="@string/agent_hint_message"
                     android:inputType="textMultiLine|textCapSentences"
+                    android:lineSpacingExtra="2dp"
                     android:maxLines="6"
-                    android:minHeight="48dp"
+                    android:minHeight="46dp"
                     android:paddingHorizontal="18dp"
-                    android:paddingTop="14dp"
-                    android:paddingBottom="4dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="6dp"
                     android:textColor="?attr/colorOnSurface"
                     android:textColorHint="?attr/colorOnSurfaceVariant"
-                    android:textSize="16sp" />
+                    android:textSize="15.5sp" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
-                    android:paddingStart="6dp"
+                    android:paddingStart="8dp"
+                    android:paddingTop="2dp"
                     android:paddingEnd="8dp"
-                    android:paddingBottom="6dp">
+                    android:paddingBottom="8dp">
 
                     <HorizontalScrollView
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:fadingEdgeLength="12dp"
+                        android:fadingEdgeLength="14dp"
                         android:requiresFadingEdge="horizontal"
                         android:scrollbars="none">
 
@@ -317,58 +476,101 @@
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/attach_button"
-                                style="@style/Widget.Material3.Button.IconButton"
-                                android:layout_width="40dp"
-                                android:layout_height="40dp"
+                                style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
+                                android:layout_width="36dp"
+                                android:layout_height="36dp"
                                 android:contentDescription="@string/agent_action_attach_image"
-                                app:icon="@drawable/ic_mtrl_image" />
+                                app:icon="@drawable/ic_mtrl_image"
+                                app:iconSize="18dp" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/style_button"
-                                style="@style/Widget.Material3.Button.TextButton"
+                                style="@style/Widget.Material3.Button.TonalButton"
                                 android:layout_width="wrap_content"
-                                android:layout_height="40dp"
+                                android:layout_height="34dp"
+                                android:layout_marginStart="6dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:minHeight="0dp"
+                                android:paddingHorizontal="12dp"
                                 android:text="@string/agent_style_button"
+                                android:textSize="12sp"
+                                app:backgroundTint="?attr/colorSurfaceContainer"
+                                app:cornerRadius="17dp"
                                 app:icon="@drawable/ic_mtrl_palette"
-                                app:iconPadding="4dp" />
+                                app:iconPadding="5dp"
+                                app:iconSize="15dp"
+                                app:iconTint="?attr/colorOnSurfaceVariant" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/design_system_button"
-                                style="@style/Widget.Material3.Button.TextButton"
+                                style="@style/Widget.Material3.Button.TonalButton"
                                 android:layout_width="wrap_content"
-                                android:layout_height="40dp"
+                                android:layout_height="34dp"
+                                android:layout_marginStart="6dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:minHeight="0dp"
+                                android:paddingHorizontal="12dp"
                                 android:text="@string/agent_design_system_button"
-                                app:iconPadding="4dp" />
+                                android:textSize="12sp"
+                                app:backgroundTint="?attr/colorSurfaceContainer"
+                                app:cornerRadius="17dp"
+                                app:icon="@drawable/ic_mtrl_style"
+                                app:iconPadding="5dp"
+                                app:iconSize="15dp"
+                                app:iconTint="?attr/colorOnSurfaceVariant" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/plan_button"
-                                style="@style/Widget.Material3.Button.TextButton"
+                                style="@style/Widget.Material3.Button.TonalButton"
                                 android:layout_width="wrap_content"
-                                android:layout_height="40dp"
+                                android:layout_height="34dp"
+                                android:layout_marginStart="6dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:minHeight="0dp"
+                                android:paddingHorizontal="12dp"
                                 android:text="@string/agent_plan_button"
+                                android:textSize="12sp"
+                                app:backgroundTint="?attr/colorSurfaceContainer"
+                                app:cornerRadius="17dp"
                                 app:icon="@drawable/ic_mtrl_checklist"
-                                app:iconPadding="4dp" />
+                                app:iconPadding="5dp"
+                                app:iconSize="15dp"
+                                app:iconTint="?attr/colorOnSurfaceVariant" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/task_log_button"
-                                style="@style/Widget.Material3.Button.TextButton"
+                                style="@style/Widget.Material3.Button.TonalButton"
                                 android:layout_width="wrap_content"
-                                android:layout_height="40dp"
+                                android:layout_height="34dp"
+                                android:layout_marginStart="6dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:minHeight="0dp"
+                                android:paddingHorizontal="12dp"
                                 android:text="@string/agent_task_log_button"
-                                app:icon="@drawable/ic_mtrl_history"
-                                app:iconPadding="4dp" />
+                                android:textSize="12sp"
+                                app:backgroundTint="?attr/colorSurfaceContainer"
+                                app:cornerRadius="17dp"
+                                app:icon="@drawable/ic_mtrl_article"
+                                app:iconPadding="5dp"
+                                app:iconSize="15dp"
+                                app:iconTint="?attr/colorOnSurfaceVariant" />
                         </LinearLayout>
                     </HorizontalScrollView>
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/send_button"
                         style="@style/Widget.Material3.Button.IconButton.Filled"
-                        android:layout_width="44dp"
-                        android:layout_height="44dp"
-                        android:layout_marginStart="4dp"
+                        android:layout_width="42dp"
+                        android:layout_height="42dp"
+                        android:layout_marginStart="8dp"
                         android:contentDescription="@string/agent_action_send"
                         android:enabled="false"
-                        app:icon="@drawable/agent_ic_send" />
+                        app:icon="@drawable/agent_ic_send"
+                        app:iconSize="20dp" />
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

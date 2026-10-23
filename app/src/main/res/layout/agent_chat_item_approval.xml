@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Approval card: the agent proposes a change in plain words. Nothing
-     runs until the user taps Approve; the outcome stays on the card. -->
+<!-- Approval & Build card: proposed changes in plain language with collapsible Details -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -8,14 +7,15 @@
     android:layout_height="wrap_content"
     android:gravity="start"
     android:orientation="vertical"
-    android:paddingVertical="4dp">
+    android:paddingVertical="5dp">
 
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginEnd="48dp"
-        app:cardBackgroundColor="?attr/colorSurfaceContainer"
-        app:cardCornerRadius="18dp"
+        android:layout_marginEnd="28dp"
+        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+        app:cardCornerRadius="20dp"
+        app:cardElevation="0dp"
         app:strokeColor="?attr/colorOutlineVariant"
         app:strokeWidth="1dp">
 
@@ -23,40 +23,71 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="14dp">
+            android:padding="16dp">
+
+            <!-- Subtle Sketchware accent header badge -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/agent_ic_spark"
+                    app:tint="?attr/colorPrimary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:letterSpacing="0.06"
+                    android:text="@string/agent_proposal_badge"
+                    android:textAppearance="?attr/textAppearanceLabelSmall"
+                    android:textColor="?attr/colorPrimary" />
+            </LinearLayout>
 
             <TextView
                 android:id="@+id/approval_title"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
                 android:textAppearance="?attr/textAppearanceBodyLargeEmphasized"
-                tools:text="Add a screen to Sporty Bet" />
+                android:textColor="?attr/colorOnSurface"
+                tools:text="Add a screen to Demo Project" />
 
             <TextView
                 android:id="@+id/approval_body"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
+                android:lineSpacingExtra="2dp"
                 android:textAppearance="?attr/textAppearanceBodyMedium"
                 android:textColor="?attr/colorOnSurfaceVariant"
-                tools:text="New activity: SettingsActivity" />
+                tools:text="• New activity: SettingsActivity" />
 
             <TextView
                 android:id="@+id/approval_details_toggle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
+                android:layout_marginTop="8dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
-                android:paddingVertical="2dp"
+                android:paddingVertical="3dp"
                 android:textAppearance="?attr/textAppearanceLabelLarge"
                 android:textColor="?attr/colorPrimary"
                 tools:text="Details ▾" />
 
             <TextView
                 android:id="@+id/approval_details"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:paddingTop="2dp"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/agent_details_well_bg"
+                android:fontFamily="monospace"
+                android:lineSpacingExtra="2dp"
+                android:padding="12dp"
                 android:textAppearance="?attr/textAppearanceBodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:visibility="gone"
@@ -67,30 +98,46 @@
                 android:id="@+id/approval_buttons"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
                 android:orientation="horizontal">
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/approval_approve"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    android:layout_height="40dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minHeight="0dp"
+                    android:paddingHorizontal="18dp"
                     android:text="@string/agent_approval_approve"
-                    app:backgroundTint="@color/agent_approve_green" />
+                    android:textColor="@android:color/white"
+                    app:backgroundTint="@color/agent_approve_green"
+                    app:cornerRadius="20dp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/approval_reject"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    android:layout_height="40dp"
                     android:layout_marginStart="8dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minHeight="0dp"
+                    android:paddingHorizontal="16dp"
                     android:text="@string/agent_approval_reject"
-                    app:backgroundTint="@color/agent_reject_red" />
+                    android:textColor="@color/agent_reject_red"
+                    app:backgroundTint="@color/agent_reject_bg"
+                    app:cornerRadius="20dp"
+                    app:strokeColor="@color/agent_reject_red"
+                    app:strokeWidth="1dp" />
             </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/approval_state_row"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="12dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
                 android:visibility="gone"
@@ -121,39 +168,48 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
-                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     tools:text="Working…" />
             </LinearLayout>
 
-            <!-- After a successful build only: the finished APK lives
-                 on disk, so the card can hand it to Android's installer
-                 now or days later — no rebuild needed. -->
+            <!-- Build → Install banner: stays resumable without rebuilding -->
             <LinearLayout
                 android:id="@+id/approval_install_row"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/agent_install_banner_bg"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="10dp"
                 android:visibility="gone"
                 tools:visibility="visible">
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/approval_install"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/agent_install" />
+                    android:layout_height="38dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minHeight="0dp"
+                    android:paddingHorizontal="16dp"
+                    android:text="@string/agent_install"
+                    app:cornerRadius="19dp"
+                    app:icon="@drawable/ic_mtrl_apk_install"
+                    app:iconPadding="6dp"
+                    app:iconSize="18dp" />
 
                 <TextView
                     android:id="@+id/approval_install_note"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp"
+                    android:layout_marginStart="12dp"
                     android:layout_weight="1"
                     android:textAppearance="?attr/textAppearanceBodySmall"
-                    android:textColor="?attr/colorOnSurfaceVariant"
-                    tools:text="Built 14:23 · 100 KB" />
+                    android:textColor="?attr/colorOnSurface"
+                    tools:text="Built 14:23 · 4.2 MB" />
             </LinearLayout>
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>

@@ -337,6 +337,8 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
             }
             boolean hasThinking = message.thinking != null
                     && !message.thinking.trim().isEmpty();
+            binding.thinkingBox.setVisibility(
+                    hasThinking ? View.VISIBLE : View.GONE);
             binding.thinkingHeader.setVisibility(
                     hasThinking ? View.VISIBLE : View.GONE);
             binding.thinkingText.setVisibility(hasThinking
@@ -345,12 +347,14 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                 markwon(binding.messageText).setMarkdown(
                         binding.thinkingText, message.thinking);
                 updateThinkingHeader(binding, message.thinkingExpanded);
-                binding.thinkingHeader.setOnClickListener(v -> {
+                View.OnClickListener toggleThinking = v -> {
                     message.thinkingExpanded = !message.thinkingExpanded;
                     binding.thinkingText.setVisibility(
                             message.thinkingExpanded ? View.VISIBLE : View.GONE);
                     updateThinkingHeader(binding, message.thinkingExpanded);
-                });
+                };
+                binding.thinkingBox.setOnClickListener(toggleThinking);
+                binding.thinkingHeader.setOnClickListener(toggleThinking);
             }
             renderBody(message);
             // No words yet: the dots pill speaks alone, no empty shell.
