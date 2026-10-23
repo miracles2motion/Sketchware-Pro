@@ -757,8 +757,17 @@ public class AgentFragment extends qA {
                     @Override
                     public void onResolvedModel(String modelId) {
                         runOnUi(() -> {
-                            if (binding != null && modelId != null
-                                    && !modelId.isEmpty()) {
+                            if (modelId == null || modelId.isEmpty()) {
+                                return;
+                            }
+                            // Remember it beyond this turn: the chat
+                            // bar keeps naming the model that works,
+                            // even after restarts.
+                            AiProviderConfig.Settings settings =
+                                    providerConfig.activeSettings();
+                            settings.lastAutoModel = modelId;
+                            providerConfig.save(requireContext());
+                            if (binding != null) {
                                 binding.modelLabel.setText("✨ Auto · "
                                         + ModelCatalog.displayName(
                                         modelId));
@@ -4674,8 +4683,13 @@ public class AgentFragment extends qA {
         binding.chooseModelButton.setVisibility(configured ? View.GONE : View.VISIBLE);
         String model = configured
                 ? providerConfig.activeSettings().model : "";
+        String lastAuto = configured
+                ? providerConfig.activeSettings().lastAutoModel : "";
         binding.modelLabel.setText(configured
-                ? ("auto".equalsIgnoreCase(model) ? "✨ Auto" : model)
+                ? ("auto".equalsIgnoreCase(model)
+                ? (lastAuto.isEmpty() ? "✨ Auto"
+                : "✨ Auto · " + ModelCatalog.displayName(lastAuto))
+                : model)
                 : getString(R.string.agent_no_provider));
         updateEmptyState();
     }

@@ -49,6 +49,12 @@ public class AiProviderConfig {
         /** False on configs written before auto-approve existed, so
          * the 5s default applies instead of Gson's 0. */
         public boolean autoApproveSecondsSet;
+        /**
+         * The model ✨ Auto last resolved and used successfully — kept
+         * so the chat bar can read "✨ Auto · <model>" between turns
+         * instead of hiding who is doing the work.
+         */
+        public String lastAutoModel = "";
     }
 
     /**
