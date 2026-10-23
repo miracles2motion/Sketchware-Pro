@@ -2,6 +2,7 @@ package pro.sketchware.ai;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -18,6 +19,7 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.Call;
@@ -116,6 +118,15 @@ public class AiChatService {
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(180, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
+            .build();
+    /**
+     * Agent turns use a shorter read deadline (90s) than the plain
+     * chat: a stalled provider should surface as a retry/failover
+     * within about a minute and a half, never a silent 3-minute hang
+     * three times over (the HabitTracker 9-minute stall).
+     */
+    private final OkHttpClient agentClient = client.newBuilder()
+            .readTimeout(90, TimeUnit.SECONDS)
             .build();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private volatile Call activeCall;
@@ -370,7 +381,7 @@ public class AiChatService {
                 .header("Accept-Encoding", "identity")
                 .post(RequestBody.create(payload.toString(), JSON))
                 .build();
-        Call call = client.newCall(request);
+        Call call = agentClient.newCall(request);
         activeCall = call;
         try (Response response = call.execute()) {
             ResponseBody body = response.body();
@@ -509,18 +520,37 @@ public class AiChatService {
                         postModelsError(listener, classify(response.code(), text));
                         return;
                     }
+                    // Parse the full /models metadata (tool support,
+                    // vision, context size, free tier) into the
+                    // catalog, then hand back the plain ids. OpenRouter
+                    // shapes carry architecture/supported_parameters;
+                    // Gemini's native list uses models[].
+                    List<ModelCatalog.ModelInfo> parsed =
+                            ModelCatalog.parseModelsResponse(text);
                     List<String> models = new ArrayList<>();
-                    JsonElement root = JsonParser.parseString(text);
-                    JsonArray data = root.getAsJsonObject().getAsJsonArray("data");
-                    if (data != null) {
-                        for (JsonElement element : data) {
-                            JsonObject object = element.getAsJsonObject();
-                            if (object.has("id")) {
-                                models.add(object.get("id").getAsString());
+                    for (ModelCatalog.ModelInfo info : parsed) {
+                        models.add(info.id);
+                    }
+                    if (models.isEmpty()) {
+                        // Unrecognised shape: fall back to the raw ids
+                        // so the picker never comes back empty.
+                        JsonElement root = JsonParser.parseString(text);
+                        JsonArray data = root.getAsJsonObject()
+                                .getAsJsonArray("data");
+                        if (data != null) {
+                            for (JsonElement element : data) {
+                                JsonObject object = element.getAsJsonObject();
+                                if (object.has("id")) {
+                                    models.add(object.get("id").getAsString());
+                                }
                             }
                         }
                     }
                     Collections.sort(models, String.CASE_INSENSITIVE_ORDER);
+                    String provider = providerOf(baseUrl);
+                    if (!provider.isEmpty()) {
+                        ModelCatalog.mergeFetched(provider, parsed);
+                    }
                     mainHandler.post(() -> listener.onModels(models));
                 } catch (Exception e) {
                     postModelsError(listener, new AiError(ErrorKind.HTTP, response.code(),
@@ -528,6 +558,20 @@ public class AiChatService {
                 }
             }
         });
+    }
+
+    /** The provider a baseUrl belongs to, for catalog keys. */
+    private static String providerOf(String baseUrl) {
+        String url = baseUrl == null ? "" : baseUrl.toLowerCase(Locale.ROOT);
+        for (AiProvider provider : AiProvider.values()) {
+            String known = provider.defaultBaseUrl == null ? ""
+                    : provider.defaultBaseUrl.toLowerCase(Locale.ROOT);
+            if (!known.isEmpty() && (url.equals(known)
+                    || url.contains(known) || known.contains(url))) {
+                return provider.name();
+            }
+        }
+        return "";
     }
 
     /**
@@ -581,6 +625,185 @@ public class AiChatService {
     private static String number(JsonObject object, String field) {
         return object.has(field) && !object.get(field).isJsonNull()
                 ? object.get(field).getAsString() : "–";
+    }
+
+    // ------------------------------------------------------------------
+    // Active model probe ("Test model" / "Verify top models")
+
+    /** What one probe learned about a model. */
+    public static class ProbeResult {
+        public boolean ok;
+        public boolean tools;
+        public boolean vision;
+        public boolean visionKnown;
+        public long latencyMs;
+        public int httpCode;
+        public String error = "";
+    }
+
+    public interface ProbeListener {
+        void onResult(ProbeResult result);
+    }
+
+    /** The 68-byte 1×1 red PNG used for the vision check. */
+    private static final String PROBE_PNG_BASE64 =
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
+                    + "AAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+    private final OkHttpClient probeClient = new OkHttpClient.Builder()
+            .dns(new ResilientDns())
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(45, TimeUnit.SECONDS)
+            .writeTimeout(15, TimeUnit.SECONDS)
+            .build();
+
+    /**
+     * One cheap live check of a model, run synchronously on the
+     * caller's thread: a ~15-token chat turn carrying a no-op
+     * {@code ping} tool measures latency and proves tool-calling, and
+     * (when asked) a second 1×1-pixel turn proves vision. The result
+     * is persisted to the catalog by the caller.
+     */
+    public ProbeResult probeModel(String baseUrl, String apiKey,
+                                  String model, boolean checkVision) {
+        ProbeResult result = new ProbeResult();
+        JsonObject payload = new JsonObject();
+        payload.addProperty("model", model);
+        payload.addProperty("stream", false);
+        JsonArray messages = new JsonArray();
+        JsonObject user = new JsonObject();
+        user.addProperty("role", "user");
+        user.addProperty("content",
+                "Reply with the single word: ok");
+        messages.add(user);
+        payload.add("messages", messages);
+        JsonArray tools = new JsonArray();
+        JsonObject ping = new JsonObject();
+        ping.addProperty("type", "function");
+        JsonObject fn = new JsonObject();
+        fn.addProperty("name", "ping");
+        fn.addProperty("description", "No-op tool used for a capability check");
+        JsonObject schema = new JsonObject();
+        schema.addProperty("type", "object");
+        schema.add("properties", new JsonObject());
+        fn.add("parameters", schema);
+        ping.add("function", fn);
+        tools.add(ping);
+        payload.add("tools", tools);
+
+        long started = SystemClock.elapsedRealtime();
+        JsonObject responseBody = postForJson(baseUrl, apiKey, payload,
+                probeClient);
+        result.latencyMs = SystemClock.elapsedRealtime() - started;
+        if (responseBody == null) {
+            result.error = "network error";
+            return result;
+        }
+        if (responseBody.has("_http")) {
+            result.httpCode = responseBody.get("_http").getAsInt();
+            result.error = "HTTP " + result.httpCode;
+            if (responseBody.has("_body")) {
+                String body = responseBody.get("_body").getAsString();
+                String low = body == null ? "" : body.toLowerCase(Locale.ROOT);
+                if (result.httpCode == 404
+                        || low.contains("does not exist")
+                        || low.contains("not found")
+                        || low.contains("no such model")) {
+                    result.error = "404 · model retired or renamed";
+                } else if (low.contains("tool") || low.contains("function")) {
+                    // Reached a real chat model that refused tools.
+                    result.ok = true;
+                    result.tools = false;
+                    result.error = "no tools";
+                } else if (result.httpCode == 503 || result.httpCode == 529) {
+                    result.error = "503 · provider overloaded";
+                } else if (result.httpCode == 402
+                        || result.httpCode == 429) {
+                    result.error = result.httpCode + " · quota";
+                }
+            }
+            return result;
+        }
+        result.ok = true;
+        result.tools = true;
+        if (responseBody.has("choices")
+                && responseBody.get("choices").isJsonArray()
+                && responseBody.getAsJsonArray("choices").size() > 0
+                && responseBody.getAsJsonArray("choices").get(0)
+                .isJsonObject()) {
+            JsonObject choice = responseBody.getAsJsonArray("choices")
+                    .get(0).getAsJsonObject();
+            JsonObject message = choice.has("message")
+                    && choice.get("message").isJsonObject()
+                    ? choice.getAsJsonObject("message")
+                    : new JsonObject();
+            if (message.has("tool_calls")) {
+                result.tools = true;
+            }
+        }
+        if (!checkVision) {
+            return result;
+        }
+        JsonObject visionPayload = new JsonObject();
+        visionPayload.addProperty("model", model);
+        visionPayload.addProperty("stream", false);
+        JsonArray visionMessages = new JsonArray();
+        JsonObject visionUser = new JsonObject();
+        visionUser.addProperty("role", "user");
+        JsonArray content = new JsonArray();
+        JsonObject textPart = new JsonObject();
+        textPart.addProperty("type", "text");
+        textPart.addProperty("text", "Reply with the single word: ok");
+        content.add(textPart);
+        JsonObject imagePart = new JsonObject();
+        imagePart.addProperty("type", "image_url");
+        JsonObject imageUrl = new JsonObject();
+        imageUrl.addProperty("url",
+                "data:image/png;base64," + PROBE_PNG_BASE64);
+        imagePart.add("image_url", imageUrl);
+        content.add(imagePart);
+        visionUser.add("content", content);
+        visionMessages.add(visionUser);
+        visionPayload.add("messages", visionMessages);
+        JsonObject visionResponse = postForJson(baseUrl, apiKey,
+                visionPayload, probeClient);
+        result.visionKnown = true;
+        result.vision = visionResponse != null
+                && !visionResponse.has("_http");
+        return result;
+    }
+
+    /**
+     * One synchronous POST, returning the parsed JSON body, or an
+     * {@code {"_http":code,"_body":text}} marker object on HTTP
+     * failure, or null on a network failure.
+     */
+    private JsonObject postForJson(String baseUrl, String apiKey,
+                                   JsonObject payload, OkHttpClient client) {
+        Request request;
+        try {
+            request = new Request.Builder()
+                    .url(normalize(baseUrl) + "chat/completions")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .post(RequestBody.create(payload.toString(), JSON))
+                    .build();
+        } catch (Exception e) {
+            return null;
+        }
+        try (Response response = client.newCall(request).execute()) {
+            try (ResponseBody body = response.body()) {
+                String text = body == null ? "" : body.string();
+                if (!response.isSuccessful()) {
+                    JsonObject marker = new JsonObject();
+                    marker.addProperty("_http", response.code());
+                    marker.addProperty("_body", text);
+                    return marker;
+                }
+                return JsonParser.parseString(text).getAsJsonObject();
+            }
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** Cancels the in-flight chat, if any. */
@@ -727,14 +950,25 @@ public class AiChatService {
     public static void markModelVisionUnsupported(String model) {
         if (model != null && !model.trim().isEmpty()) {
             KNOWN_TEXT_ONLY_MODELS.add(model.trim().toLowerCase(java.util.Locale.ROOT));
+            // Persist it: the catalog's badges then show "Text-only"
+            // honestly after a restart, too.
+            ModelCatalog.update(ModelCatalog.providerForModel(model), model,
+                    info -> info.vision = false);
         }
     }
 
     /** True if {@code model} previously rejected multimodal {@code image_url} input. */
     public static boolean isModelKnownTextOnly(String model) {
-        return model != null
-                && KNOWN_TEXT_ONLY_MODELS.contains(
-                        model.trim().toLowerCase(java.util.Locale.ROOT));
+        if (model == null) {
+            return false;
+        }
+        if (KNOWN_TEXT_ONLY_MODELS.contains(
+                model.trim().toLowerCase(java.util.Locale.ROOT))) {
+            return true;
+        }
+        ModelCatalog.ModelInfo known =
+                ModelCatalog.info(ModelCatalog.providerForModel(model), model);
+        return known != null && Boolean.FALSE.equals(known.vision);
     }
 
     /** True if {@code messages} currently contains any {@code image_url} content array. */

@@ -39,6 +39,16 @@ public class AiProviderConfig {
         public boolean showAllModels;
         /** Index of the key in use, within this provider's key list. */
         public int activeKey;
+        /**
+         * Timed auto-approve for pending cards, in seconds (0 = off).
+         * Default 5: cards approve themselves after a live countdown,
+         * pausing when Details is opened; destructive deletes always
+         * wait for a human.
+         */
+        public int autoApproveSeconds = 5;
+        /** False on configs written before auto-approve existed, so
+         * the 5s default applies instead of Gson's 0. */
+        public boolean autoApproveSecondsSet;
     }
 
     /**
@@ -173,6 +183,10 @@ public class AiProviderConfig {
                                 }
                                 target.showAllModels = source.showAllModels;
                                 target.activeKey = source.activeKey;
+                                target.autoApproveSeconds =
+                                        source.autoApproveSecondsSet
+                                                ? source.autoApproveSeconds
+                                                : 5;
                             }
                         }
                     }

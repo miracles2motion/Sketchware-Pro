@@ -270,5 +270,81 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 2. **Static Verification & Single CI Push:**
    - Verified via `scripts/check_openui_upstream.py`, `tree-sitter-java` + `javalang` AST checks, and `scripts/check_symbols.py` across all modified files before single bundled CI push.
 
+---
+
+## Smart Model Catalog, Dual Auto Modes, Unified Design System & Export #3 Hardening Roadmap (Phases 19–24)
+
+**Context:** Captures every finding from `HabitTracker-agent-export-20261023-1824.json` plus all capabilities agreed in user design sessions. All six phases shipped in ONE commit and ONE green `Android CI` build.
+
+---
+
+### Phase 19 (DONE) — Export #3 Compiler, Menu `R.id`, Compact Padding & Hard Contrast Guards (`AgentLogic.java`, `AgentEdits.java`)
+1. **Real `R.id.<name>` Support in Block Number/Comparison/Switch Slots (`AgentLogic.java`):**
+   - Accept `{"res_id": "menu_settings"}`, `"@id/menu_settings"`, `"@+id/menu_settings"`, and `"R.id.menu_settings"` in integer/number slots, `if` comparisons (`=`, `!=`), and `switch` `cases` (`onOptionsItemSelected`, `onNavigationItemSelected`, etc.), compiling to real `R.id.<name>` in generated Java and validating against screen widget IDs + `res/menu/*.xml` `@+id/*` entries so models never guess fake integers like `2131230720`.
+2. **Compact Button Padding Guard on `set_attributes` (`AgentEdits.java`):**
+   - Prevent raw `set_attributes` (`android:padding`, `android:paddingTop`, `android:paddingBottom`, `android:paddingVertical`) on compact `Button` / `MaterialButton` widgets (`height <= 48dp`) from crushing text height and re-clipping chip labels.
+3. **Hard Contrast Rejection on Unreadable Same-Surface Text (`AgentEdits.java`):**
+   - Block setting widget `text_color` / `android:textColor` to a colour with `< 1.8:1` contrast against its own background or `openui_*` surface in Light or Dark mode (e.g. `@color/openui_sunk` text on `openui_sunk_input`), returning an actionable error naming `@color/openui_text_primary` / `@color/openui_text_on_accent`.
+
+   - **Shipped:** `{"res_id":"menu_settings"}` (also `@id/…`, `@+id/…`, `R.id.…`) compiles to real `R.id.<name>` via an `asdNumber` reporter validated against `AgentResources.collectDeclaredResourceIds` (every screen widget id + every `@+id/*` / `<item type="id">` in `res/` XML); `switchValueKind` + `describeExpr` + the system prompt teach it; `set_padding` and raw `android:padding*` injects are hard-blocked on compact (≤48dp) buttons; `set_text_color` computes WCAG against the real ancestor surface in Light AND Dark, warning below `4.2:1` (3.0 for 18sp+) and hard-blocking `< 1.8:1` invisible text.
+---
+
+### Phase 20 (DONE) — Unified Design System (Retiring Separate `Style` Pill) + Theme Undo & `↺ Original Theme` (`AgentJournal.java`, `AgentTools.java`, `AgentLoop.java`, `agent_chat.xml`, `AgentFragment.java`)
+1. **Merge `Style` into `Design system`:**
+   - Remove the redundant `Style` button from the composer bar (`agent_chat.xml`), leaving **3 clean pills: `Design system` · `Plan` · `Task log`** and eliminating split-brain conflicts between old `styleBrief` text and live `Design system` palettes.
+   - Fold the human **Mood & Audience summary** banner into the top of `Design system` (`designSystem.summary`); streamline `checkDesignGate` to **Brainstorm (`ask_choice`) → `Design system` → `Plan`** while keeping `set_style_brief` as a backward-compatible alias updating `designSystem.summary`.
+2. **`↺ Original Project Theme` + 10-Step `↶ Undo` Stack:**
+   - Snapshot `originalDesignSystem` automatically when a project's first theme is saved (never overwritten by later preset experiments) alongside a 10-step `designSystemHistory` stack in `AgentJournal`.
+   - Expose one-tap **`↶ Undo`** and **`↺ Original Theme`** in the **Design system** header and Presets sheet, re-syncing project XML resources immediately.
+
+   - **Shipped:** `Style` pill removed from the composer (`Design system · Plan · Task log` remain); `styleBrief` now mirrors its first line into `designSystem.summary` (shown as a tappable Mood & Audience banner at the top of the Design system page, edited by the existing brief editor); `AgentJournal` keeps `originalDesignSystem` (pinned on first save) + a 10-step `designSystemHistory`; **`↶ Undo (n)`** and **`↺ Original theme`** buttons re-materialize XML instantly; new `undo_design_system` tool (`undo` / `restore_original`); exports carry `design_system_history` + `original_design_system`.
+---
+
+### Phase 21 (DONE) — Model Capability Catalog, Metadata Badges, Permanent Hide & Active Model Probe (`ModelCatalog.java`, `AiProviderConfig.java`, `AiChatService.java`, `AgentSettingsActivity.java`, `AgentFragment.java`)
+1. **Fix Model Filtering Everywhere & Extract Zero-Token `/models` Capabilities:**
+   - Route both `AgentSettingsActivity` and the top-bar chat Model Picker through `ModelCatalog`, filtering non-chat models (`tts`, `whisper`, `imagen`, `flux`, `dall-e`, `veo`, `sora`, `embed`, `rerank`, `moderation`, `guard`, `ocr`, `aqa`, `live`, `audio`, `video`) by default and honoring `showAllModels`.
+   - Parse rich `/models` metadata from OpenRouter (`input_modalities`, `supported_parameters` `"tools"`, `context_length`, `pricing`), Gemini (`supportedGenerationMethods`, `inputTokenLimit`), and NVIDIA/OpenAI into persisted `ModelInfo` badges:
+     - **`Tools ✓`**, **`Vision`**, **`Text-only`**, **`Chat only · Can't edit project`** (when tool-calling is unsupported), context size (`128K`, `1M`), **`Free`**, and measured latency (`1.3s`).
+2. **Permanent Per-Model Hide (`✕ Hide` + Unhide Manager in Settings):**
+   - Allow hiding any model permanently per provider (`hiddenModels` in `AiProviderConfig`) directly from the Model Picker or Settings, with a *"Hidden models (N) — Manage / Restore"* dialog in Settings.
+3. **Active Model Tester (`Test model` & `Verify top models`):**
+   - Lightweight ~15-token active probe (1-tool ping + 68-byte `1×1` PNG check when vision capability is unknown) to detect dead/retired (`404`), overloaded (`503`), tool-capable, and vision-capable models and record latency permanently.
+
+   - **Shipped:** new `ModelCatalog.java` (`.sketchware/ai/model-catalog.json`) parses OpenRouter (`architecture.input_modalities`, `supported_parameters.tools`, `context_length`, `pricing`) and Gemini (`supportedGenerationMethods`, `inputTokenLimit`) into persisted `Tools ✓ · Vision / Text-only · ctx · Free · latency` badges plus the honest "Chat only · Can't edit project" label; both Settings and the chat Model Picker now go through `ModelCatalog.visibleModels` (junk `tts/imagen/veo/embed/rerank/…` filtered by default, `showAllModels` overrides); per-model permanent **Hide (✕)** + a Hidden-restore dialog; **Test** / **⚡ Verify top models** probes (1-tool ping + 1×1-PNG vision check + latency, 404s auto-hidden as retired); live vision rejections persist "Text-only" across restarts.
+---
+
+### Phase 22 (DONE) — Dual Auto Modes: `✨ Auto (Smart Model Router)` + 5s Timed Auto-Approve (`AiChatService.java`, `AgentLoop.java`, `AgentFragment.java`, `ChatAdapter.java`, `AgentSettingsActivity.java`)
+1. **`✨ Auto` Smart Model Router (Active-Provider-First + Cross-Provider Failover):**
+   - Pinned at the top of the Model Picker (`model = "auto"`). Selects the best healthy `Vision + Tools` model in the active provider when screenshots or `preview_screen` visuals are active, or the best fast `Tools` model otherwise.
+   - Replaces silent `180s × 3` hangs with a shorter stall timeout, live retry/failover status notes (*"Gemini Flash busy (503) — switching to …"*), 5-minute model cooldowns on `503`/`429`/timeout, and automatic failover across models in the active provider first and then across other configured provider keys.
+   - **Zero-loss mid-turn context handoff:** Strips provider-specific fields (`thought_signature`, reasoning metadata, and `image_url` only if failing over to a text-only model) on the live `messages` list so completed `tool_calls` and `tool` results carry straight to the next model without re-reading files.
+2. **5-Second Timed Auto-Approve (Including `build_project`):**
+   - Configurable in Settings + quick toggle in Agent Mode (**default: `5s`**, including `build_project`).
+   - Displays live **`Approve (5s)…` → `(1s)…`** countdown on the green button; tapping **`Details`** immediately pauses the timer for manual review; **Reject** / **Stop** cancels immediately; destructive deletes (`delete_activity`, `delete_custom_view`, `remove_component`) remain manual.
+
+   - **Shipped:** model `auto` (shown as **`✨ Auto`**) routes per turn — vision+tools model when the turn carries images, otherwise the fastest known-Tools model — and `AgentLoop` fails over mid-turn on 429/5xx/network (5-min cooldown per model, `sanitizeMessagesForModel` strips `thought_signature`-class fields and downgrades images for text-only targets so completed tool calls carry over); agent turns use a 90s read timeout instead of silent 180s×3; **5-second Timed Auto-Approve** on by default (Settings switch + `⏱` toggle in the Model Picker footer): live `✓ Approve (5s)…` countdown on the card, paused by Details or any touch, immediate on Reject, and `delete_activity` / `delete_custom_view` / `remove_component` / file-resource deletes are manual-hold forever.
+---
+
+### Phase 23 (DONE) — Compact Project Index, Failed-Turn Read Cache & Vague-Prompt Intelligence (`AgentLoop.java`, `AgentTools.java`)
+1. **Compact Project Index (~350 Tokens) in `systemMessage`:**
+   - Summarizes screens, key widget IDs, `RecyclerView → item_*` links, components, variables/lists, SharedPreferences keys, `@+id/*` menu items, and wired events so newly switched or `✨ Auto` models orient immediately without 4–5 discovery tool calls and never drift on storage keys across screens.
+2. **Failed-Turn Read Cache & Clean Retry UI:**
+   - Preserves read-only tool findings across `Tap to retry` / `Resume` until the next project edit, and removes superseded error banners once a retry succeeds.
+3. **Vague-Prompt Product & Keyless-API Standard:**
+   - Guides short/vague prompts (*"build me a notepad"*, *"build me a weather forecasting app"*) through visual brainstorming → custom OpenUI Design System → complete real-world Plan, defaulting live-data apps without user keys to **free keyless public APIs** (e.g. Open-Meteo geocoding + forecast) with `INTERNET` permission + `RequestNetwork` + offline cache.
+
+   - **Shipped:** the system message now carries a **PROJECT INDEX** (~350 tokens): per screen its widget ids, wired events, components, variables, lists, More Blocks and SharedPreferences files (`param1`), plus item layouts and `res/menu/*.xml` ids with a `{"res_id":…}` hint; **read-tool retry cache** (`AgentJournal.readCache`) re-briefs failed turns with what `get_screen` / `get_event_logic` / `read_source_files` etc. already found, cleared on mutation or success; AGENT_GUIDANCE now handles vague prompts (brainstorm → complete plan, never ask the user to design) and mandates free keyless APIs (Open-Meteo geocoding+forecast, INTERNET permission, offline cache) for live-data apps without keys.
+---
+
+### Phase 24 (DONE) — Modern Material 3 Choice/Picker Sheets with Live Colour Swatches, Full Static Audit & Single Green CI Build (`AgentFragment.java`, `AgentSettingsActivity.java`)
+1. **Material 3 Card Bottom-Sheets Replacing Bare `AlertDialog.setItems`:**
+   - Upgrade **`ask_choice`**, **Model Picker**, **Key Switcher**, and **Design System Presets** from borderless text lists into rounded, outlined, ripple-enabled Material 3 cards with clear **Title + Subtitle + right-hand badge/radio/chevron**.
+2. **Live Colour Swatches & Palette Preview Inside `ask_choice`:**
+   - Render real `#RRGGBB` colour swatch circles + mini Light/Dark surface preview strips directly inside each style/colour option card, plus **"Pick custom colour…"** (Sketchware colour wheel), **"Type my own…"**, and **"You decide"** actions at the bottom.
+3. **Full Static Audit, Documentation & Single Green `Android CI` Build:**
+   - Run `tree-sitter-java`, cross-class method/arity/visibility/import/checked-exception checks, `scripts/check_symbols.py`, and `scripts/check_openui_upstream.py`, update `docs/AGENT_MODE.md` + `docs/AGENT_ROADMAP.md`, and push **once** for a single verified GREEN APK.
+   - **Shipped:** `ask_choice`, the Model Picker, the Key Switcher and Design-System Presets are now Material 3 card sheets (`showCardSheet`) — rounded filled/outlined cards with bold title + subtitle, radio-style active ring, and **live colour swatch circles + Light→Dark gradient strips** wherever a choice carries hexes; every `ask_choice` also offers **🎨 Pick a custom colour…** (Sketchware colour wheel), **⌨ Type my own…**, and **✨ You decide**; full static audit (tree-sitter parse of all 16 touched classes + cross-file symbol contract + strings/layout checks) before the single green CI push.
+
+
 
 

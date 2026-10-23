@@ -947,6 +947,8 @@ ACTION_VIEW
     <string name="agent_settings_model">Model</string>
     <string name="agent_settings_fetch_models">Fetch models for this key</string>
     <string name="agent_settings_show_all_models">Show all models, including image, audio and agent-only ones</string>
+    <string name="agent_settings_auto_approve">Auto-approve changes after 5 seconds</string>
+    <string name="agent_settings_auto_approve_hint">Pending cards approve themselves after a live 5s countdown — tapping Details pauses it, Reject cancels, and destructive deletes always wait for you.</string>
     <string name="agent_settings_refresh_models">Refresh models</string>
     <string name="agent_action_add_key">Add key</string>
     <string name="agent_key_manage_hint">Tap a key to use it. Tap the key in use for its options: rename, replace or remove.</string>
@@ -1003,6 +1005,7 @@ ACTION_VIEW
     <string name="agent_working_on_set">Now working on %1$s. Ask me anything about it.</string>
     <string name="agent_working_on_cleared">No project selected. I can still chat.</string>
     <string name="agent_approval_approve">✓ Approve</string>
+    <string name="agent_approval_approve_in">✓ Approve (%1$ds)…</string>
     <string name="agent_approval_reject">✕ Reject</string>
     <string name="agent_approval_details">Details</string>
     <string name="agent_approval_working">Working…</string>

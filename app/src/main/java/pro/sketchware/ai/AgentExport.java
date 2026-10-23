@@ -72,6 +72,14 @@ public final class AgentExport {
                 journal.has("designSystem")
                         ? journal.get("designSystem").getAsJsonObject()
                         : new JsonObject());
+        JsonObject designMeta = new JsonObject();
+        designMeta.addProperty("undo_count",
+                AgentJournal.designSystemUndoCount(scId));
+        designMeta.addProperty("has_original",
+                AgentJournal.hasOriginalDesignSystem(scId));
+        root.add("design_system_history", designMeta);
+        root.add("original_design_system",
+                AgentJournal.originalDesignSystem(scId));
         root.add("plan",
                 journal.has("plan")
                         ? journal.get("plan").getAsJsonObject()
@@ -375,6 +383,26 @@ public final class AgentExport {
         env.addProperty("sdk", android.os.Build.VERSION.SDK_INT);
         env.addProperty("device", android.os.Build.MANUFACTURER + " "
                 + android.os.Build.MODEL);
+        // ✨ Auto & auto-approve settings: routing and failover events
+        // are in the log (auto_route / model_failover), and this pins
+        // what the user had switched on when they exported.
+        try {
+            android.content.Context app =
+                    pro.sketchware.SketchApplication.getContext();
+            if (app != null) {
+                AiProviderConfig exported = AiProviderConfig.load(app);
+                AiProviderConfig.Settings s = exported.activeSettings();
+                env.addProperty("model", s.model);
+                env.addProperty("auto_router",
+                        "auto".equalsIgnoreCase(s.model));
+                env.addProperty("auto_approve_seconds",
+                        s.autoApproveSeconds);
+                env.addProperty("hidden_models_count",
+                        ModelCatalog.hiddenModels(
+                                exported.activeProvider().name()).size());
+            }
+        } catch (Throwable ignored) {
+        }
         try {
             android.content.Context app =
                     pro.sketchware.SketchApplication.getContext();

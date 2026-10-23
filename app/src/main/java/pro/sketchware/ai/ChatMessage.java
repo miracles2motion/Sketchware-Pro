@@ -94,6 +94,16 @@ public class ChatMessage {
     /** What was seen after the change ran (or why it did not). */
     public String approvalOutcome = "";
     public boolean approvalDetailsExpanded;
+    /** The tool this card asks about ("" on older cards). */
+    public String approvalTool = "";
+    /**
+     * Timed auto-approve: seconds left on this pending card's
+     * countdown (0 = no timer; -1 = paused because the user opened
+     * Details). In-memory only — a restored chat is never pending.
+     */
+    public transient int approvalCountdownLeft;
+    /** Whether this card's tool is one that must never self-approve. */
+    public boolean approvalManualHold;
 
     /**
      * Build cards (role == APPROVAL, tool build_project, once Done):

@@ -78,6 +78,18 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
         this.approvalListener = listener;
     }
 
+    /**
+     * Timed auto-approve, in seconds (0 = off). Pending approval cards
+     * count down on their Approve button and self-approve at zero;
+     * cards pause the timer when the user opens Details or touches
+     * them, and manual-hold tools never count down at all.
+     */
+    private int autoApproveSeconds;
+
+    public void setAutoApproveSeconds(int seconds) {
+        this.autoApproveSeconds = Math.max(0, seconds);
+    }
+
     /** Install taps on a finished build card. */
     public interface OnInstallListener {
         void onInstall(ChatMessage message);
@@ -533,6 +545,10 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                     context.getString(R.string.agent_approval_details)
                             + (message.approvalDetailsExpanded ? " ▴" : " ▾"));
             binding.approvalDetailsToggle.setOnClickListener(v -> {
+                if (message.approvalCountdownLeft > 0) {
+                    // Opening Details pauses the timer: reading comes first.
+                    message.approvalCountdownLeft = -1;
+                }
                 message.approvalDetailsExpanded = !message.approvalDetailsExpanded;
                 bind(message);
             });
@@ -572,9 +588,86 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                         owner.approvalListener.onApprovalDecision(message, false);
                     }
                 });
+                startCountdown(message);
+            } else {
+                cancelCountdown();
             }
             bindInstall(message);
         }
+
+        /**
+         * The timed auto-approve: a live "Approve (5s)… → (1s)…" count
+         * on the green button that approves itself at zero — unless the
+         * user touched the card (paused) or the tool is one that must
+         * never self-approve (destructive deletes).
+         */
+        private void startCountdown(ChatMessage message) {
+            cancelCountdown();
+            if (owner == null || owner.autoApproveSeconds <= 0
+                    || message.approvalManualHold) {
+                return;
+            }
+            if (message.approvalCountdownLeft == 0) {
+                message.approvalCountdownLeft = owner.autoApproveSeconds;
+            }
+            final Runnable[] tick = new Runnable[1];
+            // Any touch on the card pauses the countdown: a user who
+            // is reading always outranks a timer.
+            itemView.setOnTouchListener((v, event) -> {
+                if (message.approvalCountdownLeft > 0) {
+                    message.approvalCountdownLeft = -1;
+                    binding.approvalApprove.setText(
+                            binding.approvalApprove.getContext()
+                                    .getString(R.string.agent_approval_approve));
+                }
+                return false;
+            });
+            tick[0] = new Runnable() {
+                @Override
+                public void run() {
+                    if (!ChatMessage.APPROVAL_PENDING.equals(
+                            message.approvalState)) {
+                        return;
+                    }
+                    int left = message.approvalCountdownLeft;
+                    if (left < 0) {
+                        // Paused via Details/touch — the button keeps
+                        // its plain label until the user decides.
+                        return;
+                    }
+                    android.content.Context ctx =
+                            binding.approvalApprove.getContext();
+                    if (left <= 0) {
+                        binding.approvalApprove.setText(
+                                ctx.getString(R.string.agent_approval_approve));
+                        if (owner != null && owner.approvalListener != null) {
+                            owner.approvalListener.onApprovalDecision(
+                                    message, true);
+                        }
+                        return;
+                    }
+                    binding.approvalApprove.setText(
+                            ctx.getString(R.string.agent_approval_approve_in,
+                                    left));
+                    message.approvalCountdownLeft = left - 1;
+                    itemView.postDelayed(this, 1000L);
+                }
+            };
+            countdownTick = tick[0];
+            itemView.postDelayed(tick[0], 600L);
+        }
+
+        /** Stops the countdown for whatever was bound here before. */
+        private void cancelCountdown() {
+            if (countdownTick != null) {
+                itemView.removeCallbacks(countdownTick);
+                countdownTick = null;
+            }
+            itemView.setOnTouchListener(null);
+        }
+
+        /** The pending card's live countdown tick, for removal on rebind. */
+        private Runnable countdownTick;
 
         /**
          * The build card's Install row. The finished APK stays on disk,

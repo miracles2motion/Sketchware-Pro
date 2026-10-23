@@ -148,6 +148,7 @@ public final class AgentTools {
         register(new AskChoice());
         register(new SetStyleBrief());
         register(new SetDesignSystem());
+        register(new UndoDesignSystem());
         register(new EditDesignToken());
         register(new SetPlan());
         register(new GetTaskLog());
@@ -4510,13 +4511,15 @@ public final class AgentTools {
                     + "this project ('for young kids', 'dark and minimal', "
                     + "'friendly rounded shapes, our brand green') to the "
                     + "app's memory, so it survives the chat and any change "
-                    + "of key or model. Call it as soon as a direction is "
-                    + "agreed — no approval card, it changes nothing in the "
-                    + "project itself. Write it in headed lines so it can "
-                    + "be followed exactly: Audience; Mood; Colours (name "
-                    + "the actual colours, e.g. 'primary cheerful orange "
-                    + "#FF8A3D'); Text sizes (title/body/button sp); "
-                    + "Buttons and cards (height, corner roundness); "
+                    + "of key or model. Its first line becomes the Design "
+                    + "system's Mood & Audience summary, so the two can "
+                    + "never disagree. Call it as soon as a direction is "
+                    + "agreed — no approval card, it changes nothing in "
+                    + "the project itself. Write it in headed lines so it "
+                    + "can be followed exactly: Audience; Mood; Colours "
+                    + "(name the actual colours, e.g. 'primary cheerful "
+                    + "orange #FF8A3D'); Text sizes (title/body/button "
+                    + "sp); Buttons and cards (height, corner roundness); "
                     + "Spacing (screen padding, gaps); Do; Avoid. A new "
                     + "brief replaces the old one, so include anything "
                     + "that should carry over. If no project is chosen "
@@ -4581,8 +4584,119 @@ public final class AgentTools {
             AgentJournal.setStyleBrief(scId, brief);
             result.addProperty("saved", true);
             result.addProperty("message",
-                    "Style brief remembered for this project. Keep to it "
-                            + "in everything you make here.");
+                    "Style brief remembered for this project; its first "
+                            + "line now shows as the Design system's "
+                            + "summary. Keep to it in everything you make "
+                            + "here.");
+            return result;
+        }
+    }
+
+    /**
+     * undo_design_system: steps the Design system back — one step of
+     * Undo, or all the way back to the project's original theme.
+     */
+    private static final class UndoDesignSystem implements Tool {
+        @Override
+        public String name() {
+            return "undo_design_system";
+        }
+
+        @Override
+        public String description() {
+            return "Reverts the project's OpenUI Design System to an "
+                    + "earlier theme and re-materializes its resources. "
+                    + "Two actions: \"undo\" steps back to the theme "
+                    + "before the last set_design_system / edit_design_token "
+                    + "change (works repeatedly, up to 10 steps); "
+                    + "\"restore_original\" puts back the project's "
+                    + "first-ever agreed theme — the one the app was born "
+                    + "with — so trying presets can never lose it. Use it "
+                    + "whenever the user says they preferred the previous "
+                    + "look, or ask them first when they only seem unsure. "
+                    + "No-op (with a clear message) when there is nothing "
+                    + "to step back to.";
+        }
+
+        @Override
+        public JsonObject parameters() {
+            JsonObject properties = new JsonObject();
+            properties.add("action", stringSchema(
+                    "\"undo\" for one step back, or \"restore_original\" "
+                            + "for the project's first theme"));
+            return AgentTools.parameters(properties, "action");
+        }
+
+        @Override
+        public String activityLabel(JsonObject args) {
+            return "restore_original".equals(
+                    stringArg(args, "action"))
+                    ? "Restoring the original theme" : "Undoing the theme";
+        }
+
+        @Override
+        public JsonObject run(Session session, JsonObject args)
+                throws ToolException {
+            String action = stringArg(args, "action");
+            if (action.isEmpty()) {
+                action = "undo";
+            }
+            boolean original = "restore_original".equals(action)
+                    || "original".equals(action)
+                    || "reset".equals(action);
+            if (!original && !"undo".equals(action)
+                    && !"back".equals(action)
+                    && !"previous".equals(action)) {
+                throw new ToolException("E_BAD_ARGS",
+                        "Pass \"action\": \"undo\" or "
+                                + "\"restore_original\".");
+            }
+            JsonObject result = new JsonObject();
+            result.addProperty("action", original
+                    ? "restore_original" : "undo");
+            if (session.workingProjectId == null
+                    || session.workingProjectId.isEmpty()) {
+                result.addProperty("restored", false);
+                result.addProperty("message",
+                        "There is no project yet, so there is no saved "
+                                + "theme to step back to.");
+                return result;
+            }
+            String scId = requiredProject(session.workingProjectId);
+            JsonObject restored = original
+                    ? AgentJournal.restoreOriginalDesignSystem(scId)
+                    : AgentJournal.undoDesignSystem(scId);
+            if (restored == null) {
+                result.addProperty("restored", false);
+                result.addProperty("message", original
+                        ? "This project has no original theme snapshot "
+                                + "saved (themes saved before this update "
+                                + "have none). Nothing was changed."
+                        : "There is no earlier theme to undo to — this "
+                                + "is already the oldest one remembered.");
+                return result;
+            }
+            JsonObject mat = OpenUiThemeEngine.materializeToProject(
+                    scId, restored);
+            result.addProperty("restored", true);
+            result.addProperty("title", restored.has("title")
+                    && restored.get("title").isJsonPrimitive()
+                    ? restored.get("title").getAsString() : "");
+            if (restored.has("openuiTheme")
+                    && restored.get("openuiTheme").isJsonObject()
+                    && restored.getAsJsonObject("openuiTheme")
+                            .has("brand_color")) {
+                result.addProperty("brand_color", restored
+                        .getAsJsonObject("openuiTheme")
+                        .get("brand_color").getAsString());
+            }
+            result.add("materialized", mat);
+            result.addProperty("message", original
+                    ? "Original project theme restored and re-materialized "
+                            + "into values/colors.xml, values-night/colors.xml, "
+                            + "values/styles.xml and res/drawable/openui_*.xml."
+                    : "Theme stepped back one step and re-materialized into "
+                            + "the project's resources.");
             return result;
         }
     }
@@ -5323,7 +5437,8 @@ public final class AgentTools {
                             + "Mood; Colours (with hex); Text sizes "
                             + "(title/body/button sp); Buttons and cards "
                             + "(height, corner roundness); Spacing; Do; "
-                            + "Avoid. ");
+                            + "Avoid. Its first line doubles as the Design "
+                            + "system's Mood & Audience summary. ");
         }
         if (!hasDesign) {
             message.append("There is no design system yet, so next turn "

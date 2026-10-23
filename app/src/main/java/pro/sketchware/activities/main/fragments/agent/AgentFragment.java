@@ -51,6 +51,7 @@ import pro.sketchware.ai.AgentKnowledgePack;
 import pro.sketchware.ai.AgentLoop;
 import pro.sketchware.ai.AgentMedia;
 import pro.sketchware.ai.AgentProposal;
+import pro.sketchware.ai.ModelCatalog;
 import pro.sketchware.ai.OpenUiThemeEngine;
 
 import java.util.concurrent.CountDownLatch;
@@ -163,6 +164,9 @@ public class AgentFragment extends qA {
 
         adapter = new ChatAdapter(messages);
         adapter.setOnMessageClickListener(this::onMessageClicked);
+        adapter.setAutoApproveSeconds(providerConfig != null
+                && providerConfig.activeSettings() != null
+                ? providerConfig.activeSettings().autoApproveSeconds : 5);
         adapter.setOnApprovalListener(this::onApprovalDecision);
         adapter.setOnInstallListener(this::onInstallRequest);
         adapter.setOnOpenUiListener(new ChatAdapter.OnOpenUiListener() {
@@ -235,7 +239,6 @@ public class AgentFragment extends qA {
         binding.historyButton.setOnClickListener(v -> showChatHistoryDialog());
         binding.exportButton.setOnClickListener(v -> exportConversation());
         binding.attachButton.setOnClickListener(v -> pickAttachmentImages());
-        binding.styleButton.setOnClickListener(v -> showStyleBriefDialog());
         binding.designSystemButton.setOnClickListener(
                 v -> showDesignSystemDialog());
         binding.planButton.setOnClickListener(v -> showPlanDialog());
@@ -720,6 +723,11 @@ public class AgentFragment extends qA {
      */
     private void runAgentTurn(List<ChatMessage> history) {
         AiProviderConfig.Settings settings = providerConfig.activeSettings();
+        // ✨ Auto router pool: the active provider's models, for the
+        // per-turn pick and mid-turn failover.
+        agentLoop.autoModelPool = settings.models == null
+                ? new ArrayList<>() : settings.models;
+        agentLoop.autoShowAll = settings.showAllModels;
         agentLoop.run(settings.baseUrl,
                 providerConfig.apiKey(providerConfig.activeProvider()),
                 settings.model, history,
@@ -1212,23 +1220,6 @@ public class AgentFragment extends qA {
     }
 
     /** The Plan button: the project's agreed style direction. */
-    private void showStyleBriefDialog() {
-        String scId = workingProjectOrToast();
-        if (scId.isEmpty()) {
-            return;
-        }
-        String brief = AgentJournal.styleBrief(scId);
-        new MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.agent_style_brief_title)
-                .setMessage(brief.isEmpty()
-                        ? getString(R.string.agent_style_brief_empty)
-                        : styledStyleText(brief))
-                .setNegativeButton(R.string.agent_action_close, null)
-                .setPositiveButton(R.string.agent_style_brief_edit,
-                        (dialog, which) -> showStyleBriefEditor(scId))
-                .show();
-    }
-
     /**
      * The design system: a list of the project's components. Tapping one
      * opens what it is made of — and shows it, drawn with those exact
@@ -1331,6 +1322,53 @@ public class AgentFragment extends qA {
         modeRow.addView(wcagBadge);
         listContainer.addView(modeRow);
 
+        // 0. Mood & Audience summary (the retired Style pill, folded in)
+        String moodSummary = AgentJournal.designSystemSummary(scId);
+        LinearLayout summaryBanner = new LinearLayout(context);
+        summaryBanner.setOrientation(LinearLayout.HORIZONTAL);
+        summaryBanner.setGravity(Gravity.CENTER_VERTICAL);
+        summaryBanner.setPadding(Math.round(14f * density),
+                Math.round(10f * density), Math.round(14f * density),
+                Math.round(10f * density));
+        GradientDrawable summaryBg = new GradientDrawable();
+        summaryBg.setCornerRadius(14f * density);
+        summaryBg.setColor(resolveThemeColor(context,
+                com.google.android.material.R.attr.colorSurfaceContainerLow,
+                0xFFE6EFF8));
+        summaryBg.setStroke(Math.max(1, Math.round(density)),
+                resolveThemeColor(context,
+                        com.google.android.material.R.attr.colorOutlineVariant,
+                        0xFFB1C0CE));
+        summaryBanner.setBackground(summaryBg);
+        android.widget.TextView summaryText = new android.widget.TextView(context);
+        summaryText.setText(moodSummary.isEmpty()
+                ? "Mood & Audience: not set — tap to describe who this "
+                        + "app is for and how it should feel"
+                : "Mood & Audience: " + moodSummary);
+        summaryText.setTextSize(12.5f);
+        summaryText.setAlpha(moodSummary.isEmpty() ? 0.75f : 1f);
+        summaryText.setMaxLines(3);
+        summaryText.setTextColor(resolveThemeColor(context,
+                pro.sketchware.R.attr.colorOnSurface,
+                0xFF1C2B36));
+        LinearLayout.LayoutParams summaryTextLp =
+                new LinearLayout.LayoutParams(0,
+                        ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        summaryText.setLayoutParams(summaryTextLp);
+        summaryBanner.addView(summaryText);
+        summaryBanner.setOnClickListener(v -> {
+            if (holder[0] != null) {
+                holder[0].dismiss();
+            }
+            showStyleBriefEditor(scId);
+        });
+        LinearLayout.LayoutParams summaryLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        summaryLp.bottomMargin = Math.round(10f * density);
+        summaryBanner.setLayoutParams(summaryLp);
+        listContainer.addView(summaryBanner);
+
         // 2. Live Rendered OpenUI Mini-Screen Preview Card
         listContainer.addView(buildLiveThemeStage(context, resolved, activePalette));
 
@@ -1407,6 +1445,68 @@ public class AgentFragment extends qA {
         });
         actionRow.addView(syncBtn);
         listContainer.addView(actionRow);
+
+        // 4b. Theme history: Undo, back to the Original, and the
+        // summary editor — trying a preset can never trap the user.
+        int undoCount = AgentJournal.designSystemUndoCount(scId);
+        boolean hasOriginal = AgentJournal.hasOriginalDesignSystem(scId);
+        if (undoCount > 0 || hasOriginal) {
+            LinearLayout historyRow = new LinearLayout(context);
+            historyRow.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout.LayoutParams histLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            histLp.bottomMargin = Math.round(12f * density);
+            historyRow.setLayoutParams(histLp);
+            if (undoCount > 0) {
+                android.widget.TextView undoBtn = buildSmallPillButton(
+                        context, "↶ Undo (" + undoCount + ")", false);
+                LinearLayout.LayoutParams uLp = new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                uLp.rightMargin = Math.round(6f * density);
+                undoBtn.setLayoutParams(uLp);
+                undoBtn.setGravity(Gravity.CENTER);
+                undoBtn.setOnClickListener(v -> {
+                    com.google.gson.JsonObject restored =
+                            AgentJournal.undoDesignSystem(scId);
+                    if (restored == null) {
+                        Toast.makeText(context,
+                                "No earlier theme to undo to",
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    syncThemeResourcesWithToast(context, scId, restored,
+                            "Theme stepped back ↶");
+                    reopen.run();
+                });
+                historyRow.addView(undoBtn);
+            }
+            if (hasOriginal) {
+                android.widget.TextView originalBtn = buildSmallPillButton(
+                        context, "↺ Original theme", false);
+                LinearLayout.LayoutParams oLp = new LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                oLp.leftMargin = undoCount > 0
+                        ? Math.round(6f * density) : 0;
+                originalBtn.setLayoutParams(oLp);
+                originalBtn.setGravity(Gravity.CENTER);
+                originalBtn.setOnClickListener(v -> {
+                    com.google.gson.JsonObject restored =
+                            AgentJournal.restoreOriginalDesignSystem(scId);
+                    if (restored == null) {
+                        Toast.makeText(context,
+                                "This project has no original snapshot yet",
+                                Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    syncThemeResourcesWithToast(context, scId, restored,
+                            "Original theme restored ↺");
+                    reopen.run();
+                });
+                historyRow.addView(originalBtn);
+            }
+            listContainer.addView(historyRow);
+        }
 
         // 5. Standardized Component Tokens List
         for (int i = 0; i < tokens.size(); i++) {
@@ -1841,15 +1941,25 @@ public class AgentFragment extends qA {
             actions.add(() -> showSaveDesignPresetDialog(scId));
         }
 
-        new MaterialAlertDialogBuilder(context)
-                .setTitle("Design System Presets & Custom JSON")
-                .setItems(labels.toArray(new String[0]), (d, which) -> {
-                    if (which >= 0 && which < actions.size()) {
-                        actions.get(which).run();
-                    }
-                })
-                .setNegativeButton(R.string.agent_action_close, null)
-                .show();
+        // Material 3 cards, with a live brand-colour swatch on every
+        // preset — presets are looks, so each row shows its look.
+        List<CardRow> rows = new ArrayList<>();
+        for (int i = 0; i < labels.size(); i++) {
+            String label = labels.get(i);
+            Runnable action = actions.get(i);
+            java.util.regex.Matcher hex = java.util.regex.Pattern
+                    .compile("#[0-9A-Fa-f]{6}").matcher(label);
+            List<Integer> swatches = new ArrayList<>();
+            while (hex.find() && swatches.size() < 4) {
+                Integer color = OpenUiThemeEngine.parseHexColor(hex.group());
+                if (color != null) {
+                    swatches.add(color);
+                }
+            }
+            rows.add(new CardRow(label, "", swatches, null, false, "Apply",
+                    action));
+        }
+        showCardSheet(context, "Design System Presets & Custom JSON", rows);
     }
 
     private void applyPresetJsonObject(String scId,
@@ -2396,52 +2506,6 @@ public class AgentFragment extends qA {
         }
     }
 
-    /**
-     * The style as a small design sheet: its headed sections (Audience,
-     * Colours, Text sizes, Buttons and cards, Spacing, Do, Avoid) stand
-     * out in bold with air between them. A style saved as one plain
-     * paragraph — everything older ones are — shows as it is.
-     */
-    private static CharSequence styledStyleText(String brief) {
-        String[] headings = {"Audience", "Mood", "Colours", "Colors",
-                "Text sizes", "Text", "Buttons and cards", "Buttons",
-                "Cards", "Spacing", "Layout", "Shapes", "Do", "Avoid"};
-        android.text.SpannableStringBuilder out =
-                new android.text.SpannableStringBuilder();
-        for (String line : brief.split("\\n")) {
-            String trimmed = line.trim();
-            String heading = null;
-            for (String candidate : headings) {
-                if (trimmed.regionMatches(true, 0, candidate, 0,
-                        candidate.length())
-                        && trimmed.length() > candidate.length()
-                        && (trimmed.charAt(candidate.length()) == ':'
-                                || trimmed.charAt(candidate.length()) == '-'
-                                || trimmed.charAt(candidate.length()) == '.')) {
-                    heading = candidate;
-                    break;
-                }
-            }
-            if (heading != null) {
-                if (out.length() > 0) {
-                    out.append("\n\n");
-                }
-                int start = out.length();
-                out.append(trimmed);
-                out.setSpan(new android.text.style.StyleSpan(
-                                android.graphics.Typeface.BOLD), start,
-                        start + heading.length(),
-                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            } else {
-                if (out.length() > 0) {
-                    out.append("\n");
-                }
-                out.append(trimmed);
-            }
-        }
-        return out;
-    }
-
     private void showStyleBriefEditor(String scId) {
         android.widget.EditText input =
                 new android.widget.EditText(requireContext());
@@ -2874,6 +2938,175 @@ public class AgentFragment extends qA {
         }
     }
 
+    /** One row of a {@link #showCardSheet} card sheet. */
+    private static final class CardRow {
+        final String title;
+        final String subtitle;
+        final List<Integer> swatches;
+        final int[] gradient;
+        final boolean active;
+        final String trailing;
+        final Runnable onClick;
+
+        CardRow(String title, String subtitle, List<Integer> swatches,
+                int[] gradient, boolean active, String trailing,
+                Runnable onClick) {
+            this.title = title;
+            this.subtitle = subtitle;
+            this.swatches = swatches;
+            this.gradient = gradient;
+            this.active = active;
+            this.trailing = trailing;
+            this.onClick = onClick;
+        }
+    }
+
+    /**
+     * A Material 3 card bottom-sheet: real tappable cards with a bold
+     * title, a soft subtitle, live colour swatches and a Light/Dark
+     * gradient strip where colours are involved — unmistakably
+     * buttons, never a bare text list the user has to guess at.
+     */
+    private void showCardSheet(Context context, String title,
+                               List<CardRow> rows) {
+        showCardSheet(context, title, rows, null);
+    }
+
+    private void showCardSheet(Context context, String title,
+                               List<CardRow> rows,
+                               @Nullable Runnable onCancel) {
+        float d = context.getResources().getDisplayMetrics().density;
+        LinearLayout container = new LinearLayout(context);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(Math.round(12f * d), Math.round(4f * d),
+                Math.round(12f * d), Math.round(12f * d));
+        for (CardRow row : rows) {
+            LinearLayout card = new LinearLayout(context);
+            card.setOrientation(LinearLayout.HORIZONTAL);
+            card.setGravity(Gravity.CENTER_VERTICAL);
+            card.setPadding(Math.round(14f * d), Math.round(11f * d),
+                    Math.round(14f * d), Math.round(11f * d));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(16f * d);
+            bg.setColor(resolveThemeColor(context,
+                    com.google.android.material.R.attr.colorSurfaceContainerLow,
+                    0xFFE6EFF8));
+            bg.setStroke(Math.max(1, Math.round(row.active ? 1.6f * d : d)),
+                    row.active ? resolveThemeColor(context,
+                            pro.sketchware.R.attr.colorPrimary, 0xFF008DCD)
+                            : resolveThemeColor(context,
+                            com.google.android.material.R.attr.colorOutlineVariant,
+                            0xFFB1C0CE));
+            card.setBackground(bg);
+            LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            cardLp.topMargin = Math.round(7f * d);
+            card.setLayoutParams(cardLp);
+
+            // Live colour swatches + Light/Dark preview strip: the
+            // colours are the point, so they are drawn, not spelled.
+            if (row.gradient != null && row.gradient.length >= 2) {
+                View strip = new View(context);
+                GradientDrawable stripBg = new GradientDrawable(
+                        GradientDrawable.Orientation.LEFT_RIGHT,
+                        row.gradient);
+                stripBg.setCornerRadius(9f * d);
+                stripBg.setStroke(Math.max(1, Math.round(d)), 0x33888888);
+                strip.setBackground(stripBg);
+                strip.setLayoutParams(new LinearLayout.LayoutParams(
+                        Math.round(44f * d), Math.round(34f * d)));
+                card.addView(strip);
+            } else if (row.swatches != null && !row.swatches.isEmpty()) {
+                LinearLayout swatchRow = new LinearLayout(context);
+                swatchRow.setOrientation(LinearLayout.HORIZONTAL);
+                int shown = Math.min(5, row.swatches.size());
+                for (int i = 0; i < shown; i++) {
+                    View swatch = new View(context);
+                    GradientDrawable swBg = new GradientDrawable();
+                    swBg.setShape(GradientDrawable.OVAL);
+                    swBg.setColor(row.swatches.get(i));
+                    swBg.setStroke(Math.max(1, Math.round(d)), 0x33888888);
+                    swatch.setBackground(swBg);
+                    LinearLayout.LayoutParams swLp =
+                            new LinearLayout.LayoutParams(
+                                    Math.round(22f * d),
+                                    Math.round(22f * d));
+                    swLp.rightMargin = i < shown - 1
+                            ? Math.round(-6f * d) : 0;
+                    swatch.setLayoutParams(swLp);
+                    swatchRow.addView(swatch);
+                }
+                swatchRow.setLayoutParams(new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT));
+                card.addView(swatchRow);
+            }
+
+            LinearLayout textCol = new LinearLayout(context);
+            textCol.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout.LayoutParams colLp = new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            colLp.leftMargin = Math.round(12f * d);
+            textCol.setLayoutParams(colLp);
+            android.widget.TextView tvTitle =
+                    new android.widget.TextView(context);
+            tvTitle.setText(row.title);
+            tvTitle.setTextAppearance(com.google.android.material.R.style
+                    .TextAppearance_Material3_BodyMedium);
+            tvTitle.setTypeface(tvTitle.getTypeface(),
+                    android.graphics.Typeface.BOLD);
+            textCol.addView(tvTitle);
+            if (row.subtitle != null && !row.subtitle.isEmpty()) {
+                android.widget.TextView tvSub =
+                        new android.widget.TextView(context);
+                tvSub.setText(row.subtitle);
+                tvSub.setTextAppearance(com.google.android.material.R.style
+                        .TextAppearance_Material3_BodySmall);
+                tvSub.setAlpha(0.8f);
+                textCol.addView(tvSub);
+            }
+            card.addView(textCol);
+
+            if (row.trailing != null && !row.trailing.isEmpty()) {
+                android.widget.TextView trailing =
+                        new android.widget.TextView(context);
+                trailing.setText(row.trailing);
+                trailing.setTextSize(13f);
+                trailing.setTypeface(trailing.getTypeface(),
+                        android.graphics.Typeface.BOLD);
+                trailing.setTextColor(resolveThemeColor(context,
+                        pro.sketchware.R.attr.colorPrimary, 0xFF008DCD));
+                LinearLayout.LayoutParams trLp =
+                        new LinearLayout.LayoutParams(
+                                ViewGroup.LayoutParams.WRAP_CONTENT,
+                                ViewGroup.LayoutParams.WRAP_CONTENT);
+                trLp.leftMargin = Math.round(10f * d);
+                trailing.setLayoutParams(trLp);
+                card.addView(trailing);
+            }
+
+            card.setOnClickListener(v -> {
+                if (row.onClick != null) {
+                    row.onClick.run();
+                }
+            });
+            container.addView(card);
+        }
+        android.widget.ScrollView scroll =
+                new android.widget.ScrollView(context);
+        scroll.addView(container);
+        MaterialAlertDialogBuilder builder =
+                new MaterialAlertDialogBuilder(context)
+                        .setTitle(title)
+                        .setView(scroll)
+                        .setNegativeButton(R.string.agent_action_close, null);
+        if (onCancel != null) {
+            builder.setOnCancelListener(d -> onCancel.run());
+        }
+        builder.show();
+    }
+
     /**
      * Shows the approval card and blocks the agent thread until the
      * user decides. The card is the only way a change can happen.
@@ -2901,6 +3134,10 @@ public class AgentFragment extends qA {
         card.approvalTitle = proposal.title;
         card.approvalBody = proposal.body;
         card.approvalDetails = proposal.details;
+        card.approvalTool = proposal.tool == null ? "" : proposal.tool;
+        // Destructive deletes never count down — a person decides.
+        card.approvalManualHold = isManualHoldTool(card.approvalTool);
+        card.approvalCountdownLeft = 0;
         proposal.card = card;
         approvalCardMessage = card;
         int index = streamingMessage != null
@@ -2911,6 +3148,15 @@ public class AgentFragment extends qA {
         messages.add(index, card);
         adapter.notifyItemInserted(index);
         binding.chatList.scrollToPosition(messages.size() - 1);
+    }
+
+    /** Tools whose cards must always wait for a human decision. */
+    private static boolean isManualHoldTool(String tool) {
+        return "delete_activity".equals(tool)
+                || "delete_custom_view".equals(tool)
+                || "remove_component".equals(tool)
+                || "delete_source_file".equals(tool)
+                || "delete_resource_xml".equals(tool);
     }
 
     /** The user tapped Approve or Reject on the pending card. */
@@ -3150,24 +3396,157 @@ public class AgentFragment extends qA {
                 latch.countDown();
                 return;
             }
-            String[] items = options.toArray(new String[0]);
-            com.google.android.material.dialog.MaterialAlertDialogBuilder
-                    dialog = new com.google.android.material.dialog
-                            .MaterialAlertDialogBuilder(activity);
-            dialog.setTitle(question.isEmpty()
-                    ? "Choose one" : question);
-            // (dialog, which) — the order this file already uses at
-            // lines 841, 1174 and 1951. Reversed, it compiles as a
-            // DialogInterface index and crashes the build.
-            dialog.setItems(items, (dialog2, which) -> {
-                pickedChoice = items[which];
-                latch.countDown();
-            });
-            dialog.setOnCancelListener(dialogInterface -> latch.countDown());
-            dialog.setNegativeButton(android.R.string.cancel,
-                    (dialogInterface, which) -> latch.countDown());
-            dialog.show();
+            java.util.regex.Pattern hex =
+                    java.util.regex.Pattern.compile(
+                            "#[0-9A-Fa-f]{8}|#[0-9A-Fa-f]{6}");
+            List<CardRow> rows = new ArrayList<>();
+            for (String option : options) {
+                java.util.regex.Matcher matcher = hex.matcher(option);
+                List<Integer> swatches = new ArrayList<>();
+                while (matcher.find() && swatches.size() < 4) {
+                    Integer color = OpenUiThemeEngine.parseHexColor(
+                            matcher.group());
+                    if (color != null) {
+                        swatches.add(color);
+                    }
+                }
+                int[] gradient = swatches.size() >= 2
+                        ? toIntArray(swatches) : null;
+                String firstLine = option;
+                String rest = "";
+                int cut = option.indexOf(". ");
+                if (cut > 0 && cut < 90) {
+                    firstLine = option.substring(0, cut + 1);
+                    rest = option.substring(cut + 2);
+                } else if (option.length() > 96) {
+                    int space = option.lastIndexOf(' ', 96);
+                    cut = space > 40 ? space : 96;
+                    firstLine = option.substring(0, cut);
+                    rest = option.substring(cut).trim();
+                }
+                rows.add(new CardRow(firstLine, rest,
+                        gradient != null ? null : swatches, gradient,
+                        false, "Pick",
+                        () -> {
+                            pickedChoice = option;
+                            latch.countDown();
+                        }));
+            }
+            // The three universal answers at the bottom of every
+            // choice: a real colour wheel, the user's own words, or
+            // "the agent decides" — because taste questions never
+            // fit a fixed list alone.
+            rows.add(new CardRow("🎨 Pick a custom colour…",
+                    "Opens Sketchware's colour wheel; the hex goes to "
+                            + "the agent", null, null, false, "",
+                    () -> {
+                        showColorPickerForChoice(latch);
+                    }));
+            rows.add(new CardRow("⌨ Type my own…",
+                    "Answer in your own words", null, null, false, "",
+                    () -> {
+                        showTypedChoice(latch);
+                    }));
+            rows.add(new CardRow("✨ You decide",
+                    "The agent picks the best option and says why",
+                    null, null, false, "",
+                    () -> {
+                        pickedChoice = "You decide — pick the best "
+                                + "option yourself and say why";
+                        latch.countDown();
+                    }));
+            showCardSheet(activity,
+                    question.isEmpty() ? "Choose one" : question, rows,
+                    latch::countDown);
         });
+    }
+
+    /** The custom-colour answer to an ask_choice question. */
+    private void showColorPickerForChoice(CountDownLatch latch) {
+        android.app.Activity activity = getActivity();
+        View anchor = binding != null ? binding.getRoot() : null;
+        if (activity == null || anchor == null) {
+            latch.countDown();
+            return;
+        }
+        try {
+            final boolean[] picked = {false};
+            com.besome.sketch.lib.ui.ColorPickerDialog dialog =
+                    new com.besome.sketch.lib.ui.ColorPickerDialog(
+                            activity, 0xFFFF8A3D, false, false);
+            dialog.a(new com.besome.sketch.lib.ui.ColorPickerDialog.b() {
+                @Override
+                public void a(int color) {
+                    picked[0] = true;
+                    pickedChoice = "#"
+                            + String.format("%06X", color & 0xFFFFFF);
+                    latch.countDown();
+                }
+
+                @Override
+                public void a(String name, int color) {
+                    picked[0] = true;
+                    pickedChoice = "#"
+                            + String.format("%06X", color & 0xFFFFFF);
+                    latch.countDown();
+                }
+            });
+            dialog.setOnDismissListener(() -> {
+                // A pick already counted down; a bare dismissal is a
+                // "go back" — the sheet is gone, so answer nothing
+                // rather than hang the agent thread.
+                if (!picked[0]) {
+                    pickedChoice = "";
+                    latch.countDown();
+                }
+            });
+            dialog.showAtLocation(anchor,
+                    android.view.Gravity.CENTER, 0, 0);
+        } catch (Exception e) {
+            latch.countDown();
+        }
+    }
+
+    /** The free-text answer to an ask_choice question. */
+    private void showTypedChoice(CountDownLatch latch) {
+        android.app.Activity activity = getActivity();
+        if (activity == null) {
+            latch.countDown();
+            return;
+        }
+        android.widget.EditText input =
+                new android.widget.EditText(activity);
+        input.setSingleLine(false);
+        input.setMaxLines(3);
+        int pad = Math.round(20f * getResources()
+                .getDisplayMetrics().density);
+        android.widget.FrameLayout frame =
+                new android.widget.FrameLayout(activity);
+        frame.setPadding(pad, pad / 2, pad, 0);
+        frame.addView(input);
+        new MaterialAlertDialogBuilder(activity)
+                .setTitle("Type your answer")
+                .setView(frame)
+                .setNegativeButton(android.R.string.cancel,
+                        (d, w) -> latch.countDown())
+                .setPositiveButton(android.R.string.ok,
+                        (d, w) -> {
+                            String text = input.getText().toString().trim();
+                            pickedChoice = text.isEmpty()
+                                    ? "You decide — pick the best option "
+                                    + "yourself and say why" : text;
+                            latch.countDown();
+                        })
+                .setOnCancelListener(d -> latch.countDown())
+                .show();
+    }
+
+    private static int[] toIntArray(List<Integer> values) {
+        int[] out = new int[values.size()];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = values.get(i);
+        }
+        return out;
     }
 
     /**
@@ -3428,87 +3807,418 @@ public class AgentFragment extends qA {
         List<AiProviderConfig.KeyEntry> entries = providerConfig.keys(provider);
         int activeIndex = providerConfig.activeKeyIndex(provider);
         long now = System.currentTimeMillis();
-        String[] items = new String[entries.size()];
+        List<CardRow> rows = new ArrayList<>();
         for (int i = 0; i < entries.size(); i++) {
             AiProviderConfig.KeyEntry entry = entries.get(i);
-            String suffix = i == activeIndex
+            String status = i == activeIndex
                     ? getString(R.string.agent_key_in_use)
                     : entry.isExhausted(now)
                             ? getString(R.string.agent_key_exhausted_until,
                                     android.text.format.DateFormat.format("MMM d, h:mm a",
                                             new java.util.Date(entry.exhaustedUntil)).toString())
                             : getString(R.string.agent_key_ready);
-            items[i] = entry.label + " · " + AiProviderConfig.mask(entry)
-                    + " — " + suffix;
+            final int index = i;
+            final String label = entry.label;
+            rows.add(new CardRow(label + " · " + AiProviderConfig.mask(entry),
+                    status, null, null, i == activeIndex,
+                    i == activeIndex ? "✓" : "Use",
+                    () -> {
+                        providerConfig.setActiveKey(provider, index);
+                        providerConfig.save(requireContext());
+                        appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM,
+                                getString(R.string.agent_switched_key, label)));
+                        retryFailedTurn();
+                    }));
         }
-        new MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.agent_action_switch_key)
-                .setItems(items, (dialog, which) -> {
-                    providerConfig.setActiveKey(provider, which);
-                    providerConfig.save(requireContext());
-                    appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM,
-                            getString(R.string.agent_switched_key,
-                                    entries.get(which).label)));
-                    retryFailedTurn();
-                })
-                .show();
+        showCardSheet(requireContext(),
+                getString(R.string.agent_action_switch_key), rows);
     }
 
     /**
-     * Tapping the model name offers every model this key can call, neatly
-     * listed. The list comes from the settings cache (fetched when the key
-     * was saved) and is refreshed in the background for next time.
+     * Tapping the model name opens the Model Picker sheet: every model
+     * this key can call as a tappable card with its capability badge
+     * (Tools ✓ · Vision · context · Free · latency), a one-tap Test,
+     * and a permanent Hide — no more bare text list.
      */
     private void showModelPicker() {
+        showModelPickerSheet(null);
+    }
+
+    private void showModelPickerSheet(@Nullable Runnable onChosen) {
+        if (binding == null || getContext() == null) {
+            return;
+        }
         if (providerConfig == null || !providerConfig.isConfigured()) {
             openSettings();
             return;
         }
         AiProviderConfig.Settings settings = providerConfig.activeSettings();
-        if (settings.models != null && !settings.models.isEmpty()) {
-            pickModel(settings, settings.models);
-            refreshModelCache(settings);
+        if (settings.models == null || settings.models.isEmpty()) {
+            binding.modelLabel.setText(R.string.agent_settings_checking);
+            chatService.fetchModels(settings.baseUrl,
+                    providerConfig.apiKey(providerConfig.activeProvider()),
+                    new AiChatService.ModelsListener() {
+                        @Override
+                        public void onModels(List<String> models) {
+                            settings.models = models;
+                            providerConfig.save(requireContext());
+                            updateProviderUi();
+                            if (!models.isEmpty() && binding != null) {
+                                showModelPickerSheet(onChosen);
+                            }
+                        }
+
+                        @Override
+                        public void onError(AiChatService.AiError error) {
+                            if (binding != null) {
+                                updateProviderUi();
+                            }
+                            appendMessage(ChatMessage.error(explainError(error)));
+                        }
+                    });
             return;
         }
-        binding.modelLabel.setText(R.string.agent_settings_checking);
-        chatService.fetchModels(settings.baseUrl,
-                providerConfig.apiKey(providerConfig.activeProvider()),
-                new AiChatService.ModelsListener() {
-                    @Override
-                    public void onModels(List<String> models) {
-                        settings.models = models;
-                        providerConfig.save(requireContext());
-                        updateProviderUi();
-                        if (!models.isEmpty()) {
-                            pickModel(settings, models);
-                        }
-                    }
+        refreshModelCache(settings);
+        Context context = requireContext();
+        float d = context.getResources().getDisplayMetrics().density;
+        AiProvider provider = providerConfig.activeProvider();
+        List<String> visible = ModelCatalog.visibleModels(
+                provider.name(), settings.models, settings.showAllModels);
 
-                    @Override
-                    public void onError(AiChatService.AiError error) {
-                        updateProviderUi();
-                        appendMessage(ChatMessage.error(explainError(error)));
-                    }
-                });
+        LinearLayout container = new LinearLayout(context);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(Math.round(12f * d), Math.round(4f * d),
+                Math.round(12f * d), Math.round(12f * d));
+        androidx.appcompat.app.AlertDialog[] holder =
+                new androidx.appcompat.app.AlertDialog[1];
+        Runnable reopen = () -> {
+            if (holder[0] != null) {
+                holder[0].dismiss();
+            }
+            showModelPickerSheet(onChosen);
+        };
+
+        // ✨ Auto card first: the router picks the best healthy model
+        // for each turn (vision-capable when the turn has images,
+        // fastest Tools ✓ model otherwise) and fails over by itself.
+        boolean autoActive = "auto".equalsIgnoreCase(settings.model);
+        LinearLayout autoRow = new LinearLayout(context);
+        autoRow.setOrientation(LinearLayout.VERTICAL);
+        autoRow.setPadding(Math.round(14f * d), Math.round(11f * d),
+                Math.round(14f * d), Math.round(11f * d));
+        GradientDrawable autoBg = new GradientDrawable();
+        autoBg.setCornerRadius(16f * d);
+        autoBg.setColor(resolveThemeColor(context,
+                com.google.android.material.R.attr.colorSurfaceContainerLow,
+                0xFFE6EFF8));
+        autoBg.setStroke(Math.max(1, Math.round(autoActive ? 1.6f * d : d)),
+                autoActive ? resolveThemeColor(context,
+                        pro.sketchware.R.attr.colorPrimary, 0xFF008DCD)
+                        : resolveThemeColor(context,
+                        com.google.android.material.R.attr.colorOutlineVariant,
+                        0xFFB1C0CE));
+        autoRow.setBackground(autoBg);
+        LinearLayout.LayoutParams autoLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        autoLp.topMargin = Math.round(7f * d);
+        autoRow.setLayoutParams(autoLp);
+        android.widget.TextView autoTitle = new android.widget.TextView(context);
+        autoTitle.setText("✨ Auto — best model per turn");
+        autoTitle.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodyMedium);
+        autoTitle.setTypeface(autoTitle.getTypeface(),
+                android.graphics.Typeface.BOLD);
+        autoRow.addView(autoTitle);
+        android.widget.TextView autoSub = new android.widget.TextView(context);
+        autoSub.setText("Vision + Tools when screenshots need it · "
+                + "fastest Tools ✓ model otherwise · automatic "
+                + "failover when a provider is busy");
+        autoSub.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodySmall);
+        autoSub.setAlpha(0.8f);
+        autoRow.addView(autoSub);
+        autoRow.setOnClickListener(v -> {
+            settings.model = ModelCatalog.AUTO;
+            providerConfig.save(requireContext());
+            updateProviderUi();
+            appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM,
+                    getString(R.string.agent_switched_model,
+                            "✨ Auto")));
+            if (holder[0] != null) {
+                holder[0].dismiss();
+            }
+            if (onChosen != null) {
+                onChosen.run();
+            }
+        });
+        container.addView(autoRow);
+
+        for (String id : visible) {
+            container.addView(buildModelCardRow(context, d,
+                    provider.name(), id, id.equals(settings.model),
+                    settings, holder, reopen, onChosen));
+        }
+
+        LinearLayout footer = new LinearLayout(context);
+        footer.setOrientation(LinearLayout.HORIZONTAL);
+        footer.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams footerLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        footerLp.topMargin = Math.round(10f * d);
+        footer.setLayoutParams(footerLp);
+
+        android.widget.TextView verifyBtn = buildSmallPillButton(
+                context, "⚡ Verify top models", false);
+        verifyBtn.setLayoutParams(new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        verifyBtn.setGravity(Gravity.CENTER);
+        verifyBtn.setOnClickListener(v -> {
+            List<String> top = visible.subList(0,
+                    Math.min(6, visible.size()));
+            verifyBtn.setEnabled(false);
+            verifyBtn.setText("Probing…");
+            probeModelsInBackground(provider.name(), top,
+                    () -> binding != null && binding.chatList != null
+                            && binding.chatList.post(reopen));
+        });
+        footer.addView(verifyBtn);
+
+        List<String> hidden = ModelCatalog.hiddenModels(provider.name());
+        android.widget.TextView hiddenBtn = buildSmallPillButton(
+                context, "Hidden (" + hidden.size() + ")", false);
+        LinearLayout.LayoutParams hiddenLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        hiddenLp.leftMargin = Math.round(6f * d);
+        hiddenBtn.setLayoutParams(hiddenLp);
+        hiddenBtn.setGravity(Gravity.CENTER);
+        hiddenBtn.setOnClickListener(v -> {
+            if (holder[0] != null) {
+                holder[0].dismiss();
+            }
+            showHiddenModelsDialog(provider.name(), reopen);
+        });
+        footer.addView(hiddenBtn);
+
+        int autoSecs = providerConfig.activeSettings().autoApproveSeconds;
+        android.widget.TextView timerBtn = buildSmallPillButton(context,
+                autoSecs > 0 ? "⏱ " + autoSecs + "s" : "⏱ off",
+                autoSecs > 0);
+        LinearLayout.LayoutParams timerLp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        timerLp.leftMargin = Math.round(6f * d);
+        timerBtn.setLayoutParams(timerLp);
+        timerBtn.setGravity(Gravity.CENTER);
+        timerBtn.setOnClickListener(v -> {
+            AiProviderConfig.Settings s = providerConfig.activeSettings();
+            s.autoApproveSeconds = s.autoApproveSeconds > 0 ? 0 : 5;
+            s.autoApproveSecondsSet = true;
+            providerConfig.save(requireContext());
+            if (adapter != null) {
+                adapter.setAutoApproveSeconds(s.autoApproveSeconds);
+            }
+            Toast.makeText(context, s.autoApproveSeconds > 0
+                    ? "Auto-approve on · " + s.autoApproveSeconds + "s"
+                    : "Auto-approve off", Toast.LENGTH_SHORT).show();
+            reopen.run();
+        });
+        footer.addView(timerBtn);
+        container.addView(footer);
+
+        android.widget.ScrollView scroll = new android.widget.ScrollView(context);
+        scroll.addView(container);
+        holder[0] = new MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.agent_pick_model)
+                .setView(scroll)
+                .setNegativeButton(R.string.agent_action_close, null)
+                .create();
+        holder[0].show();
     }
 
-    private void pickModel(AiProviderConfig.Settings settings, List<String> models) {
-        if (getContext() == null) {
+    /** One model's card: name + capability badge + Test + Hide. */
+    private View buildModelCardRow(Context context, float d,
+                                   String providerName, String id,
+                                   boolean active,
+                                   AiProviderConfig.Settings settings,
+                                   androidx.appcompat.app.AlertDialog[] holder,
+                                   Runnable reopen,
+                                   @Nullable Runnable onChosen) {
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        int padH = Math.round(14f * d);
+        int padV = Math.round(11f * d);
+        row.setPadding(padH, padV, padH, padV);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(16f * d);
+        bg.setColor(resolveThemeColor(context,
+                com.google.android.material.R.attr.colorSurfaceContainerLow,
+                0xFFE6EFF8));
+        bg.setStroke(Math.max(1, Math.round(active ? 1.6f * d : d)),
+                active ? resolveThemeColor(context,
+                        pro.sketchware.R.attr.colorPrimary, 0xFF008DCD)
+                        : resolveThemeColor(context,
+                        com.google.android.material.R.attr.colorOutlineVariant,
+                        0xFFB1C0CE));
+        row.setBackground(bg);
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowLp.topMargin = Math.round(7f * d);
+        row.setLayoutParams(rowLp);
+
+        LinearLayout textCol = new LinearLayout(context);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        textCol.setLayoutParams(new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        android.widget.TextView title = new android.widget.TextView(context);
+        title.setText(id);
+        title.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodyMedium);
+        title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
+        textCol.addView(title);
+
+        String badge = ModelCatalog.badgeText(providerName, id);
+        if (badge.isEmpty()) {
+            badge = "Untested — tap Test";
+        }
+        android.widget.TextView subtitle = new android.widget.TextView(context);
+        subtitle.setText(badge);
+        subtitle.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodySmall);
+        subtitle.setAlpha(0.8f);
+        textCol.addView(subtitle);
+        row.addView(textCol);
+
+        android.widget.TextView testChip = buildSmallPillButton(
+                context, "Test", false);
+        testChip.setOnClickListener(v -> {
+            testChip.setEnabled(false);
+            testChip.setText("…");
+            List<String> one = new ArrayList<>();
+            one.add(id);
+            probeModelsInBackground(providerName, one, () -> {
+                if (binding != null && binding.chatList != null) {
+                    binding.chatList.post(reopen);
+                }
+            });
+        });
+        row.addView(testChip);
+
+        android.widget.TextView hideChip = buildSmallPillButton(
+                context, "✕", false);
+        LinearLayout.LayoutParams hideLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        hideLp.leftMargin = Math.round(6f * d);
+        hideChip.setLayoutParams(hideLp);
+        hideChip.setOnClickListener(v -> {
+            ModelCatalog.setHidden(providerName, id, true);
+            Toast.makeText(context,
+                    id + " hidden permanently — restore it from the "
+                            + "Hidden list in this picker",
+                    Toast.LENGTH_SHORT).show();
+            reopen.run();
+        });
+        row.addView(hideChip);
+
+        row.setOnClickListener(v -> {
+            settings.model = id;
+            providerConfig.save(requireContext());
+            updateProviderUi();
+            appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM,
+                    getString(R.string.agent_switched_model, id)));
+            if (holder[0] != null) {
+                holder[0].dismiss();
+            }
+            if (onChosen != null) {
+                onChosen.run();
+            }
+        });
+        return row;
+    }
+
+    /**
+     * Runs the one-model ping (+1×1-pixel vision check when vision is
+     * still unknown) off the UI thread, merges every result into the
+     * catalog, then reports back on the UI thread.
+     */
+    private void probeModelsInBackground(String providerName,
+                                         List<String> modelIds,
+                                         Runnable onUiDone) {
+        String baseUrl = providerConfig.activeSettings().baseUrl;
+        String apiKey = providerConfig.apiKey(
+                providerConfig.activeProvider());
+        List<String> ids = new ArrayList<>(modelIds);
+        Thread worker = new Thread(() -> {
+            int okCount = 0;
+            for (String id : ids) {
+                ModelCatalog.ModelInfo known =
+                        ModelCatalog.info(providerName, id);
+                boolean checkVision = known == null || known.vision == null;
+                AiChatService.ProbeResult result = chatService.probeModel(
+                        baseUrl, apiKey, id, checkVision);
+                ModelCatalog.update(providerName, id, info -> {
+                    if (result.ok) {
+                        info.tools = result.tools;
+                        info.latencyMs = result.latencyMs;
+                        info.lastError = "";
+                        if (result.visionKnown) {
+                            info.vision = result.vision;
+                        }
+                    } else if (result.httpCode == 404) {
+                        info.lastError = "404 retired";
+                        info.hidden = true;
+                    } else {
+                        info.lastError = result.error == null
+                                ? "failed" : result.error;
+                    }
+                });
+                if (result.ok) {
+                    okCount++;
+                }
+            }
+            final int ok = okCount;
+            final int total = ids.size();
+            if (binding != null && isAdded()) {
+                binding.chatList.post(() -> {
+                    Toast.makeText(requireContext(),
+                            "Tested " + total + " model"
+                                    + (total == 1 ? "" : "s") + ": "
+                                    + ok + " reachable", Toast.LENGTH_SHORT)
+                            .show();
+                    if (onUiDone != null) {
+                        onUiDone.run();
+                    }
+                });
+            }
+        }, "model-probe");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    /** Hidden models of the provider, tap to restore any of them. */
+    private void showHiddenModelsDialog(String providerName,
+                                        Runnable onDone) {
+        Context context = requireContext();
+        List<String> hidden = ModelCatalog.hiddenModels(providerName);
+        if (hidden.isEmpty()) {
+            Toast.makeText(context,
+                    "No hidden models — hide one with ✕ on its card",
+                    Toast.LENGTH_SHORT).show();
+            onDone.run();
             return;
         }
-        // Only conversational models are offered; the full fetched list
-        // stays cached for anyone who enables "show all" in Settings.
-        String[] items = AiProviderConfig.pickerModels(models, settings.showAllModels)
-                .toArray(new String[0]);
-        new MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.agent_pick_model)
+        String[] items = hidden.toArray(new String[0]);
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Hidden models — tap to restore")
                 .setItems(items, (dialog, which) -> {
-                    settings.model = items[which];
-                    providerConfig.save(requireContext());
-                    updateProviderUi();
-                    appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM,
-                            getString(R.string.agent_switched_model, items[which])));
+                    ModelCatalog.setHidden(providerName, items[which], false);
+                    onDone.run();
                 })
+                .setNegativeButton(R.string.agent_action_close, null)
                 .show();
     }
 
@@ -3532,6 +4242,9 @@ public class AgentFragment extends qA {
     }
 
     private void fetchModelsAndPick() {
+        // Failover path: the current model just failed, so after the
+        // cache is verified the picker opens and the failed turn
+        // retries on whatever the user picks.
         AiProviderConfig.Settings settings = providerConfig.activeSettings();
         chatService.fetchModels(settings.baseUrl,
                 providerConfig.apiKey(providerConfig.activeProvider()),
@@ -3545,16 +4258,7 @@ public class AgentFragment extends qA {
                                     getString(R.string.agent_error_no_models)));
                             return;
                         }
-                        String[] items = models.toArray(new String[0]);
-                        new MaterialAlertDialogBuilder(requireContext())
-                                .setTitle(R.string.agent_action_switch_model)
-                                .setItems(items, (dialog, which) -> {
-                                    settings.model = items[which];
-                                    providerConfig.save(requireContext());
-                                    updateProviderUi();
-                                    retryFailedTurn();
-                                })
-                                .show();
+                        showModelPickerSheet(() -> retryFailedTurn());
                     }
 
                     @Override
@@ -3833,8 +4537,10 @@ public class AgentFragment extends qA {
         }
         boolean configured = providerConfig.isConfigured();
         binding.chooseModelButton.setVisibility(configured ? View.GONE : View.VISIBLE);
+        String model = configured
+                ? providerConfig.activeSettings().model : "";
         binding.modelLabel.setText(configured
-                ? providerConfig.activeSettings().model
+                ? ("auto".equalsIgnoreCase(model) ? "✨ Auto" : model)
                 : getString(R.string.agent_no_provider));
         updateEmptyState();
     }

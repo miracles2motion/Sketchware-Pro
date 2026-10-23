@@ -1866,4 +1866,122 @@ public final class AgentResources {
         }
         return bos.toByteArray();
     }
+
+    private static final Pattern RES_PLUS_ID_PATTERN =
+            Pattern.compile("@\\+?id/([A-Za-z_][A-Za-z0-9_]*)");
+    private static final Pattern RES_ITEM_ID_PATTERN =
+            Pattern.compile("<item[^>]*type\\s*=\\s*\"id\"[^>]*name\\s*=\\s*\"([A-Za-z_][A-Za-z0-9_]*)\"");
+
+    /**
+     * Collects all {@code @+id/<name>} and {@code <item type="id" name="<name>">}
+     * identifiers across project XML resources (menus, custom layouts, navigation,
+     * values) plus all Sketchware activity/custom-view widget IDs so {@code R.id.<name>}
+     * references in block logic can be validated accurately.
+     */
+    public static Set<String> collectDeclaredResourceIds(String scId) {
+        Set<String> out = new java.util.LinkedHashSet<>();
+        out.add("_toolbar");
+        out.add("_app_bar");
+        out.add("_coordinator");
+        out.add("_fab");
+        out.add("_drawer");
+        if (scId == null || scId.trim().isEmpty()) {
+            return out;
+        }
+        try {
+            File root = new File(new FilePathUtil().getPathResource(scId));
+            if (root.exists() && root.isDirectory()) {
+                File[] dirs = root.listFiles();
+                if (dirs != null) {
+                    for (File dir : dirs) {
+                        if (dir == null || !dir.isDirectory()) continue;
+                        File[] files = dir.listFiles();
+                        if (files == null) continue;
+                        for (File f : files) {
+                            if (f == null || !f.isFile()
+                                    || !f.getName().toLowerCase(Locale.ROOT).endsWith(".xml")
+                                    || f.length() > 512_000L) {
+                                continue;
+                            }
+                            String xml = FileUtil.readFile(f.getAbsolutePath());
+                            if (xml == null || xml.isEmpty()) continue;
+                            java.util.regex.Matcher m1 = RES_PLUS_ID_PATTERN.matcher(xml);
+                            while (m1.find()) {
+                                out.add(m1.group(1));
+                            }
+                            java.util.regex.Matcher m2 = RES_ITEM_ID_PATTERN.matcher(xml);
+                            while (m2.find()) {
+                                out.add(m2.group(1));
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            List<ProjectFileBean> screens = new ArrayList<>();
+            List<ProjectFileBean> activities = SketchwareProjects.activities(scId);
+            if (activities != null) {
+                screens.addAll(activities);
+            }
+            List<ProjectFileBean> customViews = SketchwareProjects.customViews(scId);
+            if (customViews != null) {
+                screens.addAll(customViews);
+            }
+            for (ProjectFileBean screen : screens) {
+                if (screen == null) continue;
+                List<ViewBean> views =
+                        SketchwareProjects.screenBeans(scId, screen);
+                if (views == null) continue;
+                for (ViewBean vb : views) {
+                    if (vb != null && vb.id != null && !vb.id.isEmpty()) {
+                        out.add(vb.id);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
+    /**
+     * Maps {@code res/menu/<name>.xml} base names to their declared {@code @+id/*} item IDs
+     * for compact project indexing and menu handler diagnostics.
+     */
+    public static Map<String, List<String>> collectMenuResourceIdsByFile(String scId) {
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        if (scId == null || scId.trim().isEmpty()) {
+            return out;
+        }
+        try {
+            File menuDir = new File(new FilePathUtil().getPathResource(scId), "menu");
+            if (!menuDir.exists() || !menuDir.isDirectory()) {
+                return out;
+            }
+            File[] files = menuDir.listFiles();
+            if (files == null) {
+                return out;
+            }
+            Arrays.sort(files, (a, b) -> a.getName().compareTo(b.getName()));
+            for (File f : files) {
+                if (f == null || !f.isFile()
+                        || !f.getName().toLowerCase(Locale.ROOT).endsWith(".xml")
+                        || f.length() > 256_000L) {
+                    continue;
+                }
+                String xml = FileUtil.readFile(f.getAbsolutePath());
+                if (xml == null) continue;
+                Set<String> ids = new java.util.LinkedHashSet<>();
+                java.util.regex.Matcher m = RES_PLUS_ID_PATTERN.matcher(xml);
+                while (m.find()) {
+                    ids.add(m.group(1));
+                }
+                String base = f.getName().substring(0, f.getName().length() - 4);
+                out.put(base, new ArrayList<>(ids));
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
 }

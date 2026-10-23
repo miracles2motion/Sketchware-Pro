@@ -13,6 +13,7 @@ import com.google.gson.JsonObject;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -163,6 +164,7 @@ public final class AgentLogic {
             "rating_of",
             "read_file",
             "replace_all",
+            "res_id",
             "res_string",
             "rotation_of",
             "scale_x_of",
@@ -3116,6 +3118,8 @@ public final class AgentLogic {
         /** User custom blocks invoked in this build, pinned on apply. */
         final ArrayList<AgentExtensibility.CustomBlockDef>
                 pinnedCustomBlocks = new ArrayList<>();
+        /** Lazily loaded ids declared in the project (widgets + res/). */
+        java.util.Set<String> resourceIdsCache;
 
         Builder(Context context, Map<String, ViewBean> byId,
                 Map<String, Integer> variables, int nextId) {
@@ -3123,6 +3127,74 @@ public final class AgentLogic {
             this.byId = byId;
             this.variables = variables;
             this.nextId = nextId;
+        }
+
+        /**
+         * Every id this project declares — screen widget ids, drawer/
+         * toolbar built-ins, and every {@code @+id/<name>} or
+         * {@code <item type="id">} in the project's res/ XML (menus,
+         * layouts, navigation). Loaded once per build.
+         */
+        java.util.Set<String> declaredResourceIds() {
+            java.util.Set<String> cached = resourceIdsCache;
+            if (cached != null) {
+                return cached;
+            }
+            java.util.Set<String> ids =
+                    AgentResources.collectDeclaredResourceIds(scId);
+            resourceIdsCache = ids;
+            return ids;
+        }
+
+        /**
+         * Accepts {@code "menu_settings"}, {@code "@id/menu_settings"},
+         * {@code "@+id/menu_settings"} or {@code "R.id.menu_settings"}
+         * and returns the bare resource name.
+         */
+        static String resIdName(String raw, String what)
+                throws AgentTools.ToolException {
+            String s = raw == null ? "" : raw.trim();
+            if (s.endsWith(";")) {
+                s = s.substring(0, s.length() - 1).trim();
+            }
+            if (s.startsWith("@+id/")) {
+                s = s.substring("@+id/".length()).trim();
+            } else if (s.startsWith("@id/")) {
+                s = s.substring("@id/".length()).trim();
+            } else if (s.startsWith("R.id.")) {
+                s = s.substring("R.id.".length()).trim();
+            }
+            if (!s.matches("[A-Za-z][A-Za-z0-9_]*")) {
+                throw new AgentTools.ToolException("E_BAD_VALUE",
+                        what + ": \"res_id\" needs a resource-id name "
+                                + "like {\"res_id\":\"menu_settings\"} "
+                                + "(or \"@id/menu_settings\", "
+                                + "\"@+id/menu_settings\", "
+                                + "\"R.id.menu_settings\"), not \""
+                                + raw + "\".");
+            }
+            return s;
+        }
+
+        /** A short, sorted list of declared ids for error guidance. */
+        static String resIdHint(java.util.Set<String> ids) {
+            if (ids == null || ids.isEmpty()) {
+                return "(none yet)";
+            }
+            ArrayList<String> sorted = new ArrayList<>(ids);
+            Collections.sort(sorted);
+            StringBuilder out = new StringBuilder();
+            for (int i = 0; i < sorted.size() && i < 18; i++) {
+                if (i > 0) {
+                    out.append(", ");
+                }
+                out.append(sorted.get(i));
+            }
+            if (sorted.size() > 18) {
+                out.append(" … (").append(sorted.size() - 18)
+                        .append(" more)");
+            }
+            return out.toString();
         }
 
         BlockBean newBean(String opCode, String type) {
@@ -3284,6 +3356,7 @@ public final class AgentLogic {
             }
             if (object.has("asd_number")) return 'd';
             if (object.has("asd_string")) return 's';
+            if (object.has("res_id")) return 'd';
             if (object.has("number")) return 'd';
             if (object.has("text")) return 's';
             if (object.has("op")) {
@@ -5611,6 +5684,33 @@ public final class AgentLogic {
                 BlockBean bean = newBean("currentTime", "d");
                 return "@" + bean.id;
             }
+            if (object.has("res_id")) {
+                // A real Android resource id: {"res_id":"menu_settings"}
+                // compiles to R.id.menu_settings, so menu handlers,
+                // comparisons and switch cases match the ids aapt2
+                // actually assigns instead of guessed integers
+                // (HabitTracker compared item.getItemId() against a
+                // made-up 2131230720 and the branch never fired).
+                if (slot != 'd') {
+                    throw badValue(what, "a resource id (R.id.<name>) "
+                            + "is a number and does not fit here");
+                }
+                String idName = resIdName(
+                        stringOf(object, "res_id"), what);
+                java.util.Set<String> declared = declaredResourceIds();
+                if (!declared.contains(idName)) {
+                    throw badValue(what, "there is no id \"" + idName
+                            + "\" declared in this project yet (no "
+                            + "@+id/" + idName + " in any screen widget "
+                            + "or res/ XML). Add it first — the widget "
+                            + "or the res/menu XML item — or check the "
+                            + "spelling. Declared ids include: "
+                            + resIdHint(declared) + ".");
+                }
+                BlockBean bean = newBean("asdNumber", "d");
+                bean.parameters.add("R.id." + idName);
+                return "@" + bean.id;
+            }
             if (object.has("res_string")) {
                 if (slot != 's') {
                     throw badValue(what, "a string resource is text "
@@ -7422,6 +7522,10 @@ public final class AgentLogic {
             if (object.has("res_string")) {
                 return "string resource “"
                         + stringOf(object, "res_string") + "”";
+            }
+            if (object.has("res_id")) {
+                return "the R.id." + stringOf(object, "res_id")
+                        + " resource id";
             }
             if (object.has("date_of")) {
                 return stringOf(object, "date_of") + "'s selected date";

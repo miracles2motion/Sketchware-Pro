@@ -686,7 +686,14 @@ public final class AgentPreview {
                 ? parseColorSafe(modeColors.get("openui_text_primary")) : null;
     }
 
-    private static Integer resolveAncestorSurfaceColor(
+    /**
+     * The effective surface colour behind {@code start} in a given
+     * palette mode: its own background (drawable token, {@code @color/}
+     * or hex), the nearest opaque ancestor's, or the theme's
+     * {@code openui_bg}. Public so {@code AgentEdits} can validate a
+     * new text colour against the same background the preview audits.
+     */
+    public static Integer resolveAncestorSurfaceColor(
             String scId,
             ViewBean start,
             Map<String, ViewBean> beansById,

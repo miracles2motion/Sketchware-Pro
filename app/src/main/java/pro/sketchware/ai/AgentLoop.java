@@ -3,12 +3,14 @@ package pro.sketchware.ai;
 import android.content.Context;
 
 import com.besome.sketch.beans.ProjectFileBean;
+import com.besome.sketch.beans.ViewBean;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executor;
 
 /**
@@ -277,7 +279,15 @@ public class AgentLoop {
             + "translations). Widgets accept \"@string/<name>\" in text/hint "
             + "and \"@color/<name>\" or \"?attr/<name>\" in background and "
             + "text_color; logic blocks accept {\"res_string\":\"<name>\"} "
-            + "and color \"@color/<name>\" or \"?attr/<name>\". Use "
+            + "and color \"@color/<name>\" or \"?attr/<name>\". In ANY "
+            + "number slot that means an Android resource id — the menu "
+            + "item check in onOptionsItemSelected "
+            + "({\"op\":\"=\",\"a\":{\"arg\":\"id\"},\"b\":{\"res_id\":"
+            + "\"menu_settings\"}}), onNavigationItemSelected or "
+            + "bottom-navigation ids — use {\"res_id\":\"<name>\"} "
+            + "(\"@id/<name>\" also works), which compiles to the real "
+            + "R.id.<name> that aapt2 assigns; NEVER guess the integer "
+            + "value of an R.id constant. Use "
             + "write_resource_xml / read_resource_xml / delete_resource_xml "
             + "for raw res/<folder>/<file>.xml resources: e.g. "
             + "menu/main_menu.xml (wire onCreateOptionsMenu -> menu_inflate "
@@ -444,14 +454,31 @@ public class AgentLoop {
             + "When the user agrees a style direction for the project "
             + "('for kids', 'dark and minimal', 'use our brand colour'), "
             + "save it with set_style_brief so it survives the chat, and "
-            + "keep to it afterwards."
+            + "keep to it afterwards. The style and the Design system are "
+            + "ONE memory now: set_style_brief's first line shows as the "
+            + "Design system's Mood & Audience summary, and there is no "
+            + "separate style page. If the user wants a previous look "
+            + "back, use undo_design_system (\"undo\" for one step back, "
+            + "\"restore_original\" for the project's first-ever theme)."
             + "\n\nORDER OF WORK for a new app or substantial build: style "
             + "first, plan second, building third. If the project has no "
             + "style brief, ask what look and feel the user wants; if "
             + "they don't know, propose one yourself in plain words, "
             + "save it when they accept (or tell you to decide), then "
             + "agree the implementation plan and save it with set_plan "
-            + "BEFORE building. Save both even when no project is "
+            + "BEFORE building. VAGUE PROMPTS (\"build me a notepad\", "
+            + "\"build me a weather forecasting app\") are still whole "
+            + "products: brainstorm 2–4 named directions with ask_choice "
+            + "(with real colours and shapes), turn the pick into a "
+            + "complete set_design_system + plan covering every screen, "
+            + "and build the whole thing — never ask the user to design "
+            + "it for you. When an app needs live data and the user gave "
+            + "no API key, use a FREE KEYLESS public API (weather: "
+            + "Open-Meteo https://api.open-meteo.com/v1/forecast and its "
+            + "geocoding API; no key, CORS-free, plain JSON via "
+            + "RequestNetwork), declare INTERNET permission, and cache "
+            + "the last JSON in a file/SharedPreferences so the app "
+            + "still opens offline. Save both even when no project is "
             + "chosen yet — they are held as drafts and land in the "
             + "project this work creates. If a style and plan already "
             + "exist, use them and don't re-ask. As each plan milestone "
@@ -558,6 +585,14 @@ public class AgentLoop {
     }
 
     /**
+     * The ✨ Auto router's pool: the active provider's fetched models
+     * (set by the chat before each turn; empty means "no auto").
+     */
+    public volatile List<String> autoModelPool = new ArrayList<>();
+    /** Whether the pool should include non-chat models. */
+    public volatile boolean autoShowAll = false;
+
+    /**
      * Runs one user turn. {@code history} is the visible conversation
      * (user/assistant text); the loop takes it from there.
      */
@@ -628,8 +663,28 @@ public class AgentLoop {
         final boolean[] taskClosed = {false};
         final boolean[] previewVisionDisabled = {
                 AiChatService.isModelKnownTextOnly(model)};
+        // Read cache: read-only facts a previous FAILED turn fetched,
+        // handed to this turn so a retry does not pay for them twice.
+        // Cleared the moment anything mutates or the turn succeeds.
+        final StringBuilder readFacts = new StringBuilder();
+        {
+            String cached = AgentJournal.readCache(workingProjectId);
+            if (!cached.isEmpty()) {
+                readFacts.append(cached);
+            }
+        }
         List<JsonObject> messages = new ArrayList<>();
-        messages.add(systemMessage(workingProjectId));
+        JsonObject systemMsg = systemMessage(workingProjectId);
+        if (readFacts.length() > 0) {
+            // Facts still true when the last turn died, re-briefed so
+            // the retry starts where it stopped reading, not from zero.
+            systemMsg.addProperty("content",
+                    systemMsg.get("content").getAsString()
+                            + "\n\nFACTS READ BEFORE THE LAST TURN FAILED "
+                            + "(still true; do not re-read these unless "
+                            + "you must verify a change):\n" + readFacts);
+        }
+        messages.add(systemMsg);
         int kept = 0;
         int imageTurnsRemaining = previewVisionDisabled[0] ? 0 : 3;
         for (int i = history.size() - 1; i >= 0 && kept < 40; i--) {
@@ -668,6 +723,52 @@ public class AgentLoop {
         int sameFailure = 0;
         final int[] segment = {1};
         final boolean[] rollover = {false};
+        // ✨ Auto: when the user's model is "auto", the router picks
+        // the concrete model for this turn (vision-capable when the
+        // turn carries images, otherwise the fastest Tools ✓ model of
+        // the active provider), and failures fail over mid-turn.
+        final boolean autoRequested = "auto".equalsIgnoreCase(model);
+        final String autoProvider =
+                ModelCatalog.providerNameForBaseUrl(baseUrl);
+        if (autoRequested) {
+            boolean needsVision =
+                    AiChatService.hasMultimodalImageParts(messages);
+            String chosen = ModelCatalog.pickAutoModel(autoProvider,
+                    autoModelPool, autoShowAll, needsVision, "");
+            if (!chosen.isEmpty()) {
+                JsonObject routed = new JsonObject();
+                routed.addProperty("reason", needsVision
+                        ? "vision needed" : "fastest tools model");
+                routed.addProperty("chosen", chosen);
+                AgentJournal.record(journalProject[0], "auto_route", routed);
+                String note = "✨ Auto → " + chosen
+                        + (needsVision ? " (vision)" : "");
+                dispatch(listener, () -> listener.onToolNote(note));
+                model = chosen;
+            } else {
+                // Nothing to route to: say so instead of sending the
+                // literal "auto" to a provider and dying confusingly.
+                JsonObject failed = new JsonObject();
+                failed.addProperty("model", "auto");
+                failed.addProperty("error_kind", "EMPTY");
+                failed.addProperty("http_code", 0);
+                failed.addProperty("message",
+                        "✨ Auto has no models to choose from for this "
+                                + "provider yet");
+                AgentJournal.record(journalProject[0], "model_error",
+                        failed);
+                closeTask(journalProject[0], false,
+                        "✨ Auto had no model list to choose from",
+                        taskClosed, listener);
+                dispatch(listener, () -> listener.onError(
+                        new AiChatService.AiError(
+                                AiChatService.ErrorKind.EMPTY, 0,
+                                "✨ Auto needs a model list: open Settings "
+                                        + "→ Fetch models once, then pick "
+                                        + "✨ Auto again.")));
+                return;
+            }
+        }
         // Fingerprints refused as "already done" in this turn: a
         // second request for the same change is the user asking for
         // it on purpose, so it is let through.
@@ -741,6 +842,61 @@ public class AgentLoop {
                             continue;
                         }
                     }
+                    // Cross-provider failover: the provider is clearly
+                    // struggling (5xx/429/network after retries), so
+                    // rest this model and hand the whole turn — the
+                    // messages list with its completed tool calls —
+                    // to the next healthy model. A quota hit (429)
+                    // fails over on the first hit; a dead provider
+                    // gets its two quick retries first.
+                    boolean failoverEligible = !cancelled
+                            && (code == 429
+                                    || e.error.kind
+                                            == AiChatService.ErrorKind.QUOTA
+                                    || attempt >= 1)
+                            && (code == 429 || code == 500 || code == 502
+                                    || code == 503 || code == 504
+                                    || e.error.kind
+                                            == AiChatService.ErrorKind.NETWORK
+                                    || e.error.kind
+                                            == AiChatService.ErrorKind.QUOTA);
+                    if (failoverEligible) {
+                        ModelCatalog.cooldown(autoProvider, model,
+                                System.currentTimeMillis()
+                                        + 5L * 60_000L);
+                        String next = ModelCatalog.pickAutoModel(
+                                autoProvider, autoModelPool, autoShowAll,
+                                AiChatService.hasMultimodalImageParts(
+                                        messages),
+                                model);
+                        if (next.isEmpty()) {
+                            // Any other visible healthy model is still
+                            // better than a dead turn.
+                            next = ModelCatalog.pickAutoModel(
+                                    autoProvider, autoModelPool, true,
+                                    false, model);
+                        }
+                        if (!next.isEmpty()) {
+                            AiChatService.sanitizeMessagesForModel(
+                                    messages, next);
+                            JsonObject switched = new JsonObject();
+                            switched.addProperty("from", model);
+                            switched.addProperty("to", next);
+                            switched.addProperty("http_code", code);
+                            switched.addProperty("mid_turn", true);
+                            AgentJournal.record(journalProject[0],
+                                    "model_failover", switched);
+                            String note = model
+                                    + " busy (" + (code == 0 ? "network"
+                                    : String.valueOf(code))
+                                    + ") — switching to " + next;
+                            dispatch(listener,
+                                    () -> listener.onToolNote(note));
+                            model = next;
+                            attempt = -1;
+                            continue;
+                        }
+                    }
                     // A provider failure is part of the story: the export
                     // has to show that the model was never reached (or
                     // answered with an error), not just that nothing moved.
@@ -758,6 +914,10 @@ public class AgentLoop {
                     failed.addProperty("messages_sent", messages.size());
                     AgentJournal.record(journalProject[0], "model_error",
                             failed);
+                    // What this turn already read survives its death:
+                    // the retry is briefed, not blind.
+                    AgentJournal.setReadCache(journalProject[0],
+                            readFacts.toString());
                     closeTask(journalProject[0], false,
                             cancelled ? "you stopped it" : stopReason(e.error),
                             taskClosed, listener);
@@ -811,6 +971,9 @@ public class AgentLoop {
                 } else {
                     closeTask(journalProject[0], true, "", taskClosed,
                             listener);
+                    // A finished turn makes the read cache redundant:
+                    // the answer is in the chat and the index is fresh.
+                    AgentJournal.clearReadCache(journalProject[0]);
                     String thinking = reply.thinking == null ? "" : reply.thinking;
                     dispatch(listener, () -> listener.onAnswer(answer, thinking));
                 }
@@ -888,6 +1051,12 @@ public class AgentLoop {
                                 taskClosed, listener);
                         return;
                     }
+                    if (!result.has("error")) {
+                        // The project just changed: cached read facts
+                        // are stale now, and the fresh index covers it.
+                        readFacts.setLength(0);
+                        AgentJournal.clearReadCache(journalProject[0]);
+                    }
                     if (result.has("bind_project")) {
                         String previousProject = journalProject[0];
                         workingProjectId = result.get("bind_project").getAsString();
@@ -942,6 +1111,18 @@ public class AgentLoop {
                         AgentJournal.noteCheck(journalProject[0], call.name,
                                 label);
                     }
+                    // Read-only tools feed the retry cache: if the turn
+                    // dies later, the retry is briefed with what was
+                    // already read.
+                    if (READ_CACHE_TOOLS.contains(call.name)) {
+                        if (readFacts.length() > 2200) {
+                            readFacts.setLength(0);
+                        }
+                        readFacts.append("• ").append(label).append(": ")
+                                .append(AgentJournal.cap(
+                                        result.toString(), 260))
+                                .append('\n');
+                    }
                 }
                 {
                     // Every tool call, in order, with what was asked
@@ -995,6 +1176,8 @@ public class AgentLoop {
                                 + (reason.isEmpty() ? ""
                                         : " Last problem: " + reason)
                                 + " Tell me how you'd like to proceed.";
+                        AgentJournal.setReadCache(journalProject[0],
+                                readFacts.toString());
                         closeTask(journalProject[0], false,
                                 "the same step failed twice (" + call.name
                                         + ")", taskClosed, listener);
@@ -1439,6 +1622,169 @@ public class AgentLoop {
         return out.toString();
     }
 
+    /** Read-only tools whose findings are worth remembering across a
+     * failed turn's retry. */
+    private static final java.util.Set<String> READ_CACHE_TOOLS =
+            java.util.Set.of("get_screen", "get_event_logic",
+                    "list_activities", "list_resources",
+                    "get_values_resources", "read_source_files",
+                    "get_project_setup", "list_local_libraries",
+                    "inspect_manifest_and_settings",
+                    "list_custom_definitions", "read_resource_xml",
+                    "list_font_and_sound_sources", "read_assets");
+
+    /**
+     * The compact project index: every screen with its widget ids,
+     * wired events, components, variables, lists, More Blocks and
+     * SharedPreferences files, plus the custom views (RecyclerView
+     * item layouts) and the menu files with their item ids — all in
+     * bounded, token-cheap lines. A model that just arrived (switch,
+     * retry, or the ✨ Auto router) reads this in the system message
+     * instead of spending 4–5 tool calls discovering it, and storage
+     * keys stay consistent across screens because every screen's keys
+     * are visible side by side.
+     */
+    private static String compactProjectIndex(String scId) {
+        if (scId == null || scId.isEmpty()) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder();
+        try {
+            List<ProjectFileBean> activities =
+                    SketchwareProjects.activities(scId);
+            if (activities == null || activities.isEmpty()) {
+                return "";
+            }
+            out.append("\n\nPROJECT INDEX (current truth; check here "
+                    + "before reading files):");
+            for (ProjectFileBean activity : activities) {
+                String name = SketchwareProjects.activityName(activity);
+                out.append("\n• ").append(name).append(":");
+                ArrayList<ViewBean> beans =
+                        SketchwareProjects.screenBeans(scId, activity);
+                StringBuilder ids = new StringBuilder();
+                if (beans != null) {
+                    int shown = 0;
+                    for (ViewBean bean : beans) {
+                        if (bean == null || bean.id == null
+                                || bean.id.isEmpty()) {
+                            continue;
+                        }
+                        if (shown >= 18) {
+                            ids.append(" …(+")
+                                    .append(beans.size() - shown)
+                                    .append(")");
+                            break;
+                        }
+                        if (ids.length() > 0) {
+                            ids.append(", ");
+                        }
+                        ids.append(bean.id);
+                        shown++;
+                    }
+                }
+                out.append(" widgets[").append(ids).append("]");
+                SketchwareProjects.LogicSummary logic =
+                        SketchwareProjects.logicSummary(scId, activity);
+                List<String> events =
+                        SketchwareProjects.eventLines(scId, activity);
+                if (!events.isEmpty()) {
+                    StringBuilder ev = new StringBuilder();
+                    int shown = 0;
+                    for (String line : events) {
+                        if (shown >= 10) {
+                            ev.append(" …(+")
+                                    .append(events.size() - shown)
+                                    .append(")");
+                            break;
+                        }
+                        if (ev.length() > 0) {
+                            ev.append("; ");
+                        }
+                        ev.append(line);
+                        shown++;
+                    }
+                    out.append(" events[").append(ev).append("]");
+                }
+                if (!logic.components.isEmpty()) {
+                    out.append(" components[")
+                            .append(joinCaps(logic.components, 12))
+                            .append("]");
+                }
+                if (!logic.variables.isEmpty()) {
+                    out.append(" vars[")
+                            .append(joinCaps(logic.variables, 10))
+                            .append("]");
+                }
+                if (!logic.lists.isEmpty()) {
+                    out.append(" lists[")
+                            .append(joinCaps(logic.lists, 8))
+                            .append("]");
+                }
+                if (!logic.moreBlocks.isEmpty()) {
+                    out.append(" moreBlocks[")
+                            .append(joinCaps(logic.moreBlocks, 6))
+                            .append("]");
+                }
+                if (!logic.prefFiles.isEmpty()) {
+                    out.append(" prefs[")
+                            .append(joinCaps(logic.prefFiles, 8))
+                            .append("]");
+                }
+            }
+            List<ProjectFileBean> customViews =
+                    SketchwareProjects.customViews(scId);
+            if (customViews != null && !customViews.isEmpty()) {
+                StringBuilder items = new StringBuilder();
+                for (ProjectFileBean view : customViews) {
+                    if (items.length() > 0) {
+                        items.append(", ");
+                    }
+                    items.append(SketchwareProjects.screenName(view))
+                            .append(" (")
+                            .append(SketchwareProjects
+                                    .screenBeans(scId, view).size())
+                            .append(" widgets)");
+                }
+                out.append("\n• Item layouts (RecyclerView rows): ")
+                        .append(items);
+            }
+            java.util.Map<String, List<String>> menus =
+                    AgentResources.collectMenuResourceIdsByFile(scId);
+            for (Map.Entry<String, List<String>> menu : menus.entrySet()) {
+                out.append("\n• res/menu/").append(menu.getKey())
+                        .append(".xml ids[")
+                        .append(joinCaps(menu.getValue(), 12))
+                        .append("] — compare with {\"res_id\":\"…\"}");
+            }
+        } catch (Throwable ignored) {
+            return "";
+        }
+        return out.length() > 2600 ? out.substring(0, 2600)
+                : out.toString();
+    }
+
+    /** Comma-joins, capped, for the project index lines. */
+    private static String joinCaps(List<String> values, int cap) {
+        StringBuilder out = new StringBuilder();
+        int shown = 0;
+        for (String value : values) {
+            if (value == null || value.isEmpty()) {
+                continue;
+            }
+            if (shown >= cap) {
+                out.append(" …(+)").append(values.size() - shown);
+                break;
+            }
+            if (out.length() > 0) {
+                out.append(", ");
+            }
+            out.append(value);
+            shown++;
+        }
+        return out.toString();
+    }
+
     private JsonObject systemMessage(String workingProjectId) {
         StringBuilder prompt = new StringBuilder(AiChatService.SYSTEM_PROMPT)
                 .append(AGENT_GUIDANCE);
@@ -1477,6 +1823,15 @@ public class AgentLoop {
                 if (screens.length() > 0) {
                     prompt.append(" Its screens right now: ")
                             .append(screens).append(".");
+                }
+                // The compact project index (~350 tokens): the ids,
+                // events, components, variables and storage keys that
+                // exist right now — so a fresh or switched model orients
+                // in ONE read instead of 4–5 discovery calls, and never
+                // drifts on SharedPreferences keys between screens.
+                String index = compactProjectIndex(workingProjectId);
+                if (!index.isEmpty()) {
+                    prompt.append(index);
                 }
                 prompt.append(" Widget details are available through your "
                         + "tools. If earlier replies in this conversation "

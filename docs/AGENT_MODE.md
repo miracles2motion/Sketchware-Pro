@@ -2063,12 +2063,23 @@ logs exposed the rest of the same class:
    - Interactive **Design system** page with `☀ Light` / `☾ Dark` live preview toggle, WCAG badge, one-tap Brand/Corners/Density/Neutral/Mode pills, **Presets / Custom JSON** import & save, and **Sync theme to project**.
    - Null-safe empty-string guards on `strToMap`, `strToListMap`, `GsonStringToListString`, and `GsonStringToListNumber` (`Fx`, `BlocksHandler`); automatic session-cached `image_url` -> text-metadata fallback on text-only models (`AiChatService`, `AgentLoop`); and Light/Dark WCAG contrast + clipping + `CardView` overlap + unscrollable-form auditing in `AgentPreview`.
 
+## Wave 52 / Phases 19–24 — Unified Design System, Smart Model Catalog, `✨ Auto` Router, 5s Auto-Approve & Material 3 Choice Cards
 
+All findings from the third `HabitTracker` export plus the agreed design sessions, in one build:
 
-
-
-
-
-
-
-
+1. **Real `R.id.<name>` in block values (`AgentLogic`, `AgentResources`)**:
+   - Any number slot that means an Android resource id accepts `{"res_id":"menu_settings"}` (also `"@id/…"`, `"@+id/…"`, `"R.id.…"`) in `if` comparisons and `switch` cases (`onOptionsItemSelected`, `onNavigationItemSelected`, bottom navigation), compiling to the real `R.id.<name>` through an `asdNumber` reporter validated against every declared id (screen widget ids, drawer/toolbar built-ins, and every `@+id/*` / `<item type="id">` in `res/*.xml` via `AgentResources.collectDeclaredResourceIds`). Guessed integers like `2131230720` are over.
+2. **Compact-button padding & invisible-text guards (`AgentEdits`)**:
+   - `set_padding` and raw `set_attributes` (`android:padding*`) are refused on buttons ≤ 48dp tall / ≤ 48dp wide when the padding cannot fit (the 16dp-on-40dp chip bug), and `set_text_color` now computes WCAG contrast against the real ancestor surface (drawable tokens resolved per palette) in BOTH Light and Dark — warning below 4.2:1, hard block below 1.8:1 with a named readable alternative.
+3. **One Design system — `Style` retired (`AgentJournal`, `AgentTools`, `AgentFragment`)**:
+   - The composer bar is now `Design system · Plan · Task log`. `set_style_brief` mirrors its first line into `designSystem.summary`, shown as a tappable **Mood & Audience** banner atop the Design system page, so the two can never disagree. The first theme a project saves is pinned as `originalDesignSystem`, every change pushes a 10-step `designSystemHistory`, and the Design system header exposes **`↶ Undo (n)`** and **`↺ Original theme`** (instantly re-materialized into XML). The new `undo_design_system` tool (`undo` / `restore_original`) does the same from chat.
+4. **Model catalog, badges, Hide & active probes (`ModelCatalog`, `AiChatService`, `AgentSettingsActivity`, `AgentFragment`)**:
+   - `/models` metadata (OpenRouter + Gemini shapes) is parsed into a persisted `.sketchware/ai/model-catalog.json` — `Tools ✓`, `Vision` / `Text-only`, context size, `Free`, measured latency, last error — and both pickers filter junk (`tts`, `imagen`, `veo`, `embed`, `rerank`, …) through `ModelCatalog.visibleModels` with `showAllModels` as the escape hatch. Model Picker cards carry the badge, a one-tap **Test** (1-tool ping + 1×1-PNG vision check + latency), permanent **✕ Hide** with a Hidden-restore dialog, and **⚡ Verify top models**. 404s auto-hide as retired; live vision rejections persist "Text-only" across restarts.
+5. **`✨ Auto` router + mid-turn failover + 90s stall cutoff (`AgentLoop`, `ModelCatalog`, `AiChatService`)**:
+   - Choosing **`✨ Auto`** routes each turn to the best healthy model of the active provider (vision+tools when the turn carries images, fastest known-Tools model otherwise) and fails over mid-turn on 429/5xx/network with a 5-minute cooldown per model; `sanitizeMessagesForModel` strips provider-specific fields (and images for text-only targets) so completed `tool_calls` and `tool` results carry to the next model intact. Agent turns cap stalled reads at 90s instead of the silent 180s×3 (9-minute) hang.
+6. **5-second Timed Auto-Approve (`ChatAdapter`, `ChatMessage`, `AiProviderConfig`)**:
+   - On by default (`agent_settings.xml` switch + `⏱` toggle in the Model Picker footer): pending cards show a live `✓ Approve (5s)…` countdown and self-approve at zero — paused by **Details** or any card touch, cancelled instantly by Reject, and destructive deletes (`delete_activity`, `delete_custom_view`, `remove_component`, file/resource deletes) are manual-hold forever.
+7. **Compact project index + read cache + vague-prompt/keyless-API standard (`AgentLoop`, `AgentJournal`, `SketchwareProjects`)**:
+   - The system message carries a ~350-token PROJECT INDEX (per screen: widget ids, wired events, components, variables, lists, More Blocks, SharedPreferences files; plus item layouts and `res/menu/*.xml` ids), so switched/failed/`✨ Auto` models orient in one read. Read-only tool findings are cached and re-briefed on retry (`AgentJournal.readCache`, cleared on mutation or success). Vague prompts ("build me a notepad / weather app") brainstorm into complete plans, and live-data apps without keys use free keyless APIs (Open-Meteo) with offline cache.
+8. **Material 3 card sheets & live colour swatches (`AgentFragment`)**:
+   - `ask_choice`, the Model Picker, the Key Switcher and Design-System Presets render as tappable M3 cards (bold title + subtitle + active ring + trailing action) instead of bare text lists. Choices carrying hexes draw real colour swatch circles and Light→Dark gradient strips, and every `ask_choice` ends with **🎨 Pick a custom colour…**, **⌨ Type my own…**, and **✨ You decide**.

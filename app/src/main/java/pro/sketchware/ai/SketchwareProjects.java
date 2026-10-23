@@ -386,6 +386,14 @@ public final class SketchwareProjects {
             for (com.besome.sketch.beans.ComponentBean component
                     : store.e(javaName)) {
                 summary.components.add(component.componentId);
+                if (component.componentId != null
+                        && component.param1 != null
+                        && !component.param1.isEmpty()
+                        && component.type
+                                == com.besome.sketch.beans.ComponentBean
+                                        .COMPONENT_TYPE_SHAREDPREF) {
+                    summary.prefFiles.add(component.param1);
+                }
             }
             for (android.util.Pair<Integer, String> variable
                     : store.k(javaName)) {
@@ -544,6 +552,9 @@ public final class SketchwareProjects {
         public final List<String> moreBlocks = new ArrayList<>();
         public final java.util.LinkedHashMap<String, String> moreBlockSpecs =
                 new java.util.LinkedHashMap<>();
+        /** SharedPreferences file names this screen's file components
+         * write to (from the components' extra data). */
+        public final List<String> prefFiles = new ArrayList<>();
         public int events;
     }
 

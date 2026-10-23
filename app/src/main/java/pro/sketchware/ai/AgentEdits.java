@@ -287,17 +287,25 @@ public final class AgentEdits {
                     ViewBean bean = requireWidget(op, byId);
                     String raw = stringOf(op, "color");
                     ResColor rc = resolveResColor(scId, raw, frozen);
+                    String readableWarning;
                     if (rc != null) {
                         bean.text.resTextColor = rc.resRef;
                         bean.text.textColor = rc.fallbackInt;
+                        readableWarning = checkTextReadableAgainstSurface(
+                                scId, bean, raw, byId, frozen);
                         lines.add("Set " + bean.id + " text colour to "
                                 + rc.resRef);
                     } else {
                         int color = colorOf(scId, op);
                         bean.text.resTextColor = null;
                         bean.text.textColor = color;
+                        readableWarning = checkTextReadableAgainstSurface(
+                                scId, bean, raw, byId, frozen);
                         lines.add("Set " + bean.id + " text colour to "
                                 + colorWord(scId, op, color));
+                    }
+                    if (!readableWarning.isEmpty()) {
+                        lines.add("⚠ " + readableWarning);
                     }
                 }
                 case "set_text_size" -> {
@@ -353,6 +361,9 @@ public final class AgentEdits {
                     int[] padding = boxOf(op, bean.layout.paddingLeft,
                             bean.layout.paddingTop, bean.layout.paddingRight,
                             bean.layout.paddingBottom);
+                    enforceCompactButtonPadding(bean,
+                            padding[1], padding[3],
+                            padding[0], padding[2]);
                     bean.layout.paddingLeft = padding[0];
                     bean.layout.paddingTop = padding[1];
                     bean.layout.paddingRight = padding[2];
@@ -2059,6 +2070,205 @@ public final class AgentEdits {
         return inj;
     }
 
+    /**
+     * Rejects vertical padding that cannot fit inside a compact
+     * button/chip (≤ 48dp tall). HabitTracker's 40dp chips were given
+     * {@code android:padding="16dp"} through set_attributes, so the
+     * text was pushed out of the view box and disappeared. Used by
+     * both {@code set_padding} (bean values) and {@code set_attributes}
+     * (raw inject attributes).
+     */
+    private static void enforceCompactButtonPadding(ViewBean bean,
+                                                    int top, int bottom,
+                                                    int left, int right)
+            throws AgentTools.ToolException {
+        if (bean == null || !isButtonWidget(bean.type)
+                || bean.layout == null) {
+            return;
+        }
+        int height = bean.layout.height;
+        if (height > 0 && height <= 48 && Math.max(top, bottom) > 8) {
+            throw new AgentTools.ToolException("E_BAD_VALUE",
+                    bean.id + " is only " + height
+                            + "dp tall; " + Math.max(top, bottom)
+                            + "dp vertical padding leaves no room for its "
+                            + "text (HabitTracker bug). Use up to 8dp "
+                            + "vertical padding on a compact button, or "
+                            + "make it taller with set_size (44–56dp).");
+        }
+        int width = bean.layout.width;
+        if (width > 0 && width <= 48 && Math.max(left, right) > 12) {
+            throw new AgentTools.ToolException("E_BAD_VALUE",
+                    bean.id + " is only " + width
+                            + "dp wide; " + Math.max(left, right)
+                            + "dp horizontal padding clips its label. "
+                            + "Use up to 12dp on narrow buttons, or make "
+                            + "it wider with set_size.");
+        }
+    }
+
+    /**
+     * Inject form of {@link #enforceCompactButtonPadding}: raw
+     * {@code android:padding*} attributes on a compact button.
+     */
+    private static void enforceCompactButtonPaddingAttr(ViewBean bean,
+                                                        String name,
+                                                        String value)
+            throws AgentTools.ToolException {
+        if (bean == null || !isButtonWidget(bean.type)
+                || bean.layout == null || name == null || value == null) {
+            return;
+        }
+        boolean vertical = "android:padding".equals(name)
+                || "android:paddingTop".equals(name)
+                || "android:paddingBottom".equals(name)
+                || "android:paddingVertical".equals(name);
+        boolean horizontal = "android:padding".equals(name)
+                || "android:paddingLeft".equals(name)
+                || "android:paddingRight".equals(name)
+                || "android:paddingHorizontal".equals(name);
+        if (!vertical && !horizontal) {
+            return;
+        }
+        String digits = value.replace("dp", "").replace("dip", "")
+                .trim();
+        int dp;
+        try {
+            dp = Integer.parseInt(digits);
+        } catch (NumberFormatException e) {
+            return;
+        }
+        if (dp < 0) {
+            return;
+        }
+        int height = bean.layout.height;
+        if (vertical && height > 0 && height <= 48 && dp > 8) {
+            throw new AgentTools.ToolException("E_BAD_VALUE",
+                    name + "=\"" + value + "\" will not fit " + bean.id
+                            + " (" + height
+                            + "dp tall): vertical padding over 8dp clips "
+                            + "a compact button's text (HabitTracker bug). "
+                            + "Use up to 8dp, or make the button taller "
+                            + "(44–56dp) first.");
+        }
+        int width = bean.layout.width;
+        if (horizontal && width > 0 && width <= 48 && dp > 12) {
+            throw new AgentTools.ToolException("E_BAD_VALUE",
+                    name + "=\"" + value + "\" will not fit " + bean.id
+                            + " (" + width
+                            + "dp wide): it clips the label. Use up to "
+                            + "12dp, or make the button wider first.");
+        }
+    }
+
+    /**
+     * Checks a prospective text colour against the surface actually
+     * rendered behind the widget, in both Light and Dark palettes.
+     * Returns a gentle warning below the WCAG line, and hard-blocks
+     * physically unreadable same-colour text (&lt; 1.8:1 — the
+     * HabitTracker {@code @color/openui_sunk} text on
+     * {@code openui_sunk_input} was 1.00:1, invisible on screen).
+     */
+    private static String checkTextReadableAgainstSurface(
+            String scId,
+            ViewBean bean,
+            String rawColor,
+            Map<String, ViewBean> byId,
+            boolean frozen)
+            throws AgentTools.ToolException {
+        String raw = rawColor == null ? "" : rawColor.trim();
+        if (frozen || raw.isEmpty() || raw.startsWith("?attr/")
+                || raw.startsWith("?android:attr/")
+                || "@color/openui_chip_text".equals(raw)) {
+            return "";
+        }
+        OpenUiThemeEngine.ResolvedTheme theme;
+        try {
+            theme = OpenUiThemeEngine.resolveTheme(
+                    AgentJournal.designSystem(scId));
+        } catch (Exception e) {
+            return "";
+        }
+        Double lightFg = newTextModeColor(scId, raw, theme.lightColors);
+        Double darkFg = newTextModeColor(scId, raw, theme.darkColors);
+        if (lightFg == null && darkFg == null) {
+            return "";
+        }
+        double minRatio = bean.text != null && bean.text.textSize >= 18
+                ? 3.0 : 4.2;
+        String worstMode = null;
+        double worstRatio = Double.MAX_VALUE;
+        if (lightFg != null) {
+            Integer bg = AgentPreview.resolveAncestorSurfaceColor(scId,
+                    bean, byId, theme.lightColors, 0xFFFCFCFC);
+            if (bg != null) {
+                double r = OpenUiThemeEngine.contrastRatio(
+                        (int) Math.round(lightFg), bg);
+                if (r < worstRatio) {
+                    worstRatio = r;
+                    worstMode = "Light";
+                }
+            }
+        }
+        if (darkFg != null) {
+            Integer bg = AgentPreview.resolveAncestorSurfaceColor(scId,
+                    bean, byId, theme.darkColors, 0xFF121212);
+            if (bg != null) {
+                double r = OpenUiThemeEngine.contrastRatio(
+                        (int) Math.round(darkFg), bg);
+                if (r < worstRatio) {
+                    worstRatio = r;
+                    worstMode = "Dark";
+                }
+            }
+        }
+        if (worstMode == null) {
+            return "";
+        }
+        if (worstRatio < 1.8) {
+            throw new AgentTools.ToolException("E_BAD_VALUE",
+                    String.format(Locale.US,
+                            "%s would be unreadable: \"%s\" on its "
+                                    + "background is %.2f:1 in %s mode "
+                                    + "(below 1.8:1 — invisible in "
+                                    + "practice). Use a readable text "
+                                    + "colour instead: "
+                                    + "@color/openui_text_primary, "
+                                    + "@color/openui_text_secondary, or "
+                                    + "@color/openui_text_on_accent on "
+                                    + "accent surfaces.",
+                            bean.id, raw, worstRatio, worstMode));
+        }
+        if (worstRatio < minRatio) {
+            return String.format(Locale.US,
+                    "%s: \"%s\" on its background is %.2f:1 in %s mode "
+                            + "(WCAG needs %.1f:1). Prefer "
+                            + "@color/openui_text_primary or "
+                            + "@color/openui_text_secondary.",
+                    bean.id, raw, worstRatio, worstMode, minRatio);
+        }
+        return "";
+    }
+
+    /** Resolves a prospective colour argument in one palette mode. */
+    private static Double newTextModeColor(String scId, String raw,
+                                           Map<String, String> modeColors) {
+        String t = raw == null ? "" : raw.trim();
+        Integer color;
+        if (t.startsWith("@color/")) {
+            String key = t.substring("@color/".length()).trim();
+            if (modeColors != null && modeColors.containsKey(key)) {
+                color = OpenUiThemeEngine.parseHexColor(
+                        modeColors.get(key));
+            } else {
+                color = AgentResources.resolveColorInt(scId, key);
+            }
+        } else {
+            color = OpenUiThemeEngine.parseHexColor(t);
+        }
+        return color == null ? null : (double) (color & 0xFFFFFF);
+    }
+
     private static void applyDesignTokenToBean(String scId,
                                                ViewBean bean,
                                                String tokenKey,
@@ -3226,6 +3436,7 @@ public final class AgentEdits {
             throw new AgentTools.ToolException("E_BAD_VALUE",
                     message.toString());
         }
+        enforceCompactButtonPaddingAttr(bean, cleanName, cleanValue);
         return cleanName + "=\"" + cleanValue + "\"";
     }
 

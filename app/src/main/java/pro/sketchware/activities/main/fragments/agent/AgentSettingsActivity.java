@@ -19,6 +19,7 @@ import pro.sketchware.R;
 import pro.sketchware.ai.AiChatService;
 import pro.sketchware.ai.AiProvider;
 import pro.sketchware.ai.AiProviderConfig;
+import pro.sketchware.ai.ModelCatalog;
 import pro.sketchware.databinding.AgentKeyRowBinding;
 import pro.sketchware.databinding.AgentSettingsBinding;
 
@@ -58,8 +59,17 @@ public class AgentSettingsActivity extends AppCompatActivity {
         binding.fetchModelsButton.setOnClickListener(v -> fetchModels(false));
         binding.showAllModelsSwitch.setOnCheckedChangeListener((button, checked) -> {
             config.settings(selected).showAllModels = checked;
+            config.settings(selected).autoApproveSecondsSet = true;
             config.save(this);
             refreshModelAdapter();
+        });
+        AiProviderConfig.Settings initialSettings = config.settings(selected);
+        binding.autoApproveSwitch.setChecked(initialSettings.autoApproveSeconds > 0);
+        binding.autoApproveSwitch.setOnCheckedChangeListener((button, checked) -> {
+            AiProviderConfig.Settings settings = config.settings(selected);
+            settings.autoApproveSeconds = checked ? 5 : 0;
+            settings.autoApproveSecondsSet = true;
+            config.save(this);
         });
         binding.allowAgentModifySwitch.setChecked(config.allowAgentModify());
         binding.allowAgentModifySwitch.setOnCheckedChangeListener((button, checked) -> {
@@ -89,9 +99,12 @@ public class AgentSettingsActivity extends AppCompatActivity {
         binding.modelInput.setText(settings.model, false);
         // The fetched list is cached per provider: it is simply here,
         // reopening Settings must never demand a fresh query first.
+        // The same chat-model filter as the chat picker applies.
         binding.modelInput.setAdapter(new ArrayAdapter<>(
                 this, android.R.layout.simple_list_item_1,
-                new ArrayList<>(settings.models)));
+                new ArrayList<>(ModelCatalog.visibleModels(
+                        provider.name(), settings.models,
+                        settings.showAllModels))));
         updateFetchButtonLabel();
         binding.keyHint.setText(provider.keyPage.isEmpty()
                 ? getString(R.string.agent_settings_key_hint_custom)
@@ -273,13 +286,22 @@ public class AgentSettingsActivity extends AppCompatActivity {
             @Override
             public void onModels(List<String> models) {
                 binding.fetchModelsButton.setEnabled(true);
+                // Remember everything the provider reported; show only
+                // the chat-capable, non-hidden ones (user can flip
+                // "Show all models" to see the rest).
+                config.settings(selected).models = new ArrayList<>(models);
                 binding.modelInput.setAdapter(new ArrayAdapter<>(
-                        AgentSettingsActivity.this, android.R.layout.simple_list_item_1, models));
-                if (text(binding.modelInput).isEmpty() && !models.isEmpty()) {
-                    binding.modelInput.setText(models.get(0), false);
+                        AgentSettingsActivity.this, android.R.layout.simple_list_item_1,
+                        new ArrayList<>(ModelCatalog.visibleModels(
+                                selected.name(), models,
+                                config.settings(selected).showAllModels))));
+                List<String> visible = ModelCatalog.visibleModels(
+                        selected.name(), models,
+                        config.settings(selected).showAllModels);
+                if (text(binding.modelInput).isEmpty() && !visible.isEmpty()) {
+                    binding.modelInput.setText(visible.get(0), false);
                 }
-                showStatus(getString(R.string.agent_settings_key_ok, models.size()), false);
-                config.settings(selected).models = models;
+                showStatus(getString(R.string.agent_settings_key_ok, visible.size()), false);
                 updateFetchButtonLabel();
                 if (fromSave) {
                     // The first thing a new key does is fetch its models;
@@ -312,8 +334,9 @@ public class AgentSettingsActivity extends AppCompatActivity {
         AiProviderConfig.Settings settings = config.settings(selected);
         binding.modelInput.setAdapter(new ArrayAdapter<>(
                 this, android.R.layout.simple_list_item_1,
-                new ArrayList<>(AiProviderConfig.pickerModels(
-                        settings.models, settings.showAllModels))));
+                new ArrayList<>(ModelCatalog.visibleModels(
+                        selected.name(), settings.models,
+                        settings.showAllModels))));
     }
 
     /** Once a key has a model list, fetching again is a refresh. */

@@ -633,6 +633,44 @@ public final class AgentJournal {
     // ------------------------------------------------------------------
     // Style brief
 
+    // ------------------------------------------------------------------
+    // Read cache: facts a failed turn already learned
+
+    /**
+     * Remembers the read-only facts (screens, event logic, resources)
+     * a failed turn had already fetched, so a Tap-to-retry — or the
+     * next turn — starts from them instead of spending the same tool
+     * calls again. Cleared when a mutation lands or a turn succeeds,
+     * because both make the facts stale or redundant.
+     */
+    public static synchronized void setReadCache(String scId,
+                                                 String facts) {
+        if (scId == null || scId.isEmpty()) {
+            return;
+        }
+        JsonObject root = load(scId);
+        root.addProperty("readCache",
+                truncate(facts == null ? "" : facts, 2400));
+        save(scId, root);
+    }
+
+    /** The remembered read-only facts of the last failed turn. */
+    public static synchronized String readCache(String scId) {
+        return text(load(scId == null ? "" : scId), "readCache");
+    }
+
+    /** Forgets the read cache (project changed or turn succeeded). */
+    public static synchronized void clearReadCache(String scId) {
+        if (scId == null || scId.isEmpty()) {
+            return;
+        }
+        JsonObject root = load(scId);
+        if (root.has("readCache")) {
+            root.addProperty("readCache", "");
+            save(scId, root);
+        }
+    }
+
     public static synchronized void setStyleBrief(String scId, String brief) {
         if (scId == null || scId.isEmpty()) {
             return;
@@ -646,6 +684,31 @@ public final class AgentJournal {
                 truncate(brief == null ? "" : brief.trim(), 4000));
         root.addProperty("styleBriefAt", System.currentTimeMillis());
         save(scId, root);
+        // Unified with the Design system: the brief's first lines are
+        // the Mood & Audience summary, so the Design system page shows
+        // one direction instead of two files that can disagree.
+        String summary = summarizeBriefForDesignSystem(brief);
+        if (!summary.isEmpty()) {
+            setDesignSystemSummary(scId, summary);
+        }
+    }
+
+    /**
+     * The Mood & Audience line of a style brief: the first non-empty
+     * line, plus any Colours line's words (hexes already live in the
+     * theme itself), capped for a subtitle.
+     */
+    private static String summarizeBriefForDesignSystem(String brief) {
+        if (brief == null) {
+            return "";
+        }
+        for (String line : brief.split("\\r?\\n")) {
+            String t = line.replaceFirst("^#+\\s*", "").trim();
+            if (!t.isEmpty()) {
+                return truncate(t, 160);
+            }
+        }
+        return truncate(brief.trim(), 160);
     }
 
     public static synchronized String styleBrief(String scId) {
@@ -1472,11 +1535,167 @@ public final class AgentJournal {
             return;
         }
         JsonObject root = load(scId);
+        pushDesignHistory(root);
         JsonObject copy = system.deepCopy();
         copy.addProperty("updatedAt", System.currentTimeMillis());
         root.add("designSystem", copy);
         save(scId, root);
         record(scId, "design_system_saved", "title", text(copy, "title"));
+    }
+
+    /** How many past themes a project may step back through. */
+    private static final int MAX_DESIGN_HISTORY = 10;
+
+    /**
+     * Before a theme changes, remembers the outgoing one: the very
+     * first theme a project agrees is pinned forever as
+     * {@code originalDesignSystem} (so preset experiments can never
+     * trap the user away from Day-1 colours), and the last
+     * {@value MAX_DESIGN_HISTORY} themes stack up for step-by-step
+     * Undo. Callers save {@code root} themselves afterwards.
+     */
+    private static void pushDesignHistory(JsonObject root) {
+        JsonElement currentElement = root.get("designSystem");
+        if (currentElement == null || !currentElement.isJsonObject()) {
+            return;
+        }
+        JsonObject current = currentElement.getAsJsonObject();
+        boolean hasTheme = current.has("openuiTheme")
+                && current.get("openuiTheme").isJsonObject();
+        boolean hasTokens = current.has("tokens")
+                && current.get("tokens").isJsonArray()
+                && current.getAsJsonArray("tokens").size() > 0;
+        if (!hasTheme && !hasTokens) {
+            return;
+        }
+        if (!root.has("originalDesignSystem")
+                || !root.get("originalDesignSystem").isJsonObject()) {
+            root.add("originalDesignSystem", current.deepCopy());
+        }
+        JsonArray history = root.has("designSystemHistory")
+                && root.get("designSystemHistory").isJsonArray()
+                ? root.getAsJsonArray("designSystemHistory")
+                : new JsonArray();
+        history.add(current.deepCopy());
+        while (history.size() > MAX_DESIGN_HISTORY) {
+            history.remove(0);
+        }
+        root.add("designSystemHistory", history);
+    }
+
+    /** The project's first-ever agreed theme, or an empty object. */
+    public static synchronized JsonObject originalDesignSystem(String scId) {
+        JsonObject root = load(scId == null ? "" : scId);
+        JsonElement element = root.get("originalDesignSystem");
+        return element != null && element.isJsonObject()
+                ? element.getAsJsonObject() : new JsonObject();
+    }
+
+    /** Whether the project still remembers its first theme. */
+    public static synchronized boolean hasOriginalDesignSystem(String scId) {
+        return originalDesignSystem(scId).size() > 0;
+    }
+
+    /** How many undo steps the theme currently has. */
+    public static synchronized int designSystemUndoCount(String scId) {
+        JsonObject root = load(scId == null ? "" : scId);
+        JsonArray history = root.has("designSystemHistory")
+                && root.get("designSystemHistory").isJsonArray()
+                ? root.getAsJsonArray("designSystemHistory")
+                : new JsonArray();
+        return history.size();
+    }
+
+    /**
+     * Steps back one theme: the most recent previous design system
+     * becomes active again (and the outgoing one is kept on the same
+     * stack, so Undo and Redo walk the same ring). Returns the
+     * restored system, or null when there is nothing to undo.
+     */
+    public static synchronized JsonObject undoDesignSystem(String scId) {
+        if (scId == null || scId.isEmpty()) {
+            return null;
+        }
+        JsonObject root = load(scId);
+        JsonArray history = root.has("designSystemHistory")
+                && root.get("designSystemHistory").isJsonArray()
+                ? root.getAsJsonArray("designSystemHistory")
+                : new JsonArray();
+        if (history.size() == 0) {
+            return null;
+        }
+        JsonObject previous =
+                history.get(history.size() - 1).getAsJsonObject();
+        history.remove(history.size() - 1);
+        JsonElement currentElement = root.get("designSystem");
+        if (currentElement != null && currentElement.isJsonObject()
+                && (currentElement.getAsJsonObject().has("openuiTheme")
+                        || (currentElement.getAsJsonObject().has("tokens")
+                                && currentElement.getAsJsonObject()
+                                        .get("tokens").isJsonArray()
+                                && currentElement.getAsJsonObject()
+                                        .getAsJsonArray("tokens")
+                                        .size() > 0))) {
+            history.add(currentElement.getAsJsonObject().deepCopy());
+            while (history.size() > MAX_DESIGN_HISTORY) {
+                history.remove(0);
+            }
+        }
+        root.add("designSystemHistory", history);
+        JsonObject restored = previous.deepCopy();
+        restored.addProperty("updatedAt", System.currentTimeMillis());
+        root.add("designSystem", restored);
+        save(scId, root);
+        record(scId, "design_system_undo", "title", text(restored, "title"));
+        return restored;
+    }
+
+    /**
+     * Puts the project's first-ever theme back as the active one
+     * (the current theme is pushed onto the undo stack first, so
+     * nothing is lost). Returns the restored original, or null when
+     * the project has no original saved.
+     */
+    public static synchronized JsonObject restoreOriginalDesignSystem(
+            String scId) {
+        if (scId == null || scId.isEmpty()) {
+            return null;
+        }
+        JsonObject original = originalDesignSystem(scId);
+        if (original.size() == 0) {
+            return null;
+        }
+        JsonObject root = load(scId);
+        pushDesignHistory(root);
+        JsonObject restored = original.deepCopy();
+        restored.addProperty("updatedAt", System.currentTimeMillis());
+        root.add("designSystem", restored);
+        save(scId, root);
+        record(scId, "design_system_original_restored", "title",
+                text(restored, "title"));
+        return restored;
+    }
+
+    /** The human Mood & Audience line inside the Design system. */
+    public static synchronized String designSystemSummary(String scId) {
+        JsonObject system = designSystem(scId == null ? "" : scId);
+        return text(system, "summary");
+    }
+
+    /** Saves the Mood & Audience line inside the Design system. */
+    public static synchronized void setDesignSystemSummary(String scId,
+                                                           String summary) {
+        if (scId == null || scId.isEmpty()) {
+            return;
+        }
+        JsonObject root = load(scId);
+        JsonObject system = root.has("designSystem")
+                && root.get("designSystem").isJsonObject()
+                ? root.getAsJsonObject("designSystem") : new JsonObject();
+        system.addProperty("summary",
+                truncate(summary == null ? "" : summary.trim(), 400));
+        root.add("designSystem", system);
+        save(scId, root);
     }
 
     /**
@@ -1572,6 +1791,7 @@ public final class AgentJournal {
         if (element == null || !element.isJsonObject()) {
             return false;
         }
+        pushDesignHistory(root);
         JsonObject system = element.getAsJsonObject();
         JsonElement tokensElement = system.get("tokens");
         if (tokensElement == null || !tokensElement.isJsonArray()) {
@@ -1746,6 +1966,12 @@ public final class AgentJournal {
                     + "the user; keep to it): ").append(style);
         }
         JsonObject design = root.getAsJsonObject("designSystem");
+        if (design != null && style.isEmpty()
+                && !text(design, "summary").isEmpty()) {
+            out.append("\n\nDesign direction for this project (agreed "
+                    + "with the user; keep to it): ")
+                    .append(text(design, "summary"));
+        }
         if (design != null) {
             if (design.has("openuiTheme")
                     && design.get("openuiTheme").isJsonObject()) {
