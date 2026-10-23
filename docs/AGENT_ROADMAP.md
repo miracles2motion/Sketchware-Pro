@@ -35,7 +35,8 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 | OpenUI Lang 1.0 Core Engine (Streaming Parser, Reactive `$variable` State, `@` Built-ins, `Action` Executor & `mergeStatements` Patcher) | `OpenUiLang`, `ChatMessage`, `AgentChatLog`, `AgentExport` | **Phase 9 (DONE)** |
 | Interactive Generative UI Inside Chat (`inlineMode` Native Material 3 Views, Style/Palette Cards, Two-Way Controls & `@ToAssistant` Actions) | `OpenUiChatRenderer`, `ChatAdapter`, `AgentFragment` | **Phase 10 (DONE)** |
 | Low-Token Screen Builder, Incremental Patcher & Compact Screen Reader (`OpenUI Lang` ↔ `ViewBean` Bridge) | `OpenUiScreenBridge`, `AgentTools`, `SketchwareActions`, `AgentEdits` | **Phase 11 (DONE)** |
-| Context-Smart OpenUI Prompting, GitHub Actions CI Slim-Down & Final Bundle Verification | `AgentLoop`, `.github/workflows/agent-bootstrap.yml`, `.github/workflows/android.yml` | **Phase 12 (NEXT)** |
+| Context-Smart OpenUI Prompting, GitHub Actions CI Slim-Down & Final Bundle Verification | `AgentLoop`, `.github/workflows/agent-bootstrap.yml`, `.github/workflows/android.yml` | **Phase 12 (DONE locally)** |
+| **Post-OpenUI Milestone:** Modern Sketchware-Themed Agent UI Redesign | `AgentFragment`, `ChatAdapter`, `res/layout/agent_*`, `res/drawable/agent_*` | **NEXT (Queued)** |
 
 ---
 
@@ -189,7 +190,7 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 ---
 
-### Phase 12 — Context-Smart Prompting, CI Workflow Slim-Down & Final Bundle Audit
+### Phase 12 (DONE locally) — Context-Smart Prompting, CI Workflow Slim-Down & Final Bundle Audit
 **Goal:** Keep total prompt/context usage leaner than before, prevent GitHub Actions from ever disabling repo workflows again, and verify the entire Phases 9–12 bundle before a single push.
 1. **Context-Smart OpenUI System Prompting (`AgentLoop`):**
    - Concise, scoped OpenUI Lang 1.0 signature block for chat UI (`inlineMode`) and screen shorthand (`editMode`), keeping net multi-turn token usage substantially lower than JSON-only sessions.

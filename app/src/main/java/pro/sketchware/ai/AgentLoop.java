@@ -344,6 +344,38 @@ public class AgentLoop {
             + "build_release_package for Play Store .aab App Bundles or "
             + "signed release .apk files; and export_project_backup for "
             + ".swb project archives."
+            + "\n\nOPENUI LANG 1.0 (INTERACTIVE CHAT UI & LOW-TOKEN SCREEN "
+            + "SHORTHAND): In assistant replies (`inlineMode`), keep normal "
+            + "explanations in Markdown and use a fenced ```openui-lang "
+            + "block (`id = Component(...)` one assignment per line, entry "
+            + "`root = Stack([...])`) whenever presenting visual style "
+            + "directions, colour palettes, multi-field setup choices, or "
+            + "structured summaries/tables. Chat components (positional "
+            + "args): Stack(children, gap?), Row(children, gap?), "
+            + "Card(children, title?, subtitle?, accentColor?), "
+            + "Header(title, subtitle?, badge?), Text(content, variant?), "
+            + "Badge(label, color?), Divider(), StyleCard(name, tagline, "
+            + "colors, mood?, action?), PaletteRow(swatches), "
+            + "ColorSwatch(label, hex), TypePreview(sample, sizeSp?, "
+            + "weight?, color?), TextInput(label, $var, placeholder?), "
+            + "Select(label, $var, options), ChoiceChips(label, $var, "
+            + "options, multi?), Switch(label, $var, subtitle?), "
+            + "Slider(label, $var, min?, max?, step?), KpiRow(items) / "
+            + "Kpi(label, value, delta?), Table(headers, rows) / "
+            + "Col(header, values), ProgressBar(label, value, max?, "
+            + "color?), BreakdownBar(segments), and Button(label, action, "
+            + "variant?) with `$var = default` reactive state and actions "
+            + "@ToAssistant(\"msg\", context?), @Set($var, val), "
+            + "@Reset($var), @OpenUrl(\"url\"). Never fake approval or "
+            + "build cards in OpenUI — real project edits always call "
+            + "tools. When reading or editing Sketchware screens, prefer "
+            + "get_screen(activity, format=\"openui\") and edit_screen with "
+            + "`openui` (full 1-line-per-widget layout, e.g. "
+            + "`root = Screen([main])\\nmain = Column([header, card], "
+            + "{p: 16, bg: \"#FFFFFF\"})`) or `openui_patch` (only the 2-3 "
+            + "changed/added lines merged by statement name; `id = null` "
+            + "deletes a widget; untouched widgets and wired events stay "
+            + "intact) to cut screen tokens by ~65%."
             + "\n\nKEEPING DATA (so it is still there after the app "
             + "closes): add ONE shared_preferences component to the "
             + "screen with create_component — it is named file1, file2 "
@@ -599,7 +631,7 @@ public class AgentLoop {
                 entry.add("content",
                         AiChatService.buildUserContent(message, inlineBytes));
             } else {
-                entry.addProperty("content", message.text);
+                entry.addProperty("content", formatHistoryContent(message));
             }
             messages.add(1, entry);
             kept++;
@@ -1415,6 +1447,30 @@ public class AgentLoop {
         AgentJournal.record(workingProjectId == null ? ""
                 : workingProjectId, "system_prompt", briefed);
         return system;
+    }
+
+    private static String formatHistoryContent(ChatMessage message) {
+        if (message == null || message.text == null) {
+            return "";
+        }
+        if (message.role != ChatMessage.Role.ASSISTANT
+                || message.openUiState == null
+                || message.openUiState.isEmpty()) {
+            return message.text;
+        }
+        StringBuilder sb = new StringBuilder(message.text);
+        sb.append("\n[OpenUI state: ");
+        boolean first = true;
+        for (java.util.Map.Entry<String, Object> e : message.openUiState.entrySet()) {
+            if (!first) {
+                sb.append(", ");
+            }
+            first = false;
+            sb.append('$').append(e.getKey()).append('=')
+                    .append(OpenUiLang.stringify(e.getValue()));
+        }
+        sb.append(']');
+        return sb.toString();
     }
 
     /** Delivers a callback on the main thread. */

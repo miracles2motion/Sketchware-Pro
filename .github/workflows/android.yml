@@ -14,9 +14,13 @@ on:
       - 'settings.gradle'
   workflow_dispatch:
 
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   notifyTelegram:
-    if: ${{ !startsWith(github.ref, 'refs/heads/wip/') }}
+    if: ${{ !startsWith(github.ref, 'refs/heads/wip/') && !startsWith(github.ref, 'refs/heads/arena/') }}
     name: Notify Telegram
     runs-on: ubuntu-latest
     steps:
@@ -70,7 +74,14 @@ jobs:
       - name: Build Release APK
         env:
           SKETCHUB_API_KEY: ${{ secrets.SKETCHUB_API_KEY }}
-        run: gradle assembleRelease
+        run: |
+          set -o pipefail
+          if ! gradle assembleRelease --stacktrace 2>&1 | tee build_log.txt; then
+            grep -E "error:|What went wrong|Execution failed" build_log.txt | head -25 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          fi
 
       - name: Set short SHA
         id: set_sha
@@ -88,7 +99,7 @@ jobs:
           path: app/build/outputs/apk/release/app-release-${{ steps.set_sha.outputs.short_sha }}.apk
 
   aggregateAndSend:
-    if: ${{ !startsWith(github.ref, 'refs/heads/wip/') }}
+    if: ${{ !startsWith(github.ref, 'refs/heads/wip/') && !startsWith(github.ref, 'refs/heads/arena/') }}
     name: Send APKs to Telegram
     runs-on: ${{ vars.IS_USING_HOSTED_RUNNERS == 'true' && 'self-hosted' || 'ubuntu-latest' }}
     needs: build
@@ -135,7 +146,7 @@ jobs:
         continue-on-error: true
 
   updateAppData:
-    if: ${{ !startsWith(github.ref, 'refs/heads/wip/') }}
+    if: ${{ !startsWith(github.ref, 'refs/heads/wip/') && !startsWith(github.ref, 'refs/heads/arena/') }}
     name: Update App Data
     runs-on: ubuntu-latest
     steps:

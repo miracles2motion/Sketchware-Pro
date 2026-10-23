@@ -1,11 +1,11 @@
 name: Agent Bootstrap
 
 on:
-  push:
-    branches:
-      - 'arena/8a5fd688-sketchware-pro'
-      - 'ci/agent-bootstrap'
   workflow_dispatch:
+
+concurrency:
+  group: agent-bootstrap-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -136,11 +136,10 @@ jobs:
           # Keep the log of every commit: the branch is force pushed, so the
           # newest log would otherwise hide an older failure.
           cp build_log.txt "lfs_payload/build_log_${GITHUB_SHA}.txt" 2>/dev/null || true
-          # The release APK is published through Git LFS, so it can be
-          # downloaded straight from a browser without logging in:
-          # https://media.githubusercontent.com/media/<owner>/<repo>/lfs-payload/lfs_payload/app-release.apk
-          cp app/build/outputs/apk/release/app-release.apk lfs_payload/app-release.apk 2>/dev/null || true
-          sha256sum lfs_payload/app-release.apk > lfs_payload/app-release.apk.sha256 2>/dev/null || true
+          # Never copy *.apk into lfs_payload (.gitattributes tracks *.apk via
+          # Git LFS, which would consume ~140 MB of LFS quota per run). Release
+          # APKs are published as GitHub Actions workflow artifacts instead.
+          rm -f lfs_payload/*.apk lfs_payload/*.bin
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -f lfs_payload
