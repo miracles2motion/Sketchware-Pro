@@ -406,3 +406,15 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 ### Phase 38 (DONE) — Honest request sizes & free-tier memory
 - OpenRouter requests carry `max_tokens: 8192` (agent replies are tool-call JSON), killing the "requested 131072 but can only afford 18906" 402 class on reachable models.
 - `:free` 429 cooldowns start at 15 minutes (they reset hourly/daily, not every 5), and all cooldowns persist to a sidecar file so an app restart no longer forgets which models are resting.
+
+## Wave 56 / Phase 39 — Every Sheet Closes on Selection & Wears the Active Ring (`AgentFragment.java`)
+
+**Context:** The user caught two surviving sheet defects: the Key Picker resumed the failed turn *behind* the still-open sheet, the Design-System Presets sheet applied a theme while staying open, and the model long-press sheet ran Test/Hide behind itself; and selections were not visibly reflected on the tapped card.
+
+---
+
+### Phase 39 (DONE) — Close-first selections + active ring everywhere
+- **Key Picker:** the pick dismisses the sheet *before* `retryFailedTurn()` — the retry can never resume behind a dialog. The active key keeps its ✓ ring.
+- **Design-System Presets:** Apply closes the sheet first, then applies; the currently-applied preset wears the active stroke and a "✓ Applied" trailing label; Import / Save stay open as launchers (matching 🎨 / ⌨ behaviour in ask_choice).
+- **Model long-press actions:** Test and Hide close the action sheet before doing anything — a probe or a hide can never run behind the dialog.
+- Every sheet now follows one rule: a selection acts only after its dialog is gone; only sub-launchers stay open, and they close on success.

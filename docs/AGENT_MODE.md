@@ -2095,3 +2095,7 @@ The Plan page is now **reality-driven**: each applied change leaves keyword evid
 ## Wave 55 / Phases 35–38 — RecipeFinder Field Fixes
 
 `list_map_value`/`list_map_has` accept the nested object form (and missing-list errors list the actual lists of maps); javac "cannot be resolved" errors are translated into create_variable/remove-blocks instructions naming the undeclared screen variable; the pseudo-model filter now covers `auto-*`, `free*`, and `*-router` shapes; OpenRouter requests send `max_tokens: 8192` (no more whole-context 402s), and cooldowns persist across restarts with `:free` 429s resting 15 minutes.
+
+## Wave 56 / Phase 39 — Sheets close on selection, active ring everywhere
+
+Key Picker dismisses before the retry resumes (no more agent working behind an open dialog), Design-System Presets close before applying and ring the currently-applied look ("✓ Applied"), and model long-press actions (Test/Hide) close their sheet first. One rule everywhere: a selection acts only after its dialog is gone; only 🎨/⌨-style launchers stay open, closing on success.

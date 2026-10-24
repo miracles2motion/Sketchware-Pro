@@ -1982,12 +1982,29 @@ public class AgentFragment extends qA {
             actions.add(() -> showSaveDesignPresetDialog(scId));
         }
 
+        // The applied look wears the active ring: the preset whose
+        // title matches the project's current design system.
+        String currentTitle = "";
+        if (AgentJournal.hasDesignSystem(scId)) {
+            currentTitle = AgentJournal.textOf(
+                    AgentJournal.designSystem(scId), "title");
+        }
+
+        // The sheet is captured up front: picking a preset closes it
+        // first, so the theme applies with no dialog left hanging.
+        final androidx.appcompat.app.AlertDialog[] presetSheet =
+                new androidx.appcompat.app.AlertDialog[1];
         // Material 3 cards, with a live brand-colour swatch on every
         // preset — presets are looks, so each row shows its look.
         List<CardRow> rows = new ArrayList<>();
         for (int i = 0; i < labels.size(); i++) {
             String label = labels.get(i);
             Runnable action = actions.get(i);
+            boolean launcher = label.startsWith("Import / Paste")
+                    || label.startsWith("Save Current");
+            boolean active = !launcher && currentTitle != null
+                    && !currentTitle.isEmpty()
+                    && label.contains(currentTitle);
             java.util.regex.Matcher hex = java.util.regex.Pattern
                     .compile("#[0-9A-Fa-f]{6}").matcher(label);
             List<Integer> swatches = new ArrayList<>();
@@ -1997,10 +2014,17 @@ public class AgentFragment extends qA {
                     swatches.add(color);
                 }
             }
-            rows.add(new CardRow(label, "", swatches, null, false, "Apply",
-                    action));
+            rows.add(new CardRow(label, "", swatches, null, active,
+                    active ? "✓ Applied" : launcher ? "" : "Apply",
+                    launcher ? action : () -> {
+                        if (presetSheet[0] != null) {
+                            presetSheet[0].dismiss();
+                        }
+                        action.run();
+                    }));
         }
-        showCardSheet(context, "Design System Presets & Custom JSON", rows);
+        presetSheet[0] = showCardSheet(context,
+                "Design System Presets & Custom JSON", rows);
     }
 
     private void applyPresetJsonObject(String scId,
@@ -3925,6 +3949,11 @@ public class AgentFragment extends qA {
         List<AiProviderConfig.KeyEntry> entries = providerConfig.keys(provider);
         int activeIndex = providerConfig.activeKeyIndex(provider);
         long now = System.currentTimeMillis();
+        // The sheet is captured up front so a pick can close it before
+        // the failed turn retries — the agent must never resume behind
+        // an open dialog.
+        final androidx.appcompat.app.AlertDialog[] keySheet =
+                new androidx.appcompat.app.AlertDialog[1];
         List<CardRow> rows = new ArrayList<>();
         for (int i = 0; i < entries.size(); i++) {
             AiProviderConfig.KeyEntry entry = entries.get(i);
@@ -3941,6 +3970,9 @@ public class AgentFragment extends qA {
                     status, null, null, i == activeIndex,
                     i == activeIndex ? "✓" : "Use",
                     () -> {
+                        if (keySheet[0] != null) {
+                            keySheet[0].dismiss();
+                        }
                         providerConfig.setActiveKey(provider, index);
                         providerConfig.save(requireContext());
                         appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM,
@@ -3948,7 +3980,7 @@ public class AgentFragment extends qA {
                         retryFailedTurn();
                     }));
         }
-        showCardSheet(requireContext(),
+        keySheet[0] = showCardSheet(requireContext(),
                 getString(R.string.agent_action_switch_key), rows);
     }
 
@@ -4278,7 +4310,24 @@ public class AgentFragment extends qA {
                                 Toast.LENGTH_SHORT).show();
                         reopen.run();
                     }));
-            showCardSheet(context, ModelCatalog.displayName(id), actions);
+            androidx.appcompat.app.AlertDialog[] actionSheet =
+                    new androidx.appcompat.app.AlertDialog[1];
+            List<CardRow> wrapped = new ArrayList<>();
+            for (CardRow row : actions) {
+                Runnable run = row.onClick;
+                wrapped.add(new CardRow(row.title, row.subtitle,
+                        row.swatches, row.gradient, row.active,
+                        row.trailing, () -> {
+                    // The action sheet closes first: a probe or a hide
+                    // must never run behind an open dialog.
+                    if (actionSheet[0] != null) {
+                        actionSheet[0].dismiss();
+                    }
+                    run.run();
+                }));
+            }
+            actionSheet[0] = showCardSheet(context,
+                    ModelCatalog.displayName(id), wrapped);
             return true;
         });
         return row;
