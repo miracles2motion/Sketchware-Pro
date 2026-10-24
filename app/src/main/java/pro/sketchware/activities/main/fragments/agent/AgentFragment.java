@@ -4313,11 +4313,12 @@ public class AgentFragment extends qA {
             androidx.appcompat.app.AlertDialog[] actionSheet =
                     new androidx.appcompat.app.AlertDialog[1];
             List<CardRow> wrapped = new ArrayList<>();
-            for (CardRow row : actions) {
-                Runnable run = row.onClick;
-                wrapped.add(new CardRow(row.title, row.subtitle,
-                        row.swatches, row.gradient, row.active,
-                        row.trailing, () -> {
+            for (CardRow actionRow : actions) {
+                Runnable run = actionRow.onClick;
+                wrapped.add(new CardRow(actionRow.title,
+                        actionRow.subtitle, actionRow.swatches,
+                        actionRow.gradient, actionRow.active,
+                        actionRow.trailing, () -> {
                     // The action sheet closes first: a probe or a hide
                     // must never run behind an open dialog.
                     if (actionSheet[0] != null) {
