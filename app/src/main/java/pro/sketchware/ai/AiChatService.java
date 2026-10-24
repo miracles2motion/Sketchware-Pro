@@ -132,6 +132,20 @@ public class AiChatService {
     private volatile Call activeCall;
 
     /**
+     * Without an explicit cap, OpenRouter defaults max_tokens to the
+     * model's whole context — and a free key then answers 402 "you
+     * requested up to 131072 tokens, but can only afford 18906" for
+     * models it can actually reach. Agent replies are tool-call JSON;
+     * 8192 is generous and fits every free tier's afford check.
+     */
+    private static void capMaxTokens(String baseUrl, JsonObject payload) {
+        if (baseUrl != null && baseUrl.contains("openrouter")
+                && !payload.has("max_tokens")) {
+            payload.addProperty("max_tokens", 8192);
+        }
+    }
+
+    /**
      * Sends one turn. {@code history} already ends with the new user message.
      * Tokens are delivered on the main thread.
      */
@@ -140,6 +154,7 @@ public class AiChatService {
         JsonObject payload = new JsonObject();
         payload.addProperty("model", model);
         payload.addProperty("stream", true);
+        capMaxTokens(baseUrl, payload);
 
         JsonArray messages = new JsonArray();
         JsonObject system = new JsonObject();
@@ -366,6 +381,7 @@ public class AiChatService {
         JsonObject payload = new JsonObject();
         payload.addProperty("model", model);
         payload.addProperty("stream", false);
+        capMaxTokens(baseUrl, payload);
         JsonArray messageArray = new JsonArray();
         for (JsonObject message : messages) {
             messageArray.add(message);
@@ -670,6 +686,7 @@ public class AiChatService {
         JsonObject payload = new JsonObject();
         payload.addProperty("model", model);
         payload.addProperty("stream", false);
+        capMaxTokens(baseUrl, payload);
         JsonArray messages = new JsonArray();
         JsonObject user = new JsonObject();
         user.addProperty("role", "user");

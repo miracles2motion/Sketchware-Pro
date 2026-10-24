@@ -387,3 +387,22 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 ### Phase 34 (DONE) — Anti-confabulation guard
 - The system prompt states flatly: tools never disappear mid-session; an error means invalid arguments — read it, fix the named field, resend; never claim a tool is missing or offer workarounds for missing tools.
+
+## Wave 55 / Phases 35–38 — RecipeFinder Field Fixes (`AgentLogic.java`, `AgentBuild.java`, `AiChatService.java`, `ModelCatalog.java`)
+
+**Context:** From `RecipeFinder-agent-export-20261024-1200.json` (274 tool calls, 73 errors, 5 failed builds): the nested `list_map_value` object form failed with "no list of maps called ''" (the handler read the whole object as the list name); 5 javac builds burned ~30–90 s each on `_meal_detail cannot be resolved` with no translation to agent language; the 429 cascade still touched `openrouter/free`, `openrouter/auto-beta` and `typesafe/jev-router` (pseudo-filter gaps); and OpenRouter's default max_tokens = whole context caused "can only afford 18906 tokens" 402s on reachable models.
+
+---
+
+### Phase 35 (DONE) — Nested `list_map_value` / `list_map_has`
+- The expression handler now accepts both shapes — flat `{"list_map_value":"list"}` and the nested object `{"list_map_value":{"list":…,"index":…,"key":…}}` models naturally write — and when the list is missing, the error names every declared list of maps instead of an empty name.
+
+### Phase 36 (DONE) — javac errors translated
+- `_x cannot be resolved` in any compile failure is now explained in agent language: it is the generated field of the screen's variable/list `x`, undeclared on that screen — declare it (right type) or remove the using blocks. The five blind build attempts become one informed fix.
+
+### Phase 37 (DONE) — Pseudo-model filter closed
+- `auto`, `auto-*`, `free`, `free-*`, `router`, `*-router`, `smart`, `default` are all filtered/route-blocked/badged — `openrouter/free`, `openrouter/auto-beta` and `typesafe/jev-router` can no longer be picked or routed through.
+
+### Phase 38 (DONE) — Honest request sizes & free-tier memory
+- OpenRouter requests carry `max_tokens: 8192` (agent replies are tool-call JSON), killing the "requested 131072 but can only afford 18906" 402 class on reachable models.
+- `:free` 429 cooldowns start at 15 minutes (they reset hourly/daily, not every 5), and all cooldowns persist to a sidecar file so an app restart no longer forgets which models are resting.

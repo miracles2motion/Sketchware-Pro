@@ -6163,15 +6163,47 @@ public final class AgentLogic {
                     throw badValue(what, "that value does not fit "
                             + "here");
                 }
-                String list = stringOf(object, value
+                // Two shapes: flat {"list_map_value":"listName"} with
+                // index/key beside it, and the nested object models
+                // naturally write — {"list_map_value":{"list":…,
+                // "index":…,"key":…}}. The nested form used to read
+                // the whole object as a name and fail with "no list
+                // of maps called ''".
+                JsonObject scope = object;
+                JsonElement raw = object.get(value
                         ? "list_map_value" : "list_map_has");
+                String list;
+                if (raw != null && raw.isJsonObject()) {
+                    scope = raw.getAsJsonObject();
+                    list = stringOf(scope, "list");
+                } else {
+                    list = raw != null && raw.isJsonPrimitive()
+                            ? raw.getAsString() : "";
+                }
                 Integer listKind = lists.get(list);
                 if (listKind == null || listKind != 3) {
+                    StringBuilder mapLists = new StringBuilder();
+                    for (Map.Entry<String, Integer> entry : lists
+                            .entrySet()) {
+                        if (entry.getValue() != null
+                                && entry.getValue() == 3) {
+                            if (mapLists.length() > 0) {
+                                mapLists.append(", ");
+                            }
+                            mapLists.append(entry.getKey());
+                        }
+                    }
                     throw badValue(what, "there is no list of maps "
-                            + "called " + list + " on this screen");
+                            + "called \"" + list + "\" on this screen"
+                            + (mapLists.length() == 0
+                            ? " (it declares no lists of maps yet — "
+                            + "declare one with create_variable, "
+                            + "type list_map)"
+                            : " (lists of maps here: "
+                            + mapLists + ")"));
                 }
-                String index = expr(object.get("index"), 'd', what);
-                String key = expr(object.get("key"), 's', what);
+                String index = expr(scope.get("index"), 'd', what);
+                String key = expr(scope.get("key"), 's', what);
                 BlockBean bean = newBean(value ? "getAtListMap"
                         : "containListMap", value ? "s" : "b");
                 if (value) {

@@ -395,7 +395,12 @@ public final class ModelCatalog {
         int slash = lower.lastIndexOf('/');
         String bare = slash >= 0
                 ? lower.substring(slash + 1) : lower;
-        return bare.equals("auto") || bare.equals("router")
+        // The whole family keeps appearing: "auto", "auto-beta",
+        // "free", "free-v2", "jev-router", "router", … all route to
+        // an unknown backend instead of naming one model.
+        return bare.equals("auto") || bare.startsWith("auto-")
+                || bare.equals("free") || bare.startsWith("free-")
+                || bare.equals("router") || bare.endsWith("-router")
                 || bare.equals("smart") || bare.equals("default");
     }
 
@@ -571,7 +576,10 @@ public final class ModelCatalog {
      * Puts a model on cooldown after a 503/429/timeout. When the model
      * was already cooling down, the remaining window doubles (5 → 10 →
      * 20 … capped at 60 minutes) so a model that keeps failing drops
-     * out of ✨ Auto's rotation on its own.
+     * out of ✨ Auto's rotation on its own. Free-tier rate limits
+     * ({@code :free} 429s) start at 15 minutes — they reset hourly or
+     * daily, so a 5-minute memory just re-walks the dead pool every
+     * turn. Cooldowns persist across restarts with the catalog.
      */
     public static void cooldown(String provider, String modelId,
                                 long untilMillis) {
@@ -585,7 +593,79 @@ public final class ModelCatalog {
         } else {
             window = Math.max(0L, untilMillis - now);
         }
+        if (modelId != null && modelId.toLowerCase(Locale.ROOT)
+                .endsWith(":free")) {
+            window = Math.max(window, 15L * 60_000L);
+        }
         COOLDOWNS.put(key, now + window);
+        persistCooldowns();
+    }
+
+    /** The sidecar file that keeps cooldowns across restarts. */
+    private static File cooldownsFile() {
+        return new File(AiPaths.agentRoot(), "model-cooldowns.json");
+    }
+
+    private static volatile boolean cooldownsLoaded = false;
+
+    /** Reads persisted cooldowns once; expired entries are dropped. */
+    private static void ensureCooldownsLoaded() {
+        if (cooldownsLoaded) {
+            return;
+        }
+        synchronized (LOCK) {
+            if (cooldownsLoaded) {
+                return;
+            }
+            File f = cooldownsFile();
+            if (f.exists()) {
+                try (FileReader reader = new FileReader(f)) {
+                    JsonElement root = JsonParser.parseReader(reader);
+                    if (root.isJsonObject()) {
+                        long now = System.currentTimeMillis();
+                        for (Map.Entry<String, JsonElement> entry
+                                : root.getAsJsonObject().entrySet()) {
+                            if (entry.getValue() != null
+                                    && entry.getValue().isJsonPrimitive()) {
+                                long until = entry.getValue()
+                                        .getAsLong();
+                                if (until > now) {
+                                    COOLDOWNS.put(entry.getKey(), until);
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {
+                    // A broken sidecar costs nothing: cooldowns simply
+                    // start empty.
+                }
+            }
+            cooldownsLoaded = true;
+        }
+    }
+
+    /** Writes live cooldowns to the sidecar file. */
+    private static void persistCooldowns() {
+        synchronized (LOCK) {
+            try {
+                JsonObject cooldowns = new JsonObject();
+                long now = System.currentTimeMillis();
+                for (Map.Entry<String, Long> entry : COOLDOWNS
+                        .entrySet()) {
+                    if (entry.getValue() != null
+                            && entry.getValue() > now) {
+                        cooldowns.addProperty(entry.getKey(),
+                                entry.getValue());
+                    }
+                }
+                pro.sketchware.utility.FileUtil.writeFile(
+                        cooldownsFile().getAbsolutePath(),
+                        PRETTY.toJson(cooldowns));
+            } catch (Exception ignored) {
+                // Persistence is best-effort; the in-memory map still
+                // governs this session.
+            }
+        }
     }
 
     /** A turn finished cleanly on this model: forget its cooldown. */
@@ -604,12 +684,14 @@ public final class ModelCatalog {
     }
 
     private static boolean cooling(String provider, String modelId) {
+        ensureCooldownsLoaded();
         Long until = COOLDOWNS.get(provider + "|" + modelId);
         return until != null && until > System.currentTimeMillis();
     }
 
     /** Milliseconds left on a model's cooldown (0 when none). */
     public static long coolingForMillis(String provider, String modelId) {
+        ensureCooldownsLoaded();
         Long until = COOLDOWNS.get(provider + "|" + modelId);
         if (until == null) {
             return 0L;

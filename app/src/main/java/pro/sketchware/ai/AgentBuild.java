@@ -124,9 +124,37 @@ public final class AgentBuild {
                         String.valueOf(e.getMessage()));
             } catch (Exception ignored) {
             }
+            String raw = trim(e.getMessage());
+            // javac speaks in generated fields; the model thinks in
+            // variables. Translate the one error class that cost five
+            // blind build attempts in the field.
+            java.util.LinkedHashSet<String> unresolved =
+                    new java.util.LinkedHashSet<>();
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("(_[A-Za-z][A-Za-z0-9_]*)\\s+cannot"
+                            + "\\s+be\\s+resolved").matcher(raw);
+            while (m.find()) {
+                unresolved.add(m.group(1));
+            }
+            StringBuilder teach = new StringBuilder();
+            for (String field : unresolved) {
+                String name = field.substring(1);
+                teach.append(" \u2022 `").append(field)
+                        .append("` is the generated field for the "
+                                + "screen's variable or list \u201c")
+                        .append(name)
+                        .append("\u201d \u2014 it is NOT declared on "
+                                + "the screen named in the error. "
+                                + "Declare it (create_variable, right "
+                                + "type \u2014 lists of maps are "
+                                + "list_map) on THAT screen, or remove "
+                                + "the blocks that use it.\n");
+            }
             throw new AgentTools.ToolException("E_COMPILE",
                     "The project did not compile. Fix these errors and "
-                            + "build again:\n" + trim(e.getMessage()));
+                            + "build again:\n" + raw
+                    + (teach.length() == 0 ? ""
+                    : "\nWhat this means:\n" + teach));
         } catch (MissingFileException e) {
             throw new AgentTools.ToolException("E_BUILD_MISSING",
                     "A file the build needs is missing: "

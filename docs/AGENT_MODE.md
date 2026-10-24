@@ -2091,3 +2091,7 @@ From the `SkyCast` export: the Auto router now ranks by **model strength × aliv
 ## Wave 54 / Phases 31–34 — SkycastWeather Field Fixes
 
 The Plan page is now **reality-driven**: each applied change leaves keyword evidence and steps tick themselves done (monotonic, ~80% word match), so progress reflects the work, not the model's memory. Provider router pseudo-ids (`openrouter/auto` & co.) are excluded from pickers and ✨ Auto under every flag and badged "Provider router — not a real model" — every routed turn belongs to a nameable model. Refused blocks teach: position + name + the exact received JSON + a corrected example, with a ⚠️ chat note on the second identical failure; and the system prompt forbids the "the tool is missing" confabulation outright.
+
+## Wave 55 / Phases 35–38 — RecipeFinder Field Fixes
+
+`list_map_value`/`list_map_has` accept the nested object form (and missing-list errors list the actual lists of maps); javac "cannot be resolved" errors are translated into create_variable/remove-blocks instructions naming the undeclared screen variable; the pseudo-model filter now covers `auto-*`, `free*`, and `*-router` shapes; OpenRouter requests send `max_tokens: 8192` (no more whole-context 402s), and cooldowns persist across restarts with `:free` 429s resting 15 minutes.
