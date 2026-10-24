@@ -4571,8 +4571,14 @@ public class AgentFragment extends qA {
         streamingMessage.repliedAt = System.currentTimeMillis();
         streamingMessage.durationMs =
                 SystemClock.elapsedRealtime() - requestStartedAt;
-        if (streamingMessage.text.isEmpty()) {
-            streamingMessage.text = "…";
+        if (streamingMessage.text.trim().isEmpty()) {
+            // A turn that ends with NOTHING on screen reads as a
+            // freeze — it becomes a visible failed bubble with the
+            // same tap-to-retry affordance as any other failure.
+            streamingMessage.state = ChatMessage.State.ERROR;
+            streamingMessage.text =
+                    "The model returned an empty reply — tap to retry.";
+            failedBubble = streamingMessage;
         }
         streamingMessage = null;
         if (binding != null) {

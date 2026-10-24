@@ -2627,11 +2627,22 @@ public final class AgentTools {
             }
             String problem = nameConflict(session, scId, activity, name);
             if (problem != null) {
+                // A dead end caused a whole failed session once: the
+                // name existed (as a list) while javac claimed it did
+                // not, and the model had no way out. The refusal now
+                // names what exists and gives the two legal ways
+                // forward — use it, or replace it consciously.
                 throw new ToolException("E_NAME_TAKEN", problem
-                        + " If you created it earlier in this turn, "
-                        + "that create already succeeded — continue "
-                        + "with the rest of the task instead of "
-                        + "creating it again or asking about it.");
+                        + " You do NOT need to create it: use it "
+                        + "directly in your blocks (a list is read as "
+                        + "{\"list\":\"" + name + "\", a variable as "
+                        + "{\"var\":\"" + name + "\"}). If its type is "
+                        + "wrong for your use, propose remove_variable "
+                        + "with this exact name first, then create it "
+                        + "fresh with the type you need. Never declare "
+                        + "a raw-code copy under the same or a similar "
+                        + "name — that collides with the generated "
+                        + "field and breaks the build.");
             }
             return new Checked(activity, name, typeCode,
                     list ? SketchwareProjects.listTypeName(typeCode)
@@ -2662,8 +2673,10 @@ public final class AgentTools {
                     for (android.util.Pair<Integer, String> pair
                             : stored) {
                         if (name.equals(pair.second)) {
-                            return "\"" + name + "\" is already "
-                                    + "declared on this screen.";
+                            return "\"" + name + "\" is already a "
+                                    + SketchwareProjects.variableTypeName(
+                                    pair.first)
+                                    + " variable on this screen.";
                         }
                     }
                 }
@@ -2673,8 +2686,10 @@ public final class AgentTools {
                     for (android.util.Pair<Integer, String> pair
                             : lists) {
                         if (name.equals(pair.second)) {
-                            return "\"" + name + "\" is already the "
-                                    + "name of a list on this screen.";
+                            return "\"" + name + "\" is already a "
+                                    + SketchwareProjects.listTypeName(
+                                    pair.first)
+                                    + " on this screen.";
                         }
                     }
                 }

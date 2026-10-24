@@ -4491,6 +4491,7 @@ public final class AgentLogic {
                                         + "the Java statement(s) to "
                                         + "insert.");
                     }
+                    validateRawJava(code, false);
                     String stored = sanitizeRawJava(code);
                     BlockBean bean = newBean("addSourceDirectly", " ");
                     bean.parameters.add(stored);
@@ -4539,6 +4540,7 @@ public final class AgentLogic {
                                                 : "initializer code")
                                         + ".");
                     }
+                    validateRawJava(code, isField);
                     String stored = sanitizeRawJava(code);
                     BlockBean bean = newBean(
                             isField ? "addCustomVariable"
@@ -4969,6 +4971,7 @@ public final class AgentLogic {
                                 innerBlocks, depth + 1, "blocks");
                         bean.subStack1 = Integer.parseInt(body.get(0).id);
                     } else {
+                        validateRawJava(rawCode, false);
                         String stored = sanitizeRawJava(rawCode);
                         BlockBean bodyBean =
                                 newBean("addSourceDirectly", " ");
@@ -5464,6 +5467,139 @@ public final class AgentLogic {
                 }
             }
             return "";
+        }
+
+        /**
+         * Raw Java is the escape hatch that once produced a whole
+         * parallel set of field declarations (meal_detail vs
+         * _meal_detail) and an unclosed string literal — so it is
+         * checked before it is stored: complete literals only, no
+         * shadowing the screen's own names, and generated-field
+         * prefixes must match what the compiler will actually emit
+         * (variables/lists get the underscore, widgets do not).
+         */
+        void validateRawJava(String code, boolean isFieldDeclaration) {
+            for (String line : code.split("\\r?\\n")) {
+                int quotes = 0;
+                for (int i = 0; i < line.length(); i++) {
+                    if (line.charAt(i) == '\"'
+                            && (i == 0 || line.charAt(i - 1)
+                            != '\\')) {
+                        quotes++;
+                    }
+                }
+                if (quotes % 2 == 1) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "This raw line has an unclosed string "
+                                    + "literal (it must be one complete "
+                                    + "line): " + line.trim());
+                }
+            }
+            if (isFieldDeclaration) {
+                java.util.regex.Matcher declared =
+                        java.util.regex.Pattern.compile(
+                                "(?:private|protected|public)?\\s*[\\w" +
+                                        "<>,.\\[\\]\\s]+\\s([A-Za-z_]" +
+                                        "[A-Za-z0-9_]*)\\s*(?:=|;)").matcher(code);
+                while (declared.find()) {
+                    String name = declared.group(1);
+                    String clash = rawShadow(name);
+                    if (clash != null) {
+                        throw new AgentTools.ToolException("E_BAD_BLOCK",
+                                "This raw declaration would shadow the "
+                                        + "screen's own " + clash + " \u201c"
+                                        + name + "\u201d. The generated code "
+                                        + "already declares it \u2014 use it "
+                                        + "directly instead of declaring "
+                                        + "another one"
+                                        + ("list".equals(clash)
+                                ? " (lists arrive with the underscore "
+                                        + "prefix: _" + name + ")"
+                                : "variable".equals(clash)
+                                ? " (variables arrive with the "
+                                        + "underscore prefix: _" + name + ")"
+                                : "") + ".");
+                    }
+                }
+            }
+            // Generated-field prefix check across the whole snippet.
+            java.util.regex.Matcher used = java.util.regex.Pattern
+                    .compile("_([A-Za-z][A-Za-z0-9_]*)").matcher(code);
+            while (used.find()) {
+                String bare = used.group(1);
+                if (byId.containsKey(bare)
+                        || components.containsKey(bare)) {
+                    throw new AgentTools.ToolException("E_BAD_BLOCK",
+                            "\u201c_" + bare + "\u201d is wrong here: \u201c"
+                                    + bare + "\u201d is a widget/component, and "
+                                    + "the generated code emits widget "
+                                    + "fields WITHOUT an underscore prefix "
+                                    + "\u2014 write \u201c" + bare + "\u201d.");
+                }
+            }
+            java.util.regex.Matcher bareUse =
+                    java.util.regex.Pattern.compile(
+                            "(?<![\\w>])_?([A-Za-z][A-Za-z0-9_]*)(?=\\s*"
+                                    + "(?:\\.|\\[|;|\\(|\\)))").matcher(code);
+            while (bareUse.find()) {
+                String bare = bareUse.group(1);
+                boolean isVar = variables != null
+                        && variables.containsKey(bare);
+                boolean isList = lists != null
+                        && lists.containsKey(bare);
+                if (!(isVar || isList)) {
+                    continue;
+                }
+                if (rawDeclaredLocals(code).contains(bare)
+                        || loopVars.contains(bare)
+                        || moreBlockRefParams.containsKey("%m." + bare)) {
+                    continue;
+                }
+                String wrong = bareUse.group(0).startsWith("_")
+                        ? "" : bare;
+                if (!wrong.isEmpty() && code.contains("_" + bare)) {
+                    continue;
+                }
+                throw new AgentTools.ToolException("E_BAD_BLOCK",
+                        "\u201c" + bare + "\u201d is a "
+                                + (isList ? "list" : "variable")
+                                + " on this screen, and the generated "
+                                + "code emits those WITH an underscore "
+                                + "prefix \u2014 write \u201c_" + bare
+                                + "\u201d, not \u201c" + bare + "\u201d.");
+            }
+        }
+
+        /** What the screen already owns under this name, if anything. */
+        private String rawShadow(String name) {
+            if (variables != null && variables.containsKey(name)) {
+                return "variable";
+            }
+            if (lists != null && lists.containsKey(name)) {
+                return "list";
+            }
+            if (components != null && components.containsKey(name)) {
+                return "component";
+            }
+            if (moreBlocks != null && moreBlocks.containsKey(name)) {
+                return "More Block";
+            }
+            if (byId != null && byId.containsKey(name)) {
+                return "widget";
+            }
+            return null;
+        }
+
+        /** Names this snippet itself declares as locals. */
+        private java.util.Set<String> rawDeclaredLocals(String code) {
+            java.util.Set<String> out = new java.util.HashSet<>();
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("(?:^|;)\\s*(?:final\\s+)?[\\w<>,.\\[\\]]+"
+                            + "\\s([A-Za-z_][A-Za-z0-9_]*)\\s*=[^=]").matcher(code);
+            while (m.find()) {
+                out.add(m.group(1));
+            }
+            return out;
         }
 
         static String sanitizeRawJava(String raw) {
@@ -12699,6 +12835,7 @@ public final class AgentLogic {
                             plan.blockOpCode + " needs non-empty Java "
                                     + "code.");
                 }
+                builder.validateRawJava(rawCode, false);
                 value.newValue = Builder.sanitizeRawJava(rawCode);
                 value.shownNewValue = Builder.summarizeRawJava(rawCode);
             } else if (value.slotChar == 'm') {
