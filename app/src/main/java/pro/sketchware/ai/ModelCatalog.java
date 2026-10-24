@@ -381,8 +381,29 @@ public final class ModelCatalog {
         return visible;
     }
 
+    /**
+     * Provider router pseudo-ids ("openrouter/auto"): they route to
+     * an unknown backend, so we can never name — or trust — what is
+     * actually serving the turn. ✨ Auto only ever resolves to
+     * concrete, nameable models.
+     */
+    public static boolean isRouterPseudoModel(String id) {
+        if (id == null) {
+            return false;
+        }
+        String lower = id.toLowerCase(Locale.ROOT);
+        int slash = lower.lastIndexOf('/');
+        String bare = slash >= 0
+                ? lower.substring(slash + 1) : lower;
+        return bare.equals("auto") || bare.equals("router")
+                || bare.equals("smart") || bare.equals("default");
+    }
+
     /** True when the id is image/speech/embed junk by name. */
     public static boolean isJunkModel(String provider, String id) {
+        if (isRouterPseudoModel(id)) {
+            return true;
+        }
         String lower = id.toLowerCase(Locale.ROOT);
         for (String marker : EXTRA_NON_CHAT_MARKERS) {
             if (lower.contains(marker)) {
@@ -452,6 +473,9 @@ public final class ModelCatalog {
      * support, or {@code Text-only} where vision is known absent.
      */
     public static String badgeText(String provider, String modelId) {
+        if (isRouterPseudoModel(modelId)) {
+            return "Provider router — not a real model";
+        }
         ModelInfo known = info(provider, modelId);
         if (known == null) {
             boolean tools = AiProviderConfig.isChatCapable(modelId);
@@ -714,6 +738,11 @@ public final class ModelCatalog {
         for (String id : candidates) {
             if (id.equals(avoidId) || cooling(provider, id)
                     || isDead(provider, id)) {
+                continue;
+            }
+            if (isRouterPseudoModel(id)) {
+                // Never route through a provider's own router: the
+                // turn must belong to a model we can name.
                 continue;
             }
             ModelInfo known = info(provider, id);

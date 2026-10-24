@@ -1358,6 +1358,14 @@ public class AgentLoop {
                         String reason = result.has("message")
                                 ? result.get("message").getAsString()
                                 : "";
+                        String again = "⚠️ " + call.name
+                                + " failed twice with the same problem: "
+                                + (reason.isEmpty()
+                                ? "invalid arguments" : reason)
+                                + " — the next attempt must fix exactly "
+                                + "that field.";
+                        dispatch(listener, () -> listener
+                                .onSystemNote(again));
                         String stopText = "The agent stopped: the same step "
                                 + "failed twice (" + call.name + ")."
                                 + (reason.isEmpty() ? ""
@@ -1693,6 +1701,10 @@ public class AgentLoop {
                 applied.addProperty("result",
                         AgentJournal.cap(result.toString(), 4000));
                 AgentJournal.record(journal, "applied", applied);
+                // The change itself is the evidence: the Plan page
+                // tracks reality, not the model's bookkeeping.
+                AgentJournal.notePlanEvidence(journal, call.name,
+                        proposal == null ? null : proposal.args);
             }
             // The change compiles and saves, and can still be broken:
             // a block naming a widget its screen does not have builds
@@ -1974,7 +1986,15 @@ public class AgentLoop {
 
     private JsonObject systemMessage(String workingProjectId) {
         StringBuilder prompt = new StringBuilder(AiChatService.SYSTEM_PROMPT)
-                .append(AGENT_GUIDANCE);
+                .append(AGENT_GUIDANCE)
+                .append("\n\nTOOLS NEVER DISAPPEAR: the tool list above "
+                        + "is complete for the whole session. When a "
+                        + "tool call returns an error, the tool is "
+                        + "working — the arguments were invalid. Read "
+                        + "the error, fix the exact field it names, "
+                        + "and resend. Never claim a tool is missing, "
+                        + "broken, or unavailable, and never offer to "
+                        + "work around a missing tool.");
         if (workingProjectId != null && !workingProjectId.isEmpty()) {
             SketchwareProjects.ProjectInfo project =
                     SketchwareProjects.project(workingProjectId);

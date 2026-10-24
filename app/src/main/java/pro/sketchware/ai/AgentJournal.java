@@ -1960,6 +1960,111 @@ public final class AgentJournal {
         }
     }
 
+    /** Filler words that never identify a plan step's real work. */
+    private static final java.util.Set<String> PLAN_STOPWORDS =
+            new java.util.HashSet<>(java.util.Arrays.asList(
+                    "the", "and", "with", "from", "that", "this",
+                    "step", "then", "when", "both", "into", "onto",
+                    "each", "using", "uses", "used", "apply",
+                    "applies", "saved", "sets", "add", "adds",
+                    "added", "build", "builds", "built", "create",
+                    "creates", "created", "verify", "verified",
+                    "polish", "first", "next", "final", "also",
+                    "must", "should", "will", "your", "their",
+                    "them", "they", "have", "has", "had", "are",
+                    "was", "were", "been", "being", "over",
+                    "after", "before", "during", "while", "where",
+                    "which", "there", "here", "make", "makes",
+                    "made", "project", "screen", "user", "agent",
+                    "app", "plus", "well", "working", "works"));
+
+    /**
+     * Reality-driven plan progress: every applied change leaves its
+     * trace as evidence, and a plan step counts as done when its own
+     * keywords show up in that evidence — so the Plan page tracks
+     * what actually happened, not what the model remembered to
+     * report. Progress only ever moves forward.
+     */
+    public static synchronized void notePlanEvidence(String scId,
+                                                     String tool,
+                                                     JsonObject args) {
+        if (scId == null || scId.isEmpty() || tool == null
+                || tool.isEmpty()) {
+            return;
+        }
+        JsonObject root = load(scId);
+        if (!root.has("plan") || !root.get("plan").isJsonObject()) {
+            return;
+        }
+        JsonObject plan = root.getAsJsonObject("plan");
+        if (!plan.has("steps") || !plan.get("steps").isJsonArray()) {
+            return;
+        }
+        JsonArray steps = plan.getAsJsonArray("steps");
+        if (steps.size() == 0) {
+            return;
+        }
+        int done = plan.has("done_steps")
+                && plan.get("done_steps").isJsonPrimitive()
+                ? plan.get("done_steps").getAsInt() : 0;
+        if (done >= steps.size()) {
+            return;
+        }
+        StringBuilder evidence = new StringBuilder(
+                plan.has("evidence_text")
+                        && plan.get("evidence_text").isJsonPrimitive()
+                        ? plan.get("evidence_text").getAsString() : "");
+        evidence.append(tool).append(' ')
+                .append(args == null ? "" : cap(args.toString(), 500))
+                .append('\n');
+        if (evidence.length() > 20000) {
+            evidence = new StringBuilder(evidence.substring(
+                    evidence.length() - 20000));
+        }
+        String hay = evidence.toString()
+                .toLowerCase(java.util.Locale.ROOT);
+        int newDone = done;
+        for (int i = done; i < steps.size(); i++) {
+            JsonElement element = steps.get(i);
+            String stepText = element.isJsonObject()
+                    ? text(element.getAsJsonObject(), "text")
+                    : element.isJsonPrimitive()
+                    ? element.getAsString() : "";
+            if (!stepMatches(stepText, hay)) {
+                break;
+            }
+            newDone = i + 1;
+        }
+        plan.addProperty("evidence_text", evidence.toString());
+        if (newDone > done) {
+            plan.addProperty("done_steps", newDone);
+            plan.addProperty("current_step",
+                    Math.min(newDone, steps.size() - 1));
+        }
+        save(scId, root);
+    }
+
+    /** A step matches when ~80% of its meaningful words appear. */
+    private static boolean stepMatches(String stepText, String hay) {
+        if (stepText == null || stepText.isEmpty()) {
+            return false;
+        }
+        int need = 0;
+        int got = 0;
+        for (String word : stepText
+                .toLowerCase(java.util.Locale.ROOT)
+                .split("[^a-z0-9]+")) {
+            if (word.length() < 4 || PLAN_STOPWORDS.contains(word)) {
+                continue;
+            }
+            need++;
+            if (hay.contains(word)) {
+                got++;
+            }
+        }
+        return need == 0 || got * 5 >= need * 4;
+    }
+
     /** Empties the project's task log while keeping Style, Design System and Plan. */
     public static synchronized void clear(String scId) {
         if (scId == null || scId.isEmpty()) {

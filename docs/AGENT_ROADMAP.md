@@ -369,3 +369,21 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 ### Phase 30 (DONE) — Swatches Always Draw & Sheets Close
 - The system prompt now requires hex codes inside every colour/style `ask_choice` option ("the app draws swatches from those hexes"), and as a code safety net `showChoiceQuestion` approximates swatches from ~30 colour words (soft blue, mint, charcoal, frost…) when an option still arrives without hexes. Every answer tap — option or "✨ You decide" — closes the sheet immediately (first tap wins; no second-tap overwrite), while 🎨 / ⌨ launchers keep it open and close it only when they succeed.
+
+## Wave 54 / Phases 31–34 — SkycastWeather Field Fixes: Plan Tracks Reality, Concrete Models Only, Teaching Errors (`AgentJournal.java`, `AgentLoop.java`, `AgentLogic.java`, `ModelCatalog.java`)
+
+**Context:** From `SkycastWeather-agent-export-20261023-2324/-2358.json`: the plan froze at 0/6 across 137 tool calls; ✨ Auto resolved to the pseudo-model `openrouter/auto` in 6 of 8 turns (header honestly showed "Auto · auto"; backend model unknowable); `set_screen_title needs "text"` repeated five times with no teaching context and killed the turn; a confused model confabulated that the wiring tool was missing.
+
+---
+
+### Phase 31 (DONE) — Reality-driven plan progress
+- Every applied change records evidence (`AgentJournal.notePlanEvidence`); a plan step completes when ~80% of its meaningful keywords appear in the evidence, advancing monotonically. The Plan page now moves with the actual work, never waiting on the model's bookkeeping.
+
+### Phase 32 (DONE) — Concrete models only
+- `ModelCatalog.isRouterPseudoModel` (ids whose bare name is `auto`/`router`/`smart`/`default`) is junk-filtered from pickers, excluded from ✨ Auto under every flag, and badged "Provider router — not a real model". Routing through `openrouter/auto` — the root of the invisible-backend problem — is structurally impossible.
+
+### Phase 33 (DONE) — Block errors teach
+- Every refused block now reports its position, name, the exact received JSON, and the fix instruction (`Block 2 of 3 (set_screen_title): needs "text" — e.g. {"block":"set_screen_title","text":"Skycast"}. You sent: … — fix that field and resend the whole call.`). A second identical failure raises a visible ⚠️ system note before the turn stops, so the user sees the precise blocker.
+
+### Phase 34 (DONE) — Anti-confabulation guard
+- The system prompt states flatly: tools never disappear mid-session; an error means invalid arguments — read it, fix the named field, resend; never claim a tool is missing or offer workarounds for missing tools.

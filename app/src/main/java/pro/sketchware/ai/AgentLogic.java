@@ -2866,7 +2866,9 @@ public final class AgentLogic {
         builder.activityName = SketchwareProjects.activityName(activity);
         builder.eventArgs.putAll(plan.eventArgs);
         builder.currentEvent = plan.eventName;
+        int blockIndex = 0;
         for (JsonElement element : blocks) {
+            blockIndex++;
             if (!element.isJsonObject()) {
                 throw new AgentTools.ToolException("E_BAD_BLOCK",
                         "Every block must be an object like "
@@ -2901,11 +2903,15 @@ public final class AgentLogic {
                     }
                     String hint = variablesByScreenHint(scId, activity);
                     if (!hint.isEmpty()) {
-                        throw new AgentTools.ToolException(e.code,
-                                e.getMessage() + " " + hint);
+                        throw withBlockContext(blockIndex - 1,
+                                blocks.size(),
+                                element.getAsJsonObject(),
+                                new AgentTools.ToolException(e.code,
+                                        e.getMessage() + " " + hint));
                     }
                 }
-                throw e;
+                throw withBlockContext(blockIndex - 1, blocks.size(),
+                        element.getAsJsonObject(), e);
             }
         }
         if (builder.recoveredFromText) {
@@ -8651,7 +8657,9 @@ public final class AgentLogic {
                 }
                 if (text.isEmpty()) {
                     throw new AgentTools.ToolException("E_BAD_BLOCK",
-                            "set_screen_title needs \"text\".");
+                            "set_screen_title needs \"text\" — e.g. "
+                            + "{\"block\":\"set_screen_title\","
+                            + "\"text\":\"Skycast\"}.");
                 }
                 stmt.opCode = "setTitle";
                 stmt.type = " ";
@@ -13184,6 +13192,27 @@ public final class AgentLogic {
         plan.header = "When " + widget.id + label + " "
                 + plan.eventName.trim() + ":";
         return plan;
+    }
+
+    /**
+     * A refused block must teach, not just refuse: which of the
+     * blocks failed, what we received, and the instruction to fix
+     * that field — so one bad block never costs five blind retries
+     * and a dead turn.
+     */
+    private static AgentTools.ToolException withBlockContext(
+            int index, int total, JsonObject op,
+            AgentTools.ToolException e) {
+        String name = op != null && op.has("block")
+                && op.get("block").isJsonPrimitive()
+                ? op.get("block").getAsString() : "block";
+        return new AgentTools.ToolException(e.code,
+                "Block " + (index + 1) + " of " + total + " (" + name
+                        + "): " + e.getMessage() + " You sent: "
+                        + AgentJournal.cap(op == null ? ""
+                        : op.toString(), 400)
+                        + " — fix that field and resend the whole "
+                        + "call.");
     }
 
     /** Main-chain bean indices (head first), following nextBlock. */
