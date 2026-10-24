@@ -2099,3 +2099,7 @@ The Plan page is now **reality-driven**: each applied change leaves keyword evid
 ## Wave 56 / Phase 39 — Sheets close on selection, active ring everywhere
 
 Key Picker dismisses before the retry resumes (no more agent working behind an open dialog), Design-System Presets close before applying and ring the currently-applied look ("✓ Applied"), and model long-press actions (Test/Hide) close their sheet first. One rule everywhere: a selection acts only after its dialog is gone; only 🎨/⌨-style launchers stay open, closing on success.
+
+## Wave 57 / Phases 40–42 (PENDING) — planned from the RecipeFinder raw-code report
+
+Queued, not yet built: (40) audit the agent variable/list write path against the IDE generator so "E_NAME_TAKEN but javac cannot be resolved" ghosts are impossible, with a repair action in the E_NAME_TAKEN message; (41) raw-code hygiene — refuse declarations shadowing store names, escape newlines inside raw string literals, validate raw references against generator-emitted fields; (42) a turn can still end in a completely empty COMPLETE bubble — make empty replies a visible error with retry. Field evidence: MealdetailActivity held raw declarations without underscores (`meal_detail`…) while blocks referenced generator names (`_meal_detail`…), plus a Map/HashMap mismatch, an unclosed literal, and a stray `_activity` reference.

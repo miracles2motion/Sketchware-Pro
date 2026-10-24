@@ -418,3 +418,21 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 - **Design-System Presets:** Apply closes the sheet first, then applies; the currently-applied preset wears the active stroke and a "✓ Applied" trailing label; Import / Save stay open as launchers (matching 🎨 / ⌨ behaviour in ask_choice).
 - **Model long-press actions:** Test and Hide close the action sheet before doing anything — a probe or a hide can never run behind the dialog.
 - Every sheet now follows one rule: a selection acts only after its dialog is gone; only sub-launchers stay open, and they close on success.
+
+## Wave 57 / Phases 40–42 (PENDING) — RecipeFinder Ghost Declarations, Raw-Code Hygiene & Empty-Bubble Turn End
+
+**Context (field report, 24 Oct):** RecipeFinder's javac failures were finally diagnosed by the model itself (excellent report, followed the user's instructions exactly after earlier confusion). The project holds **two parallel naming systems**: raw injected declarations with NO underscore (`meal_detail`, `detail_image`, `detail_name`, `detail_category`, `ingredients_list` — emitted by `addSourceDirectly`/`addCustomVariable` blocks the agent wrote during an earlier struggling session) versus standard Sketchware block references WITH underscore (`_meal_detail`, …). Secondary raw-code bugs in the same injected lines: a `Map<String,Object>` declared where the list add expects `HashMap<String,Object>`; an unclosed string literal split across lines (`…append(step).append(". \n`); a reference to an undefined `_activity` field. NOTE: `MainActivity`/`SearchresultsActivity` now compile — only `MealdetailActivity` still fails. The user was given a manual fix script (edit the raw blocks to underscore names, fix the two lines, rebuild); Wave 57 makes the APP prevent this class of failure. Also registered: a turn that ends with a completely EMPTY assistant bubble (observed twice this session), and the earlier `create_variable` → `E_NAME_TAKEN` vs javac "cannot be resolved" deadlock (store says declared, generator skips — likely a store entry the IDE generator doesn't read; the app's own add-variable/add-list path must be audited).
+
+---
+
+### Phase 40 (PENDING) — Ghost-declaration audit & repair (`AgentTools.java`, `AgentLogic.java`)
+- Audit the agent's `create_variable` / list-declaration write path against the IDE editor's own add-variable/add-list sequence (ZB name rule, `eC` store writes, the generator's field emission) and fix whatever the agent path writes that the generator ignores — so a declared list/variable can never be "E_NAME_TAKEN but cannot be resolved" again.
+- Add a **repair/retype** action: when `create_variable` hits `E_NAME_TAKEN`, the message must offer the documented repair path (retype/re-write the existing entry the editor's way) instead of a dead end; an existing ghost entry (declared-in-store, absent-in-generator) should be detectable (generator read-back, like other verified writes) and repaired by the same action.
+
+### Phase 41 (PENDING) — Raw-code hygiene (`AgentLogic.java`, `AgentTools.java`)
+- **Shadow guard:** refuse `addSourceDirectly` / `addCustomVariable` / raw initializer declarations whose names shadow store variables, lists, or widget ids on that screen (the underscore collision was self-inflicted under my watch).
+- **Escaping:** raw Java lines are escaped before storage — a string literal containing `\n` must never split the line (the unclosed-literal bug); validate raw lines parse as complete Java statements.
+- **Known-field check:** raw lines referencing generated fields (`_activity`, `_context`, widget fields) are validated against the names the generator actually emits, with the mismatch named in the error.
+
+### Phase 42 (PENDING) — Empty-bubble turn end (`AgentLoop.java`, `AgentFragment.java`)
+- A turn ended with a completely empty COMPLETE assistant bubble (no text at all, distinct from the fixed "…" ghost). Empty replies must surface as a visible system error with a retry affordance, never an empty bubble; add the reply-length guard at turn end.
