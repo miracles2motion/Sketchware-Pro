@@ -5478,7 +5478,8 @@ public final class AgentLogic {
          * prefixes must match what the compiler will actually emit
          * (variables/lists get the underscore, widgets do not).
          */
-        void validateRawJava(String code, boolean isFieldDeclaration) {
+        void validateRawJava(String code, boolean isFieldDeclaration)
+                throws AgentTools.ToolException {
             for (String line : code.split("\\r?\\n")) {
                 int quotes = 0;
                 for (int i = 0; i < line.length(); i++) {
