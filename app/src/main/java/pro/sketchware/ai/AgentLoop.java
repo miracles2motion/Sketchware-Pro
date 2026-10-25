@@ -1010,6 +1010,39 @@ public class AgentLoop {
                     // picked model is NEVER abandoned silently: the
                     // user chose it, so the error surfaces and a hint
                     // names what ✨ Auto would have tried instead.
+                    if (code == 429
+                            || e.error.kind
+                                    == AiChatService.ErrorKind.QUOTA) {
+                        // Quota is per KEY, not per model: walking the
+                        // catalog against one key torches every model
+                        // on it and extends the provider's penalty
+                        // windows. ONE strike, a LONG rest (15 min —
+                        // the doubling still grows it if it repeats),
+                        // and the turn ends honestly right here.
+                        ModelCatalog.cooldown(autoProvider, model,
+                                System.currentTimeMillis()
+                                        + 15L * 60_000L);
+                        JsonObject quotaHit = new JsonObject();
+                        quotaHit.addProperty("model", model);
+                        quotaHit.addProperty("http_code", code);
+                        quotaHit.addProperty("rest_minutes", 15);
+                        AgentJournal.record(journalProject[0],
+                                "model_error", quotaHit);
+                        closeTask(journalProject[0], false,
+                                "the key hit its quota on " + model,
+                                taskClosed, listener);
+                        dispatch(listener, () -> listener.onError(
+                                new AiChatService.AiError(
+                                        AiChatService.ErrorKind.QUOTA,
+                                        code,
+                                        "Quota/limit hit on "
+                                                + ModelCatalog.displayName(
+                                                model) + ". It rests 15 "
+                                                + "minutes — wait a bit, "
+                                                + "or pick another model "
+                                                + "in settings.")));
+                        return;
+                    }
                     boolean handoverRejected = code == 400 && failedOver;
                     boolean modelGone = code == 404
                             || e.error.kind
@@ -1050,7 +1083,7 @@ public class AgentLoop {
                                             + 5L * 60_000L);
                         }
                         switchCount[0]++;
-                        if (switchCount[0] > 6) {
+                        if (switchCount[0] > 3) {
                             // A router that never settles is worse
                             // than an honest stop.
                             String giveUp = "✨ Auto tried "
