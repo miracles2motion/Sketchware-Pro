@@ -3026,16 +3026,19 @@ public class AgentFragment extends qA {
             }
 
             @Override
-            public boolean onBlueprintReady(String blueprintText) {
+            public String onBlueprintReady(String blueprintText) {
                 // The board thread blocks here until you decide —
                 // nothing is built before you approve the blueprint.
+                // You can also ask for changes: the blueprint is
+                // redrawn with them and shown again (three rounds).
                 final java.util.concurrent.CountDownLatch latch =
                         new java.util.concurrent.CountDownLatch(1);
-                final java.util.concurrent.atomic.AtomicBoolean ok =
-                        new java.util.concurrent.atomic.AtomicBoolean(
-                                false);
+                final java.util.concurrent.atomic.AtomicReference<String>
+                        verdict = new java.util.concurrent
+                        .AtomicReference<>(null);
                 runOnUi(() -> {
                     if (!isAdded()) {
+                        verdict.set("");
                         latch.countDown();
                         return;
                     }
@@ -3044,12 +3047,26 @@ public class AgentFragment extends qA {
                             + "\n… (shortened here — the full blueprint "
                             + "drives the build)"
                             : blueprintText;
+                    android.widget.EditText input =
+                            new android.widget.EditText(requireContext());
+                    input.setHint("Anything to change? (optional)");
                     new MaterialAlertDialogBuilder(requireContext())
                             .setTitle("The blueprint — build this?")
                             .setMessage(shown)
+                            .setView(input)
                             .setPositiveButton("Build it",
                                     (d2, w2) -> {
-                                        ok.set(true);
+                                        verdict.set("");
+                                        latch.countDown();
+                                    })
+                            .setNeutralButton("Adjust it",
+                                    (d2, w2) -> {
+                                        String wish = input.getText()
+                                                == null ? ""
+                                                : input.getText()
+                                                .toString().trim();
+                                        // Empty adjust = build as drawn.
+                                        verdict.set(wish);
                                         latch.countDown();
                                     })
                             .setNegativeButton("Cancel",
@@ -3062,8 +3079,10 @@ public class AgentFragment extends qA {
                     latch.await();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    verdict.set(null);
                 }
-                return ok.get();
+                String out = verdict.get();
+                return out == null ? null : out;
             }
         };
     }

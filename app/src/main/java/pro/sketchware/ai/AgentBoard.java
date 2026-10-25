@@ -51,6 +51,8 @@ public final class AgentBoard {
         public volatile String error = "";
         public volatile int appliedCount = 0;
         public volatile long startedAtMs;
+        /** Builds attempted for this part (caps the auto-retry). */
+        public volatile int attempts;
         /** Wiring parts run only after every other part settles. */
         public volatile boolean wiringPart;
         AgentSnapshots.Snapshot beforeSnapshot;
@@ -85,9 +87,12 @@ public final class AgentBoard {
         /**
          * Blueprint mode: called with the drawn blueprint BEFORE
          * anything is built. Blocks the board thread until the user
-         * decides; false cancels the whole build (nothing happens).
+         * decides. Return null to cancel the whole build (nothing
+         * happens), an empty string to build as drawn, or the user's
+         * requested adjustments — the blueprint is redrawn with them
+         * (at most three rounds) and shown again.
          */
-        boolean onBlueprintReady(String blueprintText);
+        String onBlueprintReady(String blueprintText);
     }
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
@@ -283,7 +288,27 @@ public final class AgentBoard {
                 && !blueprint.isEmpty()) {
             return true; // already drawn and approved (a part rebuild)
         }
-        String text = generateBlueprint();
+        String text = generateBlueprint("");
+        int rounds = 0;
+        while (text != null && text.trim().length() >= 60
+                && text.contains("SCREEN:") && rounds < 3) {
+            BoardListener l = listener;
+            if (l == null) {
+                break;
+            }
+            String adjustment = l.onBlueprintReady(
+                    shortenForDialog(text));
+            if (adjustment == null) {
+                note("Blueprint not approved — nothing was built.");
+                return false;
+            }
+            if (adjustment.trim().isEmpty()) {
+                break; // approved as drawn
+            }
+            rounds++;
+            note("Adjusting the blueprint…");
+            text = generateBlueprint(adjustment.trim());
+        }
         if (text == null || text.trim().length() < 60
                 || !text.contains("SCREEN:")) {
             note("No blueprint could be drawn — building straight "
@@ -292,13 +317,6 @@ public final class AgentBoard {
             return !parts.isEmpty();
         }
         blueprint = text;
-        BoardListener l = listener;
-        boolean go = l == null
-                || l.onBlueprintReady(shortenForDialog(text));
-        if (!go) {
-            note("Blueprint not approved — nothing was built.");
-            return false;
-        }
         splitFromBlueprint(text);
         if (parts.isEmpty()) {
             splitFromSteps();
@@ -312,7 +330,7 @@ public final class AgentBoard {
     }
 
     /** ONE call: the full blueprint drawn from the plan. */
-    private String generateBlueprint() {
+    private String generateBlueprint(String adjustment) {
         StringBuilder planText = new StringBuilder();
         for (String step : planSteps) {
             planText.append("- ").append(step).append('\n');
@@ -344,7 +362,10 @@ public final class AgentBoard {
                 + "WIRING: every connection between screens (which "
                 + "button opens what, which value flows where).\n"
                 + "At most 600 words. Screens already in the project: "
-                + existing + "\nTHE PLAN:\n" + planText;
+                + existing + "\nTHE PLAN:\n" + planText
+                + (adjustment == null || adjustment.trim().isEmpty()
+                ? "" : "\n\nTHE USER ASKS FOR THESE CHANGES — "
+                + "honor them exactly:\n" + adjustment.trim());
         try {
             AiChatService service = new AiChatService();
             List<JsonObject> messages = new ArrayList<>();
@@ -956,8 +977,9 @@ public final class AgentBoard {
                 .append("advance so all parts fit together — follow ")
                 .append("them exactly, especially exact names and ")
                 .append("keys):\n").append(conventions);
-        brief.append("\n\nWhen your steps are done, stop. End with one ")
-                .append("short sentence saying what you built.");
+        brief.append("\n\nWhen your steps are done, stop. End with ")
+                .append("exactly two short sentences: WHAT you built, ")
+                .append("and HOW to test it on the screen.");
 
         List<ChatMessage> history = new ArrayList<>();
         history.add(ChatMessage.user(brief.toString()));
