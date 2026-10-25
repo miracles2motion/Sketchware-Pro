@@ -263,6 +263,10 @@ public final class OpenUiThemeEngine {
         public final LinkedHashMap<String, Integer> metricsDp =
                 new LinkedHashMap<>();
         public final List<String> contrastNotes = new ArrayList<>();
+        /** Extensive-preset support: sections we don't model (type
+         * scales, motion, materials, foundations sheets…) ride along
+         * instead of being stripped on save. */
+        public final JsonObject rawExtras = new JsonObject();
     }
 
     /**
@@ -448,6 +452,19 @@ public final class OpenUiThemeEngine {
 
         enforceModeReadability(out.lightColors, false, out.contrastNotes);
         enforceModeReadability(out.darkColors, true, out.contrastNotes);
+        // Keep everything the engine does not model: an extensive
+        // preset (foundations sheets, motion, materials, type scales)
+        // is stored with the system instead of being stripped.
+        for (String consumed : new String[]{"title", "brand_color",
+                "brandColor", "primary_color", "accent_color",
+                "secondary_color", "secondaryColor", "neutral_scale",
+                "corner_profile", "density", "theme_mode",
+                "dynamic_colors", "font_heading", "font_body",
+                "preset", "radii_dp", "metrics_dp", "light_colors",
+                "dark_colors", "overrides", "light_overrides",
+                "dark_overrides"}) {
+            out.rawExtras.remove(consumed);
+        }
         return out;
     }
 
@@ -710,6 +727,12 @@ public final class OpenUiThemeEngine {
             dark.addProperty(e.getKey(), e.getValue());
         }
         t.add("dark_colors", dark);
+        for (Map.Entry<String, JsonElement> e : theme.rawExtras
+                .entrySet()) {
+            if (!t.has(e.getKey())) {
+                t.add(e.getKey(), e.getValue());
+            }
+        }
         return t;
     }
 

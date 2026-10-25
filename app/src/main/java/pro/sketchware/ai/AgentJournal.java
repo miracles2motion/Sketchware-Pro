@@ -1886,7 +1886,7 @@ public final class AgentJournal {
             int shown = 0;
             for (java.util.Map.Entry<String, JsonElement> e : theme
                     .getAsJsonObject(mode).entrySet()) {
-                if (shown >= 10) {
+                if (shown >= 14) {
                     b.append("…");
                     break;
                 }
@@ -1902,17 +1902,41 @@ public final class AgentJournal {
         }
         if (system.has("tokens")
                 && system.get("tokens").isJsonArray()) {
-            int shown = 0;
+            // Core components first, whatever the preset's order; a
+            // 56-token system shows the 12 that build every screen.
+            String[] coreOrder = {"screen", "card", "sunk_card",
+                    "primary_button", "secondary_button", "input",
+                    "chip", "list_row", "title", "body", "nav_bar",
+                    "tab_bar", "fab", "dialog"};
+            java.util.List<JsonObject> ordered =
+                    new java.util.ArrayList<>();
+            for (String core : coreOrder) {
+                for (JsonElement el : system.getAsJsonArray("tokens")) {
+                    if (el != null && el.isJsonObject() && core.equals(
+                            text(el.getAsJsonObject(), "key"))) {
+                        ordered.add(el.getAsJsonObject());
+                    }
+                }
+            }
             for (JsonElement el : system.getAsJsonArray("tokens")) {
+                if (el != null && el.isJsonObject()
+                        && !ordered.contains(el.getAsJsonObject())) {
+                    ordered.add(el.getAsJsonObject());
+                }
+            }
+            int total = ordered.size();
+            int shown = 0;
+            for (JsonObject token : ordered) {
                 if (shown >= 14) {
-                    b.append(" …more");
+                    b.append(" …+").append(total - shown)
+                            .append(" more components (stored; in the ")
+                            .append("Design System editor)");
                     break;
                 }
-                if (el == null || !el.isJsonObject()) {
-                    continue;
+                String name = text(token, "key");
+                if (name.isEmpty()) {
+                    name = text(token, "name");
                 }
-                JsonObject token = el.getAsJsonObject();
-                String name = text(token, "name");
                 if (name.isEmpty()) {
                     continue;
                 }
@@ -1940,8 +1964,109 @@ public final class AgentJournal {
                 shown++;
             }
         }
+        // Extensive presets: distill the foundations sheet (type
+        // scale, spacing grid, motion) into two bounded lines.
+        JsonObject foundations = theme.has("foundations")
+                && theme.get("foundations").isJsonObject()
+                ? theme.getAsJsonObject("foundations")
+                : system.has("foundations")
+                && system.get("foundations").isJsonObject()
+                ? system.getAsJsonObject("foundations") : null;
+        if (foundations != null) {
+            StringBuilder f = new StringBuilder(" FOUNDATIONS:");
+            JsonObject typo = foundations.has("typography")
+                    && foundations.get("typography").isJsonObject()
+                    ? foundations.getAsJsonObject("typography") : null;
+            if (typo != null) {
+                String family = text(typo, "family");
+                if (!family.isEmpty()) {
+                    f.append(" font ").append(family.trim());
+                }
+                if (typo.has("styles")
+                        && typo.get("styles").isJsonArray()) {
+                    int count = 0;
+                    int min = Integer.MAX_VALUE;
+                    int max = 0;
+                    for (JsonElement el : typo
+                            .getAsJsonArray("styles")) {
+                        if (el == null || !el.isJsonObject()) {
+                            continue;
+                        }
+                        JsonObject style = el.getAsJsonObject();
+                        String sizeText = text(style, "size");
+                        if (sizeText.isEmpty()) {
+                            continue;
+                        }
+                        try {
+                            int size = Integer.parseInt(sizeText);
+                            count++;
+                            min = Math.min(min, size);
+                            max = Math.max(max, size);
+                        } catch (NumberFormatException ignored) {
+                            // sizes may be non-integer in some specs
+                        }
+                    }
+                    if (count > 0 && min != Integer.MAX_VALUE) {
+                        f.append(", type ").append(min).append('–')
+                                .append(max).append("sp (")
+                                .append(count).append(" styles)");
+                    }
+                }
+            }
+            JsonObject spacing = foundations.has("spacing_pt")
+                    && foundations.get("spacing_pt").isJsonObject()
+                    ? foundations.getAsJsonObject("spacing_pt")
+                    : foundations.has("spacing_dp")
+                    && foundations.get("spacing_dp").isJsonObject()
+                    ? foundations.getAsJsonObject("spacing_dp") : null;
+            if (spacing != null) {
+                String grid = text(spacing, "grid");
+                if (!grid.isEmpty()) {
+                    f.append(", ").append(grid).append("dp grid");
+                }
+                String margin = firstNonEmptyText(spacing,
+                        "screen_margin", "page_margin");
+                if (!margin.isEmpty()) {
+                    f.append(", margin ").append(margin);
+                }
+                String tap = firstNonEmptyText(spacing,
+                        "min_tap_target", "min_touch_target");
+                if (!tap.isEmpty()) {
+                    f.append(", tap ≥").append(tap);
+                }
+            }
+            JsonObject motion = foundations.has("motion")
+                    && foundations.get("motion").isJsonObject()
+                    ? foundations.getAsJsonObject("motion") : null;
+            if (motion != null) {
+                String ms = firstNonEmptyText(motion,
+                        "standard_ms", "normal_ms", "quick_ms");
+                if (!ms.isEmpty()) {
+                    f.append(", motion ~").append(ms).append("ms");
+                }
+            }
+            if (f.length() > 13) {
+                b.append(f);
+            }
+        }
         String out = b.toString().trim();
         return out.length() > 1800 ? out.substring(0, 1800) : out;
+    }
+
+    /** First non-empty string among the given keys (helper for the
+     * foundations distiller; tolerant of number-typed values). */
+    private static String firstNonEmptyText(JsonObject o,
+            String... keys) {
+        for (String key : keys) {
+            JsonElement e = o.get(key);
+            if (e != null && e.isJsonPrimitive()) {
+                String v = e.getAsString().trim();
+                if (!v.isEmpty()) {
+                    return v;
+                }
+            }
+        }
+        return "";
     }
 
     public static synchronized String designSystemSummary(String scId) {
