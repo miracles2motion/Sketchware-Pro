@@ -692,6 +692,14 @@ public class AgentLoop {
      * one session, three different models redoing the same design).
      */
     private volatile String stickyAutoModel = "";
+
+    /** Minimum gap between agent requests, so a build turn cannot
+     * machine-gun a free key: 4s = max ~15 requests/minute, the
+     * free tier of the strictest mainstream provider. Field finding:
+     * ONE build message fired 190+ requests back-to-back and burned
+     * the key in under a minute. */
+    private static final long MIN_REQUEST_GAP_MS = 4000L;
+    private long lastAgentRequestAt;
     /** Consecutive Auto turns that died without a real answer. */
     private int autoDeadTurns;
 
@@ -931,7 +939,19 @@ public class AgentLoop {
             AiChatService.AgentReply reply = null;
             long requestedAt = System.currentTimeMillis();
             for (int attempt = 0; ; attempt++) {
-                requestedAt = System.currentTimeMillis();
+                long sinceLast =
+                        System.currentTimeMillis() - lastAgentRequestAt;
+                if (lastAgentRequestAt > 0 && sinceLast >= 0
+                        && sinceLast < MIN_REQUEST_GAP_MS
+                        && !cancelled) {
+                    try {
+                        Thread.sleep(MIN_REQUEST_GAP_MS - sinceLast);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+                lastAgentRequestAt = System.currentTimeMillis();
+                requestedAt = lastAgentRequestAt;
                 try {
                     reply = service.agentTurnSync(baseUrl, apiKey, model,
                             messages, AgentTools.definitions());
