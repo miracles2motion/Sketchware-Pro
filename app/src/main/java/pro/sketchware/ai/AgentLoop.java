@@ -880,13 +880,14 @@ public class AgentLoop {
                         : "strongest healthy model");
                 routed.addProperty("chosen", chosen);
                 AgentJournal.record(journalProject[0], "auto_route", routed);
+                final String picked = chosen;
                 String note = "✨ Auto → "
-                        + ModelCatalog.displayName(chosen)
+                        + ModelCatalog.displayName(picked)
                         + (needsVision ? " (vision)" : "");
                 dispatch(listener, () -> listener.onToolNote(note));
                 dispatch(listener, () -> listener
-                        .onResolvedModel(chosen));
-                model = chosen;
+                        .onResolvedModel(picked));
+                model = picked;
             } else {
                 // Nothing to route to: say so instead of sending the
                 // literal "auto" to a provider and dying confusingly.
