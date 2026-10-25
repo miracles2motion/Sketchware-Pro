@@ -853,8 +853,13 @@ public class AgentLoop {
         }
         messages.add(systemMsg);
         int kept = 0;
+        int recency = -1;
         int imageTurnsRemaining = previewVisionDisabled[0] ? 0 : 3;
-        for (int i = history.size() - 1; i >= 0 && kept < 40; i--) {
+        // Prior conversation: the last 8 messages maximum, and older
+        // assistant replies trimmed to a paragraph. Field finding:
+        // 40 full messages rode into EVERY request — on a 100-message
+        // session that alone dwarfed the actual build context.
+        for (int i = history.size() - 1; i >= 0 && kept < 8; i--) {
             ChatMessage message = history.get(i);
             if (message.state == ChatMessage.State.STREAMING
                     || message.role == ChatMessage.Role.SYSTEM
@@ -867,6 +872,13 @@ public class AgentLoop {
                     && message.hasAttachments();
             if (!hasText && !hasImages) {
                 continue;
+            }
+            recency++;
+            if (recency >= 2 && message.role == ChatMessage.Role.ASSISTANT
+                    && message.text != null
+                    && message.text.length() > 700) {
+                String trimmed = message.text.substring(0, 700) + "…";
+                message = new ChatMessage(message.role, trimmed);
             }
             JsonObject entry = new JsonObject();
             entry.addProperty("role",
