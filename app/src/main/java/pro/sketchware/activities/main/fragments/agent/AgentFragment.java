@@ -2935,18 +2935,26 @@ public class AgentFragment extends qA {
         int parts = Math.min(3, (plan.getAsJsonArray("steps").size()
                 + 1) / 2);
         new MaterialAlertDialogBuilder(requireContext())
-                .setTitle("Build in parts — how?")
-                .setMessage("Your plan will be built in about " + parts
-                        + " parts. Every part is checked before it "
+                .setTitle("Build it — how?")
+                .setMessage("Every part is checked — shown, reviewed, "
+                        + "and the whole app test-compiled — before it "
                         + "counts as done. Pick how to build:")
                 .setItems(new CharSequence[]{
-                                "Steady — one part at a time, each part "
-                                        + "checked before the next starts "
-                                        + "(recommended)",
-                                "Fast — all parts at the same time "
-                                        + "(quicker, uses more data, less "
-                                        + "stable)"},
-                        (d, w) -> startParallelBuild(w == 1))
+                                "Blueprint first — every screen drawn "
+                                        + "and named, you approve it, "
+                                        + "then screens are built and "
+                                        + "wired (recommended)",
+                                "Steady — build from the plan, one "
+                                        + "part at a time",
+                                "Fast — build from the plan, all parts "
+                                        + "at once (uses more data)"},
+                        (d, w) -> {
+                            if (w == 0) {
+                                startBlueprintFlow();
+                            } else {
+                                startParallelBuild(w == 2);
+                            }
+                        })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
@@ -2963,27 +2971,7 @@ public class AgentFragment extends qA {
                 settings.baseUrl,
                 providerConfig.apiKey(providerConfig.activeProvider()),
                 settings.model, plan, settings.models, fastMode,
-                new pro.sketchware.ai.AgentBoard.BoardListener() {
-                    @Override
-                    public void onBoardChanged() {
-                        runOnUi(() -> {
-                            refreshStrip();
-                            refreshBoardDialog();
-                        });
-                    }
-
-                    @Override
-                    public void onPartNote(String line) {
-                        runOnUi(() -> {
-                            if (!isAdded()) {
-                                return;
-                            }
-                            appendMessage(new ChatMessage(
-                                    ChatMessage.Role.SYSTEM, line));
-                            persistChat();
-                        });
-                    }
-                });
+                boardListener());
         if (started) {
             appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM,
                     fastMode
@@ -2994,6 +2982,90 @@ public class AgentFragment extends qA {
             persistChat();
             showBoardDialog();
         }
+    }
+
+    /** Blueprint mode: draw everything first, you approve, then build. */
+    private void startBlueprintFlow() {
+        if (generating || agentBoard.isRunning() || !isAdded()) {
+            return;
+        }
+        AiProviderConfig.Settings settings =
+                providerConfig.activeSettings();
+        String scId = providerConfig.workingProjectId();
+        com.google.gson.JsonObject plan = AgentJournal.plan(scId);
+        boolean started = agentBoard.startBlueprint(requireContext(),
+                scId, settings.baseUrl,
+                providerConfig.apiKey(providerConfig.activeProvider()),
+                settings.model, plan, settings.models, boardListener());
+        if (started) {
+            showBoardDialog();
+        }
+    }
+
+    /** One listener for every board mode, blueprint approval included. */
+    private pro.sketchware.ai.AgentBoard.BoardListener boardListener() {
+        return new pro.sketchware.ai.AgentBoard.BoardListener() {
+            @Override
+            public void onBoardChanged() {
+                runOnUi(() -> {
+                    refreshStrip();
+                    refreshBoardDialog();
+                });
+            }
+
+            @Override
+            public void onPartNote(String line) {
+                runOnUi(() -> {
+                    if (!isAdded()) {
+                        return;
+                    }
+                    appendMessage(new ChatMessage(
+                            ChatMessage.Role.SYSTEM, line));
+                    persistChat();
+                });
+            }
+
+            @Override
+            public boolean onBlueprintReady(String blueprintText) {
+                // The board thread blocks here until you decide —
+                // nothing is built before you approve the blueprint.
+                final java.util.concurrent.CountDownLatch latch =
+                        new java.util.concurrent.CountDownLatch(1);
+                final java.util.concurrent.atomic.AtomicBoolean ok =
+                        new java.util.concurrent.atomic.AtomicBoolean(
+                                false);
+                runOnUi(() -> {
+                    if (!isAdded()) {
+                        latch.countDown();
+                        return;
+                    }
+                    String shown = blueprintText.length() > 3800
+                            ? blueprintText.substring(0, 3800)
+                            + "\n… (shortened here — the full blueprint "
+                            + "drives the build)"
+                            : blueprintText;
+                    new MaterialAlertDialogBuilder(requireContext())
+                            .setTitle("The blueprint — build this?")
+                            .setMessage(shown)
+                            .setPositiveButton("Build it",
+                                    (d2, w2) -> {
+                                        ok.set(true);
+                                        latch.countDown();
+                                    })
+                            .setNegativeButton("Cancel",
+                                    (d2, w2) -> latch.countDown())
+                            .setOnCancelListener(
+                                    d2 -> latch.countDown())
+                            .show();
+                });
+                try {
+                    latch.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return ok.get();
+            }
+        };
     }
 
     /** The live board: one row per part, plain words throughout. */

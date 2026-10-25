@@ -51,6 +51,8 @@ public final class AgentBoard {
         public volatile String error = "";
         public volatile int appliedCount = 0;
         public volatile long startedAtMs;
+        /** Wiring parts run only after every other part settles. */
+        public volatile boolean wiringPart;
         AgentSnapshots.Snapshot beforeSnapshot;
         AgentLoop loop;
         AiChatService service;
@@ -79,6 +81,13 @@ public final class AgentBoard {
         void onBoardChanged();
 
         void onPartNote(String line);
+
+        /**
+         * Blueprint mode: called with the drawn blueprint BEFORE
+         * anything is built. Blocks the board thread until the user
+         * decides; false cancels the whole build (nothing happens).
+         */
+        boolean onBlueprintReady(String blueprintText);
     }
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
@@ -109,6 +118,11 @@ public final class AgentBoard {
             new java.util.concurrent.atomic.AtomicBoolean(false);
     /** Set when the user stops the board: skips the final build gate. */
     private volatile boolean stoppedByUser;
+    /** Blueprint mode: screens from a drawn blueprint + wiring last. */
+    private volatile boolean blueprintMode;
+    private volatile String blueprint = "";
+    private final List<String> planSteps = new ArrayList<>();
+    private JsonObject planHeld;
 
     /** A plan is board-worthy when it has enough steps to divide. */
     public static boolean available(JsonObject plan) {
@@ -148,6 +162,34 @@ public final class AgentBoard {
         if (running || context == null || !available(plan)) {
             return false;
         }
+        configure(context, scId, baseUrl, apiKey, model, plan,
+                autoModelPool, listener);
+        this.maxConcurrent = fastMode ? MAX_WORKERS : 1;
+        this.stoppedByUser = false;
+        this.blueprintMode = false;
+        this.blueprint = "";
+        parts.clear();
+        activeClaims.clear();
+
+        int n = splitFromSteps();
+        if (n == 0) {
+            return false;
+        }
+        running = true;
+        note(fastMode
+                ? "Building in " + n + " parts, all at the same time — "
+                + "each part is a separate conversation (uses more "
+                + "data). You can undo any part afterwards."
+                : "Building in " + n + " parts, one after another — "
+                + "each part is checked before the next starts.");
+        kickSupervisor();
+        return true;
+    }
+
+    /** Shared field setup for every start path. */
+    private void configure(Context context, String scId,
+            String baseUrl, String apiKey, String model, JsonObject plan,
+            List<String> autoModelPool, BoardListener listener) {
         this.context = context.getApplicationContext();
         this.scId = scId == null ? "" : scId;
         this.baseUrl = baseUrl == null ? "" : baseUrl;
@@ -156,23 +198,61 @@ public final class AgentBoard {
         this.autoModelPool = autoModelPool == null
                 ? new ArrayList<>() : autoModelPool;
         this.listener = listener;
-        this.maxConcurrent = fastMode ? MAX_WORKERS : 1;
-        this.stoppedByUser = false;
-        parts.clear();
-        activeClaims.clear();
-
-        List<String> steps = new ArrayList<>();
-        for (com.google.gson.JsonElement element
-                : plan.getAsJsonArray("steps")) {
-            if (element.isJsonObject()) {
-                JsonObject step = element.getAsJsonObject();
-                if (step.has("text") && step.get("text").isJsonPrimitive()) {
-                    steps.add(step.get("text").getAsString());
+        this.planHeld = plan;
+        planSteps.clear();
+        if (plan != null && plan.has("steps")) {
+            for (com.google.gson.JsonElement element
+                    : plan.getAsJsonArray("steps")) {
+                if (element.isJsonObject()) {
+                    JsonObject step = element.getAsJsonObject();
+                    if (step.has("text")
+                            && step.get("text").isJsonPrimitive()) {
+                        planSteps.add(step.get("text").getAsString());
+                    }
                 }
             }
         }
-        if (steps.size() < 3) {
+    }
+
+    /**
+     * Blueprint mode: one agent first draws EVERY screen (widgets,
+     * names, storage keys, wiring), the user approves the drawing,
+     * then screen-builders race (screens are independent — the safe
+     * parallel case) and ONE wiring agent connects everything
+     * afterwards. Reuses every check: render + reviewer per part,
+     * per-part undo, the final compile gate.
+     */
+    public synchronized boolean startBlueprint(Context context,
+            String scId, String baseUrl, String apiKey, String model,
+            JsonObject plan, List<String> autoModelPool,
+            BoardListener listener) {
+        if (running || context == null || !available(plan)) {
             return false;
+        }
+        configure(context, scId, baseUrl, apiKey, model, plan,
+                autoModelPool, listener);
+        this.maxConcurrent = MAX_WORKERS;
+        this.stoppedByUser = false;
+        this.blueprintMode = true;
+        this.blueprint = "";
+        this.conventions = "";
+        this.pinnedModel = "";
+        parts.clear();
+        activeClaims.clear();
+        running = true;
+        note("Drawing the blueprint first — every screen, every name. "
+                + "You approve it before anything is built.");
+        changed();
+        kickSupervisor();
+        return true;
+    }
+
+    /** Splits the plan's steps into up to MAX_WORKERS adjacent parts.
+     * Returns the part count, or 0 when the plan is too small. */
+    private int splitFromSteps() {
+        List<String> steps = new ArrayList<>(planSteps);
+        if (steps.size() < 3) {
+            return 0;
         }
         int partCount = Math.min(MAX_WORKERS,
                 (steps.size() + 1) / 2);
@@ -189,14 +269,179 @@ public final class AgentBoard {
             }
             parts.add(part);
         }
-        running = true;
-        note("Building your app in " + partCount
-                + " parts at the same time — this is faster. Each part "
-                + "uses its own AI conversation (uses more data). You "
-                + "can undo any part afterwards.");
-        // One supervisor thread: starts parts as their claims free up.
-        kickSupervisor();
+        return parts.size();
+    }
+
+    /**
+     * Blueprint mode step one: draw the blueprint, get the user's OK,
+     * split the work into screen parts plus ONE wiring part. Returns
+     * false when the user cancels — nothing gets built. Falls back to
+     * the plain step-split when no usable blueprint can be drawn.
+     */
+    private boolean prepareBlueprint() {
+        if (!parts.isEmpty() && blueprint != null
+                && !blueprint.isEmpty()) {
+            return true; // already drawn and approved (a part rebuild)
+        }
+        String text = generateBlueprint();
+        if (text == null || text.trim().length() < 60
+                || !text.contains("SCREEN:")) {
+            note("No blueprint could be drawn — building straight "
+                    + "from the plan instead.");
+            splitFromSteps();
+            return !parts.isEmpty();
+        }
+        blueprint = text;
+        BoardListener l = listener;
+        boolean go = l == null
+                || l.onBlueprintReady(shortenForDialog(text));
+        if (!go) {
+            note("Blueprint not approved — nothing was built.");
+            return false;
+        }
+        splitFromBlueprint(text);
+        if (parts.isEmpty()) {
+            splitFromSteps();
+            return !parts.isEmpty();
+        }
+        conventions = headerAndRules(text);
+        note("Blueprint approved — building "
+                + (parts.size() - 1) + " screens, then wiring them "
+                + "together.");
         return true;
+    }
+
+    /** ONE call: the full blueprint drawn from the plan. */
+    private String generateBlueprint() {
+        StringBuilder planText = new StringBuilder();
+        for (String step : planSteps) {
+            planText.append("- ").append(step).append('\n');
+        }
+        StringBuilder existing = new StringBuilder();
+        for (String name : existingScreenKeys()) {
+            existing.append(name).append(' ');
+        }
+        String prompt =
+                "You are the lead architect. Several builders will "
+                + "build this app IN PARALLEL without talking to each "
+                + "other, so the blueprint must decide EVERYTHING in "
+                + "advance; the builders will only fill in the "
+                + "blanks. Write the full blueprint in exactly these "
+                + "sections, plain text, no markdown headings:\n"
+                + "RULES: widget id style (like btn_save, tv_score), "
+                + "variable style, ONE shared preferences file "
+                + "name.\n"
+                + "Then one block per screen starting EXACTLY with a "
+                + "line 'SCREEN: <ScreenName>' followed by that "
+                + "screen's widgets, one per line (like '- btn_next "
+                + "(Button) opens ResultScreen') and what the screen "
+                + "does.\n"
+                + "VARIABLES: every variable whose value crosses "
+                + "screens, with exact names.\n"
+                + "STORAGE: every shared key, like 'app_data.high_score "
+                + "(number) written by ResultScreen, read by "
+                + "HomeScreen'.\n"
+                + "WIRING: every connection between screens (which "
+                + "button opens what, which value flows where).\n"
+                + "At most 600 words. Screens already in the project: "
+                + existing + "\nTHE PLAN:\n" + planText;
+        try {
+            AiChatService service = new AiChatService();
+            List<JsonObject> messages = new ArrayList<>();
+            JsonObject system = new JsonObject();
+            system.addProperty("role", "system");
+            system.addProperty("content",
+                    "You are a precise mobile-app architect. You "
+                            + "answer with the blueprint only.");
+            messages.add(system);
+            JsonObject user = new JsonObject();
+            user.addProperty("role", "user");
+            user.addProperty("content", prompt);
+            messages.add(user);
+            AiChatService.AgentReply reply = service.agentTurnSync(
+                    baseUrl, apiKey, effectiveModel(), messages, null);
+            return reply == null ? "" : reply.content;
+        } catch (Throwable e) {
+            return "";
+        }
+    }
+
+    /** Splits blueprint text into screen parts + ONE wiring part. */
+    private void splitFromBlueprint(String text) {
+        Set<String> known = existingScreenKeys();
+        parts.clear();
+        Part current = null;
+        StringBuilder tail = new StringBuilder();
+        boolean inTail = false;
+        for (String line : text.split("\n")) {
+            String t = line.trim();
+            if (t.startsWith("SCREEN:")) {
+                String name = t.substring("SCREEN:".length()).trim();
+                current = new Part(parts.size() + 1,
+                        name.isEmpty() ? "Screen" : name);
+                current.stepTexts.add("Build this screen EXACTLY as "
+                        + "your blueprint section says — nothing "
+                        + "more, nothing less:");
+                current.stepTexts.add(line);
+                collectClaims(t, known, current);
+                parts.add(current);
+                inTail = false;
+                continue;
+            }
+            if (t.startsWith("VARIABLES:") || t.startsWith("STORAGE:")
+                    || t.startsWith("WIRING:")) {
+                inTail = true;
+            }
+            if (inTail) {
+                tail.append(line).append('\n');
+            } else if (current != null && !t.isEmpty()) {
+                current.stepTexts.add(line);
+                collectClaims(line, known, current);
+            }
+        }
+        if (parts.isEmpty()) {
+            return;
+        }
+        Part wiring = new Part(parts.size() + 1, "Wiring");
+        wiring.wiringPart = true;
+        wiring.stepTexts.add("Connect everything per the blueprint:");
+        for (String line : tail.toString().split("\n")) {
+            if (!line.trim().isEmpty()) {
+                wiring.stepTexts.add(line);
+            }
+        }
+        parts.add(wiring);
+    }
+
+    /** RULES + VARIABLES/STORAGE/WIRING sections (no screen blocks). */
+    private static String headerAndRules(String text) {
+        StringBuilder out = new StringBuilder();
+        boolean inScreen = false;
+        for (String line : text.split("\n")) {
+            String t = line.trim();
+            if (t.startsWith("SCREEN:")) {
+                inScreen = true;
+                continue;
+            }
+            if (t.startsWith("VARIABLES:") || t.startsWith("STORAGE:")
+                    || t.startsWith("WIRING:")) {
+                inScreen = false;
+            }
+            if (!inScreen && !t.isEmpty()) {
+                out.append(line).append('\n');
+            }
+        }
+        return out.toString();
+    }
+
+    private static String shortenForDialog(String text) {
+        String clean = text == null ? "" : text.trim();
+        if (clean.length() > 3800) {
+            return clean.substring(0, 3800)
+                    + "\n… (shortened here — the full blueprint "
+                    + "drives the build)";
+        }
+        return clean;
     }
 
     /** Stops every worker now; parts mid-build are marked failed. */
@@ -265,28 +510,45 @@ public final class AgentBoard {
     // ---- internals -----------------------------------------------------
 
     private void supervise() {
-        // One cheap architect call BEFORE any worker starts: it reads
-        // the whole plan and fixes the shared names, so parts fit.
-        prepareConventions();
-        Thread watchdog = new Thread(this::watchdogs,
-                "agent-board-watchdog");
-        watchdog.setDaemon(true);
-        watchdog.start();
         try {
+            if (blueprintMode && !prepareBlueprint()) {
+                // The user said no: nothing gets built.
+                synchronized (this) {
+                    running = false;
+                }
+                changed();
+                return;
+            }
+            // One cheap architect call when no blueprint already set
+            // the shared rules (blueprint mode presets conventions).
+            prepareConventions();
+            Thread watchdog = new Thread(this::watchdogs,
+                    "agent-board-watchdog");
+            watchdog.setDaemon(true);
+            watchdog.start();
             while (running) {
                 Part next = null;
+                Part wiring = null;
                 int building = 0;
+                int screensBuilding = 0;
                 int queued = 0;
                 synchronized (this) {
                     for (Part part : parts) {
                         if (part.state == PartState.BUILDING) {
                             building++;
+                            if (!part.wiringPart) {
+                                screensBuilding++;
+                            }
                         } else if (part.state == PartState.QUEUED) {
-                            queued++;
-                            if (next == null
-                                    && disjoint(part.claims,
-                                    activeClaims)) {
-                                next = part;
+                            if (part.wiringPart) {
+                                wiring = part;
+                            } else {
+                                queued++;
+                                if (next == null
+                                        && disjoint(part.claims,
+                                        activeClaims)) {
+                                    next = part;
+                                }
                             }
                         }
                     }
@@ -295,10 +557,18 @@ public final class AgentBoard {
                     startPart(next);
                     continue;
                 }
-                if (building == 0 && queued == 0) {
+                if (wiring != null && queued == 0
+                        && screensBuilding == 0) {
+                    // The wiring agent starts only when every screen
+                    // part has settled — integration after, never
+                    // during.
+                    startPart(wiring);
+                    continue;
+                }
+                if (building == 0 && queued == 0 && wiring == null) {
                     break; // everything finished or failed for good
                 }
-                if (building == 0 && next == null) {
+                if (building == 0 && next == null && wiring == null) {
                     // Deadlock guard: queued parts block each other's
                     // screens — start the first one anyway.
                     synchronized (this) {
@@ -630,7 +900,19 @@ public final class AgentBoard {
         part.loop = loop;
         loop.autoModelPool = autoModelPool;
         StringBuilder brief = new StringBuilder();
-        brief.append("You are one of several builders working ")
+        if (part.wiringPart) {
+            brief.append("You are the WIRING agent: the screens were ")
+                    .append("built by other builders, and your only ")
+                    .append("job is connecting them — which button ")
+                    .append("opens which screen, shared data, shared ")
+                    .append("logic — exactly as your steps say, using ")
+                    .append("the exact names below. Edit screens only ")
+                    .append("to add connections; never redesign them. ")
+                    .append("Do not ask the user anything.")
+                    .append("\n\nYour part: ")
+                    .append(part.title).append("\n");
+        } else {
+            brief.append("You are one of several builders working ")
                 .append("on the SAME project, each on their own part of ")
                 .append("the agreed plan. Build YOUR part only, fully ")
                 .append("and concretely — other workers handle the ")
@@ -640,6 +922,7 @@ public final class AgentBoard {
                 .append("carry on (the style and plan are already ")
                 .append("agreed).\n\nYour part is #").append(part.index)
                 .append(": ").append(part.title).append("\n");
+        }
         for (int i = 0; i < part.stepTexts.size(); i++) {
             brief.append("\nStep ").append(i + 1).append(". ")
                     .append(part.stepTexts.get(i));
@@ -759,6 +1042,15 @@ public final class AgentBoard {
      */
     private void verifyAndFinish(Part part, String summary) {
         note(part.title + " finished — checking the result…");
+        // Screens this part created now exist — include them in the
+        // render check even though they did not exist at start.
+        Set<String> nowKnown = existingScreenKeys();
+        for (String token : part.claims) {
+            if (nowKnown.contains(token)
+                    && !part.screenDirs.contains(capital(token))) {
+                part.screenDirs.add(capital(token));
+            }
+        }
         List<String> problems = new ArrayList<>();
         for (String dir : part.screenDirs) {
             try {
