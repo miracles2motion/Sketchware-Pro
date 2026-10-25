@@ -100,6 +100,9 @@ public class AgentFragment extends qA {
     private androidx.appcompat.app.AlertDialog choiceSheetDialog;
     // Only one bounced sheet may ever be in flight.
     private volatile boolean choiceBounceRunning;
+    /** The plan review dialog opens itself ONCE per session. */
+    private boolean planAutoOpenedThisSession;
+    private int planOpenRetries;
     private final pro.sketchware.ai.AgentBoard agentBoard =
             new pro.sketchware.ai.AgentBoard();
     private androidx.appcompat.app.AlertDialog boardDialog;
@@ -285,6 +288,10 @@ public class AgentFragment extends qA {
 
         chatService = new AiChatService();
         providerConfig = AiProviderConfig.load(requireContext());
+        // A plan that already existed when this screen opened is not
+        // news — only a plan created NOW gets the auto-opened review.
+        planAutoOpenedThisSession = AgentJournal.plan(
+                providerConfig.workingProjectId()) != null;
         binding.workingOnCard.setOnClickListener(v -> showProjectPicker());
         agentLoop = new AgentLoop(requireContext(), chatService, agentExecutor);
         updateWorkingOnCard();
@@ -894,7 +901,10 @@ public class AgentFragment extends qA {
 
                     @Override
                     public void onStateChanged() {
-                        runOnUi(AgentFragment.this::refreshStrip);
+                        runOnUi(() -> {
+                            refreshStrip();
+                            maybeAutoOpenPlan();
+                        });
                     }
                 });
     }
@@ -2752,6 +2762,44 @@ public class AgentFragment extends qA {
     }
 
     /** The Plan button: the agreed build order and its progress. */
+/** The user approved the plan in the dialog: tell the agent to go. */
+    private void startFromPlan() {
+        if (generating) {
+            Toast.makeText(getContext(),
+                    "Wait for the current work to finish",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        binding.chatInput.setText(
+                "The plan is approved — start building it now.");
+        sendCurrentInput();
+    }
+
+    /** The plan-review moment can never be skipped silently: the
+     * dialog opens by itself when a plan first appears. */
+    private void maybeAutoOpenPlan() {
+        if (planAutoOpenedThisSession || !isAdded()) {
+            return;
+        }
+        String scId = providerConfig == null
+                ? "" : providerConfig.workingProjectId();
+        if (AgentJournal.plan(scId) == null) {
+            return;
+        }
+        if (generating) {
+            // The turn that saved the plan is still running; the gate
+            // ends it soon — re-check for up to about half a minute.
+            if (planOpenRetries++ < 20) {
+                new android.os.Handler(android.os.Looper
+                        .getMainLooper()).postDelayed(
+                        this::maybeAutoOpenPlan, 1500);
+            }
+            return;
+        }
+        planAutoOpenedThisSession = true;
+        showPlanDialog();
+    }
+
     private void showPlanDialog() {
         String scId = journalTarget();
         com.google.gson.JsonObject plan = AgentJournal.plan(scId);
@@ -2889,11 +2937,12 @@ public class AgentFragment extends qA {
                                 ? getString(R.string.agent_plan_title)
                                 : title)
                         .setView(scroll)
-                        .setPositiveButton("⚡ Build in parts",
-                                (d, w) -> confirmParallelBuild())
+                        .setPositiveButton("▶ Start building",
+                                (d, w) -> startFromPlan())
                         .setNeutralButton("Project history",
                                 (d, w) -> showSnapshotsDialog())
-                        .setNegativeButton(R.string.agent_action_close, null)
+                        .setNegativeButton("⚡ Build in parts",
+                                (d, w) -> confirmParallelBuild())
                         .create();
         dialog.show();
         if (generating) {

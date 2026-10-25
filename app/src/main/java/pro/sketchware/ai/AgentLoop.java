@@ -37,6 +37,27 @@ public class AgentLoop {
      * refuses duplicates by fingerprint.
      */
     private static final int MAX_TOOL_CALLS = 24;
+    /**
+     * Build verbs held after a plan is saved, until the user taps
+     * Start. Field finding 25 Oct: a weak model saved the plan and
+     * charged straight into building — the user never got their
+     * review moment. Now the loop physically refuses these tools in
+     * the same turn, with E_PLAN_REVIEW telling the model to stop.
+     */
+    private static final java.util.Set<String> PLAN_GATE_TOOLS =
+            new java.util.HashSet<>(java.util.Arrays.asList(
+                    "create_project", "create_activity",
+                    "create_fragment", "create_custom_view",
+                    "delete_activity", "delete_custom_view",
+                    "edit_activity", "edit_screen",
+                    "convert_root_layout", "import_layout_xml",
+                    "set_event_handler", "edit_event_block",
+                    "create_variable", "remove_variable",
+                    "create_more_block", "remove_more_block",
+                    "create_component", "remove_component",
+                    "edit_project_theme", "build_project",
+                    "build_release_package", "manage_custom_block",
+                    "manage_custom_component_or_event"));
     /** How many segments one user message may run, at most. */
     private static final int MAX_SEGMENTS = 6;
 
@@ -605,6 +626,30 @@ public class AgentLoop {
         }
     }
 
+    /** True from the moment a plan is created until the turn ends:
+     * build tools are refused so the user can review the plan. */
+    private boolean planGateArmed;
+
+    /** The tool result that holds the model while the user reviews
+     * the plan it just saved. */
+    private static JsonObject planReviewBlocked() {
+        JsonObject blocked = new JsonObject();
+        blocked.addProperty("error", "E_PLAN_REVIEW");
+        blocked.addProperty("message",
+                "The plan was just saved and the user is reviewing it "
+                        + "now. Do not build yet — end your turn this "
+                        + "instant. Building starts when the user taps "
+                        + "Start (their next message).");
+        return blocked;
+    }
+
+    /** A plan CREATION (title + steps), not a progress update. */
+    private static boolean planCreation(com.google.gson.JsonObject args) {
+        return args != null && args.has("steps")
+                && args.get("steps").isJsonPrimitive()
+                && !args.get("steps").getAsString().trim().isEmpty();
+    }
+
     private final Context context;
     private final AiChatService service;
     private final Executor io;
@@ -648,6 +693,7 @@ public class AgentLoop {
         // The app's own record of this project: the task is titled
         // from the user's message and closed wherever the turn ends,
         // so an interrupted task is paused — never silently lost.
+        planGateArmed = false;
         String lastUserText = "";
         ChatMessage lastUserMessage = null;
         for (int i = history.size() - 1; i >= 0; i--) {
@@ -1255,11 +1301,18 @@ public class AgentLoop {
                 long callStartedAt = System.currentTimeMillis();
                 JsonObject result;
                 if (AgentTools.isMutation(call.name)) {
-                    String label = proposalLabel(call);
-                    dispatch(listener, () -> listener.onToolNote(label));
-                    result = proposeAndExecute(call, session, listener,
-                            journalProject[0], insisted, turnStartedAt,
-                            lastUserText);
+                    if (planGateArmed
+                            && PLAN_GATE_TOOLS.contains(call.name)) {
+                        // The plan was JUST saved; the user reviews.
+                        result = planReviewBlocked();
+                    } else {
+                        String label = proposalLabel(call);
+                        dispatch(listener, () -> listener
+                                .onToolNote(label));
+                        result = proposeAndExecute(call, session,
+                                listener, journalProject[0], insisted,
+                                turnStartedAt, lastUserText);
+                    }
                     if (cancelled) {
                         closeTask(journalProject[0], false, "you stopped it",
                                 taskClosed, listener);
@@ -1310,7 +1363,20 @@ public class AgentLoop {
                 } else {
                     String label = AgentTools.labelFor(call.name, call.arguments);
                     dispatch(listener, () -> listener.onToolNote(label));
-                    result = AgentTools.dispatch(call.name, call.arguments, session);
+                    if (planGateArmed
+                            && PLAN_GATE_TOOLS.contains(call.name)) {
+                        // The plan was JUST saved; the user reviews.
+                        result = planReviewBlocked();
+                    } else {
+                        result = AgentTools.dispatch(call.name,
+                                call.arguments, session);
+                    }
+                    if ("set_plan".equals(call.name)
+                            && (result == null
+                                    || !result.has("error"))
+                            && planCreation(call.arguments)) {
+                        planGateArmed = true;
+                    }
                     if ("set_plan".equals(call.name)
                             || "set_design_system".equals(call.name)
                             || "set_style_brief".equals(call.name)) {
