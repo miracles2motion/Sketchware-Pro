@@ -15,6 +15,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -119,6 +120,23 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
 
     private OnCardListener cardListener;
 
+    /** A tapped quick-choice chip under the model's typed options. */
+    public interface OnQuickChoiceListener {
+        void onQuickChoice(String text);
+    }
+
+    private OnQuickChoiceListener quickChoiceListener;
+
+    public void setOnQuickChoiceListener(OnQuickChoiceListener l) {
+        this.quickChoiceListener = l;
+    }
+
+    /** One tappable option parsed out of a typed-out choices list. */
+    private static String[] quickChoiceOption(String title, String hex,
+            String full) {
+        return new String[]{title, hex, full};
+    }
+
     public void setOnCardListener(OnCardListener listener) {
         this.cardListener = listener;
     }
@@ -204,6 +222,9 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
     }
 
     private static final String PAYLOAD_TEXT = "text";
+    /** Id for the transient quick-choice row under a typed-out
+     * options message (never persisted — computed at bind time). */
+    private static final int VIEW_QUICK_CHOICES = 0x00A7C4E;
 
     /**
      * Repaints only the text of a streaming bubble. A full rebind on every
@@ -235,6 +256,82 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
     @Override
     public int getItemCount() {
         return items.size();
+    }
+
+    private static final java.util.regex.Pattern OPTION_HEAD =
+            java.util.regex.Pattern.compile(
+            "(?m)^\\s*\\*{0,2}(\\d{1,2})[.)]\\*{0,2}\\s*(.+)$");
+    private static final java.util.regex.Pattern HEX6 =
+            java.util.regex.Pattern.compile("#[0-9A-Fa-f]{6}");
+
+    /**
+     * Some models (small ones especially) answer the "pick a look"
+     * moment by TYPING the options as a numbered list with hex codes
+     * instead of calling ask_choice (field export 23:35: muse-glimmer
+     * did exactly that, instructions forbidding it notwithstanding).
+     * Rather than leave the user with dead text, parse such a list
+     * into tappable chips. Returns null unless this really looks like
+     * a colour-choices list: 2–6 numbered options, at least two of
+     * them carrying hex codes.
+     */
+    @Nullable
+    static java.util.List<String[]> parseChoiceOptions(String text) {
+        if (text == null || text.length() < 40
+                || text.length() > 4000) {
+            return null;
+        }
+        java.util.regex.Matcher head = OPTION_HEAD.matcher(text);
+        java.util.List<int[]> marks = new ArrayList<>();
+        while (head.find() && marks.size() < 8) {
+            marks.add(new int[]{head.start(), head.start(2)});
+        }
+        if (marks.size() < 2 || marks.size() > 6) {
+            return null;
+        }
+        java.util.List<String[]> out = new ArrayList<>();
+        int withHex = 0;
+        for (int i = 0; i < marks.size(); i++) {
+            int from = marks.get(i)[0];
+            int to = i + 1 < marks.size()
+                    ? marks.get(i + 1)[0] : text.length();
+            String seg = text.substring(from,
+                    Math.min(to, from + 600));
+            String flat = seg.replaceAll("\s+", " ").trim();
+            java.util.regex.Matcher hm = HEX6.matcher(seg);
+            String hex = hm.find() ? hm.group() : null;
+            if (hex != null) {
+                withHex++;
+            }
+            String raw = text.substring(marks.get(i)[1],
+                    Math.min(text.length(), marks.get(i)[1] + 160));
+            String title = raw;
+            int cut = title.indexOf("—");
+            if (cut < 0) {
+                cut = title.indexOf("–");
+            }
+            if (cut < 0) {
+                cut = title.indexOf(":");
+            }
+            if (cut > 0) {
+                title = title.substring(0, cut);
+            }
+            title = title.replaceAll("\\s+", " ")
+                    .replace("*", "").replace("#", "").trim();
+            if (title.length() > 26) {
+                title = title.substring(0, 26).trim() + "…";
+            }
+            if (title.isEmpty()) {
+                title = "Option " + (i + 1);
+            }
+            out.add(quickChoiceOption(title,
+                    hex == null ? "#888888" : hex,
+                    flat.length() > 400 ? flat.substring(0, 400)
+                            : flat));
+        }
+        if (withHex < 2) {
+            return null;
+        }
+        return out;
     }
 
     static class Holder extends RecyclerView.ViewHolder {
@@ -404,6 +501,97 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
             // No words yet: the dots pill speaks alone, no empty shell.
             binding.messageCard.setVisibility(
                     message.text.isEmpty() ? View.GONE : View.VISIBLE);
+            renderQuickChoices(message);
+        }
+
+        /**
+         * When the model typed its options as text (instead of the
+         * ask_choice call), the options still become tappable chips —
+         * "only saw raw text" is not an end state we accept.
+         */
+        private void renderQuickChoices(ChatMessage message) {
+            ViewGroup root = (ViewGroup) itemView;
+            View existing = root.findViewById(VIEW_QUICK_CHOICES);
+            if (existing != null) {
+                root.removeView(existing);
+            }
+            if (message.state != ChatMessage.State.COMPLETE
+                    || owner == null || owner.items == null
+                    || owner.items.isEmpty()
+                    || owner.items.get(owner.items.size() - 1)
+                    != message) {
+                return;
+            }
+            java.util.List<String[]> options =
+                    parseChoiceOptions(message.text);
+            if (options == null) {
+                return;
+            }
+            Context ctx = itemView.getContext();
+            float d = ctx.getResources().getDisplayMetrics().density;
+            android.widget.HorizontalScrollView scroll =
+                    new android.widget.HorizontalScrollView(ctx);
+            scroll.setId(VIEW_QUICK_CHOICES);
+            scroll.setHorizontalScrollBarEnabled(false);
+            LinearLayout row = new LinearLayout(ctx);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setPadding(Math.round(4f * d), Math.round(6f * d),
+                    Math.round(4f * d), 0);
+            scroll.addView(row);
+            int index = -1;
+            for (int i = 0; i < root.getChildCount(); i++) {
+                if (root.getChildAt(i) == binding.messageCard) {
+                    index = i + 1;
+                    break;
+                }
+            }
+            if (index < 0) {
+                root.addView(scroll);
+            } else {
+                root.addView(scroll, index);
+            }
+            int shown = 0;
+            for (final String[] option : options) {
+                if (shown >= 5) {
+                    break;
+                }
+                shown++;
+                com.google.android.material.button.MaterialButton chip =
+                        new com.google.android.material.button
+                        .MaterialButton(ctx);
+                chip.setStyle(
+                        com.google.android.material.button
+                        .MaterialButton.STYLE_OUTLINE);
+                chip.setAllCaps(false);
+                chip.setSingleLine(true);
+                chip.setPadding(Math.round(14f * d), 0,
+                        Math.round(14f * d), 0);
+                chip.setTextSize(13);
+                chip.setTextColor(AgentTheme.ink(ctx));
+                chip.setStrokeColor(android.content.res.ColorStateList
+                        .valueOf(AgentTheme.border(ctx)));
+                android.text.SpannableString label =
+                        new android.text.SpannableString(
+                                "● " + option[0]);
+                try {
+                    label.setSpan(new android.text.style
+                            .ForegroundColorSpan(
+                            android.graphics.Color.parseColor(
+                                    option[1])), 0, 1,
+                            android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                } catch (IllegalArgumentException ignored) {
+                    // A bad hex just keeps the default dot colour.
+                }
+                chip.setText(label);
+                row.addView(chip);
+                ((LinearLayout.LayoutParams) chip.getLayoutParams()).rightMargin =
+                        Math.round(8f * d);
+                chip.setOnClickListener(v -> {
+                    if (owner.quickChoiceListener != null) {
+                        owner.quickChoiceListener.onQuickChoice(option[2]);
+                    }
+                });
+            }
         }
 
         private void renderBody(ChatMessage message) {

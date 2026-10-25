@@ -224,6 +224,18 @@ public class AgentFragment extends qA {
                 ? providerConfig.activeSettings().autoApproveSeconds : 5);
         adapter.setOnApprovalListener(this::onApprovalDecision);
         adapter.setOnInstallListener(this::onInstallRequest);
+        adapter.setOnQuickChoiceListener(text -> {
+            // The model typed its colour options as text; the tap IS
+            // the user's answer — it goes through the normal composer.
+            if (!isAdded() || binding == null) {
+                return;
+            }
+            binding.chatInput.setText(text);
+            binding.chatInput.setSelection(text.length());
+            if (!generating) {
+                sendCurrentInput();
+            }
+        });
         adapter.setOnCardListener(new pro.sketchware.ai.ChatAdapter
                 .OnCardListener() {
             @Override
