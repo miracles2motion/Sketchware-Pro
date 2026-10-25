@@ -3034,8 +3034,9 @@ public class AgentFragment extends qA {
                 final java.util.concurrent.CountDownLatch latch =
                         new java.util.concurrent.CountDownLatch(1);
                 final java.util.concurrent.atomic.AtomicReference<String>
-                        verdict = new java.util.concurrent
-                        .AtomicReference<>(null);
+                        verdict =
+                        new java.util.concurrent.atomic.AtomicReference<>(
+                                null);
                 runOnUi(() -> {
                     if (!isAdded()) {
                         verdict.set("");
