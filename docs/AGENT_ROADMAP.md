@@ -515,3 +515,20 @@ Write `{name, var, listener, icon, description, parameters}` into events.json/li
 Define a component type in component.json (library class gated on the library being enabled in the working project, declared methods), usable afterwards through the existing create_component flow; same gates, approve card, read-back, project_state vocabulary.
 
 **Order and gate:** Phase 46 is the big unlock, well-bounded storage; 47 and 48 follow. Land as ONE build each, after Wave 59's plan contract — and NOTHING gets built until the user explicitly says so. **Acceptance (all three):** a definition created in one project is usable there and in future projects; every definition lands only through an approval card; a conflicting or malformed template is refused with a repair-path message (E_NAME_TAKEN style, no dead ends); nothing new is flagged or hidden in the model picker.
+
+---
+
+## Wave 61 / Phases 49–51 (PENDING — DO NOT BUILD until the user explicitly says so) — Core platform gaps: snapshots, Firestore, background work
+
+**Field context (25 Oct):** persisted from the gap analysis (all repo-verified). The user's rule: CORE features get phases here; everything else is sidelined to the backlog list at the end of this wave. Nothing is built until the user says so, one build per wave.
+
+### Phase 49 (PENDING) — Project snapshots & one-tap rollback (the safety layer)
+Auto-snapshot the project before every agent mutation batch (compact point-in-time copies alongside the manual .swb backup path — `mod.hey.studios.project.backup.BackupFactory/BackupRestoreManager` already provide restore plumbing), a timeline UI in project settings, and one-tap restore. This is the pairing that makes the agent fearless: every change undoable. Sizes capped, snapshots pruned like ai/exports (age + total-bytes). Also the agent's own escape hatch: a `restore_snapshot` tool for the user via approval card.
+
+### Phase 50 (PENDING) — Firestore support (the biggest backend gap)
+Native Firestore component + blocks (CRUD, queries, listeners) alongside the existing FirebaseDB/RTDB blocks; requires the Firestore library shipped/enabled like the other Firebase pieces and a helper-first design so weak models don't hand-write listeners. First candidate to be built USING the Wave 60 custom-block system where sensible — dog-food test for agent-minted vocabulary.
+
+### Phase 51 (PENDING) — Background work (WorkManager component)
+A WorkManager-backed background-task component with blocks (schedule one-time/periodic work, constraints, cancel), closing the "timers die with the app" gap. Manifest wiring via the existing injection path.
+
+**Sidelined (backlog, not phases):** localization manager (values-<lang> UI), test support (unit/UI), in-app billing blocks, crash/analytics reporting for built apps, home-screen widget builder, Wear/TV targets, ConstraintLayout palette entry, API designer for hosted backends.
