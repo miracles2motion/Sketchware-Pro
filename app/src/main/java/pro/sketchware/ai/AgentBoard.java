@@ -454,6 +454,15 @@ public final class AgentBoard {
         }
     }
 
+    /** The saved design tokens for prompts ("" when none). */
+    private String designTokensForPrompt() {
+        String sheet = AgentJournal.designTokenSheet(scId);
+        return sheet.isEmpty() ? ""
+                : "THE PROJECT'S DESIGN SYSTEM — your LOOK lines and "
+                + "colors MUST come from these user-chosen tokens:\n"
+                + sheet + "\n";
+    }
+
     /** ONE call: the full blueprint drawn from the plan. */
     private String generateBlueprint(String adjustment,
             String previous) {
@@ -492,7 +501,8 @@ public final class AgentBoard {
                 + "WIRING: every connection between screens (which "
                 + "button opens what, which value flows where).\n"
                 + "At most 600 words. Screens already in the project: "
-                + existing + "\nTHE PLAN:\n" + planText
+                + existing + "\n" + designTokensForPrompt()
+                + "\nTHE PLAN:\n" + planText
                 + (previous == null || previous.trim().isEmpty()
                 ? "" : "\n\nTHE PREVIOUS BLUEPRINT (your earlier "
                 + "drawing — keep everything that still applies; "
@@ -1162,6 +1172,14 @@ public final class AgentBoard {
                 .append("advance so all parts fit together — follow ")
                 .append("them exactly, especially exact names and ")
                 .append("keys):\n").append(conventions);
+        String tokenSheet = AgentJournal.designTokenSheet(scId);
+        if (!tokenSheet.isEmpty()) {
+            brief.append("\n\nTHE PROJECT'S DESIGN SYSTEM (the ")
+                    .append("user's own tokens — use these exact colors ")
+                    .append("and @color/openui_* resources; they win ")
+                    .append("over any generic defaults):\n")
+                    .append(tokenSheet);
+        }
         brief.append("\n\nDESIGN CONTRACT (binding — the reviewer ")
                 .append("FAILS a cramped screen): outer screen padding ")
                 .append("24dp; 16dp between cards/sections; 12dp inside ")

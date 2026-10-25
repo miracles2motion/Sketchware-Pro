@@ -2726,6 +2726,18 @@ public class AgentLoop {
                 if (!index.isEmpty()) {
                     prompt.append(index);
                 }
+                // Wave 66.3: the user's own design tokens reach the
+                // chat model too — an imported preset (and any token
+                // added to it) is the law, not improvisation.
+                String tokenSheet =
+                        AgentJournal.designTokenSheet(workingProjectId);
+                if (!tokenSheet.isEmpty()) {
+                    prompt.append("\n\nDESIGN SYSTEM saved for this ")
+                            .append("project (the user's own tokens — ")
+                            .append("use these and @color/openui_* ")
+                            .append("resources; never invent replacement ")
+                            .append("colors): ").append(tokenSheet);
+                }
                 prompt.append(" Widget details are available through your "
                         + "tools. If earlier replies in this conversation "
                         + "describe a different project or different "

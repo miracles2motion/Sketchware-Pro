@@ -1844,6 +1844,106 @@ public final class AgentJournal {
     }
 
     /** The human Mood & Audience line inside the Design system. */
+    /**
+     * The project's saved design tokens as a compact sheet for model
+     * prompts. Wave 66.3: until now the saved preset (and anything
+     * the user added to it) reached the project's theme files but
+     * never any model — chat improvised, the blueprint invented its
+     * own palette, part builders never saw the tokens. Empty when
+     * none is saved.
+     */
+    public static synchronized String designTokenSheet(String scId) {
+        JsonObject system = designSystem(scId);
+        if (system.entrySet().isEmpty()) {
+            return "";
+        }
+        StringBuilder b = new StringBuilder();
+        String title = text(system, "title");
+        if (!title.isEmpty()) {
+            b.append("Title: ").append(title).append(". ");
+        }
+        JsonObject theme = system.has("openuiTheme")
+                && system.get("openuiTheme").isJsonObject()
+                ? system.getAsJsonObject("openuiTheme")
+                : new JsonObject();
+        String[] keys = {"brand_color", "secondary_color",
+                "neutral_scale", "corner_profile", "density",
+                "theme_mode", "font_heading", "font_body"};
+        for (String key : keys) {
+            String v = text(theme, key);
+            if (!v.isEmpty()) {
+                b.append(key).append('=').append(v).append("; ");
+            }
+        }
+        for (String mode : new String[]{"light_colors",
+                "dark_colors"}) {
+            if (!theme.has(mode)
+                    || !theme.get(mode).isJsonObject()) {
+                continue;
+            }
+            b.append(mode.equals("light_colors")
+                    ? " light{" : " dark{");
+            int shown = 0;
+            for (java.util.Map.Entry<String, JsonElement> e : theme
+                    .getAsJsonObject(mode).entrySet()) {
+                if (shown >= 10) {
+                    b.append("…");
+                    break;
+                }
+                if (e.getValue() != null
+                        && e.getValue().isJsonPrimitive()) {
+                    b.append(e.getKey()).append('=')
+                            .append(e.getValue().getAsString())
+                            .append(' ');
+                    shown++;
+                }
+            }
+            b.append('}');
+        }
+        if (system.has("tokens")
+                && system.get("tokens").isJsonArray()) {
+            int shown = 0;
+            for (JsonElement el : system.getAsJsonArray("tokens")) {
+                if (shown >= 14) {
+                    b.append(" …more");
+                    break;
+                }
+                if (el == null || !el.isJsonObject()) {
+                    continue;
+                }
+                JsonObject token = el.getAsJsonObject();
+                String name = text(token, "name");
+                if (name.isEmpty()) {
+                    continue;
+                }
+                StringBuilder spec = new StringBuilder();
+                for (String key : new String[]{"background", "height",
+                        "corner_radius", "padding", "text_size",
+                        "text_color"}) {
+                    String v = text(token, key);
+                    if (!v.isEmpty()) {
+                        if (spec.length() > 0) {
+                            spec.append(", ");
+                        }
+                        spec.append(key).append('=').append(v);
+                    }
+                }
+                if (b.length() + name.length() + spec.length()
+                        > 1700) {
+                    b.append(" …more");
+                    break;
+                }
+                b.append(" | ").append(name);
+                if (spec.length() > 0) {
+                    b.append(" (").append(spec).append(')');
+                }
+                shown++;
+            }
+        }
+        String out = b.toString().trim();
+        return out.length() > 1800 ? out.substring(0, 1800) : out;
+    }
+
     public static synchronized String designSystemSummary(String scId) {
         JsonObject system = designSystem(scId == null ? "" : scId);
         return text(system, "summary");
