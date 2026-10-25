@@ -3097,13 +3097,69 @@ public class AgentFragment extends qA {
                             + "\n… (shortened here — the full blueprint "
                             + "drives the build)"
                             : blueprintText;
+                    // Pictures first: every SCREEN section rendered as
+                    // a REAL view, in the saved design system's own
+                    // palette — approve what you SEE.
+                    java.util.List<pro.sketchware.ai.AgentBlueprintPreview
+                            .ScreenDraft> drafts =
+                            pro.sketchware.ai.AgentBlueprintPreview
+                                    .parse(blueprintText);
                     android.widget.EditText input =
                             new android.widget.EditText(requireContext());
                     input.setHint("Anything to change? (optional)");
-                    new MaterialAlertDialogBuilder(requireContext())
-                            .setTitle("The blueprint — build this?")
-                            .setMessage(shown)
-                            .setView(input)
+                    MaterialAlertDialogBuilder builder =
+                            new MaterialAlertDialogBuilder(requireContext())
+                                    .setTitle("The blueprint — build this?");
+                    if (!drafts.isEmpty()) {
+                        com.google.gson.JsonObject palette =
+                                providerConfig == null ? null
+                                        : pro.sketchware.ai.AgentJournal
+                                        .designSystem(providerConfig
+                                                .workingProjectId());
+                        int pad = Math.round(16 * getResources()
+                                .getDisplayMetrics().density);
+                        android.widget.LinearLayout page =
+                                new android.widget.LinearLayout(
+                                        requireContext());
+                        page.setOrientation(
+                                android.widget.LinearLayout.VERTICAL);
+                        page.setPadding(pad, pad / 2, pad, 0);
+                        android.widget.HorizontalScrollView gallery =
+                                new android.widget.HorizontalScrollView(
+                                        requireContext());
+                        android.widget.LinearLayout row =
+                                new android.widget.LinearLayout(
+                                        requireContext());
+                        row.setOrientation(
+                                android.widget.LinearLayout.HORIZONTAL);
+                        row.setPadding(0, pad / 2, pad, pad / 2);
+                        for (pro.sketchware.ai.AgentBlueprintPreview
+                                .ScreenDraft draft : drafts) {
+                            row.addView(pro.sketchware.ai
+                                    .AgentBlueprintPreview
+                                    .renderScreen(requireContext(),
+                                            draft, palette));
+                        }
+                        gallery.addView(row);
+                        page.addView(gallery);
+                        android.widget.TextView rest =
+                                new android.widget.TextView(
+                                        requireContext());
+                        rest.setText(pro.sketchware.ai
+                                .AgentBlueprintPreview
+                                .withoutScreens(blueprintText));
+                        rest.setTextSize(11);
+                        rest.setMaxLines(12);
+                        rest.setEllipsize(android.text.TextUtils
+                                .TruncateAt.END);
+                        rest.setPadding(0, 0, 0, pad);
+                        page.addView(rest);
+                        page.addView(input);
+                        builder.setView(page);
+                    } else {
+                        builder.setMessage(shown).setView(input);
+                    }
+                    builder
                             .setPositiveButton("Build it",
                                     (d2, w2) -> {
                                         verdict.set("");
