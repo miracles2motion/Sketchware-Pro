@@ -353,6 +353,114 @@ public final class AgentExtensibility {
                                 + "\" (use #RRGGBB or #AARRGGBB).");
             }
         }
+        // Spec grammar: placeholders are %s / %d / %b / %m.<word> — a
+        // bare %m or an unknown %-sequence would render a broken block
+        // (the Blocks Manager creator rejects bare %m the same way).
+        String cleanSpec = spec.trim();
+        java.util.regex.Matcher bad = java.util.regex.Pattern
+                .compile("%(?![sdb])(?!m\\.[A-Za-z_][A-Za-z0-9_]*)")
+                .matcher(cleanSpec);
+        if (bad.find()) {
+            throw new AgentTools.ToolException("E_BAD_BLOCK_SPEC",
+                    "Illegal placeholder \"" + cleanSpec.substring(
+                            bad.start(), Math.min(bad.start() + 8,
+                                    cleanSpec.length())) + "…\" in spec. "
+                    + "Legal slots: %s (String), %d (number), %b "
+                    + "(boolean), %m.<menu> (menu selection). A bare %m "
+                    + "must be followed by .<menuName>.");
+        }
+        int argCount = countSpecArgs(cleanSpec);
+        // Code parity: every spec argument must have exactly one slot
+        // in the code template — positional (%1$s…) or sequential —
+        // and nothing beyond the argument count. A mismatched block
+        // compiles into wrong Java at the user's expense.
+        String cleanCode = code.trim();
+        java.util.Set<Integer> slots = new java.util.TreeSet<>();
+        java.util.regex.Matcher pos = java.util.regex.Pattern
+                .compile("%(\\d+)\\$[sdbf]").matcher(cleanCode);
+        while (pos.find()) {
+            slots.add(Integer.parseInt(pos.group(1)));
+        }
+        java.util.regex.Matcher seq = java.util.regex.Pattern
+                .compile("%[sdb](?!\\$)").matcher(cleanCode);
+        int sequential = 0;
+        while (seq.find()) {
+            sequential++;
+        }
+        // Container blocks ("c"/"e") get ONE extra final slot: the
+        // nested block body is injected there (real shipped sample:
+        // %m.otpview onOTPEntered -> _otp, code %1$s … %2$s = body).
+        int expected = argCount + ("c".equals(normType)
+                || "e".equals(normType) ? 1 : 0);
+        if (!slots.isEmpty()) {
+            int max = slots.last();
+            if (max != expected || slots.size() != expected
+                    || sequential > 0) {
+                throw new AgentTools.ToolException("E_BAD_BLOCK_CODE",
+                        "Code template has " + slots.size()
+                                + " positional slots (highest %"
+                                + max + "$) but this block needs "
+                                + expected + " (" + argCount
+                                + " spec argument(s)"
+                                + (expected != argCount
+                                ? " + 1 for the nested block body" : "")
+                                + "). Use exactly " + expected
+                                + " positional refs (%1$s … %" + expected
+                                + "$) — in order, none skipped.");
+            }
+        } else {
+            if (sequential != expected) {
+                throw new AgentTools.ToolException("E_BAD_BLOCK_CODE",
+                        "Code template has " + sequential + " %s/%d/%b "
+                                + "slot(s) but this block needs "
+                                + expected + " (" + argCount
+                                + " spec argument(s)"
+                                + (expected != argCount
+                                ? " + 1 for the nested block body" : "")
+                                + "). Each spec slot (%s, %d, %b, %m.*) "
+                                + "is filled into the next code slot, in "
+                                + "order.");
+            }
+        }
+        if (cleanSpec.length() > 240) {
+            throw new AgentTools.ToolException("E_BAD_BLOCK_SPEC",
+                    "Spec is " + cleanSpec.length() + " characters — "
+                            + "keep it under 240 (it must fit on a "
+                            + "block).");
+        }
+        if (cleanCode.length() > 8000) {
+            throw new AgentTools.ToolException("E_BAD_BLOCK_CODE",
+                    "Code template is " + cleanCode.length()
+                            + " characters — keep it under 8000. Move "
+                            + "the heavy lifting into a More Block and "
+                            + "have this block call it.");
+        }
+        int braces = 0;
+        for (char c : cleanCode.toCharArray()) {
+            if (c == '{') {
+                braces++;
+            } else if (c == '}') {
+                braces--;
+            }
+        }
+        if (braces != 0) {
+            throw new AgentTools.ToolException("E_BAD_BLOCK_CODE",
+                    "Code template braces are unbalanced ("
+                            + (braces > 0 ? braces + " unclosed {"
+                            : -braces + " extra }") + ").");
+        }
+    }
+
+    /** Spec arguments: %s/%d/%b slots plus %m.<menu> selections. */
+    private static int countSpecArgs(String spec) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("%[sdb]|%m\\.[A-Za-z_][A-Za-z0-9_]*")
+                .matcher(spec);
+        int n = 0;
+        while (m.find()) {
+            n++;
+        }
+        return n;
     }
 
     public static CustomBlockDef upsertCustomBlock(
@@ -362,6 +470,21 @@ public final class AgentExtensibility {
             throws AgentTools.ToolException, IOException {
         validateCustomBlock(name, type, spec, code, color);
         String cleanName = name.trim();
+        // The conflict gate: a name that already belongs to a BUILT-IN
+        // block or a project-pinned block would shadow or collide with
+        // it. Only rows in the global user table may be (re)written.
+        CustomBlockDef existing =
+                findCustomBlock(scId == null ? "" : scId, cleanName);
+        if (existing != null
+                && !"user_blocks".equals(existing.source)) {
+            throw new AgentTools.ToolException("E_NAME_TAKEN",
+                "\"" + cleanName + "\" is already a " + existing.source
+                    + " block. You do NOT need to create it — use it "
+                    + "directly in blocks ({\"block\":\"" + cleanName
+                    + "\"}). Pick a different name if you truly need a "
+                    + "variant; never overwrite blocks you did not "
+                    + "create.");
+        }
         String normType = (type == null || type.isEmpty()) ? " " : type;
         String cleanColor = (color == null || color.trim().isEmpty())
                 ? "#8A55D7" : color.trim();

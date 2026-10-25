@@ -10900,6 +10900,10 @@ public final class AgentTools {
                     "Optional newline-separated Java import statements"));
             properties.add("color", stringSchema(
                     "Optional hex color, e.g. #8A55D7"));
+            properties.add("palette", stringSchema(
+                    "Optional palette index (default 9, the agent "
+                            + "palette). Only set when the user names a "
+                            + "different palette."));
             return AgentTools.parameters(properties, "name");
         }
 
@@ -10946,6 +10950,17 @@ public final class AgentTools {
             String color = stringArg(args, "color");
             AgentExtensibility.validateCustomBlock(
                     nm, type, spec, code, color);
+            // Same gate as the write: a colliding name never reaches
+            // the approval card.
+            AgentExtensibility.CustomBlockDef clash =
+                    AgentExtensibility.findCustomBlock(scId, nm);
+            if (clash != null
+                    && !"user_blocks".equals(clash.source)) {
+                throw new ToolException("E_NAME_TAKEN",
+                    "\"" + nm + "\" is already a " + clash.source
+                        + " block. Use it directly ({\"block\":\""
+                        + nm + "\"}) or pick a different name.");
+            }
             JsonObject clean = new JsonObject();
             clean.addProperty("action", "upsert");
             clean.addProperty("name", nm);
@@ -10956,6 +10971,7 @@ public final class AgentTools {
             clean.addProperty("code", code);
             clean.addProperty("imports", stringArg(args, "imports"));
             clean.addProperty("color", color);
+            clean.addProperty("palette", stringArg(args, "palette"));
             return new AgentProposal(name(), clean, scId,
                     "Save custom block " + nm,
                     "Register custom block \"" + nm + "\" (" + spec + ").",
@@ -10992,7 +11008,8 @@ public final class AgentTools {
                                 stringArg(a, "code"),
                                 stringArg(a, "imports"),
                                 stringArg(a, "color"),
-                                "9",
+                                stringArg(a, "palette").trim().isEmpty()
+                                        ? "9" : stringArg(a, "palette"),
                                 !scId.isEmpty());
                 JsonObject res = new JsonObject();
                 res.addProperty("name", saved.name);

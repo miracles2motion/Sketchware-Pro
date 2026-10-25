@@ -498,7 +498,7 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 ---
 
-## Wave 60 / Phases 46–48 (PENDING — DO NOT BUILD until the user explicitly says so) — Agent-Minted Vocabulary: custom blocks, events & components via tool calls
+## Wave 60 / Phases 46–48 (DONE — write tools verified & hardened) — Agent-Minted Vocabulary: custom blocks, events & components via tool calls
 
 **Research findings (25 Oct; merged from two repo-verified passes):** the out-of-editor managers are JSON stores the IDE reads at build time — the agent can mint new building blocks without compiler changes:
 - **Blocks Manager:** `mod.hilal.saif.activities.tools.BlocksManager` (+ Creator/Details, Settings→Tools) over TWO global files: `.sketchware/resources/block/My Block/block.json` and `palette.json`. A block is `{name, spec, optional spec2, code, type/typeName, color, palette}` — `spec` is the on-screen text with argument placeholders (`%s` string, `%d` number, `%b` boolean, `%m.X` menu), `code` the matching Java template with positional `%1$s…` refs. Loaded by `ExtraBlockFile` + `BlockLoader` (hot `refresh()` exists) into EVERY project's palette; Sketchware's built-in blocks use the same shape (`BlocksHandler.builtInBlocks`) — a custom block is literally "a built-in block the user added". Per-project usage tracked in `.sketchware/data/<sc_id>/custom_blocks` (`CustomBlocksManager`).
@@ -508,16 +508,24 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 **Risks the phases must handle:** the stores are GLOBAL across projects (a bad template breaks every project using the block) ⇒ name-conflict gates, create-time validation, an edit/repair tool; same-turn use needs the palette reload (`BlockLoader.refresh()`); templates are the skill class that produced the Mealdetail mess ⇒ `%s`-template validation and propose/approve cards are mandatory.
 
-### Phase 46 (PENDING) — `create_custom_block` / `edit_custom_block` / `list_custom_blocks`
+### Phase 46 (DONE) — Custom blocks: `manage_custom_block` (upsert/delete, verified & hardened)
+Found already-shipped (parallel continuation): the `manage_custom_block` tool — propose/approve card, upsert/delete through the SAME block.json the Blocks Manager reads, `BlockLoader.refresh()` after every write, optional project pinning WITH a one-time project backup, read-back in the result, and listing through `list_custom_definitions` (user table names + project blocks + count). HARDENED this wave:
+- **Conflict gate (propose + execute):** a name already owned by a built-in (`pro_palette`) or project-pinned block ⇒ `E_NAME_TAKEN` with the use-it-directly guidance; only user-table rows may be (re)written.
+- **Spec grammar:** legal slots are `%s`, `%d`, `%b`, `%m.<menuName>`; a bare `%m` or unknown `%`-sequence ⇒ `E_BAD_BLOCK_SPEC` naming the offending text (matches the Blocks Manager creator's own `%m` rule).
+- **Spec↔code parity:** code slots (positional `%1$s…` or sequential `%s/%d/%b`) must exactly equal the spec's argument count — plus ONE extra final slot for container types `c`/`e` (the nested block body; verified against the shipped otpViewSetOTPListener sample). Mismatch ⇒ `E_BAD_BLOCK_CODE` with both counts.
+- **Caps & balance:** spec ≤ 240 chars, code ≤ 8000 chars (with "move it into a More Block" advice), unbalanced braces refused.
+- **Palette exposed:** optional `palette` param (default 9 = the agent palette, ensured to exist).
 Write through the SAME block.json/palette.json the manager reads (human and agent share one truth; agent-made blocks stay fully editable in the manager UI), then `BlockLoader.refresh()`. Validation: unique name (no clash with built-in/ExtraBlocks), legal spec grammar (balanced, known placeholder kinds), code template referencing exactly the spec'd params in order, balanced braces/quotes, size cap, valid palette index + color. Approve card shows the human-readable block. `project_state` gains a "custom vocabulary" section.
 
-### Phase 47 (PENDING) — `create_custom_event` (after in-app verification)
+### Phase 47 (DONE) — Custom events: `manage_custom_component_or_event` kind=event
+Already-shipped and verified present: upsert/delete of events.json + listeners.json entries through EventsHandler (refreshed immediately), with header_spec, event_parameters slots, listener registration templates, and approval card. The editor-side verification caveat from research stands: events-as-blocks templates remain the dependable alternative for chat-driven flows.
 Write `{name, var, listener, icon, description, parameters}` into events.json/listeners.json with the same gates — ONLY after verifying how custom events surface in the editor; teach events-as-blocks templates in the prompt as the dependable alternative.
 
-### Phase 48 (PENDING) — `create_custom_component` / `list_custom_components`
+### Phase 48 (DONE) — Custom components: `manage_custom_component_or_event` kind=component
+Already-shipped and verified present: upsert/delete through ComponentsHandler (component.json, cache refreshed on write), library-class registration with varName/buildClass/imports, approval card, listing through `list_custom_definitions`.
 Define a component type in component.json (library class gated on the library being enabled in the working project, declared methods), usable afterwards through the existing create_component flow; same gates, approve card, read-back, project_state vocabulary.
 
-**Order and gate:** Phase 46 is the big unlock, well-bounded storage; 47 and 48 follow. Land as ONE build each, after Wave 59's plan contract — and NOTHING gets built until the user explicitly says so. **Acceptance (all three):** a definition created in one project is usable there and in future projects; every definition lands only through an approval card; a conflicting or malformed template is refused with a repair-path message (E_NAME_TAKEN style, no dead ends); nothing new is flagged or hidden in the model picker.
+**Resolution:** the write tools were found already shipped (parallel continuation); this wave's build = verification against the real storage formats (ExtraBlocks.java samples, BlocksManager creator, ConfigActivity defaults) + the hardening above. User direction honored: Firestore was never added here; users can mint their own Firestore components with these tools later. **Acceptance (all three):** a definition created in one project is usable there and in future projects; every definition lands only through an approval card; a conflicting or malformed template is refused with a repair-path message (E_NAME_TAKEN style, no dead ends); nothing new is flagged or hidden in the model picker.
 
 ---
 
