@@ -1106,16 +1106,17 @@ public class AgentLoop {
                         closeTask(journalProject[0], false,
                                 "the key hit its quota on " + model,
                                 taskClosed, listener);
+                        final String quotaModel = model;
                         dispatch(listener, () -> listener.onError(
                                 new AiChatService.AiError(
                                         AiChatService.ErrorKind.QUOTA,
                                         code,
                                         "Quota/limit hit on "
                                                 + ModelCatalog.displayName(
-                                                model) + ". It rests 15 "
-                                                + "minutes — wait a bit, "
-                                                + "or pick another model "
-                                                + "in settings.")));
+                                                quotaModel) + ". It rests "
+                                                + "15 minutes — wait a "
+                                                + "bit, or pick another "
+                                                + "model in settings.")));
                         return;
                     }
                     boolean handoverRejected = code == 400 && failedOver;
