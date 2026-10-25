@@ -297,8 +297,22 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
             String seg = text.substring(from,
                     Math.min(to, from + 600));
             String flat = seg.replaceAll("\s+", " ").trim();
+            // Up to 3 swatches per option, like the ask_choice sheet.
             java.util.regex.Matcher hm = HEX6.matcher(seg);
-            String hex = hm.find() ? hm.group() : null;
+            StringBuilder hexes = new StringBuilder();
+            String hex = null;
+            while (hm.find() && hexes.length() < 3 * 8) {
+                String found = hm.group();
+                if (hexes.indexOf(found) < 0) {
+                    if (hexes.length() > 0) {
+                        hexes.append(';');
+                    }
+                    hexes.append(found);
+                    if (hex == null) {
+                        hex = found;
+                    }
+                }
+            }
             if (hex != null) {
                 withHex++;
             }
@@ -570,17 +584,28 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                 chip.setTextColor(AgentTheme.ink(ctx));
                 chip.setStrokeColor(android.content.res.ColorStateList
                         .valueOf(AgentTheme.border(ctx)));
+                String[] hexList = option[1].split(";");
+                if (hexList.length == 0 || option[1].isEmpty()) {
+                    hexList = new String[]{"#888888"};
+                }
+                StringBuilder dots = new StringBuilder();
+                for (int h = 0; h < Math.min(3, hexList.length); h++) {
+                    dots.append("● ");
+                }
                 android.text.SpannableString label =
                         new android.text.SpannableString(
-                                "● " + option[0]);
-                try {
-                    label.setSpan(new android.text.style
-                            .ForegroundColorSpan(
-                            android.graphics.Color.parseColor(
-                                    option[1])), 0, 1,
-                            android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-                } catch (IllegalArgumentException ignored) {
-                    // A bad hex just keeps the default dot colour.
+                                dots + option[0]);
+                for (int h = 0; h < Math.min(3, hexList.length); h++) {
+                    try {
+                        label.setSpan(new android.text.style
+                                .ForegroundColorSpan(
+                                android.graphics.Color.parseColor(
+                                        hexList[h])), h * 2, h * 2 + 1,
+                                android.text.Spannable
+                                .SPAN_EXCLUSIVE_EXCLUSIVE);
+                    } catch (IllegalArgumentException ignored) {
+                        // A bad hex just keeps the default dot colour.
+                    }
                 }
                 chip.setText(label);
                 row.addView(chip);
