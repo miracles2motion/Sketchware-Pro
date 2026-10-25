@@ -492,3 +492,19 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 4. **Drift is named, never blocked:** work that matches no open step gets a quiet one-line note in the tool result ("this is not in the plan — update the plan or return to it"). No refusals, no dead ends.
 
 **Acceptance:** in a fresh draft-chat build, a model that skips verifiable steps cannot end the task with them unticked unexplained (the briefing forces the gap into the open); a user untick forces an explicit rework mention next turn; zero new E_* refusals introduced.
+
+---
+
+## Wave 60 / Phases 46–47 (PENDING) — Agent-created building blocks: Block Manager, custom components, events-as-blocks
+
+**Research findings (25 Oct, all repo-verified):** Sketchware Pro already ships the out-of-editor manager surfaces — (1) **Blocks Manager** (`mod.hilal.saif.activities.tools.BlocksManager` + Creator/Details, under Settings→Tools) over TWO global JSON files: `.sketchware/resources/block/My Block/block.json` (blocks) and `palette.json` (palettes); a block is `name`, `spec` (user text with argument placeholders `%s` string / `%d` number / `%b` boolean / `%m.X` menu selectors), optional `spec2`, `code` (Java template with positional `%1$s…` matching spec order), `type`/`typeName`, `color`, `palette` index — loaded by `dev.aldi.sayuti.block.ExtraBlockFile` + `mod.hey.studios.editor.manage.block.v2.BlockLoader` (hot `refresh()` exists) and shown in EVERY project's palette; per-project usage is tracked in `.sketchware/data/<sc_id>/custom_blocks` (`CustomBlocksManager`); (2) **Component manager** (`developer_tools_component_manager` → `ManageCustomComponentActivity` / `AddCustomComponentActivity`, Developer Tools): register a class from an enabled library as a reusable component with declared methods; (3) **no event manager exists** — events are hardcoded per widget/component type, but `BlocksHandler` already ships event-style blocks ("When %m.view clicked" as a block with a `setOnClickListener` template), so events-as-blocks is an established pattern. The agent today has `create_more_block` (project-local procedures) but NO tool touches the global block/palette files or custom components.
+
+### Phase 46 (PENDING) — Agent-authored custom blocks (`AgentTools.java` + Block Manager storage)
+- New agent tools: `create_custom_block` (name, spec, code template, type, color, palette) and `list_custom_blocks`, writing through the SAME `block.json`/`palette.json` the Blocks Manager reads — human and agent share one truth; anything the agent makes is fully editable/deletable in the manager UI. Follow with `BlockLoader.refresh()`.
+- Validation before write: unique name (no clash with built-in/ExtraBlocks names), spec grammar legal (balanced placeholders, known kinds), code template references exactly the spec'd params in order, balanced braces/quotes, sane size cap, valid palette index + color. Record every agent-made block in the journal/exports.
+- Events-as-blocks guidance: the prompt teaches the pattern ("When %m.view clicked" style templates) so users get custom triggers without touching the hardcoded event system.
+
+### Phase 47 (PENDING) — Agent-authored custom components (after 46)
+- New agent tools over the existing custom-component storage (`ManageCustomComponentActivity`'s data): `create_custom_component` (library class + declared methods) gated on the library being enabled in the working project, and `list_custom_components`. TRUE per-type custom events remain out of scope (needs editor event-palette surgery) — noted, not attempted.
+
+**Order and gate:** Phase 46 is the big unlock, well-bounded storage; 47 after it proves out. Land as ONE build each, after Wave 59's plan contract (or re-ordered by the user).
