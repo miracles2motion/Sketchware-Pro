@@ -116,19 +116,18 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
 
         /** action: "stop" | "undo" | "rebuild" | "keep" (partIndex >= 1) */
         void onBoardAction(ChatMessage card, String action, int partIndex);
+
+        /** The user tapped one option on a choice card (index ≥ 0). */
+        default void onChoiceAnswer(ChatMessage card, int index) {
+        }
+
+        /** The user decided a colour card: hex empty means cancel. */
+        default void onColorDecision(ChatMessage card, String hex,
+                String mode) {
+        }
     }
 
     private OnCardListener cardListener;
-
-    /** The user tapped one option on a choice card (index ≥ 0). */
-    default void onChoiceAnswer(pro.sketchware.ai.ChatMessage card,
-            int index) {
-    }
-
-    /** The user decided a colour card: hex may be empty on cancel. */
-    default void onColorDecision(pro.sketchware.ai.ChatMessage card,
-            String hex, String mode) {
-    }
 
     /** A tapped quick-choice chip under the model's typed options. */
     public interface OnQuickChoiceListener {
