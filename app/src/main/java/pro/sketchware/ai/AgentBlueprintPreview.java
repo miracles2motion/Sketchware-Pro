@@ -90,15 +90,35 @@ public final class AgentBlueprintPreview {
     public static View renderScreen(Context ctx, ScreenDraft draft,
                                     JsonObject designSystem) {
         float d = ctx.getResources().getDisplayMetrics().density;
-        boolean dark = designSystem != null && "Dark".equalsIgnoreCase(
-                str(designSystem, "theme_mode", ""));
-        int accent = hex(str(designSystem, "brand_color", ""),
-                themeColor(ctx, com.google.android.material.R.attr
-                        .colorPrimary, 0xFF008DCD));
-        int surface = dark ? 0xFF15171B : 0xFFFFFFFF;
-        int ink = dark ? 0xFFECEFF4 : 0xFF1B1F24;
-        int faint = dark ? 0xFF9AA3AD : 0xFF6B7280;
-        int border = dark ? 0xFF2A2E35 : 0xFFE3E6EA;
+        // WITH a saved design system, the drawing previews the USER'S
+        // app palette (its OpenUI tokens). WITHOUT one, the drawing
+        // wears the Sketchware theme itself.
+        boolean hasPalette = designSystem != null
+                && (designSystem.has("brand_color")
+                || designSystem.has("theme_mode"));
+        boolean dark;
+        if (hasPalette) {
+            dark = "Dark".equalsIgnoreCase(str(designSystem,
+                    "theme_mode", ""));
+        } else {
+            int mode = ctx.getResources().getConfiguration().uiMode
+                    & android.content.res.Configuration
+                    .UI_MODE_NIGHT_MASK;
+            dark = mode == android.content.res.Configuration
+                    .UI_MODE_NIGHT_YES;
+        }
+        int accent = hasPalette
+                ? hex(str(designSystem, "brand_color", ""),
+                AgentTheme.primary(ctx)) : AgentTheme.primary(ctx);
+        int surface = hasPalette
+                ? (dark ? 0xFF15171B : 0xFFFFFFFF)
+                : AgentTheme.surface(ctx);
+        int ink = hasPalette ? (dark ? 0xFFECEFF4 : 0xFF1B1F24)
+                : AgentTheme.ink(ctx);
+        int faint = hasPalette ? (dark ? 0xFF9AA3AD : 0xFF6B7280)
+                : AgentTheme.faint(ctx);
+        int border = hasPalette ? (dark ? 0xFF2A2E35 : 0xFFE3E6EA)
+                : AgentTheme.border(ctx);
 
         LinearLayout card = new LinearLayout(ctx);
         card.setOrientation(LinearLayout.VERTICAL);
@@ -366,27 +386,6 @@ public final class AgentBlueprintPreview {
     }
 
     // ---- small helpers --------------------------------------------------
-
-    private static int themeColor(Context ctx, int attr, int fallback) {
-        // Same technique as the fragment's resolveThemeColor: no
-        // MaterialColors version dependency, resolves any theme attr.
-        try {
-            android.util.TypedValue tv = new android.util.TypedValue();
-            if (ctx != null && ctx.getTheme().resolveAttribute(attr, tv,
-                    true)) {
-                if (tv.resourceId != 0) {
-                    try {
-                        return androidx.core.content.ContextCompat
-                                .getColor(ctx, tv.resourceId);
-                    } catch (Exception ignored) {
-                    }
-                }
-                return tv.data;
-            }
-        } catch (Throwable ignored) {
-        }
-        return fallback;
-    }
 
     private static int hex(String value, int fallback) {
         if (value == null) {

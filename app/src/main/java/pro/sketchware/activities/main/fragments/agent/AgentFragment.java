@@ -2898,9 +2898,8 @@ public class AgentFragment extends qA {
                     row.setTypeface(row.getTypeface(),
                             android.graphics.Typeface.BOLD);
                 } else {
-                    stepBg.setColor(resolveThemeColor(requireContext(),
-                            com.google.android.material.R.attr.colorSurfaceContainerLow,
-                            0xFFECF4FE));
+                    stepBg.setColor(pro.sketchware.ai.AgentTheme
+                            .surfaceLow(requireContext()));
                 }
                 row.setBackground(stepBg);
                 if ("done".equals(state)) {
@@ -3237,7 +3236,8 @@ public class AgentFragment extends qA {
             stop.setText("⏹ Stop all workers");
             stop.setTextAppearance(com.google.android.material.R.style
                     .TextAppearance_Material3_LabelLarge);
-            stop.setTextColor(0xFFD32F2F);
+            stop.setTextColor(pro.sketchware.ai.AgentTheme
+                    .error(requireContext()));
             stop.setPadding(0, 0, 0, Math.round(10f * density));
             stop.setOnClickListener(v -> {
                 agentBoard.cancelAll();
@@ -3266,9 +3266,8 @@ public class AgentFragment extends qA {
                     .TextAppearance_Material3_BodyMedium);
             GradientDrawable bg = new GradientDrawable();
             bg.setCornerRadius(12f * density);
-            bg.setColor(resolveThemeColor(requireContext(),
-                    com.google.android.material.R.attr
-                            .colorSurfaceContainerLow, 0xFFECF4FE));
+            bg.setColor(pro.sketchware.ai.AgentTheme
+                    .surfaceLow(requireContext()));
             if (part.state == pro.sketchware.ai.AgentBoard.PartState
                     .BUILDING) {
                 row.setTypeface(row.getTypeface(),
@@ -3441,9 +3440,8 @@ public class AgentFragment extends qA {
             GradientDrawable bg = new GradientDrawable();
             bg.setCornerRadius(12f * getResources().getDisplayMetrics()
                     .density);
-            bg.setColor(resolveThemeColor(requireContext(),
-                    com.google.android.material.R.attr
-                            .colorSurfaceContainerLow, 0xFFECF4FE));
+            bg.setColor(pro.sketchware.ai.AgentTheme
+                    .surfaceLow(requireContext()));
             row.setBackground(bg);
             int rowPad = Math.round(12f * getResources()
                     .getDisplayMetrics().density);
