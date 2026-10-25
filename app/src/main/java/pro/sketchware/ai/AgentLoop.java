@@ -2100,6 +2100,11 @@ public class AgentLoop {
             AgentJournal.touchPlanCurrent(journal);
             if ("build_project".equals(call.name)) {
                 AgentJournal.completeFinalBuildStepIfReady(journal);
+                // A green build re-verifies reality: reopened steps'
+                // locks lift here, and nowhere else.
+                if (result != null && !result.has("error")) {
+                    AgentJournal.clearReopensOnBuildSuccess(journal);
+                }
             }
             {
                 // The change as it landed, read back from the project
@@ -2116,6 +2121,14 @@ public class AgentLoop {
                 // tracks reality, not the model's bookkeeping.
                 AgentJournal.notePlanEvidence(journal, call.name,
                         proposal == null ? null : proposal.args);
+                // The Plan Contract: work that matches no open step is
+                // NAMED, not blocked — one line in the tool result.
+                String drift = AgentJournal.driftNote(journal,
+                        proposal == null ? "" : proposal.title);
+                if (drift != null && result != null
+                        && !result.has("error")) {
+                    result.addProperty("plan_note", drift);
+                }
             }
             // The change compiles and saves, and can still be broken:
             // a block naming a widget its screen does not have builds

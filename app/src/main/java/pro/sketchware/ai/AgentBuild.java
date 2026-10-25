@@ -126,18 +126,33 @@ public final class AgentBuild {
             }
             String raw = trim(e.getMessage());
             // javac speaks in generated fields; the model thinks in
-            // variables. Translate the one error class that cost five
-            // blind build attempts in the field.
-            java.util.LinkedHashSet<String> unresolved =
+            // variables. Translate the error classes that cost hours
+            // in the field \u2014 classified by identifier SHAPE, because
+            // a wrong hint steers every later build (tv_streak once
+            // read as a missing _streak variable for four builds).
+            java.util.LinkedHashSet<String> varFields =
+                    new java.util.LinkedHashSet<>();
+            java.util.LinkedHashSet<String> widgetIds =
+                    new java.util.LinkedHashSet<>();
+            java.util.LinkedHashSet<String> methodNames =
                     new java.util.LinkedHashSet<>();
             java.util.regex.Matcher m = java.util.regex.Pattern
-                    .compile("(_[A-Za-z][A-Za-z0-9_]*)\\s+cannot"
+                    .compile("([A-Za-z_][A-Za-z0-9_]*)\\s+cannot"
                             + "\\s+be\\s+resolved").matcher(raw);
             while (m.find()) {
-                unresolved.add(m.group(1));
+                String token = m.group(1);
+                if (token.startsWith("_")) {
+                    varFields.add(token);
+                } else if (token.contains("_")) {
+                    // tv_streak / btn_save: a widget-id-shaped name the
+                    // layout does not declare \u2014 NOT a variable.
+                    widgetIds.add(token);
+                } else {
+                    methodNames.add(token);
+                }
             }
             StringBuilder teach = new StringBuilder();
-            for (String field : unresolved) {
+            for (String field : varFields) {
                 String name = field.substring(1);
                 teach.append(" \u2022 `").append(field)
                         .append("` is the generated field for the "
@@ -149,6 +164,34 @@ public final class AgentBuild {
                                 + "type \u2014 lists of maps are "
                                 + "list_map) on THAT screen, or remove "
                                 + "the blocks that use it.\n");
+            }
+            for (String id : widgetIds) {
+                teach.append(" \u2022 `").append(id)
+                        .append("` looks like a widget id, but NO "
+                                + "widget with this id exists on the "
+                                + "screen named in the error. Ids must "
+                                + "match the layout exactly (read them "
+                                + "with get_screen). If the widget lives "
+                                + "on a DIFFERENT screen or inside a "
+                                + "custom-view row, wire the block there "
+                                + "\u2014 do not declare a variable for "
+                                + "it.\n");
+            }
+            for (String name : methodNames) {
+                teach.append(" \u2022 `").append(name)
+                        .append("` does not exist in the generated "
+                                + "code. If it is a MoreBlock, create it "
+                                + "(create_more_block) on the same screen "
+                                + "BEFORE calling it; if it is a variable, "
+                                + "declare it on that screen first.\n");
+            }
+            if (raw.contains("Unhandled exception type")) {
+                teach.append(" \u2022 \u201cUnhandled exception "
+                        + "type\u201d: Java demands checked exceptions "
+                        + "be handled. Wrap the offending call in "
+                        + "try { \u2026 } catch (Exception e) { \u2026 } "
+                        + "\u2014 in blocks, put the raw code inside a "
+                        + "try/catch control block.\n");
             }
             throw new AgentTools.ToolException("E_COMPILE",
                     "The project did not compile. Fix these errors and "

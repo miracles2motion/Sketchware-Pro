@@ -4845,6 +4845,18 @@ public final class AgentTools {
                     progressLine += " Appended " + saved + " new step"
                             + (saved == 1 ? "." : "s.");
                 }
+                // The Plan Contract: a step the USER reopened cannot be
+                // closed by the model's bookkeeping — revert any such
+                // advance and say so.
+                int reverted = AgentJournal
+                        .revertUserReopenedProgress(scId);
+                if (reverted > 0) {
+                    progressLine += " Step(s) reopened by the user were "
+                            + "kept open — rework them; they close on a "
+                            + "green build or the user's sign-off.";
+                    progress = AgentJournal.planProgress(scId);
+                    result.addProperty("done_steps", progress[0]);
+                }
                 result.addProperty("message", progressLine);
                 return result;
             }

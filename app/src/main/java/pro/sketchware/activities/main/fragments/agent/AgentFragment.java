@@ -2863,7 +2863,11 @@ public class AgentFragment extends qA {
                 }
                 row.setLayoutParams(rlp);
                 row.setOnClickListener(v -> {
-                    AgentJournal.togglePlanStepDone(scId, stepIndex);
+                    // The user's tap steers the agent: a tick is a
+                    // sign-off, an untick reopens the step (the next
+                    // briefing tells the agent, and the step locks
+                    // until a green build).
+                    AgentJournal.togglePlanStepDoneByUser(scId, stepIndex);
                     rebuildRows[0].run();
                     refreshStrip();
                 });

@@ -1172,6 +1172,164 @@ public final class AgentJournal {
     }
 
     /**
+     * The Plan dialog's tap, now a steering signal: the user's tick is
+     * a SIGN-OFF, the user's untick REOPENS the step — recorded on the
+     * step so the briefing tells the agent, and auto-ticking locks
+     * until a green build re-verifies reality.
+     */
+    public static synchronized void togglePlanStepDoneByUser(
+            String scId, int index) {
+        if (scId == null || scId.isEmpty() || index < 0) {
+            return;
+        }
+        JsonObject root = load(scId);
+        JsonObject plan = root.getAsJsonObject("plan");
+        if (plan == null || !plan.has("steps")) {
+            return;
+        }
+        JsonArray steps = dedupePlanSteps(plan.getAsJsonArray("steps"));
+        plan.add("steps", steps);
+        if (index >= steps.size()) {
+            return;
+        }
+        JsonObject target = steps.get(index).getAsJsonObject();
+        boolean wasDone = "done".equals(text(target, "state"));
+        if (wasDone) {
+            target.addProperty("reopened", true);
+            target.addProperty("reopenedAt", System.currentTimeMillis());
+            target.remove("signedOff");
+        } else {
+            target.addProperty("signedOff", true);
+            target.addProperty("reopened", false);
+        }
+        target.addProperty("marker", "user");
+        togglePlanStepDone(scId, index);
+    }
+
+    /**
+     * The model's set_plan cannot close a step the USER reopened: any
+     * done-state a progress update gave a reopened step reverts to
+     * open (first open step becomes current again). Returns how many
+     * steps were kept open, so the tool result can say so.
+     */
+    public static synchronized int revertUserReopenedProgress(
+            String scId) {
+        if (scId == null || scId.isEmpty()) {
+            return 0;
+        }
+        JsonObject root = load(scId);
+        JsonObject plan = root.getAsJsonObject("plan");
+        if (plan == null || !plan.has("steps")) {
+            return 0;
+        }
+        JsonArray steps = dedupePlanSteps(plan.getAsJsonArray("steps"));
+        plan.add("steps", steps);
+        int kept = 0;
+        for (JsonElement element : steps) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            JsonObject step = element.getAsJsonObject();
+            if (step.has("reopened")
+                    && step.get("reopened").isJsonPrimitive()
+                    && step.get("reopened").getAsBoolean()
+                    && "done".equals(text(step, "state"))) {
+                step.addProperty("state", "pending");
+                kept++;
+            }
+        }
+        if (kept > 0) {
+            boolean assignedCurrent = false;
+            for (int i = 0; i < steps.size(); i++) {
+                JsonObject step = steps.get(i).getAsJsonObject();
+                String st = text(step, "state");
+                if ("done".equals(st)) {
+                    continue;
+                }
+                if (!assignedCurrent) {
+                    step.addProperty("state", "current");
+                    assignedCurrent = true;
+                } else if ("current".equals(st)) {
+                    step.addProperty("state", "pending");
+                }
+            }
+            plan.addProperty("updatedAt", System.currentTimeMillis());
+            save(scId, root);
+        }
+        return kept;
+    }
+
+    /**
+     * Clears a step's reopen lock once a green build re-verified the
+     * project: reality, not a claim, closes a reopened step.
+     */
+    public static synchronized void clearReopensOnBuildSuccess(
+            String scId) {
+        if (scId == null || scId.isEmpty()) {
+            return;
+        }
+        JsonObject root = load(scId);
+        JsonObject plan = root.getAsJsonObject("plan");
+        if (plan == null || !plan.has("steps")) {
+            return;
+        }
+        boolean changed = false;
+        for (JsonElement element : plan.getAsJsonArray("steps")) {
+            if (element.isJsonObject()
+                    && element.getAsJsonObject().has("reopened")
+                    && element.getAsJsonObject().get("reopened")
+                            .getAsBoolean()) {
+                element.getAsJsonObject().addProperty("reopened", false);
+                changed = true;
+            }
+        }
+        if (changed) {
+            plan.addProperty("updatedAt", System.currentTimeMillis());
+            save(scId, root);
+        }
+    }
+
+    /**
+     * The drift note for one applied change: a one-liner when the plan
+     * has open steps and NONE of them matches what was just applied.
+     * Never a refusal — the model is told to update the plan or
+     * return to it.
+     */
+    public static synchronized String driftNote(String scId,
+                                                String appliedTitle) {
+        if (scId == null || scId.isEmpty()) {
+            return null;
+        }
+        JsonObject root = load(scId);
+        JsonObject plan = root.getAsJsonObject("plan");
+        if (plan == null || !plan.has("steps")
+                || plan.getAsJsonArray("steps").size() == 0) {
+            return null;
+        }
+        String hay = (appliedTitle == null ? "" : appliedTitle)
+                + " " + (plan.has("evidence_text")
+                ? text(plan, "evidence_text") : "");
+        String lower = hay.toLowerCase(Locale.ROOT);
+        for (JsonElement element : plan.getAsJsonArray("steps")) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            JsonObject step = element.getAsJsonObject();
+            if ("done".equals(text(step, "state"))) {
+                continue;
+            }
+            if (stepMatches(cleanStepText(text(step, "text")), lower)) {
+                return null;
+            }
+        }
+        return "Plan note: this change matches no open step of the "
+                + "implementation plan — either it belongs to a step you "
+                + "already marked done (then check the user's reopen "
+                + "flags), or update the plan with set_plan (append the "
+                + "step), or return to the open steps.";
+    }
+
+    /**
      * Toggles one step of the plan between done and pending/current from
      * the Plan dialog, keeping the saved progress in sync on disk.
      */
@@ -2033,6 +2191,15 @@ public final class AgentJournal {
             if (!stepMatches(stepText, hay)) {
                 break;
             }
+            // A user-reopened step never auto-closes on evidence: only
+            // a green build (clearReopensOnBuildSuccess) or the user's
+            // own sign-off lifts that lock.
+            if (element.isJsonObject()
+                    && element.getAsJsonObject().has("reopened")
+                    && element.getAsJsonObject().get("reopened")
+                            .getAsBoolean()) {
+                break;
+            }
             newDone = i + 1;
         }
         plan.addProperty("evidence_text", evidence.toString());
@@ -2217,6 +2384,7 @@ public final class AgentJournal {
                     .append(done).append(" of ")
                     .append(planSteps.size())
                     .append(" steps done):");
+            int reopenedStep = -1;
             for (int i = 0; i < planSteps.size(); i++) {
                 JsonObject step = planSteps.get(i).getAsJsonObject();
                 String st = text(step, "state");
@@ -2226,6 +2394,22 @@ public final class AgentJournal {
                 out.append("\n  [").append(i + 1).append("] ")
                         .append(tag).append(": ")
                         .append(cleanStepText(text(step, "text")));
+                if (step.has("reopened")
+                        && step.get("reopened").isJsonPrimitive()
+                        && step.get("reopened").getAsBoolean()) {
+                    reopenedStep = i + 1;
+                    out.append("  ⚠ REOPENED BY THE USER — what was built "
+                            + "here is NOT acceptable as-is. Inspect it "
+                            + "(get_screen), fix or rebuild it, and do "
+                            + "NOT mark it done yourself: a reopened "
+                            + "step closes only on a green build "
+                            + "(build_project) or the user's own "
+                            + "sign-off.");
+                } else if (step.has("signedOff")
+                        && step.get("signedOff").isJsonPrimitive()
+                        && step.get("signedOff").getAsBoolean()) {
+                    out.append("  (the user signed this off personally)");
+                }
             }
             if (done < planSteps.size()) {
                 out.append("\nWhenever you finish a milestone step, call "
@@ -2233,6 +2417,11 @@ public final class AgentJournal {
                         + "\" (and current_step=\"" + (done + 1)
                         + "\") — you do NOT need to resend \"steps\" to "
                         + "update progress.");
+                if (reopenedStep > 0) {
+                    out.append("\nAttention is on step ").append(reopenedStep)
+                            .append(" — the user reopened it. Work there "
+                            + "first; set_plan cannot mark it done.");
+                }
             }
         } else if (!style.isEmpty()) {
             out.append("\n\nThis project has a style but no saved "
