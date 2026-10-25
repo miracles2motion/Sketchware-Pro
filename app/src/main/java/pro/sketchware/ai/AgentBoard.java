@@ -479,7 +479,11 @@ public final class AgentBoard {
                 + "line 'SCREEN: <ScreenName>' followed by that "
                 + "screen's widgets, one per line (like '- btn_next "
                 + "(Button) opens ResultScreen') and what the screen "
-                + "does.\n"
+                + "does, then a LOOK: line with HARD numbers for that "
+                + "screen: outer padding in dp, space between items in "
+                + "dp, card corner radius in dp, title and body text "
+                + "sizes in sp, which palette colors go where. Decide "
+                + "the looks yourself — builders copy your numbers.\n"
                 + "VARIABLES: every variable whose value crosses "
                 + "screens, with exact names.\n"
                 + "STORAGE: every shared key, like 'app_data.high_score "
@@ -1158,6 +1162,21 @@ public final class AgentBoard {
                 .append("advance so all parts fit together — follow ")
                 .append("them exactly, especially exact names and ")
                 .append("keys):\n").append(conventions);
+        brief.append("\n\nDESIGN CONTRACT (binding — the reviewer ")
+                .append("FAILS a cramped screen): outer screen padding ")
+                .append("24dp; 16dp between cards/sections; 12dp inside ")
+                .append("a card; touch targets at least 48dp tall; ")
+                .append("title 20sp, body 14sp, secondary 12sp; use the ")
+                .append("design-system palette; your screen's LOOK lines ")
+                .append("are the law — copy their numbers. Screens must ")
+                .append("look premium: rounded cards on a tinted ")
+                .append("background with generous space, never a wall ")
+                .append("of default-padding widgets.");
+        brief.append("\n\nSPEED CONTRACT: every request costs seconds, ")
+                .append("so build in FEW, BIG calls — one edit_screen ")
+                .append("call with ALL the add_widget operations for ")
+                .append("your screen, then one more with the styling ")
+                .append("operations. NEVER one widget per call.");
         brief.append("\n\nWhen your steps are done, stop. End with ")
                 .append("exactly two short sentences: WHAT you built, ")
                 .append("and HOW to test it on the screen.");
@@ -1335,7 +1354,11 @@ public final class AgentBoard {
                             + "answer with exactly PASS, or with "
                             + "PROBLEMS: followed by a short numbered "
                             + "list of what is wrong or missing. No "
-                            + "other words.");
+                            + "other words. Visual quality counts: a "
+                            + "cramped or default-padded screen, missing "
+                            + "spacing numbers, ignored LOOK lines, or "
+                            + "off-palette colors is PROBLEMS, not "
+                            + "PASS.");
             messages.add(system);
             JsonObject user = new JsonObject();
             user.addProperty("role", "user");
