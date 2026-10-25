@@ -632,20 +632,26 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                     break;
                 }
                 shown++;
-                com.google.android.material.button.MaterialButton chip =
-                        new com.google.android.material.button
-                        .MaterialButton(ctx);
-                chip.setStyle(
-                        com.google.android.material.button
-                        .MaterialButton.STYLE_OUTLINE);
-                chip.setAllCaps(false);
+                TextView chip = new TextView(ctx);
                 chip.setSingleLine(true);
-                chip.setPadding(Math.round(14f * d), 0,
-                        Math.round(14f * d), 0);
+                chip.setPadding(Math.round(14f * d),
+                        Math.round(9f * d), Math.round(14f * d),
+                        Math.round(9f * d));
                 chip.setTextSize(13);
                 chip.setTextColor(AgentTheme.ink(ctx));
-                chip.setStrokeColor(android.content.res.ColorStateList
-                        .valueOf(AgentTheme.border(ctx)));
+                GradientDrawable chipBg = new GradientDrawable();
+                chipBg.setCornerRadius(18f * d);
+                chipBg.setColor(androidx.core.graphics.ColorUtils
+                        .setAlphaComponent(AgentTheme.ink(ctx), 0x0D));
+                chipBg.setStroke(Math.round(1f * d),
+                        AgentTheme.border(ctx));
+                chip.setBackground(chipBg);
+                LinearLayout.LayoutParams chipLp =
+                        new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT);
+                chipLp.rightMargin = Math.round(8f * d);
+                chip.setLayoutParams(chipLp);
                 String[] hexList = option[1].split(";");
                 if (hexList.length == 0 || option[1].isEmpty()) {
                     hexList = new String[]{"#888888"};
@@ -671,8 +677,6 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                 }
                 chip.setText(label);
                 row.addView(chip);
-                ((LinearLayout.LayoutParams) chip.getLayoutParams()).rightMargin =
-                        Math.round(8f * d);
                 chip.setOnClickListener(v -> {
                     if (owner.quickChoiceListener != null) {
                         owner.quickChoiceListener.onQuickChoice(option[2]);
