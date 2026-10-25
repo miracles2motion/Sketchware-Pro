@@ -647,8 +647,17 @@ public class AgentLoop {
      * arguments travel as raw text; only a creation carries a real
      * \"steps\" field — progress updates carry done_steps (which does
      * NOT contain the quoted \"steps\" token, the underscore guards it). */
-    private static boolean planCreation(String rawArgs) {
-        return rawArgs != null && rawArgs.contains("\"steps\"");
+    /** True when the project (or the pre-project draft) ALREADY has
+     * an agreed plan — a set_plan call then updates it and must NOT
+     * re-arm the review gate. */
+    private static boolean planAlreadyKnown(AgentTools.Session session) {
+        String scId = session == null ? ""
+                : session.workingProjectId;
+        if (scId != null && !scId.isEmpty()
+                && AgentJournal.hasPlan(scId)) {
+            return true;
+        }
+        return AgentJournal.draftPlan().has("steps");
     }
 
     private final Context context;
@@ -675,6 +684,16 @@ public class AgentLoop {
     public volatile List<String> autoModelPool = new ArrayList<>();
     /** Whether the pool should include non-chat models. */
     public volatile boolean autoShowAll = false;
+
+    /**
+     * The last Auto-chosen model that produced a real answer. Routing
+     * tries it FIRST on later turns — field finding: with no memory,
+     * Auto re-rolled the whole catalog every turn (135 failovers in
+     * one session, three different models redoing the same design).
+     */
+    private volatile String stickyAutoModel = "";
+    /** Consecutive Auto turns that died without a real answer. */
+    private int autoDeadTurns;
 
     /**
      * Runs one user turn. {@code history} is the visible conversation
@@ -830,12 +849,35 @@ public class AgentLoop {
         if (autoRequested) {
             boolean needsVision =
                     AiChatService.hasMultimodalImageParts(messages);
-            String chosen = ModelCatalog.pickAutoModel(autoProvider,
-                    autoModelPool, autoShowAll, needsVision, "");
+            String chosen = "";
+            if (!stickyAutoModel.isEmpty()
+                    && autoModelPool.contains(stickyAutoModel)) {
+                // It delivered last time: stay with it instead of
+                // re-rolling the catalog (switching only on failure).
+                chosen = stickyAutoModel;
+            }
+            if (chosen.isEmpty()) {
+                chosen = ModelCatalog.pickAutoModel(autoProvider,
+                        autoModelPool, autoShowAll, needsVision, "");
+            }
+            if (autoDeadTurns >= 3) {
+                // Say it out loud instead of serving another silent
+                // dead turn: the user re-typed "Hello" six times.
+                dispatch(listener, () -> listener.onSystemNote(
+                        "Auto's models have failed the last "
+                                + autoDeadTurns + " turns in a row. "
+                                + "Pick a specific model in settings "
+                                + "(for example nemotron-3-ultra or "
+                                + "glm-5-3) or try again later."));
+                autoDeadTurns = 0;
+            }
             if (!chosen.isEmpty()) {
                 JsonObject routed = new JsonObject();
-                routed.addProperty("reason", needsVision
-                        ? "vision needed" : "strongest healthy model");
+                routed.addProperty("reason", chosen
+                        .equals(stickyAutoModel)
+                        ? "sticky — it worked last turn"
+                        : needsVision ? "vision needed"
+                        : "strongest healthy model");
                 routed.addProperty("chosen", chosen);
                 AgentJournal.record(journalProject[0], "auto_route", routed);
                 String note = "✨ Auto → "
@@ -1171,6 +1213,9 @@ public class AgentLoop {
                             cancelled ? "you stopped it" : stopReason(e.error),
                             taskClosed, listener);
                     if (!cancelled) {
+                        if (autoRequested) {
+                            autoDeadTurns++;
+                        }
                         dispatch(listener,
                                 () -> listener.onError(e.error));
                     }
@@ -1222,6 +1267,9 @@ public class AgentLoop {
             if (reply.toolCalls.isEmpty()) {
                 String answer = reply.content == null ? "" : reply.content.trim();
                 if (answer.isEmpty()) {
+                    if (autoRequested) {
+                        autoDeadTurns++;
+                    }
                     closeTask(journalProject[0], false,
                             "the model returned an empty reply",
                             taskClosed, listener);
@@ -1236,6 +1284,11 @@ public class AgentLoop {
                     // A clean answer proves the model is alive again.
                     ModelCatalog.markSuccess(autoProvider, model);
                     String thinking = reply.thinking == null ? "" : reply.thinking;
+                    if (autoRequested && answer != null
+                            && !answer.trim().isEmpty()) {
+                        stickyAutoModel = model;
+                        autoDeadTurns = 0;
+                    }
                     dispatch(listener, () -> listener.onAnswer(answer, thinking));
                 }
                 return;
@@ -1375,7 +1428,13 @@ public class AgentLoop {
                     if ("set_plan".equals(call.name)
                             && (result == null
                                     || !result.has("error"))
-                            && planCreation(call.arguments)) {
+                            && !planAlreadyKnown(session)) {
+                        // Arm ONLY for a genuine FIRST plan. Field
+                        // finding: progress updates that re-sent
+                        // "steps" re-armed the gate mid-build and the
+                        // loop refused the very screens it was
+                        // building — the plan already existed, so
+                        // this is an UPDATE, never a new review.
                         planGateArmed = true;
                     }
                     if ("set_plan".equals(call.name)
