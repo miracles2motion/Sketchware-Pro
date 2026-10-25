@@ -94,6 +94,9 @@ public class AgentFragment extends qA {
     // marks it, and the turn-end bounce checks it so a choice the model
     // DID ask for properly is never popped twice.
     private boolean choiceSheetShownThisTurn;
+    // The currently shown choice sheet (tool or bounce), so a stale one
+    // can be cancelled the moment the user starts talking first.
+    private androidx.appcompat.app.AlertDialog choiceSheetDialog;
     /** Lets the waiting turn know a question was answered. */
     private volatile CountDownLatch choiceLatch;
     /** Tokens that arrived but are not in the list yet. */
@@ -576,6 +579,7 @@ public class AgentFragment extends qA {
             return;
         }
 
+        cancelPendingChoiceSheet();
         if (providerConfig == null || !providerConfig.isConfigured()) {
             appendMessage(ChatMessage.error(getString(R.string.agent_provider_missing)));
             return;
@@ -841,6 +845,10 @@ public class AgentFragment extends qA {
                     @Override
                     public String onAskChoice(String question,
                                               java.util.List<String> options) {
+                        // Marked HERE, not in awaitChoice: the flag must
+                        // mean "the model asked for a choice properly"
+                        // — the bounce thread must never set it.
+                        choiceSheetShownThisTurn = true;
                         return awaitChoice(question, options);
                     }
 
@@ -1235,6 +1243,7 @@ public class AgentFragment extends qA {
             return;
         }
         stripDismissedText = "";
+        cancelPendingChoiceSheet();
         String scId = providerConfig.workingProjectId();
         AgentJournal.reopenLatest(scId);
         String visiblePrompt = "Resume unfinished work";
@@ -3447,7 +3456,6 @@ public class AgentFragment extends qA {
             return null;
         }
         pickedChoice = null;
-        choiceSheetShownThisTurn = true;
         CountDownLatch latch = new CountDownLatch(1);
         choiceLatch = latch;
         showChoiceQuestion(question, options, latch);
@@ -3595,7 +3603,23 @@ public class AgentFragment extends qA {
             sheet[0] = showCardSheet(activity,
                     question.isEmpty() ? "Choose one" : question, rows,
                     latch::countDown);
+            choiceSheetDialog = sheet[0];
         });
+    }
+
+    /**
+     * Cancels a pending bounce sheet: the user typing their own message
+     * is an answer in itself, and a stale sheet must never fire a pick
+     * into a later turn. The tool path is untouched — its sheet only
+     * exists while a turn is generating, which this refuses to touch.
+     */
+    private void cancelPendingChoiceSheet() {
+        androidx.appcompat.app.AlertDialog sheet = choiceSheetDialog;
+        choiceSheetDialog = null;
+        if (sheet != null && sheet.isShowing() && !generating) {
+            pickedChoice = null;
+            sheet.dismiss();
+        }
     }
 
     /** The custom-colour answer to an ask_choice question. */
@@ -4600,12 +4624,16 @@ public class AgentFragment extends qA {
     }
 
     /**
-     * One-shot bounce: the model was asked to offer options through the
-     * ask_choice tool but DREW them as an OpenUI block in the bubble
-     * instead (observed in the field — the user saw no popup at all).
-     * When no choice sheet ran this turn, the block's question and
-     * options are lifted into the real tappable sheet; the pick is sent
-     * as the user's own answer.
+     * One-shot bounce: the model was asked to offer design directions
+     * through the ask_choice tool but DREW them as an OpenUI block in
+     * the bubble instead (observed in the field — the user saw no
+     * popup at all). Fires ONLY on the design-question signature — at
+     * least two options carrying hex colour codes, which the prompt
+     * requires for style directions — so deliberate in-chat ChoiceChips
+     * (layout picks, mockups) are never hijacked. When no choice sheet
+     * ran this turn, the block's question and options are lifted into
+     * the real tappable sheet; the pick is sent as the user's own
+     * answer.
      */
     private void maybeBounceChatChoice(String text) {
         if (choiceSheetShownThisTurn || generating || !isAdded()) {
@@ -4619,6 +4647,16 @@ public class AgentFragment extends qA {
         final String question = choice.get(0);
         final java.util.List<String> options =
                 new ArrayList<>(choice.subList(1, choice.size()));
+        int hexOptions = 0;
+        for (String option : options) {
+            if (option.matches(".*#[0-9A-Fa-f]{6}.*")) {
+                hexOptions++;
+            }
+        }
+        if (hexOptions < 2) {
+            // Not a design-directions block — leave it as drawn.
+            return;
+        }
         Thread bounce = new Thread(() -> {
             String picked = awaitChoice(question, options);
             if (picked != null && !picked.trim().isEmpty()) {
