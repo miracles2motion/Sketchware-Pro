@@ -46,6 +46,23 @@ public final class AgentTools {
     }
 
     /** Everything a tool needs besides its arguments. */
+    /**
+     * The project created THIS chat turn ("" otherwise): while set,
+     * the big builder tools refuse for that project so the how-to-
+     * build card decides what happens next. Cleared when the board
+     * starts or the next turn begins.
+     */
+    public static final java.util.concurrent.atomic.AtomicReference<String>
+            justCreatedProject =
+            new java.util.concurrent.atomic.AtomicReference<>("");
+
+    /** Builder tools that must NOT run in the just-created window. */
+    private static final java.util.Set<String> JUST_CREATED_STOP =
+            java.util.Set.of("edit_screen", "create_activity",
+                    "create_component", "create_variable",
+                    "set_event_handler", "create_more_block",
+                    "create_custom_view", "add_source_directly");
+
     public static final class Session {
         public final Context context;
         public final String workingProjectId;
@@ -264,6 +281,20 @@ public final class AgentTools {
         }
         if (tool.mutates()) {
             return error("E_INTERNAL", "That change must be proposed first.");
+        }
+        // THE STOP (field report: the agent ran straight into building
+        // the moment create_project returned, racing the how-to-build
+        // card). Within the turn that created the project, the big
+        // builder tools refuse: the user picks the build mode on the
+        // card; AgentBoard owns the building after that.
+        if (JUST_CREATED_STOP.contains(name)
+                && justCreatedProject.get().equals(session.workingProjectId)) {
+            return error("E_BUILD_CARD",
+                    "The project was just created — do NOT build screens "
+                    + "yourself. The user picks the build mode (Blueprint /"
+                    + " Steady / Fast) on the card in the chat, and the "
+                    + "builders run after they choose. Tell them the "
+                    + "project is ready in one short line and stop.");
         }
         JsonObject args;
         try {
@@ -5433,6 +5464,7 @@ public final class AgentTools {
                 result.addProperty("verified",
                         "The project now exists in the user's project list.");
                 result.addProperty("bind_project", created.scId);
+                justCreatedProject.set(created.scId);
                 return result;
             } catch (Exception e) {
                 throw new ToolException("E_CREATE_FAILED",

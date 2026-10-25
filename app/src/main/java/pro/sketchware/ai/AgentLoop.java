@@ -753,6 +753,10 @@ public class AgentLoop {
     public void run(final String baseUrl, final String apiKey, final String model,
                     final List<ChatMessage> history, String workingProjectId,
                     final boolean allowModify, final Listener listener) {
+        // A new turn invalidates the just-created building stop: the
+        // card had its chance; the user's answer (or a fresh request)
+        // governs now.
+        AgentTools.justCreatedProject.set("");
         cancelled = false;
         io.execute(() -> runTurn(baseUrl, apiKey, model, history,
                 workingProjectId, allowModify, listener));

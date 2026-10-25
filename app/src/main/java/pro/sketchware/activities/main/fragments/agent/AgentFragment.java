@@ -190,6 +190,8 @@ public class AgentFragment extends qA {
     private ChatMessage boardCard;
     /** The decision a colour card produced (null = cancelled). */
     private com.google.gson.JsonObject colorDecision;
+    /** The typing-dots bubble shown while the board builds. */
+    private ChatMessage buildingBubble;
 
     @Nullable
     @Override
@@ -243,7 +245,15 @@ public class AgentFragment extends qA {
             @Override
             public void onBuildChoice(pro.sketchware.ai.ChatMessage card,
                     String which) {
-                persistChat();
+                // The answered card leaves — no dead card lingers.
+                int at = messages.indexOf(card);
+                if (at >= 0) {
+                    messages.remove(at);
+                    adapter.notifyItemRemoved(at);
+                }
+                if (generating) {
+                    stopGeneration();
+                }
                 refreshStrip();
                 if ("cancel".equals(which)) {
                     sayInChat("Okay — nothing was started.");
@@ -366,6 +376,17 @@ public class AgentFragment extends qA {
                         }
                     }
                 }
+                int at = messages.indexOf(card);
+                if (at >= 0) {
+                    messages.remove(at);
+                    adapter.notifyItemRemoved(at);
+                }
+                String label = index >= 0 && index < options.size()
+                        ? options.get(index) : "";
+                if (label.length() > 90) {
+                    label = label.substring(0, 90).trim() + "…";
+                }
+                sayInChat("✓ Picked: " + label);
                 if (index >= 0 && index < options.size()) {
                     pickedChoice = options.get(index);
                 }
@@ -378,22 +399,37 @@ public class AgentFragment extends qA {
             public void onColorDecision(
                     pro.sketchware.ai.ChatMessage card, String hex,
                     String mode) {
+                String norm = "cancel".equals(mode)
+                        ? "" : OpenUiThemeEngine.normalizeHex(hex, "");
+                if (!"cancel".equals(mode) && norm.isEmpty()) {
+                    // The card stays pending — the user can fix the
+                    // hex and tap again.
+                    sayInChat("That hex did not parse — use the "
+                            + "#RRGGBB form on the colour card.");
+                    return;
+                }
+                // The answered card LEAVES; the decision stays as a
+                // line.
+                int at = messages.indexOf(card);
+                if (at >= 0) {
+                    messages.remove(at);
+                    adapter.notifyItemRemoved(at);
+                }
                 if ("cancel".equals(mode)) {
                     colorDecision = null;
+                    sayInChat("Colour pick cancelled.");
                 } else {
-                    String norm = OpenUiThemeEngine.normalizeHex(hex, "");
-                    if (norm.isEmpty()) {
-                        // The card stays pending — the user can fix
-                        // the hex and tap again.
-                        sayInChat("That hex did not parse — use the "
-                                + "#RRGGBB form on the colour card.");
-                        return;
-                    }
                     com.google.gson.JsonObject out =
                             new com.google.gson.JsonObject();
                     out.addProperty("picked", norm);
                     if ("everywhere".equals(mode)) {
                         out.addProperty("applied_everywhere", true);
+                        sayInChat("🎨 " + norm
+                                + " — applied everywhere (theme, "
+                                + "buttons, cards all follow).");
+                    } else {
+                        sayInChat("🎨 " + norm
+                                + " — just for that element.");
                     }
                     colorDecision = out;
                 }
@@ -1094,6 +1130,15 @@ public class AgentFragment extends qA {
                             if (proposal != null
                                     && "set_app_icon".equals(proposal.tool)) {
                                 updateWorkingOnCard();
+                            } else if (proposal != null
+                                    && "create_project"
+                                    .equals(proposal.tool)) {
+                                // THE STOP: the project exists, the
+                                // agent's building job ends here — the
+                                // card decides HOW it gets built.
+                                sayInChat("Project created. Pick how "
+                                        + "it gets built:");
+                                postBuildChoiceCard();
                             }
                             refreshStrip();
                         });
@@ -3291,6 +3336,12 @@ public class AgentFragment extends qA {
             sayInChat("A build is already running — stop it first.");
             return;
         }
+        postBuildChoiceCard();
+    }
+
+    /** Posts the how-to-build card without the guards — used right
+     * after create_project, while the creating turn is finishing. */
+    private void postBuildChoiceCard() {
         String scId = providerConfig == null
                 ? "" : providerConfig.workingProjectId();
         com.google.gson.JsonObject plan = AgentJournal.plan(scId);
@@ -3344,7 +3395,9 @@ public class AgentFragment extends qA {
                             : "Part-by-part build started — each part "
                             + "is checked before the next begins."));
             persistChat();
+            finishOrphanBuildBubbles();
             boardCard = null; // a new build gets its own card
+            buildingBubble = null;
             updateBoardCard();
         }
     }
@@ -3386,7 +3439,9 @@ public class AgentFragment extends qA {
                     settings.models, boardListener());
         }
         if (started) {
+            finishOrphanBuildBubbles();
             boardCard = null; // a new build gets its own card
+            buildingBubble = null;
             updateBoardCard();
         }
     }
@@ -3395,6 +3450,23 @@ public class AgentFragment extends qA {
      * The board lives as a chat card: every board change re-renders
      * it (Wave 66 — the board dialog stays only as a legacy view).
      */
+    /** Orphaned dots (a previous run that died mid-stream) must not
+     * blink forever — a new build settles them first. */
+    private void finishOrphanBuildBubbles() {
+        if (adapter == null || !isAdded()) {
+            return;
+        }
+        for (int i = 0; i < messages.size(); i++) {
+            ChatMessage m = messages.get(i);
+            if (m.role == ChatMessage.Role.ASSISTANT
+                    && m.state == ChatMessage.State.STREAMING
+                    && m.text != null && m.text.startsWith("🛠")) {
+                m.state = ChatMessage.State.COMPLETE;
+                adapter.notifyItemChanged(i);
+            }
+        }
+    }
+
     private void updateBoardCard() {
         if (agentBoard == null || !isAdded() || adapter == null) {
             return;
@@ -3474,6 +3546,53 @@ public class AgentFragment extends qA {
         if (!running && wasLive) {
             persistChat();
         }
+        // The three-dots bubble: alive while parts build, a final
+        // line when the board ends.
+        String current = "";
+        for (pro.sketchware.ai.AgentBoard.Part part : parts) {
+            if (part.state == pro.sketchware.ai.AgentBoard.PartState
+                    .BUILDING) {
+                current = part.title;
+                break;
+            }
+        }
+        if (current.isEmpty()) {
+            for (pro.sketchware.ai.AgentBoard.Part part : parts) {
+                if (part.state == pro.sketchware.ai.AgentBoard
+                        .PartState.QUEUED) {
+                    current = part.title;
+                    break;
+                }
+            }
+        }
+        if (running && buildingBubble == null) {
+            buildingBubble = ChatMessage.assistant("");
+            buildingBubble.state = ChatMessage.State.STREAMING;
+            appendMessage(buildingBubble);
+        }
+        if (buildingBubble != null) {
+            String line = "🛠 Building " + done + " of " + parts.size()
+                    + (current.isEmpty() ? "…" : " — " + current
+                    + "…");
+            if (!line.equals(buildingBubble.text)) {
+                buildingBubble.text = line;
+                int at = messages.indexOf(buildingBubble);
+                if (at >= 0) {
+                    adapter.notifyTextChanged(at);
+                }
+            }
+            if (!running) {
+                buildingBubble.state = ChatMessage.State.COMPLETE;
+                buildingBubble.text = "Build ended — " + done + " of "
+                        + parts.size() + " parts were ready.";
+                int at = messages.indexOf(buildingBubble);
+                if (at >= 0) {
+                    adapter.notifyTextChanged(at);
+                }
+                buildingBubble = null;
+                persistChat();
+            }
+        }
     }
 
     /** One listener for every board mode, blueprint approval included. */
@@ -3505,15 +3624,15 @@ public class AgentFragment extends qA {
                 // Chat-native approval: the drawing is posted as a
                 // card with the rendered screens inline. The board
                 // thread waits on the latch; taps on the card (or 30
-                // minutes of silence = cancel) decide.
-                if (!isAdded()) {
-                    return null;
-                }
+                // minutes of silence = cancel) decide. ALL view work
+                // runs on main — this callback comes from the board
+                // thread (CalledFromWrongThreadException taught us).
                 final java.util.concurrent.CountDownLatch latch =
                         new java.util.concurrent.CountDownLatch(1);
                 blueprintLatch[0] = latch;
                 blueprintDecision = null;
-                pro.sketchware.ai.ChatMessage card = new ChatMessage();
+                final pro.sketchware.ai.ChatMessage card =
+                        new ChatMessage();
                 card.role = ChatMessage.Role.CARD;
                 card.cardKind = "blueprint";
                 card.cardState = ChatMessage.CARD_PENDING;
@@ -3526,28 +3645,37 @@ public class AgentFragment extends qA {
                 card.cardData.addProperty("scId",
                         providerConfig == null ? ""
                                 : providerConfig.workingProjectId());
-                appendMessage(card);
-                persistChat();
+                runOnUi(() -> {
+                    if (!isAdded() || adapter == null) {
+                        return;
+                    }
+                    appendMessage(card);
+                    persistChat();
+                });
                 try {
                     boolean answered = latch.await(30,
                             java.util.concurrent.TimeUnit.MINUTES);
                     if (!answered) {
-                        if (isAdded() && card.cardState
-                                == ChatMessage.CARD_PENDING) {
-                            card.cardState = ChatMessage.CARD_CANCELLED;
-                            adapter.notifyItemChanged(
-                                    messages.indexOf(card));
-                            persistChat();
-                        }
                         AgentJournal.saveBlueprint(
                                 providerConfig == null ? ""
                                         : providerConfig.workingProjectId(),
                                 blueprintText, true);
-                        sayInChat("The blueprint sat unanswered for 30 "
-                                + "minutes — cancelled, nothing was "
-                                + "built. It is kept in the project — "
-                                + "reopen it any time from the chat "
-                                + "history.");
+                        runOnUi(() -> {
+                            if (isAdded() && adapter != null
+                                    && card.cardState
+                                    == ChatMessage.CARD_PENDING) {
+                                card.cardState =
+                                        ChatMessage.CARD_CANCELLED;
+                                adapter.notifyItemChanged(
+                                        messages.indexOf(card));
+                                persistChat();
+                            }
+                            sayInChat("The blueprint sat unanswered "
+                                    + "for 30 minutes — cancelled, "
+                                    + "nothing was built. It is kept "
+                                    + "in the project — reopen it any "
+                                    + "time from the chat history.");
+                        });
                         return null;
                     }
                 } catch (InterruptedException e) {
@@ -3556,7 +3684,6 @@ public class AgentFragment extends qA {
                 } finally {
                     blueprintLatch[0] = null;
                 }
-                persistChat();
                 return blueprintDecision;
             }
         };

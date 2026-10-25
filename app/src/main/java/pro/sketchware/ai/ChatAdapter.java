@@ -1363,9 +1363,8 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                         label.setTextSize(13);
                         rowView.addView(label);
                         rowView.setOnClickListener(v -> {
-                            mark(m, ChatMessage.CARD_USED,
-                                    String.valueOf(answer));
-                            adapter.notifyDataSetChanged();
+                            // The card LEAVES on answer (fragment side);
+                            // no dead card lingers for a second tap.
                             if (adapter.cardListener != null) {
                                 adapter.cardListener.onChoiceAnswer(m,
                                         answer);
@@ -1453,8 +1452,6 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                                 String hex = inputRef[0].getText() == null
                                         ? "" : inputRef[0].getText()
                                         .toString().trim();
-                                mark(m, ChatMessage.CARD_USED,
-                                        hex + " everywhere");
                                 if (adapter.cardListener != null) {
                                     adapter.cardListener.onColorDecision(
                                             m, hex, "everywhere");
@@ -1465,16 +1462,12 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                                 String hex = inputRef[0].getText() == null
                                         ? "" : inputRef[0].getText()
                                         .toString().trim();
-                                mark(m, ChatMessage.CARD_USED,
-                                        hex + " here");
                                 if (adapter.cardListener != null) {
                                     adapter.cardListener.onColorDecision(
                                             m, hex, "here");
                                 }
                             }));
                     root.addView(button(ctx, d, "Cancel pick", () -> {
-                        mark(m, ChatMessage.CARD_CANCELLED, "");
-                        adapter.notifyDataSetChanged();
                         if (adapter.cardListener != null) {
                             adapter.cardListener.onColorDecision(m, "",
                                     "cancel");

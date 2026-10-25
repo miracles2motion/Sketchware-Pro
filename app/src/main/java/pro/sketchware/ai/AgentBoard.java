@@ -206,6 +206,9 @@ public final class AgentBoard {
     private void configure(Context context, String scId,
             String baseUrl, String apiKey, String model, JsonObject plan,
             List<String> autoModelPool, BoardListener listener) {
+        // The board now owns the building: lift the just-created
+        // chat-turn stop so every worker's tools run free.
+        AgentTools.justCreatedProject.set("");
         this.context = context.getApplicationContext();
         this.scId = scId == null ? "" : scId;
         this.baseUrl = baseUrl == null ? "" : baseUrl;
