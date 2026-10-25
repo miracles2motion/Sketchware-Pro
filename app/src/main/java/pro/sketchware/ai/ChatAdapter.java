@@ -120,6 +120,16 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
 
     private OnCardListener cardListener;
 
+    /** The user tapped one option on a choice card (index ≥ 0). */
+    default void onChoiceAnswer(pro.sketchware.ai.ChatMessage card,
+            int index) {
+    }
+
+    /** The user decided a colour card: hex may be empty on cancel. */
+    default void onColorDecision(pro.sketchware.ai.ChatMessage card,
+            String hex, String mode) {
+    }
+
     /** A tapped quick-choice chip under the model's typed options. */
     public interface OnQuickChoiceListener {
         void onQuickChoice(String text);
@@ -344,6 +354,59 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
         }
         if (withHex < 2) {
             return null;
+        }
+        return out;
+    }
+
+    /** Word → approximation, so a choice is never bare text. */
+    private static final String[][] COLOR_WORDS = {
+            {"soft blue", "B39DDB"}, {"navy", "3949AB"},
+            {"purple", "B39DDB"}, {"lavender", "D1C4E9"},
+            {"violet", "B39DDB"}, {"mint", "B2DFDB"},
+            {"teal", "80CBC4"}, {"pastel green", "C8E6C9"},
+            {"emerald", "81C784"}, {"green", "A5D6A7"},
+            {"burgundy", "A1887F"}, {"maroon", "8D6E63"},
+            {"coral", "FF8A65"}, {"red", "EF9A9A"},
+            {"orange", "FFCC80"}, {"amber", "FFD54F"},
+            {"gold", "FFD54F"}, {"yellow", "FFF59D"},
+            {"pink", "F48FB1"}, {"rose", "F48FB1"},
+            {"brown", "BCAAA4"}, {"grey", "B0BEC5"},
+            {"gray", "B0BEC5"}, {"cream", "FFF8E1"},
+            {"white", "F5F5F5"}, {"charcoal", "455A64"},
+            {"dark", "455A64"}, {"black", "37474F"},
+            {"frost", "E3F2FD"}, {"blue", "90CAF9"}};
+
+    /** Up to 4 dot colours for one option: real hexes first, then
+     * word approximations — the ask_choice sheet's exact behaviour. */
+    private static java.util.List<Integer> optionSwatches(String text) {
+        java.util.List<Integer> out = new ArrayList<>();
+        java.util.regex.Matcher m = HEX6.matcher(
+                text == null ? "" : text);
+        while (m.find() && out.size() < 4) {
+            try {
+                int c = android.graphics.Color.parseColor(m.group());
+                if (!out.contains(c)) {
+                    out.add(c);
+                }
+            } catch (IllegalArgumentException ignored) {
+                // Skip a malformed hex.
+            }
+        }
+        if (out.isEmpty()) {
+            String lower = text == null ? ""
+                    : text.toLowerCase(java.util.Locale.ROOT);
+            for (String[] word : COLOR_WORDS) {
+                if (out.size() >= 4) {
+                    break;
+                }
+                if (lower.contains(word[0])) {
+                    out.add(android.graphics.Color.parseColor(
+                            "#" + word[1]));
+                }
+            }
+        }
+        if (out.isEmpty()) {
+            out.add(0xFF9E9E9E);
         }
         return out;
     }
@@ -1210,6 +1273,203 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                     done.setTextSize(13);
                     done.setPadding(0, Math.round(8f * d), 0, 0);
                     root.addView(done);
+                }
+                return;
+            }
+            if ("choice".equals(kind)) {
+                title.setText(m.approvalTitle == null
+                        ? "Pick one" : m.approvalTitle);
+                java.util.List<String> options = new ArrayList<>();
+                if (m.cardData != null && m.cardData.has("options")
+                        && m.cardData.get("options").isJsonArray()) {
+                    for (com.google.gson.JsonElement el : m.cardData
+                            .getAsJsonArray("options")) {
+                        if (el != null && el.isJsonPrimitive()) {
+                            options.add(el.getAsString());
+                        }
+                    }
+                }
+                if (pending) {
+                    body.setText("Tap one — the build continues with "
+                            + "your pick.");
+                    int idx = -1;
+                    for (final String option : options) {
+                        idx++;
+                        final int answer = idx;
+                        LinearLayout rowView = new LinearLayout(ctx);
+                        rowView.setOrientation(LinearLayout.HORIZONTAL);
+                        rowView.setGravity(
+                                android.view.Gravity.CENTER_VERTICAL);
+                        rowView.setPadding(Math.round(10f * d),
+                                Math.round(9f * d), Math.round(10f * d),
+                                Math.round(9f * d));
+                        LinearLayout.LayoutParams rlp =
+                                new LinearLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.WRAP_CONTENT);
+                        rlp.topMargin = Math.round(6f * d);
+                        rowView.setLayoutParams(rlp);
+                        GradientDrawable rowBg = new GradientDrawable();
+                        rowBg.setCornerRadius(10f * d);
+                        rowBg.setColor(androidx.core.graphics.ColorUtils
+                                .setAlphaComponent(
+                                AgentTheme.ink(ctx), 0x0D));
+                        rowView.setBackground(rowBg);
+                        for (int color : optionSwatches(option)) {
+                            View dot = new View(ctx);
+                            int sz = Math.round(16f * d);
+                            LinearLayout.LayoutParams dlp =
+                                    new LinearLayout.LayoutParams(sz, sz);
+                            dlp.rightMargin = Math.round(5f * d);
+                            dot.setLayoutParams(dlp);
+                            GradientDrawable circle =
+                                    new GradientDrawable();
+                            circle.setShape(GradientDrawable.OVAL);
+                            circle.setColor(color);
+                            dot.setBackground(circle);
+                            rowView.addView(dot);
+                        }
+                        TextView label = new TextView(ctx);
+                        String flat = option.replaceAll("\s+", " ")
+                                .trim();
+                        if (flat.length() > 120) {
+                            flat = flat.substring(0, 120) + "…";
+                        }
+                        label.setText(flat);
+                        label.setTextColor(AgentTheme.ink(ctx));
+                        label.setTextSize(13);
+                        rowView.addView(label);
+                        rowView.setOnClickListener(v -> {
+                            mark(m, ChatMessage.CARD_USED,
+                                    String.valueOf(answer));
+                            adapter.notifyDataSetChanged();
+                            if (adapter.cardListener != null) {
+                                adapter.cardListener.onChoiceAnswer(m,
+                                        answer);
+                            }
+                        });
+                        root.addView(rowView);
+                    }
+                } else if (ChatMessage.CARD_CANCELLED.equals(
+                        m.cardState)) {
+                    body.setText("Cancelled — no pick was made.");
+                    body.setVisibility(View.VISIBLE);
+                } else {
+                    String choice = m.cardData != null
+                            && m.cardData.has("choice")
+                            ? m.cardData.get("choice").getAsString() : "";
+                    try {
+                        int at = Integer.parseInt(choice.trim());
+                        if (at >= 0 && at < options.size()) {
+                            String flat = options.get(at)
+                                    .replaceAll("\s+", " ").trim();
+                            if (flat.length() > 140) {
+                                flat = flat.substring(0, 140) + "…";
+                            }
+                            body.setText("Picked: " + flat);
+                        } else {
+                            body.setText("Interrupted — pick again by "
+                                    + "asking.");
+                        }
+                    } catch (NumberFormatException e) {
+                        body.setText("Interrupted — pick again by "
+                                + "asking.");
+                    }
+                    body.setVisibility(View.VISIBLE);
+                }
+                return;
+            }
+            if ("color".equals(kind)) {
+                title.setText(m.approvalTitle == null
+                        ? "Pick a colour" : m.approvalTitle);
+                String initial = m.cardData != null
+                        && m.cardData.has("initial")
+                        ? m.cardData.get("initial").getAsString()
+                        : "#2563EB";
+                if (pending) {
+                    body.setText("Type a hex or tap a swatch — then "
+                            + "choose where it applies.");
+                    body.setVisibility(View.VISIBLE);
+                    final EditText input = new EditText(ctx);
+                    input.setSingleLine(true);
+                    input.setHint("#RRGGBB");
+                    input.setText(initial);
+                    input.setTextSize(13);
+                    root.addView(input);
+                    final TextView[] inputRef = {input};
+                    LinearLayout swatches = new LinearLayout(ctx);
+                    swatches.setOrientation(LinearLayout.HORIZONTAL);
+                    LinearLayout.LayoutParams slp =
+                            new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT);
+                    slp.topMargin = Math.round(8f * d);
+                    swatches.setLayoutParams(slp);
+                    String[] quick = {"#059669", "#C65D3B", "#2563EB",
+                            "#7C3AED", "#D97706", "#DC2626", "#0D9488",
+                            "#DB2777"};
+                    for (final String quickHex : quick) {
+                        View dot = new View(ctx);
+                        int sz = Math.round(26f * d);
+                        LinearLayout.LayoutParams dlp =
+                                new LinearLayout.LayoutParams(sz, sz);
+                        dlp.rightMargin = Math.round(6f * d);
+                        dot.setLayoutParams(dlp);
+                        GradientDrawable circle = new GradientDrawable();
+                        circle.setShape(GradientDrawable.OVAL);
+                        try {
+                            circle.setColor(android.graphics.Color
+                                    .parseColor(quickHex));
+                        } catch (IllegalArgumentException ignored) {
+                            circle.setColor(0xFF888888);
+                        }
+                        dot.setBackground(circle);
+                        dot.setOnClickListener(v -> inputRef[0]
+                                .setText(quickHex));
+                        swatches.addView(dot);
+                    }
+                    root.addView(swatches);
+                    root.addView(button(ctx, d,
+                            "Everywhere (app theme)", () -> {
+                                String hex = inputRef[0].getText() == null
+                                        ? "" : inputRef[0].getText()
+                                        .toString().trim();
+                                mark(m, ChatMessage.CARD_USED,
+                                        hex + " everywhere");
+                                if (adapter.cardListener != null) {
+                                    adapter.cardListener.onColorDecision(
+                                            m, hex, "everywhere");
+                                }
+                            }));
+                    root.addView(button(ctx, d, "Just this element",
+                            () -> {
+                                String hex = inputRef[0].getText() == null
+                                        ? "" : inputRef[0].getText()
+                                        .toString().trim();
+                                mark(m, ChatMessage.CARD_USED,
+                                        hex + " here");
+                                if (adapter.cardListener != null) {
+                                    adapter.cardListener.onColorDecision(
+                                            m, hex, "here");
+                                }
+                            }));
+                    root.addView(button(ctx, d, "Cancel pick", () -> {
+                        mark(m, ChatMessage.CARD_CANCELLED, "");
+                        adapter.notifyDataSetChanged();
+                        if (adapter.cardListener != null) {
+                            adapter.cardListener.onColorDecision(m, "",
+                                    "cancel");
+                        }
+                    }));
+                } else {
+                    String choice = m.cardData != null
+                            && m.cardData.has("choice")
+                            ? m.cardData.get("choice").getAsString() : "";
+                    body.setText(ChatMessage.CARD_CANCELLED
+                            .equals(m.cardState)
+                            ? "Cancelled — no colour was picked."
+                            : "Colour: " + choice);
+                    body.setVisibility(View.VISIBLE);
                 }
                 return;
             }

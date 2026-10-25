@@ -188,6 +188,8 @@ public class AgentFragment extends qA {
     private ChatMessage liveNote;
     /** The live parts board, as a chat card (Wave 66: no board popup). */
     private ChatMessage boardCard;
+    /** The decision a colour card produced (null = cancelled). */
+    private com.google.gson.JsonObject colorDecision;
 
     @Nullable
     @Override
@@ -347,6 +349,56 @@ public class AgentFragment extends qA {
                             settings.model));
                     work.setDaemon(true);
                     work.start();
+                }
+            }
+
+            @Override
+            public void onChoiceAnswer(
+                    pro.sketchware.ai.ChatMessage card, int index) {
+                java.util.List<String> options =
+                        new java.util.ArrayList<>();
+                if (card.cardData != null && card.cardData.has("options")
+                        && card.cardData.get("options").isJsonArray()) {
+                    for (com.google.gson.JsonElement el : card.cardData
+                            .getAsJsonArray("options")) {
+                        if (el != null && el.isJsonPrimitive()) {
+                            options.add(el.getAsString());
+                        }
+                    }
+                }
+                if (index >= 0 && index < options.size()) {
+                    pickedChoice = options.get(index);
+                }
+                if (choiceLatch != null) {
+                    choiceLatch.countDown();
+                }
+            }
+
+            @Override
+            public void onColorDecision(
+                    pro.sketchware.ai.ChatMessage card, String hex,
+                    String mode) {
+                if ("cancel".equals(mode)) {
+                    colorDecision = null;
+                } else {
+                    String norm = OpenUiThemeEngine.normalizeHex(hex, "");
+                    if (norm.isEmpty()) {
+                        // The card stays pending — the user can fix
+                        // the hex and tap again.
+                        sayInChat("That hex did not parse — use the "
+                                + "#RRGGBB form on the colour card.");
+                        return;
+                    }
+                    com.google.gson.JsonObject out =
+                            new com.google.gson.JsonObject();
+                    out.addProperty("picked", norm);
+                    if ("everywhere".equals(mode)) {
+                        out.addProperty("applied_everywhere", true);
+                    }
+                    colorDecision = out;
+                }
+                if (colorLatch != null) {
+                    colorLatch.countDown();
                 }
             }
         });
@@ -4396,105 +4448,48 @@ public class AgentFragment extends qA {
         if (!isAdded() || getActivity() == null) {
             return null;
         }
-        // The model may offer a token name or descriptive words; only
-        // raw hex can seed the picker.
-        int initial = 0xff000000;
+        // Wave 66.6: the two popups (picker + "where does it apply")
+        // are ONE card now — hex input, quick swatches, and the
+        // Everywhere / element / cancel decision on the same card.
         String hex = tokenHex(initialHex);
         hex = hex.isEmpty() ? tokenHex(question) : hex;
-        if (!hex.isEmpty()) {
-            try {
-                initial = android.graphics.Color.parseColor(hex);
-            } catch (IllegalArgumentException ignored) {
-                // Stays black.
-            }
-        }
-        pickedColor = null;
+        final String initial = hex.isEmpty() ? "#2563EB" : hex;
+        colorDecision = null;
         CountDownLatch latch = new CountDownLatch(1);
         colorLatch = latch;
-        showColorPicker(initial);
-        boolean answered;
+        ChatMessage card = new ChatMessage();
+        card.role = ChatMessage.Role.CARD;
+        card.cardKind = "color";
+        card.cardState = ChatMessage.CARD_PENDING;
+        card.approvalTitle = question == null || question.isEmpty()
+                ? "Pick a colour" : question;
+        card.text = "";
+        card.timestamp = System.currentTimeMillis();
+        card.cardData.addProperty("initial", initial);
+        appendMessage(card);
+        persistChat();
+        if (binding != null) {
+            binding.chatList.scrollToPosition(messages.size() - 1);
+        }
         try {
-            answered = latch.await(10, TimeUnit.MINUTES);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            answered = false;
-        }
-        colorLatch = null;
-        com.google.gson.JsonObject picked =
-                answered ? pickedColor : null;
-        if (picked == null || !picked.has("picked")) {
-            return picked;
-        }
-        String pickedHex = picked.get("picked").getAsString();
-        // THE pick is no longer just a message to the model: the user
-        // decides whether it becomes THE colour of the whole app
-        // (theme + tokens re-generated, resources materialized) or
-        // stays a one-element colour.
-        final CountDownLatch where = new CountDownLatch(1);
-        final java.util.concurrent.atomic.AtomicReference<String> mode =
-                new java.util.concurrent.atomic.AtomicReference<>("here");
-        runOnUi(() -> {
-            if (!isAdded()) {
-                where.countDown();
-                return;
+            if (!latch.await(10, TimeUnit.MINUTES)) {
+                if (isAdded() && card.cardState
+                        == ChatMessage.CARD_PENDING) {
+                    card.cardState = ChatMessage.CARD_CANCELLED;
+                    adapter.notifyItemChanged(messages.indexOf(card));
+                    persistChat();
+                }
+                return null;
             }
-            new MaterialAlertDialogBuilder(requireContext())
-                    .setTitle("Colour " + pickedHex)
-                    .setMessage("Use it as THE colour of the whole app "
-                            + "(theme, buttons, cards all follow), or "
-                            + "just for the one element you were asked "
-                            + "about?")
-                    .setPositiveButton("Everywhere (app theme)",
-                            (d, w) -> {
-                                mode.set("everywhere");
-                                where.countDown();
-                            })
-                    .setNeutralButton("Just this element",
-                            (d, w) -> where.countDown())
-                    .setNegativeButton("Cancel pick",
-                            (d, w) -> {
-                                mode.set("cancel");
-                                where.countDown();
-                            })
-                    .show();
-        });
-        try {
-            where.await(5, TimeUnit.MINUTES);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return null;
+        } finally {
+            colorLatch = null;
         }
-        if ("cancel".equals(mode.get())) {
-            return null;
-        }
-        if ("everywhere".equals(mode.get())) {
-            String scId = providerConfig == null
-                    ? "" : providerConfig.workingProjectId();
-            boolean real = scId != null && !scId.isEmpty()
-                    && !pro.sketchware.ai.AgentJournal.DRAFT_KEY
-                    .equals(scId);
-            try {
-                com.google.gson.JsonObject applied =
-                        pro.sketchware.ai.OpenUiThemeEngine
-                                .applyUserColor(
-                                real ? scId : "", pickedHex);
-                applied.addProperty("picked", hex);
-                applied.addProperty("applied_everywhere", true);
-                runOnUi(() -> {
-                    if (isAdded()) {
-                        Toast.makeText(getContext(),
-                                "Colour applied to the whole app",
-                                Toast.LENGTH_SHORT).show();
-                    }
-                });
-                return applied;
-            } catch (Exception e) {
-                picked.addProperty("apply_error",
-                        String.valueOf(e.getMessage()));
-            }
-        }
-        return picked;
+        return colorDecision;
     }
+
 
     /**
      * The agent's brainstorming question, answered on the spot: the
@@ -4507,12 +4502,39 @@ public class AgentFragment extends qA {
                 || options.isEmpty()) {
             return null;
         }
+        // Wave 66.6: the choice is a CARD now — same swatch rows the
+        // sheet had (real hexes, word approximations as fallback),
+        // inline in the chat instead of a popup.
         pickedChoice = null;
         CountDownLatch latch = new CountDownLatch(1);
         choiceLatch = latch;
-        showChoiceQuestion(question, options, latch);
+        ChatMessage card = new ChatMessage();
+        card.role = ChatMessage.Role.CARD;
+        card.cardKind = "choice";
+        card.cardState = ChatMessage.CARD_PENDING;
+        card.approvalTitle = question == null || question.isEmpty()
+                ? "Pick one" : question;
+        card.text = "";
+        card.timestamp = System.currentTimeMillis();
+        com.google.gson.JsonArray optionsJson =
+                new com.google.gson.JsonArray();
+        for (String option : options) {
+            optionsJson.add(option == null ? "" : option);
+        }
+        card.cardData.add("options", optionsJson);
+        appendMessage(card);
+        persistChat();
+        if (binding != null) {
+            binding.chatList.scrollToPosition(messages.size() - 1);
+        }
         try {
             if (!latch.await(10, TimeUnit.MINUTES)) {
+                if (isAdded() && card.cardState
+                        == ChatMessage.CARD_PENDING) {
+                    card.cardState = ChatMessage.CARD_CANCELLED;
+                    adapter.notifyItemChanged(messages.indexOf(card));
+                    persistChat();
+                }
                 return null;
             }
         } catch (InterruptedException e) {
@@ -4523,6 +4545,7 @@ public class AgentFragment extends qA {
         }
         return pickedChoice;
     }
+
 
     /** The question as a list the user taps. */
     private void showChoiceQuestion(String question,
