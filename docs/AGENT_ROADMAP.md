@@ -478,3 +478,17 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 ### Hotfix 3 — recovery hardened after the field retest (`AgentLoop.java`)
 - Field retest on `apk-release-0f508bd` still showed JSON bubbles. Two gaps: (1) recovery required the ENTIRE reply to be the object — a sentence around it (or a fence tag sharing its first line) bailed; (2) even when recovery fired, the raw JSON stayed in the bubble next to the sheet, so it still READ as broken.
 - Now: a string-aware balanced-brace scan lifts the FIRST `{...}` that names a **known interactive tool** (`AgentTools.isInteractive` gate — a hand-written `add_source_directly` or unknown tool is never executed), fence-tag tolerant; the JSON is stripped from the bubble (kept prose, or "The question sheet is open — pick there." when the object was the whole reply); the matching `tool_calls` entry is still declared into the raw message. Port-tested against the field reply and 7 more cases: prose-before/after, ```json fence, nested args, non-interactive tool (refused), unknown tool (refused), random JSON (refused), prose (refused).
+
+---
+
+## Wave 59 / Phase 45 (PENDING) — The Plan Contract: the implementation plan becomes state the app tracks, not a promise the model keeps
+
+**Field context (25 Oct):** the user reports the agent does not work in tandem with the implementation plan — models drift off it, and the plan checklist's own checkboxes can be freely tapped with no effect on anything. Verdict: the plan is currently a display, not a contract; the model is asked to remember it (it doesn't) and the user's taps do nothing (nothing listens). Build the contract in ONE later build, only after the user confirms the JSON-ban APK (35407f0) holds in the field. **No model flagging or hiding of any kind — model availability stays untouched.**
+
+### Phase 45 (PENDING) — Plan as contract (`AgentLoop.java`, plan tool + UI surface)
+1. **App-verified ticks:** a step may only be marked done when the artifact it names verifiably exists in the project (screen/widget/event/component/compile — checked through the app's own project state, never through the model's claim). The model never ticks its own boxes.
+2. **The plan rides in every turn:** open steps (and who owns each — agent or user) are re-sent in the model's briefing EVERY turn, so attention drift cannot lose the plan mid-build.
+3. **User taps steer the agent:** unticking a step ⇒ the next briefing says "the user reopened this step — it is not acceptable as-is"; ticking a step ⇒ recorded as the user's sign-off. The checklist becomes the steering wheel, not a mirror.
+4. **Drift is named, never blocked:** work that matches no open step gets a quiet one-line note in the tool result ("this is not in the plan — update the plan or return to it"). No refusals, no dead ends.
+
+**Acceptance:** in a fresh draft-chat build, a model that skips verifiable steps cannot end the task with them unticked unexplained (the briefing forces the gap into the open); a user untick forces an explicit rework mention next turn; zero new E_* refusals introduced.
