@@ -375,6 +375,31 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
             {"dark", "455A64"}, {"black", "37474F"},
             {"frost", "E3F2FD"}, {"blue", "90CAF9"}};
 
+    private static final java.util.regex.Pattern HEX8 =
+            java.util.regex.Pattern.compile("#[0-9A-Fa-f]{8}");
+
+    /**
+     * What the user reads: the hex codes are stripped (the swatch
+     * dots already show the colours — the codes only ate label
+     * space) while the FULL text, codes included, stays as the
+     * answer the model receives.
+     */
+    private static String displayLabel(String raw, int cap) {
+        String flat = raw == null ? "" : raw.replaceAll("\s+", " ");
+        flat = HEX8.matcher(flat).replaceAll("");
+        flat = HEX6.matcher(flat).replaceAll("");
+        flat = flat.replaceAll("\s+([,.:;])", "$1");
+        flat = flat.replaceAll("\s{2,}", " ").trim();
+        while (flat.endsWith(",") || flat.endsWith("→")
+                || flat.endsWith("-")) {
+            flat = flat.substring(0, flat.length() - 1).trim();
+        }
+        if (flat.length() > cap) {
+            flat = flat.substring(0, cap).trim() + "…";
+        }
+        return flat;
+    }
+
     /** Up to 4 dot colours for one option: real hexes first, then
      * word approximations — the ask_choice sheet's exact behaviour. */
     private static java.util.List<Integer> optionSwatches(String text) {
@@ -1333,12 +1358,7 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                             rowView.addView(dot);
                         }
                         TextView label = new TextView(ctx);
-                        String flat = option.replaceAll("\s+", " ")
-                                .trim();
-                        if (flat.length() > 120) {
-                            flat = flat.substring(0, 120) + "…";
-                        }
-                        label.setText(flat);
+                        label.setText(displayLabel(option, 120));
                         label.setTextColor(AgentTheme.ink(ctx));
                         label.setTextSize(13);
                         rowView.addView(label);
@@ -1364,12 +1384,8 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                     try {
                         int at = Integer.parseInt(choice.trim());
                         if (at >= 0 && at < options.size()) {
-                            String flat = options.get(at)
-                                    .replaceAll("\s+", " ").trim();
-                            if (flat.length() > 140) {
-                                flat = flat.substring(0, 140) + "…";
-                            }
-                            body.setText("Picked: " + flat);
+                            body.setText("Picked: "
+                                    + displayLabel(options.get(at), 140));
                         } else {
                             body.setText("Interrupted — pick again by "
                                     + "asking.");
