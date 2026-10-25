@@ -1650,12 +1650,24 @@ public class AgentLoop {
             return result;
         }
         result.add("picked_colour", picked);
-        result.addProperty("message",
-                "The user picked this colour themselves in Sketchware's "
-                        + "colour picker. Use the hex exactly, and propose "
-                        + "the change on an approval card right away — the "
-                        + "card is the confirmation, so do not ask again "
-                        + "in chat first.");
+        if (picked.has("applied_everywhere")) {
+            result.addProperty("message",
+                    "The user applied this colour to the WHOLE app "
+                            + "themselves: the design system was "
+                            + "re-branded and the theme resources were "
+                            + "materialized. Do NOT propose any colour "
+                            + "change for it — build with the OpenUI "
+                            + "tokens (@color/openui_*), which already "
+                            + "carry this colour everywhere.");
+        } else {
+            result.addProperty("message",
+                    "The user picked this colour themselves in "
+                            + "Sketchware's colour picker. Use the hex "
+                            + "exactly, and propose the change on an "
+                            + "approval card right away — the card is "
+                            + "the confirmation, so do not ask again "
+                            + "in chat first.");
+        }
         return result;
     }
 

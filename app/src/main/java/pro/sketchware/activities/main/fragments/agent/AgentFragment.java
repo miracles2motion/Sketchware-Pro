@@ -4159,7 +4159,80 @@ public class AgentFragment extends qA {
             answered = false;
         }
         colorLatch = null;
-        return answered ? pickedColor : null;
+        com.google.gson.JsonObject picked =
+                answered ? pickedColor : null;
+        if (picked == null || !picked.has("picked")) {
+            return picked;
+        }
+        String hex = picked.get("picked").getAsString();
+        // THE pick is no longer just a message to the model: the user
+        // decides whether it becomes THE colour of the whole app
+        // (theme + tokens re-generated, resources materialized) or
+        // stays a one-element colour.
+        final CountDownLatch where = new CountDownLatch(1);
+        final java.util.concurrent.atomic.AtomicReference<String> mode =
+                new java.util.concurrent.atomic.AtomicReference<>("here");
+        runOnUi(() -> {
+            if (!isAdded()) {
+                where.countDown();
+                return;
+            }
+            new MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("Colour " + hex)
+                    .setMessage("Use it as THE colour of the whole app "
+                            + "(theme, buttons, cards all follow), or "
+                            + "just for the one element you were asked "
+                            + "about?")
+                    .setPositiveButton("Everywhere (app theme)",
+                            (d, w) -> {
+                                mode.set("everywhere");
+                                where.countDown();
+                            })
+                    .setNeutralButton("Just this element",
+                            (d, w) -> where.countDown())
+                    .setNegativeButton("Cancel pick",
+                            (d, w) -> {
+                                mode.set("cancel");
+                                where.countDown();
+                            })
+                    .show();
+        });
+        try {
+            where.await(5, TimeUnit.MINUTES);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+        if ("cancel".equals(mode.get())) {
+            return null;
+        }
+        if ("everywhere".equals(mode.get())) {
+            String scId = providerConfig == null
+                    ? "" : providerConfig.workingProjectId();
+            boolean real = scId != null && !scId.isEmpty()
+                    && !pro.sketchware.ai.AgentJournal.DRAFT_KEY
+                    .equals(scId);
+            try {
+                com.google.gson.JsonObject applied =
+                        pro.sketchware.ai.OpenUiThemeEngine
+                                .applyUserColor(
+                                real ? scId : "", hex);
+                applied.addProperty("picked", hex);
+                applied.addProperty("applied_everywhere", true);
+                runOnUi(() -> {
+                    if (isAdded()) {
+                        Toast.makeText(getContext(),
+                                "Colour applied to the whole app",
+                                Toast.LENGTH_SHORT).show();
+                    }
+                });
+                return applied;
+            } catch (Exception e) {
+                picked.addProperty("apply_error",
+                        String.valueOf(e.getMessage()));
+            }
+        }
+        return picked;
     }
 
     /**

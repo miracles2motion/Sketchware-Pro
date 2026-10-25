@@ -4427,7 +4427,12 @@ public final class AgentTools {
                     + "the result says cancelled — then ask in words or "
                     + "continue without that change. Once the user picks, "
                     + "go straight to the approval card for the change; "
-                    + "do not ask again in chat first. Never call this when "
+                    + "The result may say applied_everywhere: the user "
+                    + "themselves made it the app-wide brand colour "
+                    + "(tokens and resources already updated) — do "
+                    + "NOT propose a colour change, just use the "
+                    + "OpenUI tokens. Do not ask again in chat "
+                    + "first. Never call this when "
                     + "the user already named an exact colour or token.";
         }
 

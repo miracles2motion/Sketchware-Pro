@@ -935,6 +935,51 @@ public final class OpenUiThemeEngine {
      *   <li>Default screen &amp; custom-row root backgrounds ({@code @color/openui_bg})</li>
      * </ul>
      */
+    /**
+     * The user picked a colour and chose "use everywhere": re-brand
+     * the design system with it — every token regenerates from this
+     * one colour — and re-materialize the Android resources, so the
+     * pick genuinely becomes THE colour of the app. Works on the live
+     * project when {@code scId} is one, otherwise on the agreed draft
+     * (which pours into the project at create_project). Throws only
+     * when a real project cannot be materialized.
+     */
+    public static JsonObject applyUserColor(String scId, String hex)
+            throws AgentTools.ToolException {
+        JsonObject current = scId == null || scId.isEmpty()
+                ? AgentJournal.draftOrEmptyDesignSystem()
+                : AgentJournal.designSystem(scId);
+        JsonObject input = new JsonObject();
+        if (current != null) {
+            for (String key : new String[]{"title", "theme_mode",
+                    "secondary_color", "neutral_scale", "corner_profile",
+                    "density", "light_overrides", "dark_overrides"}) {
+                if (current.has(key)) {
+                    input.add(key, current.get(key));
+                }
+            }
+        }
+        if (!input.has("title")) {
+            input.addProperty("title", "App Design System");
+        }
+        input.addProperty("brand_color", hex);
+        ResolvedTheme resolved = resolveTheme(input);
+        JsonObject full = buildDesignSystemJson(resolved, null);
+        JsonObject out = new JsonObject();
+        if (scId == null || scId.isEmpty()) {
+            AgentJournal.setDraftDesignSystemObject(full);
+            AgentJournal.setDesignSystemObject(
+                    AgentJournal.DRAFT_KEY, full);
+            out.addProperty("saved", "draft");
+        } else {
+            AgentJournal.setDesignSystemObject(scId, full);
+            out.add("materialized", materializeToProject(scId, full));
+            out.addProperty("saved", true);
+        }
+        out.addProperty("brand_color", hex);
+        return out;
+    }
+
     public static JsonObject materializeToProject(String scId,
                                                   JsonObject designSystemJson)
             throws AgentTools.ToolException {
