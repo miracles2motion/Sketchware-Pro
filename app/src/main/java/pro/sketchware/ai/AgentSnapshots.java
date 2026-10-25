@@ -134,8 +134,9 @@ public final class AgentSnapshots {
             if (entries == null) {
                 return out;
             }
-            Arrays.sort(entries, (a, b) -> b.lastModified()
-                    - a.lastModified());
+            Arrays.sort(entries,
+                    (File a, File b) -> Long.compare(
+                            b.lastModified(), a.lastModified()));
             for (File entry : entries) {
                 if (!entry.isDirectory() || !new File(entry, MARKER)
                         .isFile()) {
