@@ -1050,7 +1050,8 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                     rowView.setLayoutParams(rlp);
                     GradientDrawable rowBg = new GradientDrawable();
                     rowBg.setCornerRadius(10f * d);
-                    rowBg.setColor(withAlphaCompat(AgentTheme.ink(ctx),
+rowBg.setColor(androidx.core.graphics.ColorUtils
+                            .setAlphaComponent(AgentTheme.ink(ctx),
                             0x0D));
                     rowView.setBackground(rowBg);
                     String icon = "🕒";

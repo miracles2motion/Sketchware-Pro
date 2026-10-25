@@ -284,14 +284,16 @@ public class AgentFragment extends qA {
                     updateBoardCard();
                     return;
                 }
-                pro.sketchware.ai.AgentBoard.Part target = null;
+                pro.sketchware.ai.AgentBoard.Part found = null;
                 for (pro.sketchware.ai.AgentBoard.Part part
                         : agentBoard.getParts()) {
                     if (part.index == partIndex) {
-                        target = part;
+                        found = part;
                         break;
                     }
                 }
+                // Effectively final: the threads below capture it.
+                final pro.sketchware.ai.AgentBoard.Part target = found;
                 if (target == null) {
                     return;
                 }
