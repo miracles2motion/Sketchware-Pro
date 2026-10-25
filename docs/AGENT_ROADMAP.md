@@ -440,3 +440,20 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 
 ### Hotfix — Model-selector dropdown crash (`AgentSettingsActivity.java`)
 - Field report (24 Oct): Settings → OpenRouter → Refresh models → tap the model selector ⇒ `IllegalStateException: ArrayAdapter requires the resource ID to be a TextView` (Caused by `TwoLineListItem cannot be cast to TextView`) at `BadgeAdapter.getView`. Latent since Wave 53: `BadgeAdapter` passed `android.R.layout.simple_list_item_2` (root `TwoLineListItem`) to `ArrayAdapter` and called `super.getView()`, and ArrayAdapter's default binder only auto-fills a bare `TextView` — it crashes the first time the dropdown opens with a **non-empty** cached model list (empty caches never reach `getView`, which is why it hid through Waves 53–56). Fixed: the super class gets the TextView-rooted `simple_dropdown_item_1line`, `getView` inflates/binds the `TwoLineListItem` row itself (recycling only same-type rows), and `getDropDownView` routes through `getView` so the dropdown's scrap stays homogeneous. Same visuals as before (14sp name, 11sp badge at 0.85 alpha).
+
+---
+
+## Wave 58 / Phases 43–44 (DONE) — The Invisible Choice Popup (field report, 25 Oct)
+
+**Field report:** "Create for me a habit tracker app" in a fresh draft chat (gpt-oss-120b, OpenRouter) never showed the design-choice popup. Export forensics: the model made **zero tool calls** — the system prompt's ask_choice instruction was answered by *drawing* an OpenUI fence (`ChoiceChips( label: "…", $style = "", options: [...] )`) in the reply text instead. Three independent layers then each contributed to the user seeing nothing:
+1. **Grammar rejection:** OpenUI Lang statements are `identifier = Expression` lines; the fence had no statement-level `=` (and `label:`/`$style =` argument syntax is not the grammar), so `parse` produced zero statements and the whole block was skipped as malformed.
+2. **Silent renderer:** `renderProgramInto` found no root and, not streaming, added **no view at all** — an empty gap where the choices should be, no error, no source.
+3. **No tool → no popup:** the ask_choice sheet only exists inside the tool path, so nothing tappable ever appeared; the user answered "I did see anything".
+
+### Phase 43 (DONE) — Choice auto-bounce (`AgentLoop.java`, `AgentFragment.java`, `OpenUiLang.java`)
+- `OpenUiLang.extractChatChoice(text)`: tolerant recovery that ignores the strict grammar — finds an ```openui fence rooted at `ChoiceChips`/`Select`/`Choice`, collects its string literals (skipping empties, `$var` bindings, bare hexes and bare numbers), and returns `[question, option…]`. Validated in a standalone harness against the exact fence from the field export (question + 3 options), the positional `Select` form, and four negatives (Table/StyleCard/no-fence) — no false positives.
+- `AgentFragment.maybeBounceChatChoice` at turn end (after COMPLETE): when **no choice sheet ran this turn** (`choiceSheetShownThisTurn` — set by the tool path, reset in `startRequest`), the extracted question/options go through the very same `awaitChoice` sheet (swatch rows, 🎨/⌨/✨ rows included) on a daemon thread; the pick is sent as the user's own message via `sendChoiceAsUser`. One-shot per turn; a properly tool-called ask_choice never double-pops.
+- Prompt hardened in both places: the DESIGN BEFORE YOU BUILD rule now says the options must be INSIDE the ask_choice tool call (never an ```openui block, ChoiceChips/Select, or a plain list — the app can only pop the sheet from the tool call); the screen-component catalog now marks ChoiceChips/Select "app screens only, never inside a chat reply".
+
+### Phase 44 (DONE) — OpenUI blocks are never silent (`OpenUiChatRenderer.java`)
+- `renderProgramInto` now receives the raw segment source; when no root resolves (or `buildNodeView` yields nothing) on a completed reply, it renders a fallback card — "This interactive block could not be displayed — its source is below." — with the source in selectable 11sp monospace (capped at 1200 chars). Streaming keeps the skeleton. No reply can again lose its interactive block into an empty gap.

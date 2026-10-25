@@ -47,6 +47,7 @@ import pro.sketchware.R;
 import pro.sketchware.ai.AgentChatLog;
 import pro.sketchware.ai.AgentExport;
 import pro.sketchware.ai.AgentJournal;
+import pro.sketchware.ai.OpenUiLang;
 import pro.sketchware.ai.AgentKnowledgePack;
 import pro.sketchware.ai.AgentLoop;
 import pro.sketchware.ai.AgentMedia;
@@ -89,6 +90,10 @@ public class AgentFragment extends qA {
     private volatile com.google.gson.JsonObject pickedColor;
     /** The option the user tapped in the agent's question, if any. */
     private volatile String pickedChoice;
+    // True from the moment a choice sheet shows this turn: the tool path
+    // marks it, and the turn-end bounce checks it so a choice the model
+    // DID ask for properly is never popped twice.
+    private boolean choiceSheetShownThisTurn;
     /** Lets the waiting turn know a question was answered. */
     private volatile CountDownLatch choiceLatch;
     /** Tokens that arrived but are not in the list yet. */
@@ -687,6 +692,7 @@ public class AgentFragment extends qA {
         generating = true;
         liveStepLabel = "";
         stripDismissedText = "";
+        choiceSheetShownThisTurn = false;
         requestStartedAt = SystemClock.elapsedRealtime();
         updateActionButton();
         refreshStrip();
@@ -3441,6 +3447,7 @@ public class AgentFragment extends qA {
             return null;
         }
         pickedChoice = null;
+        choiceSheetShownThisTurn = true;
         CountDownLatch latch = new CountDownLatch(1);
         choiceLatch = latch;
         showChoiceQuestion(question, options, latch);
@@ -4571,6 +4578,7 @@ public class AgentFragment extends qA {
         streamingMessage.repliedAt = System.currentTimeMillis();
         streamingMessage.durationMs =
                 SystemClock.elapsedRealtime() - requestStartedAt;
+        boolean finishedComplete = true;
         if (streamingMessage.text.trim().isEmpty()) {
             // A turn that ends with NOTHING on screen reads as a
             // freeze — it becomes a visible failed bubble with the
@@ -4579,11 +4587,60 @@ public class AgentFragment extends qA {
             streamingMessage.text =
                     "The model returned an empty reply — tap to retry.";
             failedBubble = streamingMessage;
+            finishedComplete = false;
         }
+        final String finishedText = streamingMessage.text;
         streamingMessage = null;
         if (binding != null) {
             adapter.notifyDataSetChanged();
         }
+        if (finishedComplete) {
+            maybeBounceChatChoice(finishedText);
+        }
+    }
+
+    /**
+     * One-shot bounce: the model was asked to offer options through the
+     * ask_choice tool but DREW them as an OpenUI block in the bubble
+     * instead (observed in the field — the user saw no popup at all).
+     * When no choice sheet ran this turn, the block's question and
+     * options are lifted into the real tappable sheet; the pick is sent
+     * as the user's own answer.
+     */
+    private void maybeBounceChatChoice(String text) {
+        if (choiceSheetShownThisTurn || generating || !isAdded()) {
+            return;
+        }
+        final java.util.List<String> choice =
+                OpenUiLang.extractChatChoice(text);
+        if (choice == null || choice.size() < 3) {
+            return;
+        }
+        final String question = choice.get(0);
+        final java.util.List<String> options =
+                new ArrayList<>(choice.subList(1, choice.size()));
+        Thread bounce = new Thread(() -> {
+            String picked = awaitChoice(question, options);
+            if (picked != null && !picked.trim().isEmpty()) {
+                runOnUi(() -> sendChoiceAsUser(picked));
+            }
+        });
+        bounce.setDaemon(true);
+        bounce.start();
+    }
+
+    /** Sends the bounced choice as if the user had typed it. */
+    private void sendChoiceAsUser(String text) {
+        if (!isAdded() || binding == null || generating) {
+            return;
+        }
+        appendMessage(ChatMessage.user(text));
+        persistChat();
+        lastUserText = text;
+        ChatMessage reply = ChatMessage.assistant("");
+        streamingMessage = reply;
+        appendMessage(reply);
+        startRequest();
     }
 
     /**

@@ -185,6 +185,7 @@ public final class OpenUiChatRenderer {
             container.addView(blockHost);
             cache.blockHosts.put(segIndex, blockHost);
 
+            final String segSource = seg.content;
             final OpenUiLang.RuntimeState boundRuntime = runtime;
             final RenderCache finalCache = cache;
             boundRuntime.setOnStateChangeListener(() -> {
@@ -192,10 +193,10 @@ public final class OpenUiChatRenderer {
                 if (host != null) {
                     host.onStateChanged(message);
                 }
-                renderProgramInto(blockHost, boundRuntime, message, segStreaming, markwon, host, finalCache.runtimes);
+                renderProgramInto(blockHost, boundRuntime, message, segStreaming, markwon, host, finalCache.runtimes, segSource);
             });
 
-            renderProgramInto(blockHost, boundRuntime, message, segStreaming, markwon, host, cache.runtimes);
+            renderProgramInto(blockHost, boundRuntime, message, segStreaming, markwon, host, cache.runtimes, segSource);
         }
     }
 
@@ -288,13 +289,19 @@ public final class OpenUiChatRenderer {
                                           boolean streaming,
                                           Markwon markwon,
                                           Host host,
-                                          Map<Integer, OpenUiLang.RuntimeState> allRuntimes) {
+                                          Map<Integer, OpenUiLang.RuntimeState> allRuntimes,
+                                          String rawSource) {
         blockHost.removeAllViews();
         Context ctx = blockHost.getContext();
         OpenUiLang.ComponentNode root = runtime.evaluateRoot(ROOT_COMPONENTS);
         if (root == null) {
             if (streaming) {
                 blockHost.addView(buildSkeletonView(ctx, "Building interface…"));
+            } else {
+                // A block that produced no views is never silent — the
+                // user would stare at an empty gap and think the reply
+                // lost its options. Show the source instead.
+                blockHost.addView(buildRawFallbackView(ctx, rawSource));
             }
             return;
         }
@@ -321,7 +328,36 @@ public final class OpenUiChatRenderer {
                 markwon, host, actionHost, allRuntimes);
         if (rootView != null) {
             blockHost.addView(rootView);
+        } else if (!streaming) {
+            blockHost.addView(buildRawFallbackView(ctx, rawSource));
         }
+    }
+
+    /** The readable remains of a block the renderer could not build. */
+    private static View buildRawFallbackView(Context ctx, String rawSource) {
+        LinearLayout wrap = new LinearLayout(ctx);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        TextView note = new TextView(ctx);
+        note.setText("This interactive block could not be displayed \u2014 "
+                + "its source is below.");
+        note.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_LabelSmall);
+        note.setTextColor(colorOnSurfaceVariant(ctx));
+        note.setPadding(dp(ctx, 2), dp(ctx, 4), dp(ctx, 2), dp(ctx, 4));
+        wrap.addView(note);
+        TextView code = new TextView(ctx);
+        String source = rawSource == null ? "" : rawSource.trim();
+        if (source.length() > 1200) {
+            source = source.substring(0, 1200) + " \u2026";
+        }
+        code.setText(source);
+        code.setTypeface(android.graphics.Typeface.MONOSPACE);
+        code.setTextSize(11f);
+        code.setTextColor(colorOnSurfaceVariant(ctx));
+        code.setTextIsSelectable(true);
+        code.setPadding(dp(ctx, 2), 0, dp(ctx, 2), dp(ctx, 2));
+        wrap.addView(code);
+        return wrap;
     }
 
     /** Checks whether any expression outside a single direct binding reads {@code $varName}. */

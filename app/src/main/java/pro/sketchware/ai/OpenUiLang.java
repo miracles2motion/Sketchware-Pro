@@ -56,6 +56,92 @@ public final class OpenUiLang {
                 || lower.contains("]]>openui:");
     }
 
+    /**
+     * Tolerant chat-choice recovery: when the model answers a style or
+     * direction question by DRAWING an OpenUI choice block (a
+     * ChoiceChips/Select fence) instead of calling the ask_choice tool,
+     * this pulls the question and the options out of the raw fence text.
+     * It deliberately does NOT use the strict grammar — a model that
+     * confuses the two syntaxes is exactly the one this must catch.
+     * Returns [question, option…] (question first) or null when the text
+     * holds no choice block.
+     */
+    public static List<String> extractChatChoice(String text) {
+        if (text == null || text.isEmpty()) {
+            return null;
+        }
+        java.util.regex.Matcher fence = java.util.regex.Pattern
+                .compile("(?is)```\\s*openui[^\\n]*\\n(.*?)(```|\\\\z)")
+                .matcher(text);
+        while (fence.find()) {
+            List<String> out = choiceFromFence(fence.group(1));
+            if (out != null) {
+                return out;
+            }
+        }
+        return null;
+    }
+
+    private static List<String> choiceFromFence(String source) {
+        if (source == null) {
+            return null;
+        }
+        String head = source.trim();
+        if (!head.startsWith("ChoiceChips")
+                && !head.startsWith("Select")
+                && !head.startsWith("Choice")) {
+            return null;
+        }
+        List<String> strings = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inString = false;
+        boolean escaped = false;
+        for (int i = 0; i < source.length(); i++) {
+            char c = source.charAt(i);
+            if (inString) {
+                if (escaped) {
+                    current.append(c);
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == '"') {
+                    inString = false;
+                    String value = current.toString().trim();
+                    // Empty strings and "$var" bindings are arguments,
+                    // never something the user could pick or read.
+                    if (!value.isEmpty() && !value.startsWith("$")) {
+                        strings.add(value);
+                    }
+                    current.setLength(0);
+                } else {
+                    current.append(c);
+                }
+            } else if (c == '"') {
+                inString = true;
+            }
+        }
+        if (strings.size() < 3) {
+            return null;
+        }
+        List<String> out = new ArrayList<>();
+        out.add(strings.get(0));
+        int options = 0;
+        for (int i = 1; i < strings.size() && options < 6; i++) {
+            String value = strings.get(i);
+            // A bare hex or a bare number is swatch/argument data.
+            if (value.matches("#[0-9A-Fa-f]{6,8}")
+                    || value.matches("\\d+(\\.\\d+)?")) {
+                continue;
+            }
+            out.add(value);
+            options++;
+        }
+        if (out.size() < 3) {
+            return null;
+        }
+        return out;
+    }
+
     /** A contiguous slice of an assistant message: Markdown prose or OpenUI Lang code. */
     public static final class Segment {
         public enum Kind {
