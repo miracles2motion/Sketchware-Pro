@@ -103,6 +103,17 @@ public class AgentFragment extends qA {
     /** The plan review dialog opens itself ONCE per session. */
     private boolean planAutoOpenedThisSession;
 
+    /** True only when a REAL project is the working one — the app
+     * uses the sentinel id "__draft__" before any project exists. */
+    private boolean hasRealProject() {
+        if (providerConfig == null) {
+            return false;
+        }
+        String id = providerConfig.workingProjectId();
+        return id != null && !id.isEmpty()
+                && !pro.sketchware.ai.AgentJournal.DRAFT_KEY.equals(id);
+    }
+
     /** The plan that matters right now: the working project's plan,
      * or — before any project exists — the agreed draft. Never null. */
     private com.google.gson.JsonObject currentPlanOrDraft() {
@@ -2954,22 +2965,16 @@ public class AgentFragment extends qA {
                         .setView(scroll)
                         .setPositiveButton("▶ Start building",
                                 (d, w) -> startFromPlan())
-                        .setNeutralButton(providerConfig != null
-                                        && !providerConfig
-                                        .workingProjectId().isEmpty()
-                                ? "Project history" : "",
-                                providerConfig != null
-                                        && !providerConfig
-                                        .workingProjectId().isEmpty()
-                                ? (d, w) -> showSnapshotsDialog() : null)
-                        .setNegativeButton(providerConfig != null
-                                        && !providerConfig
-                                        .workingProjectId().isEmpty()
-                                ? "⚡ Build in parts" : "Close",
-                                providerConfig != null
-                                        && !providerConfig
-                                        .workingProjectId().isEmpty()
-                                ? (d, w) -> confirmParallelBuild() : null)
+                        .setNeutralButton(hasRealProject()
+                                        ? "Project history" : "",
+                                hasRealProject()
+                                        ? (d, w) -> showSnapshotsDialog()
+                                        : null)
+                        .setNegativeButton(hasRealProject()
+                                        ? "⚡ Build in parts" : "Close",
+                                hasRealProject()
+                                        ? (d, w) -> confirmParallelBuild()
+                                        : null)
                         .create();
         dialog.show();
         if (generating) {
@@ -2999,8 +3004,19 @@ public class AgentFragment extends qA {
         }
         String scId = providerConfig == null
                 ? "" : providerConfig.workingProjectId();
+        boolean noProject = !hasRealProject();
         com.google.gson.JsonObject plan = AgentJournal.plan(scId);
-        if (scId.isEmpty() && pro.sketchware.ai.AgentJournal
+        if (noProject) {
+            // No real project yet (empty or "__draft__"): the plan —
+            // wherever it lives — can only be BUILT from, not split.
+            Toast.makeText(getContext(),
+                    "Your plan is saved. Tap ▶ Start building — the "
+                            + "project is created from it, then parts "
+                            + "become available.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (pro.sketchware.ai.AgentJournal
                 .draftPlan().has("steps")) {
             // A plan agreed BEFORE any project exists: building must
             // start first — creating the project IS step one.
@@ -3025,24 +3041,17 @@ public class AgentFragment extends qA {
                 .setTitle("Build it — how?")
                 .setMessage("Every part is checked — shown, reviewed, "
                         + "and the whole app test-compiled — before it "
-                        + "counts as done. Pick how to build:")
-                .setItems(new CharSequence[]{
-                                "Blueprint first — every screen drawn "
-                                        + "and named, you approve it, "
-                                        + "then screens are built and "
-                                        + "wired (recommended)",
-                                "Steady — build from the plan, one "
-                                        + "part at a time",
-                                "Fast — build from the plan, all parts "
-                                        + "at once (uses more data)"},
-                        (d, w) -> {
-                            if (w == 0) {
-                                startBlueprintFlow();
-                            } else {
-                                startParallelBuild(w == 2);
-                            }
-                        })
-                .setNegativeButton(android.R.string.cancel, null)
+                        + "counts as done. Pick a way (tap outside to "
+                        + "cancel):")
+                // Plain buttons, not a list: list items were reported
+                // invisible on at least one MIUI device — buttons are
+                // the primitive every Android skin renders.
+                .setPositiveButton("Blueprint first (recommended)",
+                        (d, w) -> startBlueprintFlow())
+                .setNeutralButton("Steady parts",
+                        (d, w) -> startParallelBuild(false))
+                .setNegativeButton("Fast parts",
+                        (d, w) -> startParallelBuild(true))
                 .show();
     }
 
@@ -3078,7 +3087,8 @@ public class AgentFragment extends qA {
         }
         String scId = providerConfig.workingProjectId();
         com.google.gson.JsonObject plan = AgentJournal.plan(scId);
-        if (scId.isEmpty() && AgentJournal.draftPlan().has("steps")) {
+        if (!hasRealProject()) {
+            // Empty or "__draft__": a build needs a real project first.
             Toast.makeText(getContext(),
                     "Your plan is saved. Tap ▶ Start building — the "
                             + "project is created from it, then the "

@@ -164,7 +164,11 @@ public final class AgentBoard {
                                       List<String> autoModelPool,
                                       boolean fastMode,
                                       BoardListener listener) {
-        if (running || context == null || !available(plan)) {
+        if (running || context == null || !available(plan)
+                || scId == null || scId.isEmpty()
+                || AgentJournal.DRAFT_KEY.equals(scId)) {
+            // Never build against no project or the "__draft__"
+            // sentinel: parts need a real project to land in.
             return false;
         }
         configure(context, scId, baseUrl, apiKey, model, plan,
@@ -231,7 +235,9 @@ public final class AgentBoard {
             String scId, String baseUrl, String apiKey, String model,
             JsonObject plan, List<String> autoModelPool,
             BoardListener listener) {
-        if (running || context == null || !available(plan)) {
+        if (running || context == null || !available(plan)
+                || scId == null || scId.isEmpty()
+                || AgentJournal.DRAFT_KEY.equals(scId)) {
             return false;
         }
         configure(context, scId, baseUrl, apiKey, model, plan,
