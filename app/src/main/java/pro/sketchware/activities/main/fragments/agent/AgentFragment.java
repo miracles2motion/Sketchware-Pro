@@ -102,6 +102,20 @@ public class AgentFragment extends qA {
     private volatile boolean choiceBounceRunning;
     /** The plan review dialog opens itself ONCE per session. */
     private boolean planAutoOpenedThisSession;
+
+    /** The plan that matters right now: the working project's plan,
+     * or — before any project exists — the agreed draft. Never null. */
+    private com.google.gson.JsonObject currentPlanOrDraft() {
+        String scId = providerConfig == null
+                ? "" : providerConfig.workingProjectId();
+        com.google.gson.JsonObject plan = scId.isEmpty()
+                ? new com.google.gson.JsonObject()
+                : pro.sketchware.ai.AgentJournal.plan(scId);
+        if (!plan.has("steps")) {
+            plan = pro.sketchware.ai.AgentJournal.draftPlan();
+        }
+        return plan;
+    }
     private int planOpenRetries;
     private final pro.sketchware.ai.AgentBoard agentBoard =
             new pro.sketchware.ai.AgentBoard();
@@ -290,8 +304,12 @@ public class AgentFragment extends qA {
         providerConfig = AiProviderConfig.load(requireContext());
         // A plan that already existed when this screen opened is not
         // news — only a plan created NOW gets the auto-opened review.
+        // plan() returns an EMPTY OBJECT when there is no plan — a
+        // null check here silently disabled the auto-open forever.
         planAutoOpenedThisSession = AgentJournal.plan(
-                providerConfig.workingProjectId()) != null;
+                providerConfig.workingProjectId()).has("steps")
+                || pro.sketchware.ai.AgentJournal.draftPlan()
+                .has("steps");
         binding.workingOnCard.setOnClickListener(v -> showProjectPicker());
         agentLoop = new AgentLoop(requireContext(), chatService, agentExecutor);
         updateWorkingOnCard();
@@ -2781,9 +2799,7 @@ public class AgentFragment extends qA {
         if (planAutoOpenedThisSession || !isAdded()) {
             return;
         }
-        String scId = providerConfig == null
-                ? "" : providerConfig.workingProjectId();
-        if (AgentJournal.plan(scId) == null) {
+        if (!currentPlanOrDraft().has("steps")) {
             return;
         }
         if (generating) {
@@ -2938,10 +2954,22 @@ public class AgentFragment extends qA {
                         .setView(scroll)
                         .setPositiveButton("▶ Start building",
                                 (d, w) -> startFromPlan())
-                        .setNeutralButton("Project history",
-                                (d, w) -> showSnapshotsDialog())
-                        .setNegativeButton("⚡ Build in parts",
-                                (d, w) -> confirmParallelBuild())
+                        .setNeutralButton(providerConfig != null
+                                        && !providerConfig
+                                        .workingProjectId().isEmpty()
+                                ? "Project history" : "",
+                                providerConfig != null
+                                        && !providerConfig
+                                        .workingProjectId().isEmpty()
+                                ? (d, w) -> showSnapshotsDialog() : null)
+                        .setNegativeButton(providerConfig != null
+                                        && !providerConfig
+                                        .workingProjectId().isEmpty()
+                                ? "⚡ Build in parts" : "Close",
+                                providerConfig != null
+                                        && !providerConfig
+                                        .workingProjectId().isEmpty()
+                                ? (d, w) -> confirmParallelBuild() : null)
                         .create();
         dialog.show();
         if (generating) {
@@ -2972,6 +3000,17 @@ public class AgentFragment extends qA {
         String scId = providerConfig == null
                 ? "" : providerConfig.workingProjectId();
         com.google.gson.JsonObject plan = AgentJournal.plan(scId);
+        if (scId.isEmpty() && pro.sketchware.ai.AgentJournal
+                .draftPlan().has("steps")) {
+            // A plan agreed BEFORE any project exists: building must
+            // start first — creating the project IS step one.
+            Toast.makeText(getContext(),
+                    "Your plan is saved. Tap ▶ Start building — the "
+                            + "project is created from it, then parts "
+                            + "become available.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
         if (scId.isEmpty() || !pro.sketchware.ai.AgentBoard
                 .available(plan)) {
             Toast.makeText(getContext(),
@@ -3037,10 +3076,18 @@ public class AgentFragment extends qA {
         if (generating || agentBoard.isRunning() || !isAdded()) {
             return;
         }
-        AiProviderConfig.Settings settings =
-                providerConfig.activeSettings();
         String scId = providerConfig.workingProjectId();
         com.google.gson.JsonObject plan = AgentJournal.plan(scId);
+        if (scId.isEmpty() && AgentJournal.draftPlan().has("steps")) {
+            Toast.makeText(getContext(),
+                    "Your plan is saved. Tap ▶ Start building — the "
+                            + "project is created from it, then the "
+                            + "blueprint build becomes available.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        AiProviderConfig.Settings settings =
+                providerConfig.activeSettings();
         boolean started = agentBoard.startBlueprint(requireContext(),
                 scId, settings.baseUrl,
                 providerConfig.apiKey(providerConfig.activeProvider()),

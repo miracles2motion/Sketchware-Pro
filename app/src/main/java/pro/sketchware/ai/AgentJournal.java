@@ -2022,6 +2022,29 @@ public final class AgentJournal {
         draftPlanSteps = stepsText == null ? "" : stepsText;
     }
 
+    /** The plan agreed before any project exists, in the SAME shape
+     * as {@link #plan} — so the UI can treat drafts and project plans
+     * identically. Empty object when there is no draft. */
+    public static synchronized JsonObject draftPlan() {
+        JsonObject out = new JsonObject();
+        if (draftPlanSteps.isEmpty()) {
+            return out;
+        }
+        out.addProperty("title", draftPlanTitle);
+        com.google.gson.JsonArray steps = new com.google.gson.JsonArray();
+        for (String line : draftPlanSteps.split("\n")) {
+            if (line.trim().isEmpty()) {
+                continue;
+            }
+            JsonObject step = new JsonObject();
+            step.addProperty("text", line.trim());
+            step.addProperty("state", "pending");
+            steps.add(step);
+        }
+        out.add("steps", steps);
+        return out;
+    }
+
     public static synchronized boolean hasDrafts() {
         return !draftStyleBrief.isEmpty()
                 || !draftPlanSteps.isEmpty()
