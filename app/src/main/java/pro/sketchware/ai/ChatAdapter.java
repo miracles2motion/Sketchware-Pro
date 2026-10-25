@@ -899,7 +899,10 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                 return;
             }
             if ("blueprint".equals(kind)) {
-                title.setText("The blueprint — build this?");
+                title.setText(m.cardData != null
+                        && m.cardData.has("recovered")
+                        ? "Your saved blueprint — build this?"
+                        : "The blueprint — build this?");
                 String scId = m.cardData != null && m.cardData.has("scId")
                         ? m.cardData.get("scId").getAsString() : "";
                 String text = m.cardData != null && m.cardData

@@ -1286,6 +1286,7 @@ public class AgentFragment extends qA {
         card.timestamp = System.currentTimeMillis();
         card.cardData.addProperty("blueprint_text", saved);
         card.cardData.addProperty("scId", scId);
+        card.cardData.addProperty("recovered", true);
         appendMessage(card);
         persistChat();
     }
