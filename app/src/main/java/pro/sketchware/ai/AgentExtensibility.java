@@ -375,7 +375,8 @@ public final class AgentExtensibility {
         // and nothing beyond the argument count. A mismatched block
         // compiles into wrong Java at the user's expense.
         String cleanCode = code.trim();
-        java.util.Set<Integer> slots = new java.util.TreeSet<>();
+        java.util.TreeSet<Integer> slots =
+                new java.util.TreeSet<>();
         java.util.regex.Matcher pos = java.util.regex.Pattern
                 .compile("%(\\d+)\\$[sdbf]").matcher(cleanCode);
         while (pos.find()) {
