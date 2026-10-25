@@ -533,3 +533,35 @@ Native Firestore component + blocks (CRUD, queries, listeners) alongside the exi
 A WorkManager-backed background-task component with blocks (schedule one-time/periodic work, constraints, cancel), closing the "timers die with the app" gap. Manifest wiring via the existing injection path.
 
 **Sidelined (backlog, not phases):** localization manager (values-<lang> UI), test support (unit/UI), in-app billing blocks, crash/analytics reporting for built apps, home-screen widget builder, Wear/TV targets, ConstraintLayout palette entry, API designer for hosted backends.
+
+---
+
+## Wave 62 / Phases 52–54 (PENDING — DO NOT BUILD until the user explicitly says so) — Agent Manager: parallel builders with a review board (the "Antigravity" experience)
+
+**Field context (25 Oct):** the user compared the agent's single-lane hour-long builds ("a habit tracker for almost an hour and at the end it might likely look poor") to Google Antigravity's orchestrator model. Diagnosis: (1) the agent is ONE conversation making ONE network/tool call at a time — the hour is latency stacked on latency, not thinking; (2) the model does manual labor (hand-writing 200 blocks one by one), which is also where quality dies — attention is gone by block 150; (3) everything is serial under one project lock. The fix is a role reversal: agents work in PARALLEL on separate pieces, produce REVIEWABLE finished pieces, and the user reviews pictures + taps Add/Rebuild instead of watching chat text for an hour.
+
+**User's direction for the UX:** extremely presentable to a LAYMAN. The user never sees the words "territory", "candidate", "orchestrator", "worker", "diff", "merge". The words the user DOES see: "Your app has 4 parts. I'm building all 4 at the same time — about 10 minutes instead of an hour.", "2 of 4 parts ready.", "Take a look", "Add to my app", "No, rebuild it".
+
+**Hard dependencies:** builds ON TOP OF Phase 49 (snapshots + diff — a worker builds on a CLONE of the project; its result lands as a diff artifact the user reviews; nothing touches the real project without approval) and Phase 45 (the Plan Contract — the plan's steps are what get divided among workers). Both must land first.
+
+### Phase 52 (PENDING) — Parallel builders over project parts ("parts, built together")
+- **Part division (layman-safe):** the planner splits the app into NON-OVERLAPPING units — per screens (Habits screen, Stats screen), theme/styling, assets (icons/drawables/strings), plus shared chores. Rule stated in the prompt and enforced in code: a part is only assigned when its files/state are disjoint from every other running part; ambiguous overlaps fall back to the single-lane path. No shared-state conflicts by construction.
+- **Isolation:** each part is built in its own CLONE of the project (Phase 49 snapshot/clone machinery). A worker is a normal agent turn with its own conversation, system prompt scoped to its part, and the same tool set — no new tool classes.
+- **Worker runtime:** workers run concurrently (bounded, default 3, configurable in settings — data cost warning in the UI when >1, since each worker is its own conversation); each worker's output is validated BEFORE review: builds cleanly, opens, matches the part's promised description (the app checks, not the model's claim). Broken work gets one silent repair attempt on the worker's clone, then the part is shown as "Failed — rebuild?" instead of reaching the board as done.
+- **Chat stays alive while workers run:** the main conversation is never blocked; the board is the progress surface.
+
+### Phase 53 (PENDING) — The review board (the UI the layman actually sees)
+- A card board (agent surface): one card per part — name in plain words, live state ("building…" → "✅ Done — take a look" / "Failed — rebuild?"), and a top line "2 of 4 parts ready." as THE progress bar.
+- Tapping a card opens the part's review page: preview images of what was built (AgentPreview), one plain sentence ("A screen where you add habits and tick them daily."), and the diff summary ("what changed") from Phase 49.
+- Exactly two decisions per card: **"Add to my app"** (applies the part's change-set onto the real project via the approval-card path, with the standard audit/journal trail) and **"No, rebuild it"** (re-runs that part's worker with the user's implicit feedback + the previous attempt as context). Nothing EVER joins the real project without the user's tap — the same iron rule as every mutation today.
+- Board persistence: the board survives app restarts like the chat does; parts already added are marked so.
+- "Rebuild" loops are bounded (e.g. 2 automatic retries per part) after which the part is escalated as a plain question in chat ("This part keeps failing — want me to build it in the main conversation instead?").
+
+### Phase 54 (PENDING) — Choice builds ("pick the picture you like", strictly optional)
+- For taste-heavy parts (a screen's look), the user can tap "Show me options" instead of betting on one build: N workers (default 3) each build their own take on the SAME part, each in its own clone.
+- The user sees N side-by-side preview images with one-line descriptions, taps one — that one becomes the review card from Phase 53 ("Add to my app"). The others are discarded.
+- Data honesty: this genuinely multiplies API spend (N conversations for one part), so it is an explicit opt-in per part — never a default — and the UI states the cost plainly before starting.
+
+**Standing rules this wave must keep:** Design gate on create (the plan division happens after style is settled); every approval card closes on selection with the active ring (Wave 56 rules); no model flagging/hiding anywhere — every worker uses whatever models the user already configured, including Auto; exports/journal record each part's worker conversations for forensics; the single-lane chat path remains the default until the user explicitly starts a board (and stays fully functional forever — the board is an addition, not a replacement).
+
+**Acceptance:** a 3-screen app requested with "build it" can be divided so screens/theme/assets build concurrently and the board shows plain-language progress; a part that fails validation never reaches the board as done; no part lands on the real project without "Add to my app"; a layman can complete a full build touching only the board (pictures + two buttons + "N of M parts ready"); chat remains usable the whole time.
