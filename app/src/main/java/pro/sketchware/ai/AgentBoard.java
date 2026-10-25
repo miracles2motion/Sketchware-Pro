@@ -97,6 +97,13 @@ public final class AgentBoard {
     private volatile String conventions = "";
     /** A worker stuck longer than this is cancelled, not left spinning. */
     private static final long PART_TIMEOUT_MS = 12 * 60 * 1000;
+    /** Rebuilds allowed per part before it is reported failed. */
+    private static final int MAX_ATTEMPTS = 2;
+    /** 1 = steady (one part at a time); MAX_WORKERS = fast. */
+    private volatile int maxConcurrent = 1;
+    private final java.util.concurrent.atomic.AtomicBoolean
+            supervising =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
 
     /** A plan is board-worthy when it has enough steps to divide. */
     public static boolean available(JsonObject plan) {
@@ -131,6 +138,7 @@ public final class AgentBoard {
                                       String baseUrl, String apiKey,
                                       String model, JsonObject plan,
                                       List<String> autoModelPool,
+                                      boolean fastMode,
                                       BoardListener listener) {
         if (running || context == null || !available(plan)) {
             return false;
@@ -143,6 +151,7 @@ public final class AgentBoard {
         this.autoModelPool = autoModelPool == null
                 ? new ArrayList<>() : autoModelPool;
         this.listener = listener;
+        this.maxConcurrent = fastMode ? MAX_WORKERS : 1;
         parts.clear();
         activeClaims.clear();
 
@@ -180,9 +189,7 @@ public final class AgentBoard {
                 + "uses its own AI conversation (uses more data). You "
                 + "can undo any part afterwards.");
         // One supervisor thread: starts parts as their claims free up.
-        Thread supervisor = new Thread(this::supervise, "agent-board");
-        supervisor.setDaemon(true);
-        supervisor.start();
+        kickSupervisor();
         return true;
     }
 
@@ -232,11 +239,19 @@ public final class AgentBoard {
         this.model = model == null ? this.model : model;
         part.state = PartState.QUEUED;
         part.error = "";
+        part.attempts = 0;
         running = true;
         note("Rebuilding: " + part.title);
-        Thread supervisor = new Thread(this::supervise, "agent-board");
-        supervisor.setDaemon(true);
-        supervisor.start();
+        kickSupervisor();
+    }
+
+    /** Starts the one supervisor thread, never two. */
+    private void kickSupervisor() {
+        if (supervising.compareAndSet(false, true)) {
+            Thread thread = new Thread(this::supervise, "agent-board");
+            thread.setDaemon(true);
+            thread.start();
+        }
     }
 
     // ---- internals -----------------------------------------------------
@@ -249,86 +264,74 @@ public final class AgentBoard {
                 "agent-board-watchdog");
         watchdog.setDaemon(true);
         watchdog.start();
-        // Restartable board: only parts still queued are scheduled.
-        List<Part> queue = new ArrayList<>();
-        synchronized (this) {
-            for (Part part : parts) {
-                if (part.state == PartState.QUEUED) {
-                    queue.add(part);
-                }
-            }
-        }
-        List<Thread> workers = new ArrayList<>();
-        while (!queue.isEmpty() && running) {
-            Part next = null;
-            synchronized (this) {
-                for (Part part : queue) {
-                    if (disjoint(part.claims, activeClaims)) {
-                        next = part;
-                        break;
+        try {
+            while (running) {
+                Part next = null;
+                int building = 0;
+                int queued = 0;
+                synchronized (this) {
+                    for (Part part : parts) {
+                        if (part.state == PartState.BUILDING) {
+                            building++;
+                        } else if (part.state == PartState.QUEUED) {
+                            queued++;
+                            if (next == null
+                                    && disjoint(part.claims,
+                                    activeClaims)) {
+                                next = part;
+                            }
+                        }
                     }
                 }
-            }
-            if (next == null) {
+                if (next != null && building < maxConcurrent) {
+                    startPart(next);
+                    continue;
+                }
+                if (building == 0 && queued == 0) {
+                    break; // everything finished or failed for good
+                }
+                if (building == 0 && next == null) {
+                    // Deadlock guard: queued parts block each other's
+                    // screens — start the first one anyway.
+                    synchronized (this) {
+                        for (Part part : parts) {
+                            if (part.state == PartState.QUEUED) {
+                                next = part;
+                                break;
+                            }
+                        }
+                    }
+                    if (next != null) {
+                        startPart(next);
+                    }
+                    continue;
+                }
                 try {
-                    // All queued parts are blocked by running claims;
-                    // wait for a worker to finish and free its claims.
                     Thread.sleep(1200);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return;
                 }
-                boolean anyActive = false;
-                synchronized (this) {
-                    for (Part part : parts) {
-                        if (part.state == PartState.BUILDING) {
-                            anyActive = true;
-                        }
-                    }
-                }
-                if (!anyActive) {
-                    // Nothing running and nothing startable: deadlock
-                    // guard — start the first queued part anyway.
-                    synchronized (this) {
-                        next = queue.get(0);
-                    }
-                }
-                continue;
             }
-            queue.remove(next);
-            final Part part = next;
-            synchronized (this) {
-                activeClaims.addAll(part.claims);
-                part.state = PartState.BUILDING;
-                part.startedAtMs = System.currentTimeMillis();
-                part.beforeSnapshot = AgentSnapshots.snapshot(scId);
-            }
-            changed();
-            Thread worker = new Thread(() -> runWorker(part),
-                    "agent-part-" + part.index);
-            workers.add(worker);
-            worker.start();
-            try {
-                Thread.sleep(800);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-        }
-        // Wait for the last workers, then close the board.
-        for (Thread worker : workers) {
-            try {
-                worker.join();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-        synchronized (this) {
+        } finally {
+            supervising.set(false);
             if (running) {
                 running = false;
-                changed();
             }
+            changed();
         }
+    }
+
+    private void startPart(Part part) {
+        synchronized (this) {
+            activeClaims.addAll(part.claims);
+            part.state = PartState.BUILDING;
+            part.startedAtMs = System.currentTimeMillis();
+            part.beforeSnapshot = AgentSnapshots.snapshot(scId);
+        }
+        changed();
+        new Thread(() -> runWorker(part), "agent-part-" + part.index)
+                .start();
     }
 
     /**
@@ -448,7 +451,7 @@ public final class AgentBoard {
         part.loop = loop;
         loop.autoModelPool = autoModelPool;
         StringBuilder brief = new StringBuilder();
-        brief.append("You are one of several parallel builders working ")
+        brief.append("You are one of several builders working ")
                 .append("on the SAME project, each on their own part of ")
                 .append("the agreed plan. Build YOUR part only, fully ")
                 .append("and concretely — other workers handle the ")
@@ -470,6 +473,11 @@ public final class AgentBoard {
                 }
                 brief.append(part.screenDirs.get(i));
             }
+        }
+        if (part.attempts > 0 && !part.error.isEmpty()) {
+            brief.append("\n\nA PREVIOUS ATTEMPT AT THIS PART HAD ")
+                    .append("PROBLEMS — fix ALL of them:\n")
+                    .append(part.error);
         }
         StringBuilder whole = new StringBuilder();
         synchronized (this) {
@@ -500,13 +508,20 @@ public final class AgentBoard {
 
                     @Override
                     public void onAnswer(String text, String thinking) {
-                        finishPart(part, PartState.DONE, text.trim());
+                        // Verification blocks (rendering + a reviewer
+                        // call) so it never runs on the callback thread.
+                        new Thread(() -> verifyAndFinish(part,
+                                text.trim()), "agent-verify-"
+                                + part.index).start();
                     }
 
                     @Override
                     public void onError(AiChatService.AiError error) {
-                        finishPart(part, PartState.FAILED,
-                                String.valueOf(error.message));
+                        List<String> problems = new ArrayList<>();
+                        problems.add("The builder stopped: "
+                                + error.message);
+                        new Thread(() -> decide(part, "", problems),
+                                "agent-verify-" + part.index).start();
                     }
 
                     @Override
@@ -548,20 +563,151 @@ public final class AgentBoard {
                 });
     }
 
-    private void finishPart(Part part, PartState state, String detail) {
+    /**
+     * Never trusts the worker's own words: every screen the part owns
+     * must actually render, and an independent reviewer AI must pass
+     * the real diff — only then is the part DONE.
+     */
+    private void verifyAndFinish(Part part, String summary) {
+        note(part.title + " finished — checking the result…");
+        List<String> problems = new ArrayList<>();
+        for (String dir : part.screenDirs) {
+            try {
+                AgentPreview.renderScreen(context, scId, dir,
+                        360, 800, false);
+            } catch (Throwable t) {
+                String why = String.valueOf(t.getMessage());
+                problems.add("Screen " + dir + " could not be shown"
+                        + (why.isEmpty() ? "" : ": " + why));
+            }
+        }
+        if (problems.isEmpty()) {
+            String verdict = reviewPart(part);
+            if (verdict != null && !verdict.trim().isEmpty()) {
+                problems.add(verdict.trim());
+            }
+        }
+        decide(part, summary, problems);
+    }
+
+    /**
+     * A second, independent AI reads what ACTUALLY changed (diff
+     * against the part's own pre-snapshot) against the plan and the
+     * conventions sheet. Returns null on PASS or if it cannot run
+     * (an unreachable reviewer never blocks a part).
+     */
+    private String reviewPart(Part part) {
+        try {
+            if (part.beforeSnapshot == null) {
+                return null;
+            }
+            List<String> lines =
+                    AgentSnapshots.diffLines(scId, part.beforeSnapshot);
+            if (lines == null || lines.isEmpty()) {
+                return "No changes were found for this part — nothing "
+                        + "was built.";
+            }
+            StringBuilder diff = new StringBuilder();
+            for (String line : lines) {
+                if (diff.length() > 4000) {
+                    diff.append("\n…(diff shortened)");
+                    break;
+                }
+                diff.append(line).append('\n');
+            }
+            StringBuilder steps = new StringBuilder();
+            for (String step : part.stepTexts) {
+                steps.append("- ").append(step).append('\n');
+            }
+            AiChatService service = new AiChatService();
+            List<JsonObject> messages = new ArrayList<>();
+            JsonObject system = new JsonObject();
+            system.addProperty("role", "system");
+            system.addProperty("content",
+                    "You are a strict but fair build reviewer. You "
+                            + "answer with exactly PASS, or with "
+                            + "PROBLEMS: followed by a short numbered "
+                            + "list of what is wrong or missing. No "
+                            + "other words.");
+            messages.add(system);
+            JsonObject user = new JsonObject();
+            user.addProperty("role", "user");
+            user.addProperty("content",
+                    "A builder was asked to build ONLY these steps:\n"
+                            + steps
+                            + "\nRULES it had to follow:\n"
+                            + conventions
+                            + "\nWHAT ACTUALLY CHANGED (diff):\n"
+                            + diff
+                            + "\nDid the changes correctly and fully "
+                            + "cover the steps while following the "
+                            + "rules? Answer PASS or PROBLEMS:");
+            messages.add(user);
+            AiChatService.AgentReply reply = service.agentTurnSync(
+                    baseUrl, apiKey, model, messages, null);
+            String answer = reply == null || reply.content == null
+                    ? "" : reply.content.trim();
+            if (answer.isEmpty()) {
+                return null;
+            }
+            String upper = answer.toUpperCase(java.util.Locale.US);
+            if (upper.startsWith("PASS")) {
+                return null;
+            }
+            if (answer.length() > 400) {
+                answer = answer.substring(0, 400);
+            }
+            return answer;
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    /** The gate: pass, or a bounded rebuild with problems attached. */
+    private void decide(Part part, String summary,
+                        List<String> problems) {
+        String problemText = joinProblems(problems);
+        boolean pass = problems.isEmpty();
+        boolean retry = false;
         synchronized (this) {
-            part.state = state;
-            if (state == PartState.DONE) {
-                part.summary = detail;
+            if (pass) {
+                part.state = PartState.DONE;
+                part.summary = summary;
+                part.error = "";
+            } else if (!running) {
+                part.state = PartState.FAILED;
+                part.error = "Stopped";
+            } else if (part.attempts < MAX_ATTEMPTS) {
+                part.attempts++;
+                retry = true;
+                part.state = PartState.QUEUED;
+                part.error = problemText;
             } else {
-                part.error = detail;
+                part.state = PartState.FAILED;
+                part.error = problemText;
             }
             activeClaims.removeAll(part.claims);
         }
-        note(state == PartState.DONE
-                ? "Part ready: " + part.title
-                : "Part failed: " + part.title);
+        if (pass) {
+            note("Part ready (checked): " + part.title);
+        } else if (retry) {
+            note(part.title + " had problems — building it again "
+                    + "(attempt " + (part.attempts + 1) + ")");
+        } else {
+            note("Part failed: " + part.title + " — " + problemText);
+        }
         changed();
+    }
+
+    private static String joinProblems(List<String> problems) {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < problems.size() && i < 5; i++) {
+            if (out.length() > 0) {
+                out.append(" ");
+            }
+            out.append(problems.get(i));
+        }
+        return out.toString();
     }
 
     private synchronized void note(String line) {

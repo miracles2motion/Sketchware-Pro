@@ -2935,18 +2935,23 @@ public class AgentFragment extends qA {
         int parts = Math.min(3, (plan.getAsJsonArray("steps").size()
                 + 1) / 2);
         new MaterialAlertDialogBuilder(requireContext())
-                .setTitle("Build in parts?")
-                .setMessage("Your app will be built in about " + parts
-                        + " parts at the same time — much faster. Each "
-                        + "part uses its own AI conversation, so this "
-                        + "uses more data. You can look at every part, "
-                        + "undo it, or rebuild it afterwards.")
-                .setPositiveButton("Start", (d, w) -> startParallelBuild())
+                .setTitle("Build in parts — how?")
+                .setMessage("Your plan will be built in about " + parts
+                        + " parts. Every part is checked before it "
+                        + "counts as done. Pick how to build:")
+                .setItems(new CharSequence[]{
+                                "Steady — one part at a time, each part "
+                                        + "checked before the next starts "
+                                        + "(recommended)",
+                                "Fast — all parts at the same time "
+                                        + "(quicker, uses more data, less "
+                                        + "stable)"},
+                        (d, w) -> startParallelBuild(w == 1))
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
     }
 
-    private void startParallelBuild() {
+    private void startParallelBuild(boolean fastMode) {
         if (generating || agentBoard.isRunning() || !isAdded()) {
             return;
         }
@@ -2957,7 +2962,7 @@ public class AgentFragment extends qA {
         boolean started = agentBoard.start(requireContext(), scId,
                 settings.baseUrl,
                 providerConfig.apiKey(providerConfig.activeProvider()),
-                settings.model, plan, settings.models,
+                settings.model, plan, settings.models, fastMode,
                 new pro.sketchware.ai.AgentBoard.BoardListener() {
                     @Override
                     public void onBoardChanged() {
@@ -2981,8 +2986,11 @@ public class AgentFragment extends qA {
                 });
         if (started) {
             appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM,
-                    "Parallel build started — open the plan to watch "
-                            + "the parts."));
+                    fastMode
+                            ? "Parallel build started — every part is "
+                            + "still checked before it counts."
+                            : "Part-by-part build started — each part "
+                            + "is checked before the next begins."));
             persistChat();
             showBoardDialog();
         }
