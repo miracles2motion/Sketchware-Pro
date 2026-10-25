@@ -1130,6 +1130,9 @@ public class AgentLoop {
             // runs exactly like a native call and the user gets the
             // real popup instead of a raw JSON bubble.
             recoverTextToolCall(reply);
+            // The chat-side ban: nothing tool-shaped survives
+            // to the bubble, whatever shape slipped recovery.
+            reply.content = scrubToolJson(reply.content);
             {
                 // What the model said, before anything is done with
                 // it: the answer it wrote, the reasoning it kept
@@ -1529,17 +1532,17 @@ public class AgentLoop {
      * that stops to repeat the question is worse than a decided one.
      */
     /**
-     * Recovers a tool call the model printed as text. A weak model,
-     * told to use ask_choice, will sometimes ANSWER with the call as a
-     * JSON object (bare, fenced, or with a sentence around it) instead
-     * of making a real function call — the user then sees raw JSON and
-     * no popup. Recovery is strict: only a JSON object that names a
-     * KNOWN INTERACTIVE tool (ask_choice, pick_color, …) is ever
-     * lifted, so an explanation that happens to contain JSON is never
-     * executed. The recovered call is declared in the raw message (the
-     * protocol demands a tool result reference a call the assistant
-     * message declared) and dispatched exactly like a native one; the
-     * JSON itself is stripped from what the bubble shows.
+     * Recovers tool calls the model printed as text. A weak model will
+     * sometimes ANSWER with the call as a JSON object instead of making
+     * a real function call — the user then sees raw JSON and no popup.
+     * Recovery is strict about EXECUTION (only a tool the app knows and
+     * asks the user with is ever lifted; a mutation or an unknown name
+     * is never run) and forgiving about SHAPE: bare object, fenced,
+     * wrapped in prose, an array of calls, a {"tool_calls":[…]} wrapper,
+     * arguments under any common key, the name in any casing/separators,
+     * or no usable name at all when the object carries a question with
+     * options (the ask_choice signature). The JSON never reaches the
+     * chat: what replaces it is the real sheet, or plain words.
      */
     private static void recoverTextToolCall(
             AiChatService.AgentReply reply) {
@@ -1552,63 +1555,46 @@ public class AgentLoop {
         // A fenced block: ``` or ```json (tag may share the first line).
         if (text.startsWith("```")) {
             int open = text.indexOf('\n');
-            if (open < 0) {
-                open = 3;
-            }
             int close = text.lastIndexOf("```");
-            if (close > open) {
-                text = text.substring(open, close).trim();
+            if (open > 3 && close > open) {
+                text = text.substring(open + 1, close).trim();
+            } else if (close > 3) {
+                text = text.substring(3, close).trim();
+            }
+            if (text.startsWith("json")) {
+                text = text.substring(4).trim();
             }
         }
-        // 1) The whole reply is one JSON object.
-        if (text.startsWith("{") && text.endsWith("}")) {
-            AiChatService.ToolCallData call =
-                    callFromJsonObject(text);
-            if (call != null) {
-                declareRecoveredCall(reply, call);
-                reply.content = "The question sheet is open — pick there.";
+        // 1) The whole reply is one JSON value (object or array).
+        if (text.startsWith("{") || text.startsWith("[")) {
+            java.util.List<AiChatService.ToolCallData> calls =
+                    callsFromJsonValue(text);
+            if (calls != null && !calls.isEmpty()) {
+                for (AiChatService.ToolCallData call : calls) {
+                    declareRecoveredCall(reply, call);
+                }
+                reply.content =
+                        "The question sheet is open — pick there.";
                 return;
             }
-            return; // A pure object that names no tool stays as text.
+            // A pure value naming no tool stays as text.
+            return;
         }
-        // 2) The object sits inside prose. Find the first balanced
-        // {...} (string-aware) that names a known interactive tool,
-        // lift it out, and keep the surrounding words as the bubble.
+        // 2) The JSON sits inside prose: find the first balanced {...}
+        // (string-aware) that carries a tool, lift it out, and keep the
+        // surrounding words as the bubble.
         int start = text.indexOf('{');
         while (start >= 0) {
-            int depth = 0;
-            boolean inString = false;
-            boolean escaped = false;
-            int end = -1;
-            for (int i = start; i < text.length(); i++) {
-                char c = text.charAt(i);
-                if (inString) {
-                    if (escaped) {
-                        escaped = false;
-                    } else if (c == '\\') {
-                        escaped = true;
-                    } else if (c == '"') {
-                        inString = false;
-                    }
-                } else if (c == '"') {
-                    inString = true;
-                } else if (c == '{') {
-                    depth++;
-                } else if (c == '}') {
-                    depth--;
-                    if (depth == 0) {
-                        end = i;
-                        break;
-                    }
-                }
-            }
+            int end = balancedObjectEnd(text, start);
             if (end < 0) {
-                return;
+                break;
             }
-            AiChatService.ToolCallData call =
-                    callFromJsonObject(text.substring(start, end + 1));
-            if (call != null) {
-                declareRecoveredCall(reply, call);
+            java.util.List<AiChatService.ToolCallData> calls =
+                    callsFromJsonValue(text.substring(start, end + 1));
+            if (calls != null && !calls.isEmpty()) {
+                for (AiChatService.ToolCallData call : calls) {
+                    declareRecoveredCall(reply, call);
+                }
                 String rest = (text.substring(0, start) + " "
                         + text.substring(end + 1)).trim();
                 reply.content = rest.isEmpty()
@@ -1620,32 +1606,140 @@ public class AgentLoop {
         }
     }
 
-    /** The interactive tool call this JSON object names, or null. */
-    private static AiChatService.ToolCallData callFromJsonObject(
-            String json) {
+    /** Index of the brace that closes the one at {@code start}, or -1. */
+    private static int balancedObjectEnd(String text, int start) {
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+        for (int i = start; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == '"') {
+                    inString = false;
+                }
+            } else if (c == '"') {
+                inString = true;
+            } else if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /** The recoverable calls one JSON value (object or array) holds. */
+    private static java.util.List<AiChatService.ToolCallData>
+            callsFromJsonValue(String json) {
         try {
-            JsonObject obj = com.google.gson.JsonParser
-                    .parseString(json).getAsJsonObject();
-            String name = "";
+            JsonElement parsed = com.google.gson.JsonParser
+                    .parseString(json);
+            java.util.List<AiChatService.ToolCallData> out =
+                    new java.util.ArrayList<>();
+            if (parsed.isJsonArray()) {
+                for (JsonElement element : parsed.getAsJsonArray()) {
+                    if (element.isJsonObject()) {
+                        AiChatService.ToolCallData call =
+                                callFromJsonObject(
+                                        element.getAsJsonObject());
+                        if (call != null) {
+                            out.add(call);
+                        }
+                    }
+                }
+                return out;
+            }
+            if (parsed.isJsonObject()) {
+                JsonObject obj = parsed.getAsJsonObject();
+                if (obj.has("tool_calls")
+                        && obj.get("tool_calls").isJsonArray()) {
+                    for (JsonElement element
+                            : obj.getAsJsonArray("tool_calls")) {
+                        if (element.isJsonObject()) {
+                            AiChatService.ToolCallData call =
+                                    callFromJsonObject(
+                                            element.getAsJsonObject());
+                            if (call != null) {
+                                out.add(call);
+                            }
+                        }
+                    }
+                    return out;
+                }
+                AiChatService.ToolCallData call =
+                        callFromJsonObject(obj);
+                if (call != null) {
+                    out.add(call);
+                }
+                return out;
+            }
+            return null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /** Tool names matched with case and separators forgiven. */
+    private static String canonicalToolName(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return null;
+        }
+        String norm = raw.toLowerCase(java.util.Locale.US)
+                .replaceAll("[^a-z0-9]", "");
+        for (String known : new String[] {
+                "ask_choice", "pick_color", "ask_user", "ask_file"}) {
+            if (!AgentTools.isInteractive(known)) {
+                continue;
+            }
+            if (norm.equals(known.replace("_", ""))) {
+                return known;
+            }
+        }
+        return null;
+    }
+
+    /** The interactive call this object carries, or null. */
+    private static AiChatService.ToolCallData callFromJsonObject(
+            JsonObject obj) {
+        try {
+            String rawName = "";
             JsonElement argsElement = null;
             if (obj.has("function") && obj.get("function").isJsonObject()) {
-                // The OpenAI wire shape, imitated in text.
                 JsonObject fn = obj.getAsJsonObject("function");
-                name = fn.has("name")
+                rawName = fn.has("name")
                         && fn.get("name").isJsonPrimitive()
                         ? fn.get("name").getAsString() : "";
                 argsElement = fn.get("arguments");
             } else {
-                name = obj.has("tool") && obj.get("tool").isJsonPrimitive()
+                rawName = obj.has("tool")
+                        && obj.get("tool").isJsonPrimitive()
                         ? obj.get("tool").getAsString()
-                        : obj.has("name") && obj.get("name").isJsonPrimitive()
+                        : obj.has("name")
+                        && obj.get("name").isJsonPrimitive()
                         ? obj.get("name").getAsString() : "";
-                argsElement = obj.get("arguments");
+                argsElement = obj.has("arguments") ? obj.get("arguments")
+                        : obj.has("parameters") ? obj.get("parameters")
+                        : obj.has("args") ? obj.get("args") : null;
             }
-            // Only a tool the app actually knows AND asks the user
-            // with: recovering, say, a hand-written add_source_directly
-            // would execute code the model never proposed properly.
-            if (!AgentTools.isInteractive(name)) {
+            String name = canonicalToolName(rawName);
+            // Intent fallback: a question with options IS an ask_choice,
+            // name or no name — the model's intent is unambiguous.
+            if (name == null
+                    && obj.has("question") && obj.has("options")
+                    && obj.get("options").isJsonArray()
+                    && obj.getAsJsonArray("options").size() >= 2
+                    && AgentTools.isInteractive("ask_choice")) {
+                name = "ask_choice";
+                argsElement = obj;
+            }
+            if (name == null) {
                 return null;
             }
             String arguments = "{}";
@@ -1670,7 +1764,15 @@ public class AgentLoop {
     private static void declareRecoveredCall(
             AiChatService.AgentReply reply,
             AiChatService.ToolCallData call) {
-        JsonArray declared = new JsonArray();
+        JsonArray declared;
+        JsonElement existing =
+                reply.rawMessage.get("tool_calls");
+        if (existing != null && existing.isJsonArray()) {
+            declared = existing.getAsJsonArray();
+        } else {
+            declared = new JsonArray();
+            reply.rawMessage.add("tool_calls", declared);
+        }
         JsonObject wire = new JsonObject();
         wire.addProperty("id", call.id);
         wire.addProperty("type", "function");
@@ -1679,8 +1781,145 @@ public class AgentLoop {
         fn.addProperty("arguments", call.arguments);
         wire.add("function", fn);
         declared.add(wire);
-        reply.rawMessage.add("tool_calls", declared);
         reply.toolCalls.add(call);
+    }
+
+    /**
+     * True when this JSON object is shaped like a tool call (any wire
+     * dialect) — even one the app refuses to execute. Plain data the
+     * user actually asked for never matches: a lone "name", a sample
+     * payload, a config snippet all pass through untouched.
+     */
+    private static boolean looksLikeToolObject(String json) {
+        try {
+            JsonElement parsed = com.google.gson.JsonParser
+                    .parseString(json);
+            if (!parsed.isJsonObject()) {
+                return false;
+            }
+            JsonObject obj = parsed.getAsJsonObject();
+            if (obj.has("tool_calls") || obj.has("function")
+                    || obj.has("tool")) {
+                return true;
+            }
+            boolean hasName = obj.has("name")
+                    && obj.get("name").isJsonPrimitive();
+            boolean hasArgs = obj.has("arguments")
+                    || obj.has("parameters") || obj.has("args");
+            if (hasName && hasArgs) {
+                return true;
+            }
+            return obj.has("question") && obj.has("options")
+                    && obj.get("options").isJsonArray();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * The chat-side guarantee: any remaining tool-shaped JSON in a
+     * reply is masked to a plain line before the user can read it.
+     * JSON the user actually asked for (not tool-shaped) is untouched.
+     */
+    public static String scrubToolJson(String text) {
+        if (text == null || text.isEmpty()
+                || (!text.contains("{") && !text.contains("["))) {
+            return text;
+        }
+        String out = text;
+        int start = out.indexOf('{');
+        while (start >= 0) {
+            int end = balancedObjectEnd(out, start);
+            if (end < 0) {
+                break;
+            }
+            String candidate = out.substring(start, end + 1);
+            java.util.List<AiChatService.ToolCallData> calls =
+                    callsFromJsonValue(candidate);
+            // Interactive calls are handled (recovered earlier); any
+            // OTHER tool-shaped object — a mutation, an unknown tool —
+            // is banned from display too, without being executed.
+            boolean handled = calls != null && !calls.isEmpty()
+                    || looksLikeToolObject(candidate);
+            if (handled) {
+                out = out.substring(0, start)
+                        + "[The model wrote a tool call as text — the "
+                        + "app handled it; nothing for you to do.]"
+                        + out.substring(end + 1);
+                start = out.indexOf('{', start);
+            } else {
+                start = out.indexOf('{', start + 1);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The ask_choice a text object carries: [question, option…] or null.
+     * Used by the chat to pop the real sheet even when the loop's
+     * recovery missed the shape entirely.
+     */
+    public static String[] extractTextChoice(String text) {
+        if (text == null) {
+            return null;
+        }
+        int start = text.indexOf('{');
+        while (start >= 0) {
+            int end = balancedObjectEnd(text, start);
+            if (end < 0) {
+                break;
+            }
+            try {
+                JsonObject obj = com.google.gson.JsonParser
+                        .parseString(text.substring(start, end + 1))
+                        .getAsJsonObject();
+                JsonElement argsElement = obj;
+                if (obj.has("function")
+                        && obj.get("function").isJsonObject()) {
+                    argsElement = obj.getAsJsonObject("function");
+                }
+                JsonObject args = argsElement.isJsonObject()
+                        && (argsElement.getAsJsonObject().has("arguments")
+                        || argsElement.getAsJsonObject().has("parameters")
+                        || argsElement.getAsJsonObject().has("args")
+                        || argsElement.getAsJsonObject().has("question"))
+                        ? argsElement.getAsJsonObject() : null;
+                if (args != null) {
+                    args = args.has("arguments")
+                            ? args.get("arguments").isJsonPrimitive()
+                            ? com.google.gson.JsonParser.parseString(
+                            args.get("arguments").getAsString())
+                            .getAsJsonObject()
+                            : args.get("arguments").isJsonObject()
+                            ? args.getAsJsonObject("arguments") : null
+                            : args.has("parameters")
+                            ? args.getAsJsonObject("parameters")
+                            : args.has("args")
+                            ? args.getAsJsonObject("args") : args;
+                }
+                if (args != null && args.has("question")
+                        && args.has("options")
+                        && args.get("options").isJsonArray()
+                        && args.getAsJsonArray("options").size() >= 2) {
+                    String[] out = new String[1 + args
+                            .getAsJsonArray("options").size()];
+                    out[0] = args.get("question").isJsonPrimitive()
+                            ? args.get("question").getAsString() : "";
+                    int i = 1;
+                    for (JsonElement option
+                            : args.getAsJsonArray("options")) {
+                        out[i++] = option.isJsonPrimitive()
+                                ? option.getAsString()
+                                : option.toString();
+                    }
+                    return out;
+                }
+            } catch (Exception ignored) {
+                // Not JSON — keep scanning.
+            }
+            start = text.indexOf('{', start + 1);
+        }
+        return null;
     }
 
     private JsonObject askChoice(AiChatService.ToolCallData call,

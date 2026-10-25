@@ -97,6 +97,8 @@ public class AgentFragment extends qA {
     // The currently shown choice sheet (tool or bounce), so a stale one
     // can be cancelled the moment the user starts talking first.
     private androidx.appcompat.app.AlertDialog choiceSheetDialog;
+    // Only one bounced sheet may ever be in flight.
+    private volatile boolean choiceBounceRunning;
     /** Lets the waiting turn know a question was answered. */
     private volatile CountDownLatch choiceLatch;
     /** Tokens that arrived but are not in the list yet. */
@@ -4602,6 +4604,14 @@ public class AgentFragment extends qA {
         streamingMessage.repliedAt = System.currentTimeMillis();
         streamingMessage.durationMs =
                 SystemClock.elapsedRealtime() - requestStartedAt;
+        // The chat-side JSON ban, applied to EVERY completed bubble —
+        // including the plain-streaming path that never runs the tool
+        // loop. Tool-shaped JSON is masked before anyone can read it.
+        String originalText = streamingMessage.text;
+        String scrubbed = AgentLoop.scrubToolJson(originalText);
+        if (!scrubbed.equals(originalText)) {
+            streamingMessage.text = scrubbed;
+        }
         boolean finishedComplete = true;
         if (streamingMessage.text.trim().isEmpty()) {
             // A turn that ends with NOTHING on screen reads as a
@@ -4613,13 +4623,13 @@ public class AgentFragment extends qA {
             failedBubble = streamingMessage;
             finishedComplete = false;
         }
-        final String finishedText = streamingMessage.text;
+        final String finishedText = originalText;
         streamingMessage = null;
         if (binding != null) {
             adapter.notifyDataSetChanged();
         }
         if (finishedComplete) {
-            maybeBounceChatChoice(finishedText);
+            bounceIfActionable(finishedText);
         }
     }
 
@@ -4635,30 +4645,51 @@ public class AgentFragment extends qA {
      * the real tappable sheet; the pick is sent as the user's own
      * answer.
      */
-    private void maybeBounceChatChoice(String text) {
-        if (choiceSheetShownThisTurn || generating || !isAdded()) {
+    /**
+     * One bounce per turn, from either source: a drawn ChoiceChips
+     * fence, or a tool call the model printed as a JSON object. The
+     * user gets the real tappable sheet and their pick becomes their
+     * message; raw JSON never reaches this point — the scrubber
+     * already masked it in the bubble.
+     */
+    private void bounceIfActionable(String text) {
+        if (choiceSheetShownThisTurn || choiceBounceRunning
+                || generating || !isAdded()) {
             return;
         }
-        final java.util.List<String> choice =
+        java.util.List<String> choice =
                 OpenUiLang.extractChatChoice(text);
-        if (choice == null || choice.size() < 3) {
-            return;
-        }
-        final String question = choice.get(0);
-        final java.util.List<String> options =
-                new ArrayList<>(choice.subList(1, choice.size()));
-        int hexOptions = 0;
-        for (String option : options) {
-            if (option.matches(".*#[0-9A-Fa-f]{6}.*")) {
-                hexOptions++;
+        if (choice != null && choice.size() >= 3) {
+            int hexOptions = 0;
+            for (String option : choice.subList(1, choice.size())) {
+                if (option.matches(".*#[0-9A-Fa-f]{6}.*")) {
+                    hexOptions++;
+                }
+            }
+            if (hexOptions >= 2) {
+                bounceChoiceSheet(choice.get(0),
+                        new ArrayList<>(choice.subList(1, choice.size())));
+                return;
             }
         }
-        if (hexOptions < 2) {
-            // Not a design-directions block — leave it as drawn.
+        String[] parts = AgentLoop.extractTextChoice(text);
+        if (parts == null || parts.length < 3) {
             return;
         }
+        java.util.List<String> options = new ArrayList<>();
+        for (int i = 1; i < parts.length; i++) {
+            options.add(parts[i]);
+        }
+        bounceChoiceSheet(parts[0], options);
+    }
+
+    /** Pops the real sheet off-thread and sends the pick as the user's. */
+    private void bounceChoiceSheet(String question,
+                                   java.util.List<String> options) {
+        choiceBounceRunning = true;
         Thread bounce = new Thread(() -> {
             String picked = awaitChoice(question, options);
+            choiceBounceRunning = false;
             if (picked != null && !picked.trim().isEmpty()) {
                 runOnUi(() -> sendChoiceAsUser(picked));
             }
