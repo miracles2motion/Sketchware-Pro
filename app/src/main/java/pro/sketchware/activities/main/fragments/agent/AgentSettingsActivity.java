@@ -115,19 +115,29 @@ public class AgentSettingsActivity extends AppCompatActivity {
     /** Dropdown rows that show the capability badge under each name. */
     private class BadgeAdapter extends ArrayAdapter<String> {
         BadgeAdapter(List<String> models) {
+            // TextView-rooted resource for the super class: ArrayAdapter's
+            // own binder can only auto-fill a bare TextView. A two-line
+            // resource here crashes the dropdown the first time it opens
+            // with a non-empty list (TwoLineListItem cannot be cast to
+            // TextView) — the row is bound in getView() instead.
             super(AgentSettingsActivity.this,
-                    android.R.layout.simple_list_item_2, models);
+                    android.R.layout.simple_dropdown_item_1line, models);
         }
 
         @Override
         public View getView(int position, View convertView,
                             android.view.ViewGroup parent) {
-            View view = super.getView(position, convertView, parent);
+            View row = convertView
+                    instanceof android.widget.TwoLineListItem
+                    ? convertView
+                    : getLayoutInflater().inflate(
+                            android.R.layout.simple_list_item_2,
+                            parent, false);
             String id = getItem(position);
             android.widget.TextView name =
-                    view.findViewById(android.R.id.text1);
+                    row.findViewById(android.R.id.text1);
             android.widget.TextView badge =
-                    view.findViewById(android.R.id.text2);
+                    row.findViewById(android.R.id.text2);
             if (name != null) {
                 name.setText(ModelCatalog.displayName(id));
                 name.setTextSize(14f);
@@ -141,7 +151,13 @@ public class AgentSettingsActivity extends AppCompatActivity {
                 badge.setTextSize(11f);
                 badge.setAlpha(0.85f);
             }
-            return view;
+            return row;
+        }
+
+        @Override
+        public View getDropDownView(int position, View convertView,
+                                    android.view.ViewGroup parent) {
+            return getView(position, convertView, parent);
         }
     }
 
