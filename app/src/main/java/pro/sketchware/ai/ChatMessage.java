@@ -47,8 +47,28 @@ public class ChatMessage {
         ASSISTANT,
         SYSTEM,
         /** An approval card for a proposed change. Never sent to a model. */
-        APPROVAL
+        APPROVAL,
+        /**
+         * An interactive app card on the chat surface — build choices,
+         * blueprint approval, the parts board. Popups are retired:
+         * everything a dialog used to ask now lives here. Never sent
+         * to a model.
+         */
+        CARD
     }
+
+    /** Card lifecycles (role == CARD). */
+    public static final String CARD_PENDING = "PENDING";
+    public static final String CARD_USED = "USED";
+    public static final String CARD_CANCELLED = "CANCELLED";
+
+    // Card payloads (role == CARD), plain JSON so Gson round-trips them.
+    /** Which card this is: build_choice | blueprint | board. */
+    public String cardKind = "";
+    /** PENDING / USED / CANCELLED (the board card stays PENDING = live). */
+    public String cardState = CARD_PENDING;
+    /** The card's payload: choices, blueprint text, part snapshots. */
+    public JsonObject cardData = new JsonObject();
 
     /** Approval-card lifecycle. */
     public static final String APPROVAL_PENDING = "PENDING";

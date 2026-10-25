@@ -128,6 +128,11 @@ public class AgentFragment extends qA {
         return plan;
     }
     private int planOpenRetries;
+    /** Chat-native blueprint wait: taps on the blueprint card count
+     * this down instead of a popup. */
+    private final java.util.concurrent.CountDownLatch[] blueprintLatch =
+            new java.util.concurrent.CountDownLatch[1];
+    private volatile String blueprintDecision;
     private final pro.sketchware.ai.AgentBoard agentBoard =
             new pro.sketchware.ai.AgentBoard();
     private androidx.appcompat.app.AlertDialog boardDialog;
@@ -217,6 +222,39 @@ public class AgentFragment extends qA {
                 ? providerConfig.activeSettings().autoApproveSeconds : 5);
         adapter.setOnApprovalListener(this::onApprovalDecision);
         adapter.setOnInstallListener(this::onInstallRequest);
+        adapter.setOnCardListener(new pro.sketchware.ai.ChatAdapter
+                .OnCardListener() {
+            @Override
+            public void onBuildChoice(pro.sketchware.ai.ChatMessage card,
+                    String which) {
+                persistChat();
+                refreshStrip();
+                if ("cancel".equals(which)) {
+                    sayInChat("Okay — nothing was started.");
+                    return;
+                }
+                if ("blueprint".equals(which)) {
+                    startBlueprintFlow();
+                } else {
+                    startParallelBuild("fast".equals(which));
+                }
+            }
+
+            @Override
+            public void onBlueprintDecision(
+                    pro.sketchware.ai.ChatMessage card, String verdict) {
+                blueprintDecision = verdict;
+                if (blueprintLatch[0] != null) {
+                    blueprintLatch[0].countDown();
+                }
+            }
+
+            @Override
+            public void onBoardAction(pro.sketchware.ai.ChatMessage card,
+                    String action, int partIndex) {
+                // Wave 2 of this phase.
+            }
+        });
         adapter.setOnOpenUiListener(new ChatAdapter.OnOpenUiListener() {
             @Override
             public void onOpenUiStateChanged(ChatMessage message) {
@@ -1146,6 +1184,22 @@ public class AgentFragment extends qA {
         messages.clear();
         if (!scId.isEmpty()) {
             messages.addAll(AgentChatLog.load(scId));
+        }
+        // A card interrupted by a process death must not come back
+        // looking un-answered: pending one-shot cards become USED
+        // ("interrupted"), the live board card becomes CANCELLED.
+        for (ChatMessage m : messages) {
+            if (m.role == ChatMessage.Role.CARD
+                    && ChatMessage.CARD_PENDING.equals(m.cardState)
+                    && !"board".equals(m.cardKind)) {
+                m.cardState = ChatMessage.CARD_USED;
+                m.cardData.addProperty("choice",
+                        "blueprint".equals(m.cardKind)
+                                ? "interrupted" : "interrupted");
+            } else if (m.role == ChatMessage.Role.CARD
+                    && "board".equals(m.cardKind)) {
+                m.cardState = ChatMessage.CARD_CANCELLED;
+            }
         }
         if (adapter != null) {
             adapter.notifyDataSetChanged();
@@ -3023,64 +3077,52 @@ public class AgentFragment extends qA {
     // ---- Agent Manager: parallel parts ---------------------------------
 
     /** Confirms the parallel build, then starts the board. */
+    /** Says something on the chat surface (no popups, no toasts). */
+    private void sayInChat(String line) {
+        if (!isAdded()) {
+            return;
+        }
+        appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM, line));
+        persistChat();
+    }
+
+    /** Posts the how-to-build card on the chat surface: the retired
+     * popup, reborn as part of the conversation. */
     private void confirmParallelBuild() {
         if (generating || agentBoard.isRunning()) {
-            Toast.makeText(getContext(),
-                    "A build is already running", Toast.LENGTH_SHORT)
-                    .show();
+            sayInChat("A build is already running — stop it first.");
             return;
         }
         String scId = providerConfig == null
                 ? "" : providerConfig.workingProjectId();
-        boolean noProject = !hasRealProject();
         com.google.gson.JsonObject plan = AgentJournal.plan(scId);
-        if (noProject) {
+        if (!hasRealProject()) {
             // No real project yet (empty or "__draft__"): the plan —
             // wherever it lives — can only be BUILT from, not split.
-            Toast.makeText(getContext(),
-                    "Your plan is saved. Tap ▶ Start building — the "
-                            + "project is created from it, then parts "
-                            + "become available.",
-                    Toast.LENGTH_LONG).show();
+            sayInChat("Your plan is saved. Tap ▶ Start building — the "
+                    + "project is created from it, then the parts and "
+                    + "blueprint options unlock.");
             return;
         }
-        if (pro.sketchware.ai.AgentJournal
-                .draftPlan().has("steps")) {
-            // A plan agreed BEFORE any project exists: building must
-            // start first — creating the project IS step one.
-            Toast.makeText(getContext(),
-                    "Your plan is saved. Tap ▶ Start building — the "
-                            + "project is created from it, then parts "
-                            + "become available.",
-                    Toast.LENGTH_LONG).show();
-            return;
-        }
-        if (scId.isEmpty() || !pro.sketchware.ai.AgentBoard
-                .available(plan)) {
-            Toast.makeText(getContext(),
-                    "Save a plan first — a build needs at least three "
-                            + "steps to split into parts",
-                    Toast.LENGTH_LONG).show();
+        if (!pro.sketchware.ai.AgentBoard.available(plan)) {
+            sayInChat("Save a plan first — a build needs at least "
+                    + "three steps to split into parts.");
             return;
         }
         int parts = Math.min(3, (plan.getAsJsonArray("steps").size()
                 + 1) / 2);
-        new MaterialAlertDialogBuilder(requireContext())
-                .setTitle("Build it — how?")
-                .setMessage("Every part is checked — shown, reviewed, "
-                        + "and the whole app test-compiled — before it "
-                        + "counts as done. Pick a way (tap outside to "
-                        + "cancel):")
-                // Plain buttons, not a list: list items were reported
-                // invisible on at least one MIUI device — buttons are
-                // the primitive every Android skin renders.
-                .setPositiveButton("Blueprint first (recommended)",
-                        (d, w) -> startBlueprintFlow())
-                .setNeutralButton("Steady parts",
-                        (d, w) -> startParallelBuild(false))
-                .setNegativeButton("Fast parts",
-                        (d, w) -> startParallelBuild(true))
-                .show();
+        pro.sketchware.ai.ChatMessage card = new ChatMessage();
+        card.role = ChatMessage.Role.CARD;
+        card.cardKind = "build_choice";
+        card.cardState = ChatMessage.CARD_PENDING;
+        card.approvalTitle = "Build it — how?";
+        card.text = "Every part is checked — shown, reviewed, and the "
+                + "whole app test-compiled — before it counts as done. "
+                + "Your plan splits into about " + parts
+                + " parts. Pick a way:";
+        card.timestamp = System.currentTimeMillis();
+        appendMessage(card);
+        persistChat();
     }
 
     private void startParallelBuild(boolean fastMode) {

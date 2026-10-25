@@ -863,7 +863,8 @@ public class AgentLoop {
             ChatMessage message = history.get(i);
             if (message.state == ChatMessage.State.STREAMING
                     || message.role == ChatMessage.Role.SYSTEM
-                    || message.role == ChatMessage.Role.APPROVAL) {
+                    || message.role == ChatMessage.Role.APPROVAL
+                    || message.role == ChatMessage.Role.CARD) {
                 continue;
             }
             boolean hasText = message.text != null

@@ -5,6 +5,8 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.Typeface;
+import android.widget.TextView;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -48,6 +50,7 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
     private static final int TYPE_ASSISTANT = 1;
     private static final int TYPE_SYSTEM = 2;
     private static final int TYPE_APPROVAL = 3;
+    private static final int TYPE_CARD = 4;
 
     /** The list the fragment owns; the adapter never copies it. */
     private final List<ChatMessage> items;
@@ -101,6 +104,24 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
         this.installListener = listener;
     }
 
+    /** Button taps on an app card (build choice, blueprint, board). */
+    public interface OnCardListener {
+        /** which: "blueprint" | "steady" | "fast" */
+        void onBuildChoice(ChatMessage card, String which);
+
+        /** verdict: "" build as drawn, text = adjustments, null = cancel */
+        void onBlueprintDecision(ChatMessage card, String verdict);
+
+        /** action: "stop" | "undo" | "rebuild" | "keep" (partIndex >= 1) */
+        void onBoardAction(ChatMessage card, String action, int partIndex);
+    }
+
+    private OnCardListener cardListener;
+
+    public void setOnCardListener(OnCardListener listener) {
+        this.cardListener = listener;
+    }
+
     /** Interactive OpenUI Lang bubble events (state save, @ToAssistant, @OpenUrl). */
     public interface OnOpenUiListener {
         void onOpenUiStateChanged(ChatMessage message);
@@ -132,6 +153,9 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
         if (message.role == ChatMessage.Role.APPROVAL) {
             return TYPE_APPROVAL;
         }
+        if (message.role == ChatMessage.Role.CARD) {
+            return TYPE_CARD;
+        }
         if (message.isFromApp()) {
             return TYPE_SYSTEM;
         }
@@ -162,12 +186,19 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
             return new ApprovalHolder(
                     AgentChatItemApprovalBinding.inflate(inflater, parent, false));
         }
+        if (viewType == TYPE_CARD) {
+            return new CardHolder(new LinearLayout(parent.getContext()));
+        }
         return new AssistantHolder(AgentChatItemAssistantBinding.inflate(inflater, parent, false));
     }
 
     @Override
     public void onBindViewHolder(@NonNull Holder holder, int position) {
         holder.owner = this;
+        if (holder instanceof CardHolder cardHolder) {
+            cardHolder.bind(items.get(position), this);
+            return;
+        }
         holder.bind(items.get(position));
     }
 
@@ -763,5 +794,143 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
             approval.stopDots();
         }
         super.onViewRecycled(holder);
+    }
+
+    /**
+     * An app card on the chat surface — the retired popups, reborn as
+     * part of the conversation. Rendered programmatically (no XML) so
+     * each kind composes its own content; buttons route through
+     * {@link OnCardListener} and the card marks itself used, so a
+     * restored history shows the decisions that were made.
+     */
+    static class CardHolder extends Holder {
+        final LinearLayout root;
+
+        CardHolder(LinearLayout root) {
+            super(root);
+            this.root = root;
+        }
+
+        void bind(ChatMessage m, ChatAdapter adapter) {
+            Context ctx = root.getContext();
+            float d = ctx.getResources().getDisplayMetrics().density;
+            root.removeAllViews();
+            root.setOrientation(LinearLayout.VERTICAL);
+            int pad = Math.round(14f * d);
+            root.setPadding(pad, pad, pad, pad);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(0, Math.round(6f * d), Math.round(48f * d),
+                    Math.round(6f * d));
+            root.setLayoutParams(lp);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(16f * d);
+            bg.setColor(AgentTheme.surfaceLow(ctx));
+            bg.setStroke(1, AgentTheme.border(ctx));
+            root.setBackground(bg);
+
+            TextView title = new TextView(ctx);
+            title.setTextColor(AgentTheme.ink(ctx));
+            title.setTypeface(Typeface.DEFAULT_BOLD);
+            title.setTextSize(15);
+            root.addView(title);
+            TextView body = new TextView(ctx);
+            body.setTextColor(AgentTheme.faint(ctx));
+            body.setTextSize(13);
+            body.setPadding(0, Math.round(4f * d), 0, 0);
+            root.addView(body);
+
+            String kind = m.cardKind == null ? "" : m.cardKind;
+            boolean pending = ChatMessage.CARD_PENDING.equals(m.cardState);
+            if ("build_choice".equals(kind)) {
+                title.setText(m.approvalTitle == null || m.approvalTitle
+                        .isEmpty() ? "Build it — how?" : m.approvalTitle);
+                body.setText(m.text == null ? "" : m.text);
+                String choice = m.cardData == null || !m.cardData
+                        .has("choice") ? "" :
+                        m.cardData.get("choice").getAsString();
+                if (pending) {
+                    root.addView(button(ctx, d,
+                            "Blueprint first (recommended)", () -> {
+                                mark(m, ChatMessage.CARD_USED, "blueprint");
+                                if (adapter.cardListener != null) {
+                                    adapter.cardListener.onBuildChoice(m,
+                                            "blueprint");
+                                }
+                            }));
+                    root.addView(button(ctx, d, "Steady parts", () -> {
+                        mark(m, ChatMessage.CARD_USED, "steady");
+                        if (adapter.cardListener != null) {
+                            adapter.cardListener.onBuildChoice(m, "steady");
+                        }
+                    }));
+                    root.addView(button(ctx, d, "Fast parts", () -> {
+                        mark(m, ChatMessage.CARD_USED, "fast");
+                        if (adapter.cardListener != null) {
+                            adapter.cardListener.onBuildChoice(m, "fast");
+                        }
+                    }));
+                    root.addView(button(ctx, d, "Not now", () -> {
+                        mark(m, ChatMessage.CARD_CANCELLED, "");
+                        if (adapter.cardListener != null) {
+                            adapter.cardListener.onBuildChoice(m, "cancel");
+                        }
+                    }));
+                } else {
+                    TextView done = new TextView(ctx);
+                    done.setTextSize(13);
+                    done.setPadding(0, Math.round(8f * d), 0, 0);
+                    if (ChatMessage.CARD_CANCELLED.equals(m.cardState)) {
+                        done.setText("Cancelled.");
+                        done.setTextColor(AgentTheme.faint(ctx));
+                    } else {
+                        done.setText("Choice: "
+                                + ("blueprint".equals(choice) ? "Blueprint"
+                                : "steady".equals(choice) ? "Steady parts"
+                                : "fast".equals(choice) ? "Fast parts"
+                                : choice));
+                        done.setTextColor(AgentTheme.primary(ctx));
+                        done.setTypeface(Typeface.DEFAULT_BOLD);
+                    }
+                    root.addView(done);
+                }
+                return;
+            }
+            // Unknown/placeholder kinds render their text at least.
+            title.setText(m.approvalTitle == null ? "Card"
+                    : m.approvalTitle);
+            body.setText(m.text == null ? "" : m.text);
+        }
+
+        private static void mark(ChatMessage m, String state,
+                                 String choice) {
+            m.cardState = state;
+            if (m.cardData == null) {
+                m.cardData = new JsonObject();
+            }
+            if (!choice.isEmpty()) {
+                m.cardData.addProperty("choice", choice);
+            }
+        }
+
+        private com.google.android.material.button.MaterialButton button(
+                Context ctx, float d, String label, Runnable action) {
+            com.google.android.material.button.MaterialButton b =
+                    new com.google.android.material.button.MaterialButton(
+                            ctx);
+            b.setText(label);
+            b.setTextSize(13);
+            b.setAllCaps(false);
+            b.setInsetTop(Math.round(6f * d));
+            b.setInsetBottom(Math.round(6f * d));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = Math.round(8f * d);
+            b.setLayoutParams(lp);
+            b.setOnClickListener(v -> action.run());
+            return b;
+        }
     }
 }
