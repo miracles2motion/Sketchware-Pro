@@ -643,11 +643,12 @@ public class AgentLoop {
         return blocked;
     }
 
-    /** A plan CREATION (title + steps), not a progress update. */
-    private static boolean planCreation(com.google.gson.JsonObject args) {
-        return args != null && args.has("steps")
-                && args.get("steps").isJsonPrimitive()
-                && !args.get("steps").getAsString().trim().isEmpty();
+    /** A plan CREATION (title + steps), not a progress update. The
+     * arguments travel as raw text; only a creation carries a real
+     * \"steps\" field — progress updates carry done_steps (which does
+     * NOT contain the quoted \"steps\" token, the underscore guards it). */
+    private static boolean planCreation(String rawArgs) {
+        return rawArgs != null && rawArgs.contains("\"steps\"");
     }
 
     private final Context context;

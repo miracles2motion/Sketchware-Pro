@@ -20,8 +20,10 @@ public final class AgentTheme {
 
     /** The app's primary/brand colour. */
     public static int primary(Context ctx) {
-        return resolve(ctx, com.google.android.material.R.attr
-                .colorPrimary, 0xFF008DCD);
+        // The app's own R: this repo's proven namespace for
+        // colorPrimary (besome code resolves it the same way).
+        return resolve(ctx, pro.sketchware.R.attr.colorPrimary,
+                0xFF008DCD);
     }
 
     /** Card and dialog backgrounds. */
@@ -50,8 +52,8 @@ public final class AgentTheme {
 
     /** Destructive / failure accents (stop buttons, failed states). */
     public static int error(Context ctx) {
-        return resolve(ctx, com.google.android.material.R.attr
-                .colorError, 0xFFD32F2F);
+        return resolve(ctx, pro.sketchware.R.attr.colorError,
+                0xFFD32F2F);
     }
 
     /** Hairline borders. */
