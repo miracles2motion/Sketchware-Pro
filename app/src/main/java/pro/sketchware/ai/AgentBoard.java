@@ -50,6 +50,7 @@ public final class AgentBoard {
         public volatile String summary = "";
         public volatile String error = "";
         public volatile int appliedCount = 0;
+        public volatile long startedAtMs;
         AgentSnapshots.Snapshot beforeSnapshot;
         AgentLoop loop;
         AiChatService service;
@@ -92,6 +93,10 @@ public final class AgentBoard {
     private Context context;
     private BoardListener listener;
     private volatile boolean running;
+    /** The architect's shared rules sheet; set before workers start. */
+    private volatile String conventions = "";
+    /** A worker stuck longer than this is cancelled, not left spinning. */
+    private static final long PART_TIMEOUT_MS = 12 * 60 * 1000;
 
     /** A plan is board-worthy when it has enough steps to divide. */
     public static boolean available(JsonObject plan) {
@@ -237,6 +242,13 @@ public final class AgentBoard {
     // ---- internals -----------------------------------------------------
 
     private void supervise() {
+        // One cheap architect call BEFORE any worker starts: it reads
+        // the whole plan and fixes the shared names, so parts fit.
+        prepareConventions();
+        Thread watchdog = new Thread(this::watchdogs,
+                "agent-board-watchdog");
+        watchdog.setDaemon(true);
+        watchdog.start();
         // Restartable board: only parts still queued are scheduled.
         List<Part> queue = new ArrayList<>();
         synchronized (this) {
@@ -288,6 +300,7 @@ public final class AgentBoard {
             synchronized (this) {
                 activeClaims.addAll(part.claims);
                 part.state = PartState.BUILDING;
+                part.startedAtMs = System.currentTimeMillis();
                 part.beforeSnapshot = AgentSnapshots.snapshot(scId);
             }
             changed();
@@ -314,6 +327,116 @@ public final class AgentBoard {
             if (running) {
                 running = false;
                 changed();
+            }
+        }
+    }
+
+    /**
+     * One cheap architect call before any worker starts: it reads the
+     * WHOLE plan and writes the shared conventions sheet — exact
+     * storage keys, variable names, More Block names — that every
+     * worker's brief carries, so parts fit together. If the call
+     * fails, a deterministic fallback sheet keeps the build going.
+     */
+    private void prepareConventions() {
+        StringBuilder planText = new StringBuilder();
+        for (Part part : parts) {
+            for (String step : part.stepTexts) {
+                planText.append("- ").append(step).append('\n');
+            }
+        }
+        String prompt =
+                "You are the lead architect of a small build team. "
+                + "Below is the FULL plan for an app; several builders "
+                + "will each build one part IN PARALLEL and cannot "
+                + "talk to each other, so every shared decision must "
+                + "be fixed in advance. Write the shared conventions "
+                + "sheet they must all follow: (1) any data two or "
+                + "more parts both read or write — give the exact "
+                + "shared preferences file name and exact key names; "
+                + "(2) exact variable names for values that cross "
+                + "parts; (3) exact More Block names used by more than "
+                + "one part; (4) one line per screen: its name and "
+                + "which part owns it. Plain text, at most 200 words, "
+                + "no preamble, no markdown headings."
+                + "\n\nTHE PLAN:\n" + planText;
+        try {
+            AiChatService service = new AiChatService();
+            List<JsonObject> messages = new ArrayList<>();
+            JsonObject system = new JsonObject();
+            system.addProperty("role", "system");
+            system.addProperty("content",
+                    "You are a precise mobile-app architect. You "
+                            + "answer with the conventions sheet only.");
+            messages.add(system);
+            JsonObject user = new JsonObject();
+            user.addProperty("role", "user");
+            user.addProperty("content", prompt);
+            messages.add(user);
+            AiChatService.AgentReply reply = service.agentTurnSync(
+                    baseUrl, apiKey, model, messages, null);
+            String sheet = reply == null ? "" : reply.content;
+            if (sheet != null) {
+                sheet = sheet.trim();
+            }
+            if (sheet == null || sheet.length() < 20) {
+                throw new IllegalStateException("empty sheet");
+            }
+            if (sheet.length() > 1800) {
+                sheet = sheet.substring(0, 1800);
+            }
+            conventions = sheet;
+            note("The rules every part must follow are set.");
+        } catch (Throwable e) {
+            conventions = fallbackSheet();
+            note("The architect could not be reached; standard naming "
+                    + "rules will be used.");
+        }
+    }
+
+    private static String fallbackSheet() {
+        return "Standard naming rules (the architect was unreachable):"
+                + "\n1. All names use snake_case."
+                + "\n2. ONE shared preferences file for the whole app: "
+                + "app_data. Any key that two parts both touch must be "
+                + "named <feature>_<thing> (e.g. game_high_score)."
+                + "\n3. Do not invent custom blocks or components; use "
+                + "the built-in palette and More Blocks only."
+                + "\n4. Reuse screens that already exist before "
+                + "creating new ones; new screens are named after "
+                + "their feature (e.g. SettingsScreen)."
+                + "\n5. Keep every widget id descriptive and unique "
+                + "(e.g. btn_save, tv_score).";
+    }
+
+    /** Cancels workers stuck longer than the timeout. */
+    private void watchdogs() {
+        while (running) {
+            try {
+                Thread.sleep(20000);
+            } catch (InterruptedException e) {
+                return;
+            }
+            if (!running) {
+                return;
+            }
+            long now = System.currentTimeMillis();
+            synchronized (this) {
+                for (Part part : parts) {
+                    if (part.state == PartState.BUILDING
+                            && part.startedAtMs > 0
+                            && now - part.startedAtMs
+                                    > PART_TIMEOUT_MS) {
+                        note("Part timed out: " + part.title);
+                        part.startedAtMs = 0;
+                        if (part.loop != null) {
+                            part.loop.cancel();
+                        }
+                        if (part.service != null) {
+                            part.service.cancel();
+                        }
+                    }
+                }
             }
         }
     }
@@ -348,6 +471,21 @@ public final class AgentBoard {
                 brief.append(part.screenDirs.get(i));
             }
         }
+        StringBuilder whole = new StringBuilder();
+        synchronized (this) {
+            for (Part p : parts) {
+                for (String step : p.stepTexts) {
+                    whole.append("- ").append(step).append('\n');
+                }
+            }
+        }
+        brief.append("\n\nTHE WHOLE PLAN, for context (other builders ")
+                .append("handle the other steps — never redo or undo ")
+                .append("their work):\n").append(whole);
+        brief.append("\nCONVENTIONS EVERY PART MUST FOLLOW (agreed in ")
+                .append("advance so all parts fit together — follow ")
+                .append("them exactly, especially exact names and ")
+                .append("keys):\n").append(conventions);
         brief.append("\n\nWhen your steps are done, stop. End with one ")
                 .append("short sentence saying what you built.");
 

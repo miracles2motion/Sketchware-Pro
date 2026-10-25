@@ -464,7 +464,7 @@ public final class AgentExtensibility {
         return n;
     }
 
-    public static CustomBlockDef upsertCustomBlock(
+    public static synchronized CustomBlockDef upsertCustomBlock(
             String scId, String name, String type, String typeName,
             String spec, String spec2, String code, String imports,
             String color, String palette, boolean pinToProject)
@@ -578,7 +578,7 @@ public final class AgentExtensibility {
                         .toJson(pinned));
     }
 
-    public static void deleteCustomBlock(String scId, String name)
+    public static synchronized void deleteCustomBlock(String scId, String name)
             throws AgentTools.ToolException, IOException {
         if (name == null || name.trim().isEmpty()) {
             throw new AgentTools.ToolException("E_BAD_BLOCK_NAME",
@@ -690,7 +690,7 @@ public final class AgentExtensibility {
         return null;
     }
 
-    public static CustomComponentDef upsertCustomComponent(
+    public static synchronized CustomComponentDef upsertCustomComponent(
             String name, String typeName, int requestedId,
             String varName, String buildClass, String classInfoName,
             String description, String imports, String additionalVar,
@@ -776,7 +776,7 @@ public final class AgentExtensibility {
         return findCustomComponent(cleanType);
     }
 
-    public static void deleteCustomComponent(String typeOrName)
+    public static synchronized void deleteCustomComponent(String typeOrName)
             throws AgentTools.ToolException {
         if (typeOrName == null || typeOrName.trim().isEmpty()) {
             throw new AgentTools.ToolException("E_BAD_COMPONENT_TYPE",
@@ -849,7 +849,7 @@ public final class AgentExtensibility {
         return out;
     }
 
-    public static void upsertCustomEvent(
+    public static synchronized void upsertCustomEvent(
             String eventName, String targetClassVar, String listenerName,
             String parameters, String headerSpec, String description,
             String eventCode, String listenerCode, String listenerImports)
@@ -955,7 +955,7 @@ public final class AgentExtensibility {
         EventsHandler.refreshCachedCustomListeners();
     }
 
-    public static void deleteCustomEvent(String eventName)
+    public static synchronized void deleteCustomEvent(String eventName)
             throws AgentTools.ToolException {
         if (eventName == null || eventName.trim().isEmpty()) {
             throw new AgentTools.ToolException("E_BAD_EVENT_NAME",
