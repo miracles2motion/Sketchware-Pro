@@ -295,6 +295,61 @@ public final class AgentSnapshots {
         }
     }
 
+    /**
+     * Screen-scoped undo: makes only the named screens (their
+     * {@code File/<screen>/} subtrees) match the snapshot again —
+     * files in them are copied back, files created there after the
+     * snapshot are removed. Everything outside those screens keeps
+     * whatever the other parts did. Returns true when a screen was
+     * restored.
+     */
+    public static boolean restoreScreens(String scId, Snapshot snap,
+                                         List<String> screenDirs) {
+        if (snap == null || screenDirs == null
+                || screenDirs.isEmpty()) {
+            return false;
+        }
+        boolean any = false;
+        for (String screen : screenDirs) {
+            if (screen == null || screen.isEmpty()) {
+                continue;
+            }
+            try {
+                File project = projectDir(scId);
+                File live = new File(new File(project, "File"), screen);
+                File saved = new File(new File(snap.dir, "File"), screen);
+                if (!saved.isDirectory()) {
+                    // The screen did not exist at the snapshot: it was
+                    // created by this part, so undo = remove it.
+                    if (live.isDirectory()) {
+                        deleteTree(live);
+                        any = true;
+                    }
+                    continue;
+                }
+                // Remove live files created after the snapshot, then
+                // copy the snapshot's screen back over.
+                java.util.Map<String, Long> liveHash =
+                        new java.util.LinkedHashMap<>();
+                hashTree(live, "", liveHash);
+                java.util.Map<String, Long> savedHash =
+                        new java.util.LinkedHashMap<>();
+                hashTree(saved, "", savedHash);
+                for (String rel : liveHash.keySet()) {
+                    if (!savedHash.containsKey(rel)) {
+                        //noinspection ResultOfMethodCallIgnored
+                        new File(live, rel).delete();
+                    }
+                }
+                int[] count = {0};
+                copyTree(saved, live, count);
+                any |= count[0] > 0;
+            } catch (Throwable ignored) {
+            }
+        }
+        return any;
+    }
+
     // ---- path helpers -------------------------------------------------
 
     /**

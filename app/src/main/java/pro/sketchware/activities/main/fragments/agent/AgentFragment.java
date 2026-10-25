@@ -100,6 +100,9 @@ public class AgentFragment extends qA {
     private androidx.appcompat.app.AlertDialog choiceSheetDialog;
     // Only one bounced sheet may ever be in flight.
     private volatile boolean choiceBounceRunning;
+    private final pro.sketchware.ai.AgentBoard agentBoard =
+            new pro.sketchware.ai.AgentBoard();
+    private androidx.appcompat.app.AlertDialog boardDialog;
     /** Lets the waiting turn know a question was answered. */
     private volatile CountDownLatch choiceLatch;
     /** Tokens that arrived but are not in the list yet. */
@@ -2886,6 +2889,8 @@ public class AgentFragment extends qA {
                                 ? getString(R.string.agent_plan_title)
                                 : title)
                         .setView(scroll)
+                        .setPositiveButton("⚡ Build in parts",
+                                (d, w) -> confirmParallelBuild())
                         .setNeutralButton("Project history",
                                 (d, w) -> showSnapshotsDialog())
                         .setNegativeButton(R.string.agent_action_close, null)
@@ -2904,6 +2909,298 @@ public class AgentFragment extends qA {
             };
             container.postDelayed(refresh[0], 1200);
         }
+    }
+
+    // ---- Agent Manager: parallel parts ---------------------------------
+
+    /** Confirms the parallel build, then starts the board. */
+    private void confirmParallelBuild() {
+        if (generating || agentBoard.isRunning()) {
+            Toast.makeText(getContext(),
+                    "A build is already running", Toast.LENGTH_SHORT)
+                    .show();
+            return;
+        }
+        String scId = providerConfig == null
+                ? "" : providerConfig.workingProjectId();
+        com.google.gson.JsonObject plan = AgentJournal.plan(scId);
+        if (scId.isEmpty() || !pro.sketchware.ai.AgentBoard
+                .available(plan)) {
+            Toast.makeText(getContext(),
+                    "Save a plan first — a build needs at least three "
+                            + "steps to split into parts",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        int parts = Math.min(3, (plan.getAsJsonArray("steps").size()
+                + 1) / 2);
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle("Build in parts?")
+                .setMessage("Your app will be built in about " + parts
+                        + " parts at the same time — much faster. Each "
+                        + "part uses its own AI conversation, so this "
+                        + "uses more data. You can look at every part, "
+                        + "undo it, or rebuild it afterwards.")
+                .setPositiveButton("Start", (d, w) -> startParallelBuild())
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void startParallelBuild() {
+        if (generating || agentBoard.isRunning() || !isAdded()) {
+            return;
+        }
+        AiProviderConfig.Settings settings =
+                providerConfig.activeSettings();
+        String scId = providerConfig.workingProjectId();
+        com.google.gson.JsonObject plan = AgentJournal.plan(scId);
+        boolean started = agentBoard.start(requireContext(), scId,
+                settings.baseUrl,
+                providerConfig.apiKey(providerConfig.activeProvider()),
+                settings.model, plan, settings.models,
+                new pro.sketchware.ai.AgentBoard.BoardListener() {
+                    @Override
+                    public void onBoardChanged() {
+                        runOnUi(() -> {
+                            refreshStrip();
+                            refreshBoardDialog();
+                        });
+                    }
+
+                    @Override
+                    public void onPartNote(String line) {
+                        runOnUi(() -> {
+                            if (!isAdded()) {
+                                return;
+                            }
+                            appendMessage(new ChatMessage(
+                                    ChatMessage.Role.SYSTEM, line));
+                            persistChat();
+                        });
+                    }
+                });
+        if (started) {
+            appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM,
+                    "Parallel build started — open the plan to watch "
+                            + "the parts."));
+            persistChat();
+            showBoardDialog();
+        }
+    }
+
+    /** The live board: one row per part, plain words throughout. */
+    private void showBoardDialog() {
+        if (!isAdded()) {
+            return;
+        }
+        android.widget.LinearLayout container =
+                new android.widget.LinearLayout(requireContext());
+        container.setOrientation(android.widget.LinearLayout.VERTICAL);
+        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        container.setPadding(pad, pad / 2, pad, pad);
+        android.widget.ScrollView scroll =
+                new android.widget.ScrollView(requireContext());
+        scroll.addView(container);
+        boardDialog = new MaterialAlertDialogBuilder(requireContext())
+                .setTitle("Parts")
+                .setView(scroll)
+                .setPositiveButton("Close", null)
+                .show();
+        rebuildBoardRows(container);
+    }
+
+    private void rebuildBoardRows(android.widget.LinearLayout container) {
+        if (!isAdded() || container == null) {
+            return;
+        }
+        container.removeAllViews();
+        float density = getResources().getDisplayMetrics().density;
+        List<pro.sketchware.ai.AgentBoard.Part> parts =
+                agentBoard.getParts();
+        int[] progress = agentBoard.progress();
+        android.widget.TextView header =
+                new android.widget.TextView(requireContext());
+        header.setText(progress[0] + " of " + progress[1]
+                + " parts ready");
+        header.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_LabelLarge);
+        header.setPadding(0, 0, 0, Math.round(8f * density));
+        container.addView(header);
+        if (agentBoard.isRunning()) {
+            android.widget.TextView stop =
+                    new android.widget.TextView(requireContext());
+            stop.setText("⏹ Stop all workers");
+            stop.setTextAppearance(com.google.android.material.R.style
+                    .TextAppearance_Material3_LabelLarge);
+            stop.setTextColor(0xFFD32F2F);
+            stop.setPadding(0, 0, 0, Math.round(10f * density));
+            stop.setOnClickListener(v -> {
+                agentBoard.cancelAll();
+                appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM,
+                        "Parallel build stopped. Parts already added "
+                                + "stay; unfinished parts were not "
+                                + "added."));
+                persistChat();
+                refreshBoardDialog();
+            });
+            container.addView(stop);
+        }
+        for (pro.sketchware.ai.AgentBoard.Part part : parts) {
+            android.widget.TextView row =
+                    new android.widget.TextView(requireContext());
+            String icon = part.state
+                    == pro.sketchware.ai.AgentBoard.PartState.DONE ? "✅"
+                    : part.state
+                    == pro.sketchware.ai.AgentBoard.PartState.FAILED ? "⚠"
+                    : part.state
+                    == pro.sketchware.ai.AgentBoard.PartState.BUILDING
+                    ? "🛠" : "🕒";
+            row.setText(icon + "  " + part.index + ". " + part.title
+                    + "\n" + part.stateLabel());
+            row.setTextAppearance(com.google.android.material.R.style
+                    .TextAppearance_Material3_BodyMedium);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(12f * density);
+            bg.setColor(resolveThemeColor(requireContext(),
+                    com.google.android.material.R.attr
+                            .colorSurfaceContainerLow, 0xFFECF4FE));
+            if (part.state == pro.sketchware.ai.AgentBoard.PartState
+                    .BUILDING) {
+                row.setTypeface(row.getTypeface(),
+                        android.graphics.Typeface.BOLD);
+            }
+            row.setBackground(bg);
+            int rowPad = Math.round(12f * density);
+            row.setPadding(rowPad, rowPad, rowPad, rowPad);
+            android.widget.LinearLayout.LayoutParams lp =
+                    new android.widget.LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = Math.round(6f * density);
+            row.setLayoutParams(lp);
+            row.setOnClickListener(v -> {
+                if (part.state == pro.sketchware.ai.AgentBoard.PartState
+                        .DONE) {
+                    showPartReview(part);
+                } else if (part.state == pro.sketchware.ai.AgentBoard
+                        .PartState.FAILED) {
+                    confirmPartRetry(part);
+                } else {
+                    Toast.makeText(getContext(),
+                            part.title + " is still working",
+                            Toast.LENGTH_SHORT).show();
+                }
+            });
+            container.addView(row);
+        }
+        if (agentBoard.isRunning()) {
+            container.postDelayed(this::refreshBoardDialog, 1200);
+        }
+    }
+
+    private void refreshBoardDialog() {
+        if (boardDialog == null || !boardDialog.isShowing()
+                || !isAdded()) {
+            return;
+        }
+        android.widget.ScrollView scroll = findScrollView(boardDialog);
+        if (scroll != null && scroll.getChildCount() > 0
+                && scroll.getChildAt(0)
+                instanceof android.widget.LinearLayout) {
+            rebuildBoardRows((android.widget.LinearLayout)
+                    scroll.getChildAt(0));
+        }
+    }
+
+    private android.widget.ScrollView findScrollView(
+            androidx.appcompat.app.AlertDialog dialog) {
+        if (dialog.getWindow() == null) {
+            return null;
+        }
+        android.view.View content = dialog.getWindow().getDecorView()
+                .findViewById(android.R.id.content);
+        if (content instanceof android.view.ViewGroup) {
+            return findScrollView((android.view.ViewGroup) content);
+        }
+        return null;
+    }
+
+    private android.widget.ScrollView findScrollView(
+            android.view.ViewGroup group) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            android.view.View child = group.getChildAt(i);
+            if (child instanceof android.widget.ScrollView) {
+                return (android.widget.ScrollView) child;
+            }
+            if (child instanceof android.view.ViewGroup) {
+                android.widget.ScrollView found =
+                        findScrollView((android.view.ViewGroup) child);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Done part: what it says it built, the diff, undo, rebuild. */
+    private void showPartReview(pro.sketchware.ai.AgentBoard.Part part) {
+        if (!isAdded()) {
+            return;
+        }
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle("Part " + part.index + " · " + part.title)
+                .setMessage(part.summary == null || part.summary.isEmpty()
+                        ? "Finished." : part.summary)
+                .setPositiveButton("Undo this part", (d, w) -> {
+                    Thread work = new Thread(() -> {
+                        boolean ok = agentBoard.undoPart(part);
+                        runOnUi(() -> {
+                            if (!isAdded()) {
+                                return;
+                            }
+                            appendMessage(new ChatMessage(
+                                    ChatMessage.Role.SYSTEM, ok
+                                    ? "Part undone: " + part.title
+                                    : "Could not undo " + part.title
+                                            + " — no snapshot was "
+                                            + "taken before it."));
+                            persistChat();
+                        });
+                    });
+                    work.setDaemon(true);
+                    work.start();
+                })
+                .setNeutralButton("Rebuild this part", (d, w) ->
+                        confirmPartRetry(part))
+                .setNegativeButton("Keep it", null)
+                .show();
+    }
+
+    private void confirmPartRetry(
+            pro.sketchware.ai.AgentBoard.Part part) {
+        if (generating || agentBoard.isRunning()) {
+            Toast.makeText(getContext(),
+                    "Wait for the current build to finish",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        AiProviderConfig.Settings settings =
+                providerConfig.activeSettings();
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle("Rebuild \"" + part.title + "\"?")
+                .setMessage("This part is built again from scratch"
+                        + (part.error == null || part.error.isEmpty()
+                        ? "." : ". Last problem: "
+                        + part.error.substring(0,
+                        Math.min(160, part.error.length()))))
+                .setPositiveButton("Rebuild", (d, w) -> agentBoard
+                        .rebuildPart(part, settings.baseUrl,
+                                providerConfig.apiKey(
+                                        providerConfig.activeProvider()),
+                                settings.model))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     /** The project-history timeline: snapshots with diff and restore. */
