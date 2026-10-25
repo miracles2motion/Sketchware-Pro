@@ -129,6 +129,10 @@ public final class AgentBoard {
     /** Blueprint mode: screens from a drawn blueprint + wiring last. */
     private volatile boolean blueprintMode;
     private volatile String blueprint = "";
+    /** Resume flow (Wave 66 chat cards): an adjustment to honor on
+     * the FIRST draw, and the previous drawing it builds upon. */
+    private volatile String pendingFirstAdjustment = "";
+    private volatile String pendingPreviousBlueprint = "";
     private final List<String> planSteps = new ArrayList<>();
     private JsonObject planHeld;
 
@@ -261,6 +265,57 @@ public final class AgentBoard {
         return true;
     }
 
+    /**
+     * Wave 66 chat-card flows: either build straight from a SAVED
+     * blueprint (no redraw), or redraw once honoring the user's
+     * adjustment on top of the previous drawing. Same guards and
+     * lifecycle as {@link #startBlueprint}.
+     */
+    public synchronized boolean startBlueprintFromSaved(Context context,
+            String scId, String baseUrl, String apiKey, String model,
+            JsonObject plan, List<String> autoModelPool,
+            BoardListener listener, String previousBlueprint,
+            String firstAdjustment) {
+        if (running || context == null || !available(plan)
+                || scId == null || scId.isEmpty()
+                || AgentJournal.DRAFT_KEY.equals(scId)) {
+            return false;
+        }
+        configure(context, scId, baseUrl, apiKey, model, plan,
+                autoModelPool, listener);
+        this.maxConcurrent = MAX_WORKERS;
+        this.stoppedByUser = false;
+        this.blueprintMode = true;
+        this.conventions = "";
+        this.pinnedModel = "";
+        parts.clear();
+        activeClaims.clear();
+        boolean adjust = firstAdjustment != null
+                && !firstAdjustment.trim().isEmpty();
+        this.pendingFirstAdjustment = adjust
+                ? firstAdjustment.trim() : "";
+        this.pendingPreviousBlueprint = previousBlueprint == null
+                ? "" : previousBlueprint;
+        if (!adjust && pendingPreviousBlueprint.trim().length() >= 60
+                && pendingPreviousBlueprint.contains("SCREEN:")) {
+            this.blueprint = pendingPreviousBlueprint;
+            this.pendingFirstAdjustment = "";
+            this.pendingPreviousBlueprint = "";
+        } else {
+            this.blueprint = "";
+        }
+        running = true;
+        note(this.blueprint.isEmpty()
+                ? "Redrawing the blueprint with your changes — every "
+                + "screen, every name. You approve it before anything "
+                + "is built."
+                : "Using your saved blueprint — no redraw. Splitting "
+                + "it into screens now.");
+        changed();
+        kickSupervisor();
+        return true;
+    }
+
     /** Splits the plan's steps into up to MAX_WORKERS adjacent parts.
      * Returns the part count, or 0 when the plan is too small. */
     private int splitFromSteps() {
@@ -293,11 +348,29 @@ public final class AgentBoard {
      * the plain step-split when no usable blueprint can be drawn.
      */
     private boolean prepareBlueprint() {
-        if (!parts.isEmpty() && blueprint != null
-                && !blueprint.isEmpty()) {
+        if (blueprint != null && !blueprint.isEmpty()
+                && !parts.isEmpty()) {
             return true; // already drawn and approved (a part rebuild)
         }
-        String text = generateBlueprint("");
+        if (blueprint != null && !blueprint.isEmpty()) {
+            // Seeded from the chat card's saved drawing: straight to
+            // the split, no redraw.
+            splitFromBlueprint(blueprint);
+            if (!parts.isEmpty()) {
+                conventions = headerAndRules(blueprint);
+                note("Blueprint approved — building "
+                        + (parts.size() - 1) + " screens, then wiring "
+                        + "them together.");
+                return true;
+            }
+            // The saved text split into nothing usable: redraw below.
+        }
+        String firstAdjust = pendingFirstAdjustment;
+        String previous = pendingPreviousBlueprint;
+        pendingFirstAdjustment = "";
+        pendingPreviousBlueprint = "";
+        String text = generateBlueprintWithProgress(firstAdjust,
+                previous);
         int rounds = 0;
         while (text != null && text.trim().length() >= 60
                 && text.contains("SCREEN:") && rounds < 3) {
@@ -305,10 +378,13 @@ public final class AgentBoard {
             if (l == null) {
                 break;
             }
-            String adjustment = l.onBlueprintReady(
-                    shortenForDialog(text));
+            // Wave 66: the drawing is kept in the journal the moment
+            // it exists, so nothing can lose it again.
+            AgentJournal.saveBlueprint(scId, text, false);
+            String adjustment = l.onBlueprintReady(text);
             if (adjustment == null) {
                 note("Blueprint not approved — nothing was built.");
+                AgentJournal.saveBlueprint(scId, text, true);
                 return false;
             }
             if (adjustment.trim().isEmpty()) {
@@ -316,7 +392,8 @@ public final class AgentBoard {
             }
             rounds++;
             note("Adjusting the blueprint…");
-            text = generateBlueprint(adjustment.trim());
+            text = generateBlueprintWithProgress(adjustment.trim(),
+                    text);
         }
         if (text == null || text.trim().length() < 60
                 || !text.contains("SCREEN:")) {
@@ -326,6 +403,7 @@ public final class AgentBoard {
             return !parts.isEmpty();
         }
         blueprint = text;
+        AgentJournal.saveBlueprint(scId, text, true);
         splitFromBlueprint(text);
         if (parts.isEmpty()) {
             splitFromSteps();
@@ -338,8 +416,47 @@ public final class AgentBoard {
         return true;
     }
 
+    /**
+     * Draws with honest progress: a pre-line, then a 30-second
+     * heartbeat so the silence of ONE big request never looks like
+     * a hang (field report: "stood there quite some time").
+     */
+    private String generateBlueprintWithProgress(String adjustment,
+            String previous) {
+        note("✏️ Drawing every screen now — one big request, usually "
+                + "1–3 minutes. The blueprint card appears right here "
+                + "when the drawing is done.");
+        final long startedAt = System.currentTimeMillis();
+        final java.util.concurrent.atomic.AtomicBoolean done =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        Thread pulse = new Thread(() -> {
+            while (!done.get()) {
+                try {
+                    Thread.sleep(30000);
+                } catch (InterruptedException e) {
+                    return;
+                }
+                if (done.get()) {
+                    return;
+                }
+                long s = (System.currentTimeMillis() - startedAt)
+                        / 1000;
+                note("✏️ Still drawing… " + (s / 60) + "m" + (s % 60)
+                        + "s. Silence is normal — one big request.");
+            }
+        });
+        pulse.setDaemon(true);
+        pulse.start();
+        try {
+            return generateBlueprint(adjustment, previous);
+        } finally {
+            done.set(true);
+        }
+    }
+
     /** ONE call: the full blueprint drawn from the plan. */
-    private String generateBlueprint(String adjustment) {
+    private String generateBlueprint(String adjustment,
+            String previous) {
         StringBuilder planText = new StringBuilder();
         for (String step : planSteps) {
             planText.append("- ").append(step).append('\n');
@@ -372,6 +489,11 @@ public final class AgentBoard {
                 + "button opens what, which value flows where).\n"
                 + "At most 600 words. Screens already in the project: "
                 + existing + "\nTHE PLAN:\n" + planText
+                + (previous == null || previous.trim().isEmpty()
+                ? "" : "\n\nTHE PREVIOUS BLUEPRINT (your earlier "
+                + "drawing — keep everything that still applies; "
+                + "change only what the user asks):\n"
+                + previous.trim())
                 + (adjustment == null || adjustment.trim().isEmpty()
                 ? "" : "\n\nTHE USER ASKS FOR THESE CHANGES — "
                 + "honor them exactly:\n" + adjustment.trim());

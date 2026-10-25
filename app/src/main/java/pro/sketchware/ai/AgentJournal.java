@@ -2025,6 +2025,41 @@ public final class AgentJournal {
     /** The plan agreed before any project exists, in the SAME shape
      * as {@link #plan} — so the UI can treat drafts and project plans
      * identically. Empty object when there is no draft. */
+    /** The drawn blueprint for a project ("" when none was ever drawn). */
+    public static synchronized String blueprint(String scId) {
+        JsonObject root = load(scId);
+        return root.has("blueprint")
+                && root.get("blueprint").isJsonPrimitive()
+                ? root.get("blueprint").getAsString() : "";
+    }
+
+    /**
+     * False only while a drawn blueprint sits unanswered — the chat
+     * re-offers it on reopen; everything else counts as decided.
+     */
+    public static synchronized boolean blueprintDecided(String scId) {
+        JsonObject root = load(scId);
+        return !root.has("blueprint_decided")
+                || !root.get("blueprint_decided").isJsonPrimitive()
+                || root.get("blueprint_decided").getAsBoolean();
+    }
+
+    /**
+     * Persists the drawn blueprint (Wave 66: "no way to get back the
+     * blueprint created" — now it survives process death). {@code
+     * decided} stops the reopen re-offer.
+     */
+    public static synchronized void saveBlueprint(String scId,
+            String text, boolean decided) {
+        if (scId == null || scId.isEmpty() || DRAFT_KEY.equals(scId)) {
+            return;
+        }
+        JsonObject root = load(scId);
+        root.addProperty("blueprint", text == null ? "" : text);
+        root.addProperty("blueprint_decided", decided);
+        save(scId, root);
+    }
+
     public static synchronized JsonObject draftPlan() {
         JsonObject out = new JsonObject();
         if (draftPlanSteps.isEmpty()) {

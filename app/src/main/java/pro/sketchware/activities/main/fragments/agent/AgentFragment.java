@@ -236,7 +236,7 @@ public class AgentFragment extends qA {
                     return;
                 }
                 if ("blueprint".equals(which)) {
-                    startBlueprintFlow();
+                    startBlueprintFlow("", "");
                 } else {
                     startParallelBuild("fast".equals(which));
                 }
@@ -245,10 +245,31 @@ public class AgentFragment extends qA {
             @Override
             public void onBlueprintDecision(
                     pro.sketchware.ai.ChatMessage card, String verdict) {
-                blueprintDecision = verdict;
                 if (blueprintLatch[0] != null) {
+                    // A live draw is waiting on this very card.
+                    blueprintDecision = verdict;
                     blueprintLatch[0].countDown();
+                    return;
                 }
+                // A REOPENED card: the saved blueprint gets its
+                // decision now, without any drawing wait.
+                String scId = providerConfig == null ? ""
+                        : providerConfig.workingProjectId();
+                String saved = card.cardData != null
+                        && card.cardData.has("blueprint_text")
+                        ? card.cardData.get("blueprint_text")
+                        .getAsString() : AgentJournal.blueprint(scId);
+                if (verdict == null) {
+                    AgentJournal.saveBlueprint(scId, saved, true);
+                    sayInChat("Left the saved blueprint as it was — "
+                            + "nothing was built.");
+                    return;
+                }
+                if (verdict.trim().isEmpty()) {
+                    startBlueprintFlow(saved, "");
+                    return;
+                }
+                startBlueprintFlow(saved, verdict.trim());
             }
 
             @Override
@@ -1233,6 +1254,63 @@ public class AgentFragment extends qA {
     }
 
     /** Binds (or unbinds) the working project and notes it in the chat. */
+    /**
+     * Wave 66: "no way to get back the blueprint created" — if a
+     * drawn blueprint sits unanswered in the journal, re-offer it as
+     * a card the moment its chat comes back on screen.
+     */
+    private void maybeRepostSavedBlueprint(String scId) {
+        if (scId == null || scId.isEmpty()
+                || AgentJournal.DRAFT_KEY.equals(scId) || !isAdded()) {
+            return;
+        }
+        String saved = AgentJournal.blueprint(scId);
+        if (saved.trim().length() < 60 || !saved.contains("SCREEN:")
+                || AgentJournal.blueprintDecided(scId)) {
+            return;
+        }
+        for (ChatMessage m : messages) {
+            if (m.role == ChatMessage.Role.CARD
+                    && "blueprint".equals(m.cardKind)
+                    && ChatMessage.CARD_PENDING.equals(m.cardState)) {
+                return; // an open question is already on screen
+            }
+        }
+        ChatMessage card = new ChatMessage();
+        card.role = ChatMessage.Role.CARD;
+        card.cardKind = "blueprint";
+        card.cardState = ChatMessage.CARD_PENDING;
+        card.approvalTitle = "Your saved blueprint — build this?";
+        card.text = "Recovered from your last visit — the drawing "
+                + "was kept. Build it, adjust it, or let it go.";
+        card.timestamp = System.currentTimeMillis();
+        card.cardData.addProperty("blueprint_text", saved);
+        card.cardData.addProperty("scId", scId);
+        appendMessage(card);
+        persistChat();
+    }
+
+    /**
+     * A card interrupted by a process death must not come back
+     * looking un-answered: pending one-shot cards become USED
+     * ("interrupted"), a stale live board card becomes CANCELLED
+     * (its rows stay as the review record).
+     */
+    private void sweepStaleCards() {
+        for (ChatMessage m : messages) {
+            if (m.role == ChatMessage.Role.CARD
+                    && ChatMessage.CARD_PENDING.equals(m.cardState)
+                    && !"board".equals(m.cardKind)) {
+                m.cardState = ChatMessage.CARD_USED;
+                m.cardData.addProperty("choice", "interrupted");
+            } else if (m.role == ChatMessage.Role.CARD
+                    && "board".equals(m.cardKind)
+                    && ChatMessage.CARD_PENDING.equals(m.cardState)) {
+                m.cardState = ChatMessage.CARD_CANCELLED;
+            }
+        }
+    }
+
     private void chooseProject(String scId, String name) {
         providerConfig.setWorkingProjectId(scId);
         providerConfig.save(requireContext());
@@ -1245,25 +1323,8 @@ public class AgentFragment extends qA {
         if (!scId.isEmpty()) {
             messages.addAll(AgentChatLog.load(scId));
         }
-        // A card interrupted by a process death must not come back
-        // looking un-answered: pending one-shot cards become USED
-        // ("interrupted"), the live board card becomes CANCELLED.
-        for (ChatMessage m : messages) {
-            if (m.role == ChatMessage.Role.CARD
-                    && ChatMessage.CARD_PENDING.equals(m.cardState)
-                    && !"board".equals(m.cardKind)) {
-                m.cardState = ChatMessage.CARD_USED;
-                m.cardData.addProperty("choice",
-                        "blueprint".equals(m.cardKind)
-                                ? "interrupted" : "interrupted");
-            } else if (m.role == ChatMessage.Role.CARD
-                    && "board".equals(m.cardKind)
-                    && ChatMessage.CARD_PENDING.equals(m.cardState)) {
-                // A restored live card can never be live again — but
-                // its rows stay as the review record.
-                m.cardState = ChatMessage.CARD_CANCELLED;
-            }
-        }
+        sweepStaleCards();
+        maybeRepostSavedBlueprint(scId);
         if (adapter != null) {
             adapter.notifyDataSetChanged();
         }
@@ -3222,7 +3283,8 @@ public class AgentFragment extends qA {
     }
 
     /** Blueprint mode: draw everything first, you approve, then build. */
-    private void startBlueprintFlow() {
+    private void startBlueprintFlow(String savedBlueprint,
+            String firstAdjustment) {
         if (generating || agentBoard.isRunning() || !isAdded()) {
             return;
         }
@@ -3237,10 +3299,25 @@ public class AgentFragment extends qA {
         }
         AiProviderConfig.Settings settings =
                 providerConfig.activeSettings();
-        boolean started = agentBoard.startBlueprint(requireContext(),
-                scId, settings.baseUrl,
-                providerConfig.apiKey(providerConfig.activeProvider()),
-                settings.model, plan, settings.models, boardListener());
+        String key = providerConfig.apiKey(
+                providerConfig.activeProvider());
+        boolean resume = savedBlueprint != null
+                && savedBlueprint.trim().length() >= 60
+                && savedBlueprint.contains("SCREEN:");
+        boolean adjust = firstAdjustment != null
+                && !firstAdjustment.trim().isEmpty();
+        boolean started;
+        if (resume || adjust) {
+            started = agentBoard.startBlueprintFromSaved(
+                    requireContext(), scId, settings.baseUrl, key,
+                    settings.model, plan, settings.models,
+                    boardListener(), resume ? savedBlueprint : "",
+                    adjust ? firstAdjustment.trim() : "");
+        } else {
+            started = agentBoard.startBlueprint(requireContext(),
+                    scId, settings.baseUrl, key, settings.model, plan,
+                    settings.models, boardListener());
+        }
         if (started) {
             boardCard = null; // a new build gets its own card
             updateBoardCard();
@@ -3395,9 +3472,15 @@ public class AgentFragment extends qA {
                                     messages.indexOf(card));
                             persistChat();
                         }
+                        AgentJournal.saveBlueprint(
+                                providerConfig == null ? ""
+                                        : providerConfig.workingProjectId(),
+                                blueprintText, true);
                         sayInChat("The blueprint sat unanswered for 30 "
                                 + "minutes — cancelled, nothing was "
-                                + "built.");
+                                + "built. It is kept in the project — "
+                                + "reopen it any time from the chat "
+                                + "history.");
                         return null;
                     }
                 } catch (InterruptedException e) {
@@ -5800,11 +5883,13 @@ public class AgentFragment extends qA {
         }
         chatProjectId = working;
         List<ChatMessage> saved = AgentChatLog.load(working);
-        if (saved.isEmpty()) {
-            return;
+        if (!saved.isEmpty()) {
+            messages.addAll(saved);
         }
-        messages.addAll(saved);
-        if (binding != null) {
+        sweepStaleCards();
+        // Wave 66: an unanswered saved blueprint comes back as a card.
+        maybeRepostSavedBlueprint(working);
+        if (binding != null && !messages.isEmpty()) {
             binding.chatList.scrollToPosition(messages.size() - 1);
         }
     }
