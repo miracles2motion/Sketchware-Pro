@@ -4164,7 +4164,7 @@ public class AgentFragment extends qA {
         if (picked == null || !picked.has("picked")) {
             return picked;
         }
-        String hex = picked.get("picked").getAsString();
+        String pickedHex = picked.get("picked").getAsString();
         // THE pick is no longer just a message to the model: the user
         // decides whether it becomes THE colour of the whole app
         // (theme + tokens re-generated, resources materialized) or
@@ -4178,7 +4178,7 @@ public class AgentFragment extends qA {
                 return;
             }
             new MaterialAlertDialogBuilder(requireContext())
-                    .setTitle("Colour " + hex)
+                    .setTitle("Colour " + pickedHex)
                     .setMessage("Use it as THE colour of the whole app "
                             + "(theme, buttons, cards all follow), or "
                             + "just for the one element you were asked "
@@ -4216,7 +4216,7 @@ public class AgentFragment extends qA {
                 com.google.gson.JsonObject applied =
                         pro.sketchware.ai.OpenUiThemeEngine
                                 .applyUserColor(
-                                real ? scId : "", hex);
+                                real ? scId : "", pickedHex);
                 applied.addProperty("picked", hex);
                 applied.addProperty("applied_everywhere", true);
                 runOnUi(() -> {
