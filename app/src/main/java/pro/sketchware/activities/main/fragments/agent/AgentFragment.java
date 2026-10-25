@@ -3159,11 +3159,9 @@ public class AgentFragment extends qA {
         com.google.gson.JsonObject plan = AgentJournal.plan(scId);
         if (!hasRealProject()) {
             // Empty or "__draft__": a build needs a real project first.
-            Toast.makeText(getContext(),
-                    "Your plan is saved. Tap ▶ Start building — the "
-                            + "project is created from it, then the "
-                            + "blueprint build becomes available.",
-                    Toast.LENGTH_LONG).show();
+            sayInChat("Your plan is saved. Tap ▶ Start building — the "
+                    + "project is created from it, then the blueprint "
+                    + "build unlocks.");
             return;
         }
         AiProviderConfig.Settings settings =
@@ -3202,119 +3200,56 @@ public class AgentFragment extends qA {
 
             @Override
             public String onBlueprintReady(String blueprintText) {
-                // The board thread blocks here until you decide —
-                // nothing is built before you approve the blueprint.
-                // You can also ask for changes: the blueprint is
-                // redrawn with them and shown again (three rounds).
+                // Chat-native approval: the drawing is posted as a
+                // card with the rendered screens inline. The board
+                // thread waits on the latch; taps on the card (or 30
+                // minutes of silence = cancel) decide.
+                if (!isAdded()) {
+                    return null;
+                }
                 final java.util.concurrent.CountDownLatch latch =
                         new java.util.concurrent.CountDownLatch(1);
-                final java.util.concurrent.atomic.AtomicReference<String>
-                        verdict =
-                        new java.util.concurrent.atomic.AtomicReference<>(
-                                null);
-                runOnUi(() -> {
-                    if (!isAdded()) {
-                        verdict.set("");
-                        latch.countDown();
-                        return;
-                    }
-                    String shown = blueprintText.length() > 3800
-                            ? blueprintText.substring(0, 3800)
-                            + "\n… (shortened here — the full blueprint "
-                            + "drives the build)"
-                            : blueprintText;
-                    // Pictures first: every SCREEN section rendered as
-                    // a REAL view, in the saved design system's own
-                    // palette — approve what you SEE.
-                    java.util.List<pro.sketchware.ai.AgentBlueprintPreview
-                            .ScreenDraft> drafts =
-                            pro.sketchware.ai.AgentBlueprintPreview
-                                    .parse(blueprintText);
-                    android.widget.EditText input =
-                            new android.widget.EditText(requireContext());
-                    input.setHint("Anything to change? (optional)");
-                    MaterialAlertDialogBuilder builder =
-                            new MaterialAlertDialogBuilder(requireContext())
-                                    .setTitle("The blueprint — build this?");
-                    if (!drafts.isEmpty()) {
-                        com.google.gson.JsonObject palette =
-                                providerConfig == null ? null
-                                        : pro.sketchware.ai.AgentJournal
-                                        .designSystem(providerConfig
-                                                .workingProjectId());
-                        int pad = Math.round(16 * getResources()
-                                .getDisplayMetrics().density);
-                        android.widget.LinearLayout page =
-                                new android.widget.LinearLayout(
-                                        requireContext());
-                        page.setOrientation(
-                                android.widget.LinearLayout.VERTICAL);
-                        page.setPadding(pad, pad / 2, pad, 0);
-                        android.widget.HorizontalScrollView gallery =
-                                new android.widget.HorizontalScrollView(
-                                        requireContext());
-                        android.widget.LinearLayout row =
-                                new android.widget.LinearLayout(
-                                        requireContext());
-                        row.setOrientation(
-                                android.widget.LinearLayout.HORIZONTAL);
-                        row.setPadding(0, pad / 2, pad, pad / 2);
-                        for (pro.sketchware.ai.AgentBlueprintPreview
-                                .ScreenDraft draft : drafts) {
-                            row.addView(pro.sketchware.ai
-                                    .AgentBlueprintPreview
-                                    .renderScreen(requireContext(),
-                                            draft, palette));
-                        }
-                        gallery.addView(row);
-                        page.addView(gallery);
-                        android.widget.TextView rest =
-                                new android.widget.TextView(
-                                        requireContext());
-                        rest.setText(pro.sketchware.ai
-                                .AgentBlueprintPreview
-                                .withoutScreens(blueprintText));
-                        rest.setTextSize(11);
-                        rest.setMaxLines(12);
-                        rest.setEllipsize(android.text.TextUtils
-                                .TruncateAt.END);
-                        rest.setPadding(0, 0, 0, pad);
-                        page.addView(rest);
-                        page.addView(input);
-                        builder.setView(page);
-                    } else {
-                        builder.setMessage(shown).setView(input);
-                    }
-                    builder
-                            .setPositiveButton("Build it",
-                                    (d2, w2) -> {
-                                        verdict.set("");
-                                        latch.countDown();
-                                    })
-                            .setNeutralButton("Adjust it",
-                                    (d2, w2) -> {
-                                        String wish = input.getText()
-                                                == null ? ""
-                                                : input.getText()
-                                                .toString().trim();
-                                        // Empty adjust = build as drawn.
-                                        verdict.set(wish);
-                                        latch.countDown();
-                                    })
-                            .setNegativeButton("Cancel",
-                                    (d2, w2) -> latch.countDown())
-                            .setOnCancelListener(
-                                    d2 -> latch.countDown())
-                            .show();
-                });
+                blueprintLatch[0] = latch;
+                blueprintDecision = null;
+                pro.sketchware.ai.ChatMessage card = new ChatMessage();
+                card.role = ChatMessage.Role.CARD;
+                card.cardKind = "blueprint";
+                card.cardState = ChatMessage.CARD_PENDING;
+                card.approvalTitle = "The blueprint — build this?";
+                card.text = "Look at the screens. Build it, adjust it, "
+                        + "or cancel — right here.";
+                card.timestamp = System.currentTimeMillis();
+                card.cardData.addProperty("blueprint_text",
+                        blueprintText == null ? "" : blueprintText);
+                card.cardData.addProperty("scId",
+                        providerConfig == null ? ""
+                                : providerConfig.workingProjectId());
+                appendMessage(card);
+                persistChat();
                 try {
-                    latch.await();
+                    boolean answered = latch.await(30,
+                            java.util.concurrent.TimeUnit.MINUTES);
+                    if (!answered) {
+                        if (isAdded() && card.cardState
+                                == ChatMessage.CARD_PENDING) {
+                            card.cardState = ChatMessage.CARD_CANCELLED;
+                            adapter.notifyItemChanged(
+                                    messages.indexOf(card));
+                            persistChat();
+                        }
+                        sayInChat("The blueprint sat unanswered for 30 "
+                                + "minutes — cancelled, nothing was "
+                                + "built.");
+                        return null;
+                    }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    verdict.set(null);
+                    return null;
+                } finally {
+                    blueprintLatch[0] = null;
                 }
-                String out = verdict.get();
-                return out == null ? null : out;
+                persistChat();
+                return blueprintDecision;
             }
         };
     }

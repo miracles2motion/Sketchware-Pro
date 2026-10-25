@@ -6,6 +6,7 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.Typeface;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -893,6 +894,105 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                         done.setTextColor(AgentTheme.primary(ctx));
                         done.setTypeface(Typeface.DEFAULT_BOLD);
                     }
+                    root.addView(done);
+                }
+                return;
+            }
+            if ("blueprint".equals(kind)) {
+                title.setText("The blueprint — build this?");
+                String scId = m.cardData != null && m.cardData.has("scId")
+                        ? m.cardData.get("scId").getAsString() : "";
+                String text = m.cardData != null && m.cardData
+                        .has("blueprint_text")
+                        ? m.cardData.get("blueprint_text").getAsString()
+                        : "";
+                java.util.List<AgentBlueprintPreview.ScreenDraft>
+                        drafts = AgentBlueprintPreview.parse(text);
+                if (!drafts.isEmpty()) {
+                    android.widget.HorizontalScrollView gallery =
+                            new android.widget.HorizontalScrollView(ctx);
+                    gallery.setFillViewport(true);
+                    LinearLayout row = new LinearLayout(ctx);
+                    row.setOrientation(LinearLayout.HORIZONTAL);
+                    row.setPadding(0, Math.round(10f * d), 0,
+                            Math.round(4f * d));
+                    com.google.gson.JsonObject palette = scId.isEmpty()
+                            ? null : AgentJournal.designSystem(scId);
+                    for (AgentBlueprintPreview.ScreenDraft draft
+                            : drafts) {
+                        row.addView(AgentBlueprintPreview.renderScreen(
+                                ctx, draft, palette));
+                    }
+                    gallery.addView(row);
+                    root.addView(gallery);
+                }
+                TextView rules = new TextView(ctx);
+                rules.setText(AgentBlueprintPreview.withoutScreens(text));
+                rules.setTextColor(AgentTheme.faint(ctx));
+                rules.setTextSize(12);
+                rules.setMaxLines(8);
+                rules.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                rules.setPadding(0, Math.round(8f * d), 0, 0);
+                root.addView(rules);
+                if (pending) {
+                    final EditText adjustInput = new EditText(ctx);
+                    adjustInput.setHint("Anything to change? (optional)");
+                    adjustInput.setTextSize(13);
+                    adjustInput.setVisibility(View.GONE);
+                    root.addView(adjustInput);
+                    final TextView[] input = {adjustInput};
+                    root.addView(button(ctx, d, "Build it", () -> {
+                        mark(m, ChatMessage.CARD_USED, "build");
+                        if (adapter.cardListener != null) {
+                            adapter.cardListener.onBlueprintDecision(m, "");
+                        }
+                    }));
+                    root.addView(button(ctx, d, "Adjust it (redraw)",
+                            () -> {
+                                if (input[0].getVisibility()
+                                        == View.GONE) {
+                                    input[0].setVisibility(View.VISIBLE);
+                                    return;
+                                }
+                                String wish = input[0].getText() == null
+                                        ? "" : input[0].getText()
+                                        .toString().trim();
+                                mark(m, ChatMessage.CARD_USED,
+                                        wish.isEmpty() ? "adjusted"
+                                                : "adjusted");
+                                if (adapter.cardListener != null) {
+                                    adapter.cardListener
+                                            .onBlueprintDecision(m, wish);
+                                }
+                            }));
+                    root.addView(button(ctx, d, "Cancel — build nothing",
+                            () -> {
+                                mark(m, ChatMessage.CARD_CANCELLED, "");
+                                if (adapter.cardListener != null) {
+                                    adapter.cardListener
+                                            .onBlueprintDecision(m, null);
+                                }
+                            }));
+                } else if (ChatMessage.CARD_CANCELLED.equals(
+                        m.cardState)) {
+                    TextView done = new TextView(ctx);
+                    done.setText("Cancelled — nothing was built.");
+                    done.setTextColor(AgentTheme.faint(ctx));
+                    done.setTextSize(13);
+                    done.setPadding(0, Math.round(8f * d), 0, 0);
+                    root.addView(done);
+                } else {
+                    TextView done = new TextView(ctx);
+                    String choice = m.cardData != null
+                            && m.cardData.has("choice")
+                            ? m.cardData.get("choice").getAsString() : "";
+                    done.setText("adjusted".equals(choice)
+                            ? "Sent back for a redraw — see the next "
+                            + "card." : "Approved — building.");
+                    done.setTextColor(AgentTheme.primary(ctx));
+                    done.setTypeface(Typeface.DEFAULT_BOLD);
+                    done.setTextSize(13);
+                    done.setPadding(0, Math.round(8f * d), 0, 0);
                     root.addView(done);
                 }
                 return;
