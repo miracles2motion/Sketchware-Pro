@@ -5320,7 +5320,16 @@ public final class AgentTools {
             JsonObject result = new JsonObject();
             result.addProperty("style_brief",
                     AgentJournal.styleBrief(scId));
-            result.addProperty("task_log", AgentJournal.logText(scId));
+            String log = AgentJournal.logText(scId);
+            if (log.length() > 4000) {
+                // The full firehose once crushed a whole build turn:
+                // this result rides along in EVERY later request of
+                // the turn, so it stays a summary — newest first.
+                log = log.substring(0, 4000)
+                        + "\n…(older entries omitted — the recent "
+                        + "history above is what matters)";
+            }
+            result.addProperty("task_log", log);
             return result;
         }
     }

@@ -699,6 +699,49 @@ public class AgentLoop {
      * ONE build message fired 190+ requests back-to-back and burned
      * the key in under a minute. */
     private static final long MIN_REQUEST_GAP_MS = 4000L;
+
+    /** One tool result larger than this is truncated — it would
+     * otherwise ride along in every later request of the turn. */
+    private static final int TOOL_RESULT_CAP = 12000;
+    /** The newest N tool results stay full; older ones are stubbed. */
+    private static final int MAX_FULL_TOOL_RESULTS = 24;
+
+    /** Bounds the turn's payload: the snowball of full tool results
+     * (each request carried ALL previous ones) is what made requests
+     * grow to hundreds of thousands of tokens by call #150. */
+    private static void compactToolHistory(
+            List<JsonObject> messages) {
+        int seen = 0;
+        for (JsonObject m : messages) {
+            if (m.has("role") && "tool".equals(
+                    m.get("role").getAsString())) {
+                seen++;
+            }
+        }
+        int toStub = seen - MAX_FULL_TOOL_RESULTS;
+        if (toStub <= 0) {
+            return;
+        }
+        for (JsonObject m : messages) {
+            if (toStub <= 0) {
+                return;
+            }
+            if (m.has("role") && "tool".equals(
+                    m.get("role").getAsString())) {
+                String content = m.has("content")
+                        && m.get("content").isJsonPrimitive()
+                        ? m.get("content").getAsString() : "";
+                if (!content.startsWith("[earlier tool result")) {
+                    m.addProperty("content",
+                            "[earlier tool result omitted to keep the "
+                                    + "request small — re-read with the "
+                                    + "tool if needed. Was: "
+                                    + AgentJournal.cap(content, 160));
+                    toStub--;
+                }
+            }
+        }
+    }
     private long lastAgentRequestAt;
     /** Consecutive Auto turns that died without a real answer. */
     private int autoDeadTurns;
@@ -1600,10 +1643,16 @@ public class AgentLoop {
                     pendingPreviewScreen = result.has("screen")
                             ? result.get("screen").getAsString() : "screen";
                 }
+                String content = result.toString();
+                if (content.length() > TOOL_RESULT_CAP) {
+                    content = content.substring(0, TOOL_RESULT_CAP)
+                            + "\n…(truncated — ask a narrower question)";
+                }
+                compactToolHistory(messages);
                 JsonObject toolMessage = new JsonObject();
                 toolMessage.addProperty("role", "tool");
                 toolMessage.addProperty("tool_call_id", call.id);
-                toolMessage.addProperty("content", result.toString());
+                toolMessage.addProperty("content", content);
                 messages.add(toolMessage);
             }
             if (!pendingPreviewPath.isEmpty() && !previewVisionDisabled[0]
