@@ -95,6 +95,9 @@ public final class AgentBoard {
     private volatile boolean running;
     /** The architect's shared rules sheet; set before workers start. */
     private volatile String conventions = "";
+    /** The model the FIRST worker resolved; everyone else is pinned
+     * to it so parts land from one AI, not three different ones. */
+    private volatile String pinnedModel = "";
     /** A worker stuck longer than this is cancelled, not left spinning. */
     private static final long PART_TIMEOUT_MS = 12 * 60 * 1000;
     /** Rebuilds allowed per part before it is reported failed. */
@@ -388,7 +391,7 @@ public final class AgentBoard {
                 .append("BUILD ERRORS:\n").append(trimmed);
         List<ChatMessage> history = new ArrayList<>();
         history.add(ChatMessage.user(brief.toString()));
-        loop.run(baseUrl, apiKey, model, history, scId, true,
+        loop.run(baseUrl, apiKey, effectiveModel(), history, scId, true,
                 new AgentLoop.Listener() {
                     @Override
                     public void onToolNote(String line) {
@@ -487,15 +490,19 @@ public final class AgentBoard {
                 + "Below is the FULL plan for an app; several builders "
                 + "will each build one part IN PARALLEL and cannot "
                 + "talk to each other, so every shared decision must "
-                + "be fixed in advance. Write the shared conventions "
-                + "sheet they must all follow: (1) any data two or "
-                + "more parts both read or write — give the exact "
-                + "shared preferences file name and exact key names; "
-                + "(2) exact variable names for values that cross "
-                + "parts; (3) exact More Block names used by more than "
-                + "one part; (4) one line per screen: its name and "
-                + "which part owns it. Plain text, at most 200 words, "
-                + "no preamble, no markdown headings."
+                + "be fixed in advance. First, judge the plan: answer "
+                + "SPLIT only if the steps are concrete enough for "
+                + "separate builders to divide safely; answer SINGLE "
+                + "if the plan is too vague or tangled. Your FIRST "
+                + "line is exactly SPLIT or SINGLE. Then write the "
+                + "shared conventions sheet they must all follow: "
+                + "(1) any data two or more parts both read or write "
+                + "— give the exact shared preferences file name "
+                + "and exact key names; (2) exact variable names for "
+                + "values that cross parts; (3) exact More Block "
+                + "names used by more than one part; (4) one line per "
+                + "screen: its name and which part owns it. Plain "
+                + "text, at most 200 words, no markdown headings."
                 + "\n\nTHE PLAN:\n" + planText;
         try {
             AiChatService service = new AiChatService();
@@ -511,13 +518,27 @@ public final class AgentBoard {
             user.addProperty("content", prompt);
             messages.add(user);
             AiChatService.AgentReply reply = service.agentTurnSync(
-                    baseUrl, apiKey, model, messages, null);
+                    baseUrl, apiKey, effectiveModel(), messages, null);
             String sheet = reply == null ? "" : reply.content;
             if (sheet != null) {
                 sheet = sheet.trim();
             }
             if (sheet == null || sheet.length() < 20) {
                 throw new IllegalStateException("empty sheet");
+            }
+            int newline = sheet.indexOf('\n');
+            String head = newline < 0 ? sheet
+                    : sheet.substring(0, newline);
+            boolean single = head.trim()
+                    .toUpperCase(java.util.Locale.US)
+                    .startsWith("SINGLE");
+            if (single) {
+                sheet = newline < 0 ? fallbackSheet()
+                        : sheet.substring(newline + 1).trim();
+                if (sheet.length() < 20) {
+                    sheet = fallbackSheet();
+                }
+                collapseToOnePart();
             }
             if (sheet.length() > 1800) {
                 sheet = sheet.substring(0, 1800);
@@ -529,6 +550,26 @@ public final class AgentBoard {
             note("The architect could not be reached; standard naming "
                     + "rules will be used.");
         }
+    }
+
+    /**
+     * The clarity gate said SINGLE: the plan is too loose to divide,
+     * so all steps become ONE part — a single builder working in
+     * order, still under the full check pipeline.
+     */
+    private void collapseToOnePart() {
+        synchronized (this) {
+            Part all = new Part(1, "The whole plan");
+            for (Part part : parts) {
+                all.stepTexts.addAll(part.stepTexts);
+                all.claims.addAll(part.claims);
+                all.screenDirs.addAll(part.screenDirs);
+            }
+            parts.clear();
+            parts.add(all);
+        }
+        note("This plan is too loose to split safely — building it "
+                + "as one checked sequence instead.");
     }
 
     private static String fallbackSheet() {
@@ -576,6 +617,10 @@ public final class AgentBoard {
                 }
             }
         }
+    }
+
+    private String effectiveModel() {
+        return pinnedModel.isEmpty() ? model : pinnedModel;
     }
 
     private void runWorker(Part part) {
@@ -633,11 +678,21 @@ public final class AgentBoard {
 
         List<ChatMessage> history = new ArrayList<>();
         history.add(ChatMessage.user(brief.toString()));
-        loop.run(baseUrl, apiKey, model, history, scId, true,
+        loop.run(baseUrl, apiKey, effectiveModel(), history, scId, true,
                 new AgentLoop.Listener() {
                     @Override
                     public void onToolNote(String line) {
                         // Worker activity lines stay out of the chat.
+                    }
+
+                    @Override
+                    public void onResolvedModel(String resolvedModel) {
+                        // Pin the whole build to the FIRST resolved
+                        // model so every part comes from the same AI.
+                        if (pinnedModel.isEmpty() && resolvedModel != null
+                                && !resolvedModel.isEmpty()) {
+                            pinnedModel = resolvedModel;
+                        }
                     }
 
                     @Override
@@ -778,7 +833,7 @@ public final class AgentBoard {
                             + "rules? Answer PASS or PROBLEMS:");
             messages.add(user);
             AiChatService.AgentReply reply = service.agentTurnSync(
-                    baseUrl, apiKey, model, messages, null);
+                    baseUrl, apiKey, effectiveModel(), messages, null);
             String answer = reply == null || reply.content == null
                     ? "" : reply.content.trim();
             if (answer.isEmpty()) {
