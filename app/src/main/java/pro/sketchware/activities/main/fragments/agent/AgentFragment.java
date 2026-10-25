@@ -161,6 +161,12 @@ public class AgentFragment extends qA {
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
+        // The exports folder is a diagnostics aid, not an archive: on
+        // every agent start, anything over a week old (or pushing the
+        // folder past its cap) quietly goes.
+        Thread prune = new Thread(AgentExport::prune);
+        prune.setDaemon(true);
+        prune.start();
         /*
          * The chat screen lives in a container that the coordinator layout
          * pushes below the app bar. The container is not always shortened by

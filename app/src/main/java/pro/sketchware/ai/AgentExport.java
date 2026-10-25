@@ -792,12 +792,56 @@ public final class AgentExport {
         return state;
     }
 
+    /** Exports older than this are diagnostics nobody will read. */
+    private static final long PRUNE_AGE_MS = 7L * 24 * 60 * 60 * 1000;
+
+    /** The whole exports folder is never worth more than this. */
+    private static final long PRUNE_TOTAL_BYTES = 20L * 1024 * 1024;
+
+    /**
+     * Keeps the exports folder bounded: files older than seven days go,
+     * then (oldest first) until the folder is under the cap. Called on
+     * the agent opening and before each new export — sharing needs no
+     * bookkeeping, because a shared export simply ages out.
+     */
+    public static void prune() {
+        try {
+            File dir = new File(AiPaths.agentRoot(), "exports");
+            File[] files = dir.listFiles();
+            if (files == null || files.length == 0) {
+                return;
+            }
+            long cutoff = System.currentTimeMillis() - PRUNE_AGE_MS;
+            // Oldest first, so both passes take from the same end.
+            java.util.Arrays.sort(files, (a, b) -> Long.compare(
+                    a.lastModified(), b.lastModified()));
+            long total = 0;
+            for (File file : files) {
+                total += file.length();
+            }
+            for (File file : files) {
+                boolean expired = file.lastModified() < cutoff;
+                boolean overCap = total > PRUNE_TOTAL_BYTES;
+                if (!expired && !overCap) {
+                    break;
+                }
+                long size = file.length();
+                if (file.delete()) {
+                    total -= size;
+                }
+            }
+        } catch (Exception ignored) {
+            // Pruning must never disturb whatever else is starting.
+        }
+    }
+
     /** Writes the export under the agent root and returns the file. */
     public static File write(JsonObject root, String projectName)
             throws Exception {
         File dir = new File(AiPaths.agentRoot(), "exports");
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();
+        prune();
         String safe = (projectName == null ? "" : projectName)
                 .replaceAll("[^A-Za-z0-9_-]+", "-").replaceAll("^-+|-+$", "");
         if (safe.isEmpty()) {
