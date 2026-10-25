@@ -56,13 +56,14 @@ public class AgentLoop {
                     + "(#B39DDB → #90CAF9), thin font, frosted glass” — "
                     + "the app draws swatches from those hexes, so an "
                     + "option without hexes shows no colours. Use 2–4 "
-                    + "hexes per option (background → accent). Put the "
-                    + "options INSIDE the ask_choice tool call — never "
-                    + "in an ```openui block, a ChoiceChips/Select "
-                    + "component, or a plain list in your reply text: "
-                    + "the app can only pop the choice sheet from the "
-                    + "tool call, so options drawn anywhere else are "
-                    + "invisible to the user. NEVER "
+                    + "hexes per option (background → accent). Make "
+                    + "ask_choice a REAL function call — question and "
+                    + "options go in the arguments and the app pops "
+                    + "the sheet itself. Do not print the call as text "
+                    + "or JSON in your reply, and do not draw the "
+                    + "options as an ```openui block, a "
+                    + "ChoiceChips/Select component, or a plain list: "
+                    + "none of those shows the user a popup. NEVER "
                     + "re-ask a question the user already answered: if "
                     + "a Design System or style brief is saved for this "
                     + "project (it is in the PROJECT INDEX) or the "
@@ -1121,6 +1122,13 @@ public class AgentLoop {
                     return;
                 }
             }
+            // A model that fumbles real function calling may still
+            // print the call as a JSON object (gpt-oss-120b did this
+            // when the design rule leaned too hard on "the tool
+            // call"). Recover it BEFORE the reply is judged, so it
+            // runs exactly like a native call and the user gets the
+            // real popup instead of a raw JSON bubble.
+            recoverTextToolCall(reply);
             {
                 // What the model said, before anything is done with
                 // it: the answer it wrote, the reasoning it kept
@@ -1519,6 +1527,89 @@ public class AgentLoop {
      * told to propose one itself and carry on, because a conversation
      * that stops to repeat the question is worse than a decided one.
      */
+    /**
+     * Recovers a tool call the model printed as text. A weak model,
+     * told to put the options inside the ask_choice tool call, will
+     * sometimes answer with a bare JSON object (or the OpenAI wire
+     * shape) in the reply instead of a real function call — the user
+     * then sees raw JSON and no popup. When the ENTIRE reply is such
+     * an object naming a tool, the call is reconstructed: a matching
+     * declaration goes into the raw message (the protocol demands a
+     * tool result reference a tool_call the assistant message itself
+     * declared) and the call joins the normal dispatch like any
+     * native one.
+     */
+    private static void recoverTextToolCall(
+            AiChatService.AgentReply reply) {
+        if (reply == null || reply.content == null
+                || !reply.toolCalls.isEmpty()
+                || reply.rawMessage == null) {
+            return;
+        }
+        String text = reply.content.trim();
+        if (text.startsWith("```")) {
+            int open = text.indexOf('\n');
+            int close = text.lastIndexOf("```");
+            if (open > 3 && close > open) {
+                text = text.substring(open + 1, close).trim();
+            }
+        }
+        if (!text.startsWith("{") || !text.endsWith("}")) {
+            return;
+        }
+        try {
+            JsonObject obj = com.google.gson.JsonParser
+                    .parseString(text).getAsJsonObject();
+            String name = "";
+            JsonElement argsElement = null;
+            if (obj.has("function") && obj.get("function").isJsonObject()) {
+                // The OpenAI wire shape, imitated in text.
+                JsonObject fn = obj.getAsJsonObject("function");
+                name = fn.has("name")
+                        && fn.get("name").isJsonPrimitive()
+                        ? fn.get("name").getAsString() : "";
+                argsElement = fn.get("arguments");
+            } else {
+                name = obj.has("tool") && obj.get("tool").isJsonPrimitive()
+                        ? obj.get("tool").getAsString()
+                        : obj.has("name") && obj.get("name").isJsonPrimitive()
+                        ? obj.get("name").getAsString() : "";
+                argsElement = obj.get("arguments");
+            }
+            if (!name.matches("[a-z_]{2,40}")) {
+                return;
+            }
+            String arguments = "{}";
+            if (argsElement != null && !argsElement.isJsonNull()) {
+                arguments = argsElement.isJsonPrimitive()
+                        ? argsElement.getAsString()
+                        : argsElement.toString();
+                // The arguments must be valid JSON either way.
+                com.google.gson.JsonParser.parseString(arguments);
+            }
+            AiChatService.ToolCallData call =
+                    new AiChatService.ToolCallData();
+            call.id = "call_text_" + System.currentTimeMillis();
+            call.name = name;
+            call.arguments = arguments;
+            reply.toolCalls.add(call);
+            // Declare the call in the assistant message, so the tool
+            // result that follows is protocol-valid.
+            JsonArray declared = new JsonArray();
+            JsonObject wire = new JsonObject();
+            wire.addProperty("id", call.id);
+            wire.addProperty("type", "function");
+            JsonObject fn = new JsonObject();
+            fn.addProperty("name", name);
+            fn.addProperty("arguments", arguments);
+            wire.add("function", fn);
+            declared.add(wire);
+            reply.rawMessage.add("tool_calls", declared);
+        } catch (Exception ignored) {
+            // Not a tool call — leave the reply as plain content.
+        }
+    }
+
     private JsonObject askChoice(AiChatService.ToolCallData call,
                                  Listener listener) {
         JsonObject args = new JsonObject();
