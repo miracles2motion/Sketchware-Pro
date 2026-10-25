@@ -997,6 +997,127 @@ public class ChatAdapter extends RecyclerView.Adapter<ChatAdapter.Holder> {
                 }
                 return;
             }
+            if ("board".equals(kind)) {
+                boolean live = pending;
+                int done = m.cardData != null && m.cardData.has("done")
+                        ? m.cardData.get("done").getAsInt() : 0;
+                int total = m.cardData != null && m.cardData.has("total")
+                        ? m.cardData.get("total").getAsInt() : 0;
+                title.setText(live ? "🛠 Parts board — " + done + " of "
+                        + total + " ready" : "Parts board — finished");
+                body.setText(live ? "Live. Stop anytime; tap a ready "
+                        + "part to review it." : "Tap a part to review "
+                        + "or rebuild it.");
+                java.util.List<com.google.gson.JsonObject> rows =
+                        new java.util.ArrayList<>();
+                if (m.cardData != null && m.cardData.has("parts")
+                        && m.cardData.get("parts").isJsonArray()) {
+                    for (com.google.gson.JsonElement el : m.cardData
+                            .getAsJsonArray("parts")) {
+                        if (el.isJsonObject()) {
+                            rows.add(el.getAsJsonObject());
+                        }
+                    }
+                }
+                final int[] expanded = {m.cardData != null
+                        && m.cardData.has("open")
+                        ? m.cardData.get("open").getAsInt() : -1};
+                if (live) {
+                    root.addView(button(ctx, d, "⏹ Stop all workers",
+                            () -> {
+                                if (adapter.cardListener != null) {
+                                    adapter.cardListener.onBoardAction(m,
+                                            "stop", -1);
+                                }
+                            }));
+                }
+                for (final com.google.gson.JsonObject part : rows) {
+                    final int idx = part.has("index")
+                            ? part.get("index").getAsInt() : 0;
+                    TextView rowView = new TextView(ctx);
+                    rowView.setTextSize(13);
+                    rowView.setPadding(Math.round(10f * d),
+                            Math.round(8f * d), Math.round(10f * d),
+                            Math.round(8f * d));
+                    LinearLayout.LayoutParams rlp =
+                            new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT);
+                    rlp.topMargin = Math.round(6f * d);
+                    rowView.setLayoutParams(rlp);
+                    GradientDrawable rowBg = new GradientDrawable();
+                    rowBg.setCornerRadius(10f * d);
+                    rowBg.setColor(withAlphaCompat(AgentTheme.ink(ctx),
+                            0x0D));
+                    rowView.setBackground(rowBg);
+                    String icon = "🕒";
+                    String st = part.has("state")
+                            ? part.get("state").getAsString() : "";
+                    if ("DONE".equals(st)) {
+                        icon = "✅";
+                    } else if ("FAILED".equals(st)) {
+                        icon = "⚠";
+                    } else if ("BUILDING".equals(st)) {
+                        icon = "🔧";
+                    }
+                    String titleText = part.has("title")
+                            ? part.get("title").getAsString()
+                            : "Part " + idx;
+                    String label = part.has("label")
+                            ? part.get("label").getAsString() : "";
+                    rowView.setText(icon + "  " + idx + ". "
+                            + titleText
+                            + (label.isEmpty() ? "" : " — " + label));
+                    final boolean open = expanded[0] == idx;
+                    root.addView(rowView);
+                    rowView.setOnClickListener(v -> {
+                        expanded[0] = open ? -1 : idx;
+                        if (m.cardData == null) {
+                            m.cardData = new JsonObject();
+                        }
+                        m.cardData.addProperty("open", expanded[0]);
+                        adapter.notifyDataSetChanged();
+                    });
+                    if (!open) {
+                        continue;
+                    }
+                    LinearLayout panel = new LinearLayout(ctx);
+                    panel.setOrientation(LinearLayout.VERTICAL);
+                    panel.setPadding(Math.round(12f * d),
+                            Math.round(6f * d), Math.round(12f * d), 0);
+                    TextView detail = new TextView(ctx);
+                    String detailText = part.has("summary")
+                            && !part.get("summary").getAsString()
+                            .isEmpty() ? part.get("summary")
+                            .getAsString() : part.has("error")
+                            && !part.get("error").getAsString().isEmpty()
+                            ? part.get("error").getAsString()
+                            : "Still waiting…";
+                    detail.setText(detailText);
+                    detail.setTextColor(AgentTheme.faint(ctx));
+                    detail.setTextSize(12);
+                    panel.addView(detail);
+                    if ("DONE".equals(st)) {
+                        panel.addView(button(ctx, d, "Undo this part",
+                                () -> adapter.cardListener.onBoardAction(
+                                        m, "undo", idx)));
+                        panel.addView(button(ctx, d, "Rebuild this part",
+                                () -> adapter.cardListener.onBoardAction(
+                                        m, "rebuild", idx)));
+                        panel.addView(button(ctx, d, "Keep it", () -> {
+                            expanded[0] = -1;
+                            m.cardData.addProperty("open", -1);
+                            adapter.notifyDataSetChanged();
+                        }));
+                    } else if ("FAILED".equals(st)) {
+                        panel.addView(button(ctx, d, "Rebuild this part",
+                                () -> adapter.cardListener.onBoardAction(
+                                        m, "rebuild", idx)));
+                    }
+                    root.addView(panel);
+                }
+                return;
+            }
             // Unknown/placeholder kinds render their text at least.
             title.setText(m.approvalTitle == null ? "Card"
                     : m.approvalTitle);

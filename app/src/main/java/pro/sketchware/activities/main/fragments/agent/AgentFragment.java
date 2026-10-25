@@ -186,6 +186,8 @@ public class AgentFragment extends qA {
      * not pile up in the chat or in an export.
      */
     private ChatMessage liveNote;
+    /** The live parts board, as a chat card (Wave 66: no board popup). */
+    private ChatMessage boardCard;
 
     @Nullable
     @Override
@@ -252,7 +254,65 @@ public class AgentFragment extends qA {
             @Override
             public void onBoardAction(pro.sketchware.ai.ChatMessage card,
                     String action, int partIndex) {
-                // Wave 2 of this phase.
+                if ("stop".equals(action)) {
+                    agentBoard.cancelAll();
+                    sayInChat("Stopped. Built parts stay in the project"
+                            + " — undo or rebuild any of them from the"
+                            + " board card above.");
+                    refreshStrip();
+                    updateBoardCard();
+                    return;
+                }
+                pro.sketchware.ai.AgentBoard.Part target = null;
+                for (pro.sketchware.ai.AgentBoard.Part part
+                        : agentBoard.getParts()) {
+                    if (part.index == partIndex) {
+                        target = part;
+                        break;
+                    }
+                }
+                if (target == null) {
+                    return;
+                }
+                if ("undo".equals(action)) {
+                    Thread work = new Thread(() -> {
+                        boolean ok = agentBoard.undoPart(target);
+                        runOnUi(() -> {
+                            if (!isAdded()) {
+                                return;
+                            }
+                            appendMessage(new ChatMessage(
+                                    ChatMessage.Role.SYSTEM, ok
+                                    ? "Part undone: " + target.title
+                                    : "Could not undo " + target.title
+                                            + " — no snapshot was taken"
+                                            + " before it."));
+                            persistChat();
+                            updateBoardCard();
+                        });
+                    });
+                    work.setDaemon(true);
+                    work.start();
+                } else if ("rebuild".equals(action)) {
+                    if (generating || agentBoard.isRunning()) {
+                        sayInChat("Wait for the current build to finish"
+                                + " — then rebuild part " + partIndex
+                                + ".");
+                        return;
+                    }
+                    AiProviderConfig.Settings settings =
+                            providerConfig.activeSettings();
+                    sayInChat("Rebuilding part " + partIndex + " — "
+                            + target.title + ". The card updates as it"
+                            + " goes.");
+                    Thread work = new Thread(() -> agentBoard.rebuildPart(
+                            target, settings.baseUrl,
+                            providerConfig.apiKey(
+                                    providerConfig.activeProvider()),
+                            settings.model));
+                    work.setDaemon(true);
+                    work.start();
+                }
             }
         });
         adapter.setOnOpenUiListener(new ChatAdapter.OnOpenUiListener() {
@@ -1197,7 +1257,10 @@ public class AgentFragment extends qA {
                         "blueprint".equals(m.cardKind)
                                 ? "interrupted" : "interrupted");
             } else if (m.role == ChatMessage.Role.CARD
-                    && "board".equals(m.cardKind)) {
+                    && "board".equals(m.cardKind)
+                    && ChatMessage.CARD_PENDING.equals(m.cardState)) {
+                // A restored live card can never be live again — but
+                // its rows stay as the review record.
                 m.cardState = ChatMessage.CARD_CANCELLED;
             }
         }
@@ -1285,8 +1348,15 @@ public class AgentFragment extends qA {
             });
             binding.taskStripDismiss.setText("Board");
             binding.taskStripDismiss.setVisibility(View.VISIBLE);
-            binding.taskStripDismiss.setOnClickListener(
-                    v -> showBoardDialog());
+            binding.taskStripDismiss.setOnClickListener(v -> {
+                // Wave 66: the board IS the card — scroll to it.
+                if (boardCard != null && messages.contains(boardCard)) {
+                    binding.chatList.smoothScrollToPosition(
+                            messages.indexOf(boardCard));
+                } else {
+                    showBoardDialog();
+                }
+            });
             updatePlanButtonBadge(scId);
             return;
         }
@@ -3146,7 +3216,8 @@ public class AgentFragment extends qA {
                             : "Part-by-part build started — each part "
                             + "is checked before the next begins."));
             persistChat();
-            showBoardDialog();
+            boardCard = null; // a new build gets its own card
+            updateBoardCard();
         }
     }
 
@@ -3171,7 +3242,93 @@ public class AgentFragment extends qA {
                 providerConfig.apiKey(providerConfig.activeProvider()),
                 settings.model, plan, settings.models, boardListener());
         if (started) {
-            showBoardDialog();
+            boardCard = null; // a new build gets its own card
+            updateBoardCard();
+        }
+    }
+
+    /**
+     * The board lives as a chat card: every board change re-renders
+     * it (Wave 66 — the board dialog stays only as a legacy view).
+     */
+    private void updateBoardCard() {
+        if (agentBoard == null || !isAdded() || adapter == null) {
+            return;
+        }
+        java.util.List<pro.sketchware.ai.AgentBoard.Part> parts =
+                agentBoard.getParts();
+        if (parts.isEmpty()) {
+            return;
+        }
+        boolean running = agentBoard.isRunning();
+        boolean wasLive = boardCard != null
+                && ChatMessage.CARD_PENDING.equals(boardCard.cardState);
+        if (boardCard == null) {
+            boardCard = new ChatMessage();
+            boardCard.role = ChatMessage.Role.CARD;
+            boardCard.cardKind = "board";
+            boardCard.cardState = ChatMessage.CARD_PENDING;
+            boardCard.approvalTitle = "Parts board";
+            boardCard.text = "";
+            boardCard.timestamp = System.currentTimeMillis();
+            boardCard.cardData = new com.google.gson.JsonObject();
+            appendMessage(boardCard);
+            binding.chatList.post(() -> binding.chatList
+                    .smoothScrollToPosition(
+                            messages.indexOf(boardCard)));
+        }
+        int done = 0;
+        for (pro.sketchware.ai.AgentBoard.Part part : parts) {
+            if (part.state == pro.sketchware.ai.AgentBoard.PartState
+                    .DONE) {
+                done++;
+            }
+        }
+        // Preserve the user's open row across ticks.
+        int openRow = boardCard.cardData != null
+                && boardCard.cardData.has("open")
+                ? boardCard.cardData.get("open").getAsInt() : -1;
+        boardCard.cardData = new com.google.gson.JsonObject();
+        boardCard.cardData.addProperty("done", done);
+        boardCard.cardData.addProperty("total", parts.size());
+        boardCard.cardData.addProperty("open", openRow);
+        com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
+        for (pro.sketchware.ai.AgentBoard.Part part : parts) {
+            com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+            o.addProperty("index", part.index);
+            o.addProperty("title", part.title);
+            o.addProperty("state", part.state.name());
+            String label;
+            switch (part.state) {
+                case DONE:
+                    label = "ready — tap to review";
+                    break;
+                case FAILED:
+                    label = "failed";
+                    break;
+                case BUILDING:
+                    label = "building…";
+                    break;
+                default:
+                    label = "queued";
+            }
+            o.addProperty("label", label);
+            String detail = part.state == pro.sketchware.ai.AgentBoard
+                    .PartState.FAILED && part.error != null
+                    && !part.error.isEmpty() ? part.error : part.summary;
+            if (detail != null && detail.length() > 500) {
+                detail = detail.substring(0, 500) + "…";
+            }
+            o.addProperty("summary", detail == null ? "" : detail);
+            arr.add(o);
+        }
+        boardCard.cardData.add("parts", arr);
+        if (!running && wasLive) {
+            boardCard.cardState = ChatMessage.CARD_USED;
+        }
+        adapter.notifyItemChanged(messages.indexOf(boardCard));
+        if (!running && wasLive) {
+            persistChat();
         }
     }
 
@@ -3183,6 +3340,7 @@ public class AgentFragment extends qA {
                 runOnUi(() -> {
                     refreshStrip();
                     refreshBoardDialog();
+                    updateBoardCard();
                 });
             }
 
