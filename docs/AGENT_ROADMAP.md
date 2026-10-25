@@ -508,3 +508,25 @@ Every one of Sketchware Pro's **19 `DesignDrawer` items** plus project-level and
 - New agent tools over the existing custom-component storage (`ManageCustomComponentActivity`'s data): `create_custom_component` (library class + declared methods) gated on the library being enabled in the working project, and `list_custom_components`. TRUE per-type custom events remain out of scope (needs editor event-palette surgery) — noted, not attempted.
 
 **Order and gate:** Phase 46 is the big unlock, well-bounded storage; 47 after it proves out. Land as ONE build each, after Wave 59's plan contract (or re-ordered by the user).
+
+---
+
+## Wave 60 / Phases 46–48 (PENDING — DO NOT BUILD until the user explicitly says so) — Agent-Minted Vocabulary: custom blocks, events & components via tool calls
+
+**Research findings (25 Oct):** the three settings managers the user wants the agent empowered by are plain JSON stores on disk that the IDE reads at build time — no compiled-code changes are needed for the agent to mint new building blocks:
+- **Custom Blocks ("My Block"):** `.sketchware/resources/block/My Block/block.json` — entries `{name, spec, code, color, paletteColor}`; `spec` is the on-screen block text with `%s` input slots, `code` the matching Java template the compiler fills. Sketchware's own built-in blocks use the same shape (`BlocksHandler.builtInBlocks`), so a custom block is literally "a built-in block the user added". UI: the settings Block Selector (curation) + `CustomBlocksManager`/`BlockLoader` (load & refresh).
+- **Custom Events:** `.sketchware/data/system/events.json` (+ `listeners.json`) — entries `{name, var, listener, icon, description, parameters}`; the Events Manager creator validates and appends; the editor offers the event wherever its listener applies.
+- **Custom Components:** `.sketchware/data/system/component.json` (`wq.CUSTOM_COMPONENT_FILE`) — entries define a whole component *type* (build class, variable name, type class, icon); the editor then treats it like a library component.
+
+**Risks the phases must handle:** the stores are GLOBAL across projects (a bad template breaks every project using the block) ⇒ name-conflict gates, create-time template validation, and an edit/repair tool; same-turn use requires triggering the same palette reload the settings UI triggers (the one technical unknown to nail down); templates are the skill class that produced the Mealdetail mess ⇒ route through the raw-code hygiene gate adapted for `%s` templates, and always land via the propose/approve card.
+
+### Phase 46 (PENDING) — `create_custom_block` / `edit_custom_block`
+Write `{name, spec, code, color, paletteColor}` into My Block's block.json: spec + Java-template validation adapted to `%s` placeholders, name-conflict gate against existing custom AND built-in blocks, propose/approve card showing the human-readable block, palette reload for same-turn use, read-back verification. `edit_custom_block` for repair. `project_state` gains a "custom vocabulary" section so the model knows what exists.
+
+### Phase 47 (PENDING) — `create_custom_event`
+Write `{name, var, listener, icon, description, parameters}` into events.json/listeners.json with the same gates (listener must be one the app knows, name conflicts, approve card, read-back, project_state vocabulary).
+
+### Phase 48 (PENDING) — `create_custom_component`
+Define a new component type in component.json (build class, variable name, type class, icon), usable afterwards through the existing create_component flow; same gates, approve card, read-back, project_state vocabulary.
+
+**Acceptance (all three):** a definition created in one project is usable there and in future projects; every definition lands only through an approval card; a conflicting or malformed template is refused with a repair-path message (E_NAME_TAKEN style, no dead ends); nothing new is flagged or hidden in the model picker.
