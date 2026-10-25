@@ -104,6 +104,8 @@ public final class AgentBoard {
     private final java.util.concurrent.atomic.AtomicBoolean
             supervising =
             new java.util.concurrent.atomic.AtomicBoolean(false);
+    /** Set when the user stops the board: skips the final build gate. */
+    private volatile boolean stoppedByUser;
 
     /** A plan is board-worthy when it has enough steps to divide. */
     public static boolean available(JsonObject plan) {
@@ -152,6 +154,7 @@ public final class AgentBoard {
                 ? new ArrayList<>() : autoModelPool;
         this.listener = listener;
         this.maxConcurrent = fastMode ? MAX_WORKERS : 1;
+        this.stoppedByUser = false;
         parts.clear();
         activeClaims.clear();
 
@@ -212,6 +215,7 @@ public final class AgentBoard {
             }
         }
         running = false;
+        stoppedByUser = true;
         activeClaims.clear();
         changed();
     }
@@ -240,6 +244,7 @@ public final class AgentBoard {
         part.state = PartState.QUEUED;
         part.error = "";
         part.attempts = 0;
+        stoppedByUser = false;
         running = true;
         note("Rebuilding: " + part.title);
         kickSupervisor();
@@ -320,6 +325,132 @@ public final class AgentBoard {
             }
             changed();
         }
+        // The board's last duty: if anything landed, prove the WHOLE
+        // app still compiles — parts passing alone is not enough.
+        if (!stoppedByUser && anyPartDone()) {
+            runFinalBuildGate();
+        }
+    }
+
+    private boolean anyPartDone() {
+        synchronized (this) {
+            for (Part part : parts) {
+                if (part.state == PartState.DONE) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The compile check: render + review verifies each part's screens,
+     * but only a real build of the whole project proves the parts fit
+     * together (cross-part Java, manifests, resources). Runs once when
+     * the board finishes; on failure, ONE bounded repair attempt with
+     * the compiler errors, then an honest final report.
+     */
+    private void runFinalBuildGate() {
+        note("All parts finished — test-compiling the whole app…");
+        changed();
+        String errors;
+        try {
+            AgentBuild.build(context, scId);
+            note("Test build passed — the whole app compiles with "
+                    + "every part in it.");
+            changed();
+            return;
+        } catch (AgentTools.ToolException e) {
+            errors = String.valueOf(e.getMessage());
+        } catch (Throwable t) {
+            errors = t.getMessage() == null
+                    ? "unknown build error" : t.getMessage();
+        }
+        note("Test build found problems — one repair attempt "
+                + "starting…");
+        changed();
+        runCompileRepair(errors);
+    }
+
+    /** ONE silent repair: fix the named errors, rebuild, report. */
+    private void runCompileRepair(String errors) {
+        AiChatService service = new AiChatService();
+        AgentLoop loop = new AgentLoop(context, service, Runnable::run);
+        loop.autoModelPool = autoModelPool;
+        String trimmed = errors.length() > 4000
+                ? errors.substring(0, 4000) : errors;
+        StringBuilder brief = new StringBuilder();
+        brief.append("The app failed to COMPILE after a parts build. ")
+                .append("Fix ONLY what the errors name — make the ")
+                .append("smallest changes that make it compile. Do ")
+                .append("not redesign anything, do not add features, ")
+                .append("and do not ask the user anything.\n\n")
+                .append("BUILD ERRORS:\n").append(trimmed);
+        List<ChatMessage> history = new ArrayList<>();
+        history.add(ChatMessage.user(brief.toString()));
+        loop.run(baseUrl, apiKey, model, history, scId, true,
+                new AgentLoop.Listener() {
+                    @Override
+                    public void onToolNote(String line) {
+                    }
+
+                    @Override
+                    public void onAnswer(String text, String thinking) {
+                        afterRepair();
+                    }
+
+                    @Override
+                    public void onError(AiChatService.AiError error) {
+                        note("Repair builder failed: " + error.message);
+                        changed();
+                    }
+
+                    @Override
+                    public boolean onApproval(AgentProposal proposal) {
+                        return true;
+                    }
+
+                    @Override
+                    public JsonObject onPickColor(String question,
+                                                  String initialHex) {
+                        JsonObject out = new JsonObject();
+                        out.addProperty("picked",
+                                initialHex == null || initialHex.isEmpty()
+                                        ? "#008DCD" : initialHex);
+                        return out;
+                    }
+
+                    @Override
+                    public String onAskChoice(String question,
+                                              List<String> options) {
+                        return "You decide — pick the best option "
+                                + "yourself and say why";
+                    }
+
+                    @Override
+                    public void onApprovalResolved(
+                            AgentProposal proposal, JsonObject result) {
+                    }
+
+                    @Override
+                    public void onWorkingProjectChanged(String changed) {
+                    }
+                });
+    }
+
+    private void afterRepair() {
+        try {
+            AgentBuild.build(context, scId);
+            note("Repaired — the test build now passes.");
+        } catch (Throwable t) {
+            String why = t instanceof AgentTools.ToolException
+                    ? String.valueOf(t.getMessage())
+                    : "see the build errors";
+            note("The repair did not fully fix the build (" + why
+                    + "). Ask me in chat to fix it, or rebuild a part "
+                    + "from the board.");
+        }
+        changed();
     }
 
     private void startPart(Part part) {
@@ -342,6 +473,9 @@ public final class AgentBoard {
      * fails, a deterministic fallback sheet keeps the build going.
      */
     private void prepareConventions() {
+        if (!conventions.isEmpty()) {
+            return; // already agreed for this build — never re-paid
+        }
         StringBuilder planText = new StringBuilder();
         for (Part part : parts) {
             for (String step : part.stepTexts) {
