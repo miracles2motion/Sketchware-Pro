@@ -47,6 +47,7 @@ import pro.sketchware.R;
 import pro.sketchware.ai.AgentChatLog;
 import pro.sketchware.ai.AgentExport;
 import pro.sketchware.ai.AgentJournal;
+import pro.sketchware.ai.AgentSnapshots;
 import pro.sketchware.ai.OpenUiLang;
 import pro.sketchware.ai.AgentKnowledgePack;
 import pro.sketchware.ai.AgentLoop;
@@ -2885,6 +2886,8 @@ public class AgentFragment extends qA {
                                 ? getString(R.string.agent_plan_title)
                                 : title)
                         .setView(scroll)
+                        .setNeutralButton("Project history",
+                                (d, w) -> showSnapshotsDialog())
                         .setNegativeButton(R.string.agent_action_close, null)
                         .create();
         dialog.show();
@@ -2901,6 +2904,152 @@ public class AgentFragment extends qA {
             };
             container.postDelayed(refresh[0], 1200);
         }
+    }
+
+    /** The project-history timeline: snapshots with diff and restore. */
+    private void showSnapshotsDialog() {
+        String scId = journalTarget();
+        if (scId == null || scId.isEmpty()) {
+            Toast.makeText(getContext(), R.string.agent_pick_project_first,
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+        List<AgentSnapshots.Snapshot> snapshots =
+                AgentSnapshots.list(scId);
+        android.widget.LinearLayout container =
+                new android.widget.LinearLayout(requireContext());
+        container.setOrientation(android.widget.LinearLayout.VERTICAL);
+        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        container.setPadding(pad, pad / 2, pad, pad);
+        if (snapshots.isEmpty()) {
+            android.widget.TextView empty =
+                    new android.widget.TextView(requireContext());
+            empty.setText("No history yet — a snapshot is taken "
+                    + "automatically before the agent changes anything.");
+            empty.setTextAppearance(com.google.android.material.R.style
+                    .TextAppearance_Material3_BodyMedium);
+            container.addView(empty);
+        }
+        for (AgentSnapshots.Snapshot snap : snapshots) {
+            android.widget.TextView row =
+                    new android.widget.TextView(requireContext());
+            row.setText("🕒  " + snap.label());
+            row.setTextAppearance(com.google.android.material.R.style
+                    .TextAppearance_Material3_BodyMedium);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(12f * getResources().getDisplayMetrics()
+                    .density);
+            bg.setColor(resolveThemeColor(requireContext(),
+                    com.google.android.material.R.attr
+                            .colorSurfaceContainerLow, 0xFFECF4FE));
+            row.setBackground(bg);
+            int rowPad = Math.round(12f * getResources()
+                    .getDisplayMetrics().density);
+            row.setPadding(rowPad, rowPad, rowPad, rowPad);
+            android.widget.LinearLayout.LayoutParams lp =
+                    new android.widget.LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = Math.round(6f * getResources()
+                    .getDisplayMetrics().density);
+            row.setLayoutParams(lp);
+            row.setOnClickListener(v ->
+                    showSnapshotDiffDialog(scId, snap));
+            container.addView(row);
+        }
+        android.widget.ScrollView scroll =
+                new android.widget.ScrollView(requireContext());
+        scroll.addView(container);
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle("Project history")
+                .setView(scroll)
+                .setPositiveButton(R.string.agent_action_close, null)
+                .show();
+    }
+
+    /** The diff first — restore only after the user has seen it. */
+    private void showSnapshotDiffDialog(String scId,
+                                        AgentSnapshots.Snapshot snap) {
+        if (getActivity() == null) {
+            return;
+        }
+        Thread load = new Thread(() -> {
+            List<String> lines = AgentSnapshots.diffLines(scId, snap);
+            runOnUi(() -> {
+                if (getActivity() == null || !isAdded()) {
+                    return;
+                }
+                android.widget.LinearLayout container =
+                        new android.widget.LinearLayout(requireContext());
+                container.setOrientation(
+                        android.widget.LinearLayout.VERTICAL);
+                int pad = (int) (20 * getResources()
+                        .getDisplayMetrics().density);
+                container.setPadding(pad, pad / 2, pad, pad);
+                android.widget.TextView intro =
+                        new android.widget.TextView(requireContext());
+                intro.setText("What changed since this snapshot:");
+                intro.setTextAppearance(com.google.android.material
+                        .R.style.TextAppearance_Material3_LabelLarge);
+                container.addView(intro);
+                for (String line : lines) {
+                    android.widget.TextView item =
+                            new android.widget.TextView(requireContext());
+                    item.setText(line.startsWith("•") ? line
+                            : "•  " + line);
+                    item.setTextAppearance(com.google.android.material
+                            .R.style.TextAppearance_Material3_BodyMedium);
+                    item.setPadding(0, Math.round(4f * getResources()
+                            .getDisplayMetrics().density), 0, 0);
+                    container.addView(item);
+                }
+                android.widget.ScrollView scroll =
+                        new android.widget.ScrollView(requireContext());
+                scroll.addView(container);
+                new MaterialAlertDialogBuilder(requireContext())
+                        .setTitle("Snapshot · " + snap.label())
+                        .setView(scroll)
+                        .setPositiveButton("Restore this",
+                                (d, w) -> confirmRestore(scId, snap))
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+            });
+        });
+        load.setDaemon(true);
+        load.start();
+    }
+
+    private void confirmRestore(String scId,
+                                AgentSnapshots.Snapshot snap) {
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle("Restore your project?")
+                .setMessage("The project goes back to exactly how it "
+                        + "was at " + snap.label() + ". Changes made "
+                        + "after that are undone.")
+                .setPositiveButton("Restore", (d, w) -> {
+                    Thread work = new Thread(() -> {
+                        boolean ok = AgentSnapshots.restore(scId, snap);
+                        runOnUi(() -> {
+                            if (!isAdded()) {
+                                return;
+                            }
+                            appendMessage(new ChatMessage(
+                                    ChatMessage.Role.SYSTEM,
+                                    ok ? "Your project was restored to "
+                                            + snap.label() + ". Later "
+                                            + "changes were undone."
+                                    : "The restore did not finish — "
+                                            + "nothing was changed. Try "
+                                            + "again."));
+                            persistChat();
+                            refreshStrip();
+                        });
+                    });
+                    work.setDaemon(true);
+                    work.start();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     /** The Plan page body: progress line plus the marked steps. */

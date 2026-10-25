@@ -664,6 +664,13 @@ public class AgentLoop {
             }
         }
         AgentJournal.beginTurn(workingProjectId, lastUserText);
+        // The safety layer: anything this turn might change is
+        // snapshotted first, so the user can see the diff and undo it.
+        // Best-effort — a failed snapshot never blocks a turn.
+        if (workingProjectId != null && !workingProjectId.isEmpty()
+                && allowModify) {
+            AgentSnapshots.snapshot(workingProjectId);
+        }
         dispatch(listener, listener::onStateChanged);
         {
             // What the turn started from: the user's own words and the
