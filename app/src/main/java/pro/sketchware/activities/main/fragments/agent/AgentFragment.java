@@ -1208,6 +1208,34 @@ public class AgentFragment extends qA {
             text = AgentJournal.stripText(scId);
             resumable = !text.isEmpty();
         }
+        // While the parts board runs, the strip IS the control bar:
+        // always visible, with Stop and Board a tap away — a parts
+        // build must never look like a chat that silently died.
+        if (agentBoard.isRunning()) {
+            int[] progress = agentBoard.progress();
+            stripShownText = "board";
+            binding.taskStrip.setVisibility(View.VISIBLE);
+            binding.taskStripText.setText("🛠 Parts building — "
+                    + progress[0] + " of " + progress[1]
+                    + " ready (tap Board to watch)");
+            binding.taskStripResume.setText("⏹ Stop");
+            binding.taskStripResume.setVisibility(View.VISIBLE);
+            binding.taskStripResume.setOnClickListener(v -> {
+                agentBoard.cancelAll();
+                appendMessage(new ChatMessage(ChatMessage.Role.SYSTEM,
+                        "Parts build stopped. Parts already added "
+                                + "stay; unfinished parts were not "
+                                + "added."));
+                persistChat();
+                refreshStrip();
+            });
+            binding.taskStripDismiss.setText("Board");
+            binding.taskStripDismiss.setVisibility(View.VISIBLE);
+            binding.taskStripDismiss.setOnClickListener(
+                    v -> showBoardDialog());
+            updatePlanButtonBadge(scId);
+            return;
+        }
         stripShownText = text;
         boolean show = !text.isEmpty()
                 && (generating || !text.equals(stripDismissedText));

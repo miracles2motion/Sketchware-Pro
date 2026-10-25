@@ -123,6 +123,9 @@ public final class AgentBoard {
             new java.util.concurrent.atomic.AtomicBoolean(false);
     /** Set when the user stops the board: skips the final build gate. */
     private volatile boolean stoppedByUser;
+    /** Throttles worker activity lines: one per part per 12s. */
+    private final java.util.Map<Integer, Long> lastNoteAt =
+            new java.util.HashMap<>();
     /** Blueprint mode: screens from a drawn blueprint + wiring last. */
     private volatile boolean blueprintMode;
     private volatile String blueprint = "";
@@ -538,6 +541,13 @@ public final class AgentBoard {
 
     private void supervise() {
         try {
+            if (!preflight()) {
+                synchronized (this) {
+                    running = false;
+                }
+                changed();
+                return;
+            }
             if (blueprintMode && !prepareBlueprint()) {
                 // The user said no: nothing gets built.
                 synchronized (this) {
@@ -630,6 +640,49 @@ public final class AgentBoard {
         if (!stoppedByUser && anyPartDone()) {
             runFinalBuildGate();
         }
+    }
+
+    /**
+     * ONE cheap request before any part starts: on a rate-limited key
+     * every part would otherwise die silently, one after another.
+     */
+    private boolean preflight() {
+        try {
+            AiChatService service = new AiChatService();
+            List<JsonObject> messages = new ArrayList<>();
+            JsonObject user = new JsonObject();
+            user.addProperty("role", "user");
+            user.addProperty("content", "Reply with exactly: OK");
+            messages.add(user);
+            service.agentTurnSync(baseUrl, apiKey,
+                    effectiveModel(), messages, null);
+            return true;
+        } catch (AiChatService.AgentRequestException e) {
+            if (e.error.httpCode == 429 || e.error.kind
+                    == AiChatService.ErrorKind.QUOTA) {
+                note("Your key is rate-limited right now ("
+                        + effectiveModel() + "). Nothing was built — "
+                        + "wait for the quota window or pick another "
+                        + "model, then start the build again.");
+                return false;
+            }
+            return true;
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    /** A part died of quota: pause the board instead of burning the
+     * rest — queued parts stay queued for a later rebuild. */
+    private void pauseForQuota(Part part) {
+        synchronized (this) {
+            running = false;
+        }
+        note("Board paused — your key hit its quota during \""
+                + part.title + "\". Built parts stay. When the quota "
+                + "resets, tap Rebuild on the failed part and the "
+                + "rest continues.");
+        changed();
     }
 
     private boolean anyPartDone() {
@@ -993,7 +1046,23 @@ public final class AgentBoard {
                 new AgentLoop.Listener() {
                     @Override
                     public void onToolNote(String line) {
-                        // Worker activity lines stay out of the chat.
+                        // Visible, but throttled: one line per part
+                        // per 12s, so the chat shows life without
+                        // drowning in worker chatter.
+                        long now = System.currentTimeMillis();
+                        boolean show;
+                        synchronized (AgentBoard.this) {
+                            Long last = lastNoteAt.get(part.index);
+                            show = last == null
+                                    || now - last >= 12000;
+                            if (show) {
+                                lastNoteAt.put(part.index, now);
+                            }
+                        }
+                        if (show && line != null
+                                && !line.trim().isEmpty()) {
+                            note("Part " + part.index + " · " + line);
+                        }
                     }
 
                     @Override
@@ -1017,6 +1086,13 @@ public final class AgentBoard {
 
                     @Override
                     public void onError(AiChatService.AiError error) {
+                        boolean quota =
+                                error.kind == AiChatService.ErrorKind.QUOTA
+                                || String.valueOf(error.message)
+                                .contains("429");
+                        if (quota) {
+                            pauseForQuota(part);
+                        }
                         List<String> problems = new ArrayList<>();
                         problems.add("The builder stopped: "
                                 + error.message);
