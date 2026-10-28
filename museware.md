@@ -5,8 +5,9 @@ product from scratch to finish using only this file. Nothing here requires acces
 any prior conversation. Where a decision was painful to learn elsewhere, the lesson is
 recorded as a **LAW** — do not relitigate laws during implementation.
 
-**Spec version:** 1.2 — third audit: no-code blocks/events, custom components,
-web-vs-app modes, first-run scenario traces (project-file format: `museware/1`).
+**Spec version:** 1.3 — fourth audit: responsive/breakpoint system (compact-first,
+no-code per-breakpoint editing, AI-written overrides), watch honesty
+(project-file format: `museware/1`).
 
 **Product one-liner (the pitch):**
 > Museware is the canvas where Meta's muse builds with you: every AI action is a
@@ -218,8 +219,14 @@ interface StyleSet {
   borderRadius?: string;
   width?: string;  height?: string; // "match" | "hug" | "<px>" | "<%>"
   align?: "start"|"center"|"end"|"stretch";
+  responsive?: { medium?: Partial<StyleSet>;   // ≥600 px overrides
+                 expanded?: Partial<StyleSet> } // ≥1024 px overrides;
   [k: string]: string | undefined;
 }
+// RESPONSIVE MODEL (§9.7): base styles ARE the compact (mobile-first)
+// design; medium/expanded override ONLY what should reflow. Rendered as
+// generated CSS classes with @media queries (inline styles cannot carry
+// them) — the same CSS ships in export (§10.1).
 
 interface ScreenDoc {
   id: string;                    // "home", "details" (slug)
@@ -361,7 +368,8 @@ leaf), props schema (zod-able), defaults.
 - `screen` — full-page flex-col; props: `title`, `layout` ("flex-col"|"flex-row"), `scroll` (bool, default true)
 - `row` — flex-row container; props: `gap`, `align`, `wrap`
 - `col` — flex-col container; props: `gap`, `align`
-- `grid` — CSS grid; props: `columns` (2–6), `gap`
+- `grid` — CSS grid; props: `columns` (2–6), `gap` (responsive: override `columns` per
+  breakpoint — 2 on compact, 3 medium, 4 expanded is the classic card page)
 - `card` — elevated rounded surface; props: `title?`, `pad`
 - `hero` — full-width banner; props: `title`, `subtitle`, `image?`
 - `tabs` — tab strip + panels; props: `items: string[]`
@@ -694,7 +702,9 @@ silence, but drowning the chat kills it entirely).
 ### 8.3 The Verify Gate (law 5 — non-negotiable, the best-paid pattern)
 After a turn that applied tree/tokens changes:
 1. `muse/canvasOutline.ts` renders the changed screens to a plain-text
-   description (screens → tree outline with resolved styles; ≤ 4000 chars).
+   description (screens → tree outline with resolved styles; ≤ 4000 chars;
+   when any node carries responsive overrides, outline BOTH compact and
+   expanded — total still ≤ 4000).
 2. Ask the CHAT model, as reviewer: "A builder was asked: <user ask>. It produced:
    <outline>. Answer exactly PASS, or PROBLEMS: a numbered list. Visual quality
    counts: cramped/default-padded layouts, ignored LOOK numbers, off-palette colours
@@ -750,7 +760,9 @@ token sheet (hex literals only when the user explicitly demands a custom colour)
 First agree the look (offer 2–4 whole directions with hexes), save it with
 set_design_tokens, propose_blueprint, then fill in after approval. Never print HTML,
 JSON, or code in your reply — prose only. The user's saved design system is LAW:
-use its tokens, never invent replacements.
+use its tokens, never invent replacements. Design COMPACT-FIRST (390px);
+add medium (≥600px) / expanded (≥1024px) overrides only where the layout
+should reflow — grid columns, wrapping rows, hero splitting side-by-side.
 ```
 
 ### 8.6 Choice protocol (the colour moment)
@@ -853,9 +865,12 @@ Keyboard: `⌘/Ctrl+Z` undo, `⇧⌘Z` redo, `⌫` delete selection, `⌘D` dupl
 Schema-driven from §4: props fields by type (text/number/select/toggle/screen-picker/
 action-picker), styles section (token pickers FIRST: colour = token swatch grid with
 custom hex as the last option; spacing/radius steppers bound to token defaults),
-bindings list (`bindKey`s on the screen). **Events tab** (§4.2): the
-WHEN/THEN chip editor — argument fields are pickers, zero code. **Save as
-component** button (§4.3). "Ask muse to restyle this" button → prefills
+bindings list (`bindKey`s on the screen). **Breakpoint awareness (§9.7):** the
+inspector edits the breakpoint the topbar switcher currently shows; a
+field carrying an override at THIS breakpoint gets a filled dot (tap to
+revert to inherit). **Events tab** (§4.2): the WHEN/THEN chip editor —
+argument fields are pickers, zero code. **Save as component** button
+(§4.3). "Ask muse to restyle this" button → prefills
 the rail with a scoped request.
 
 ### 9.4 Screens & viewport
@@ -889,11 +904,49 @@ This is the judge-moment feature: "the AI built this, and it actually RUNS."
 
 ---
 
+### 9.7 Responsive design (the thing Sketchware never had)
+**The model: three named breakpoints, compact-first, zero code.**
+- Breakpoints (pinned): **compact** = the base styles (design at 390×844);
+  **medium** ≥ 600 px; **expanded** ≥ 1024 px. (Material window-size
+  classes — three is enough for the demo and for real sites.)
+- Mechanism: a node's `styles.responsive` holds per-breakpoint overrides
+  (§2). Rendering generates one CSS class per node id plus `@media
+  (min-width: …)` blocks — the canvas, RunMode, and the exported code all
+  consume the SAME generated CSS. No duplicate styling logic anywhere.
+- **Design-time UX (the topbar 📱 💻 🖥 switcher EDITS, it doesn't just
+  preview):** the switcher selects the breakpoint being edited. On 📱 you
+  edit base styles; on 💻/🖥 edited fields write `responsive.medium` /
+  `.expanded` overrides. Fields inheriting from the lower breakpoint show
+  an "inherits" chip; overriding one shows a filled dot (tap = clear
+  override). The canvas frame animates to the breakpoint width so the
+  reflow is VISIBLE while you edit. Nodes carrying an override at the
+  current breakpoint get a small dot badge on the canvas too.
+- Defaults are responsive already: containers flex/wrap, `grid.columns`
+  overridable per breakpoint, hero splits side-by-side at expanded via
+  its default overrides, text uses relative sizes. A fresh component
+  needs zero breakpoint work to look right on all three.
+- **The AI writes it too:** `setStyles` ops may include `responsive`
+  overrides; the system prompt's compact-first rule (§8.5) plus the fill
+  prompt's LOOK line keep it purposeful (reflow where it matters, not
+  vanity overrides). The reviewer sees compact AND expanded outlines
+  (§8.3), so a broken tablet layout FAILS review like any other defect.
+- RunMode reflows live with the browser window — judges will drag the
+  window edge; let them.
+- **Watches & tiny screens: honest fence.** v1 targets ≥ 320 px compact;
+  a wrist UI is a different paradigm (glances, no scroll) and Wear OS has
+  no real browser to run a PWA — so watches are explicitly OUT of v1
+  (§11.5), stated in the README, not silently broken. The 320 px no-break
+  test (§13) is the small-screen guarantee we DO make.
+- Why not absolute positioning ever: absolute coordinates are the
+  Sketchware trap — one screen size, everything else stretched. The
+  flex/grid + override model is what makes one design truly be three.
+
 ## 10. Export
 
 ### 10.1 React codegen
-`ProjectDoc → React components` (one component per screen; styles → inline style
-objects referencing the exported `tokens.css`; actions → `useState`/`useNavigate`
+`ProjectDoc → React components` (one component per screen; styles → the SAME
+generated CSS classes + `@media` blocks the canvas used (plus
+`tokens.css`), so breakpoints survive export exactly; actions → `useState`/`useNavigate`
 equivalents in a 40-line runtime stub). Deterministic, readable, no AI in the loop.
 Round-trip guarantee: exported projects re-import as `museware/1`.
 
@@ -920,8 +973,9 @@ scope, two paragraphs max).
 Multi-user/collaboration; server-side project storage (IndexedDB + file I/O
 only); custom code components or arbitrary-JS actions; real backend
 connectors or auth; themes beyond light/dark; RTL; i18n; native mobile
-builds (PWA/Capacitor wrap only); template gallery/marketplace; version
-branching. If a demo request drifts here, the answer is "post-hackathon".
+builds (PWA/Capacitor wrap only); watch/wearable UIs (a wrist paradigm,
+not a small phone — the compact breakpoint bottoms out at 320 px and that
+is the honest floor); template gallery/marketplace; version branching. If a demo request drifts here, the answer is "post-hackathon".
 
 ### 11.6 Security & safety
 The API key never reaches the browser bundle (CI greps the dist). Model
@@ -991,6 +1045,11 @@ the app. 5) Export PWA → open on a phone. Fallback: pre-recorded run.
     fires its action list; nested `when` evaluates once per change.
 18. Custom component: save a selection → palette group appears → place twice →
     both copies render; `E_NAME_TAKEN` on duplicate name; AI can do the same.
+19. Responsive: build with overrides → drag the browser edge through
+    600/1024 in RunMode → reflow matches the switcher; exported site
+    reflows identically; 320 px compact shows no overflow/broken wrap.
+20. Breakpoint editing: override a field on 💻 → filled dot appears, 📱
+    unaffected; clear the override → inherits again; undo restores.
 
 ---
 
@@ -1073,3 +1132,42 @@ component trigger (tap/change/submit) holding an ordered action list (§4.2).
 **Logic chip** — one action rendered in the Events tab; arguments are
 pickers. **Custom component** — a saved subtree placed as copies (§4.3).
 **kind** — the project's web/app mode: defaults only, one tree (§8.8).
+
+---
+
+## 17. The Reference Repository & the Clean-Room Caution (read BEFORE writing any code)
+
+**Reference repo (this branch — frozen as the yardstick):**
+**https://github.com/miracles2motion/Sketchware-Pro/tree/arena/8a5fd688-sketchware-pro**
+When a question is "how was X done there?" — the agent loop, blueprint flow, verify
+gate, token sheet, board/stop UX, pacing, error handling — READ the implementation at
+this link for the answer, then design Museware's own way per this spec. Useful starting
+points in that tree: `app/src/main/java/pro/sketchware/ai/` (the whole agent:
+`AgentLoop`, `AgentBoard`, `AgentTools`, `AgentJournal`, `OpenUiThemeEngine`,
+`ChatAdapter`), `docs/AGENT_ROADMAP.md` (every field lesson as it happened), and
+`museware.md` (this file, if the branch is newer).
+
+**CAUTION — clean-room rules (non-negotiable):**
+
+1. **The reference repo is source-AVAILABLE, not open-source.** Its own `LICENSE.md`
+   says the code likely infringes original Sketchware copyright and must not be used
+   in serious non-personal projects. Copying ANY of it into Museware is a legal and
+   hackathon-disqualification problem.
+2. **READ to understand, NEVER copy to include.** No copy-paste of code, no
+   transpilation, no "adapted from", no renamed-variable copies, no resource/XML
+   reuse, no regex-or-string constants lifted from that tree. Every line in Museware
+   must originate in THIS spec or be written fresh for Museware.
+3. **What MAY cross the gap (and only this):** IDEAS and PATTERNS — laws, data-shape
+   concepts, UX behaviors, numbers learned from field failures (caps, pacing
+   intervals), and the design-token JSON *schema* (`openui-1.0`), which is a format,
+   not code. What may NOT: source code, comments, string literals, prompts copied
+   verbatim from that repo (this spec's Appendix A is the only prompt source), names
+   of internal classes, and any file from that repo included whole or in part.
+4. **Audit yourself before shipping:** grep the Museware tree for identifiers that
+   exist only in the reference (`AgentLoop`, `AgentBoard`, `openui_` asset names,
+   Sketchware XML keys, pro.sketchware paths). Any hit is a violation — rewrite the
+   concept from this spec instead. There must be **zero traces of Sketchware** in the
+   final product: it should be impossible to tell the yardstick existed.
+
+If an agent cannot honor these rules, it must stop and flag the conflict rather than
+"helpfully" reuse code.
