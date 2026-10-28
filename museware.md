@@ -5,7 +5,10 @@ product from scratch to finish using only this file. Nothing here requires acces
 any prior conversation. Where a decision was painful to learn elsewhere, the lesson is
 recorded as a **LAW** — do not relitigate laws during implementation.
 
-**Spec version:** 1.4 — fifth pass: the muse family strategy (field-proven on the
+**Spec version:** 1.5 — sixth pass: the landing page (live-canvas hero), first-run
+entry, the three-tier mw token architecture (own system, calibrated by the
+iOS/Windows foundations, openui-1.0 architecture), and the professional-polish
+checklist (the muse family strategy from v1.4 stands
 same API key), Screenshot→Canvas via SAM, voice input, Muse Image generation,
 and the full UI spec — Museware's own design language, desktop/tablet/mobile
 layouts, the agent rail in detail (project-file format: `museware/1`).
@@ -935,6 +938,34 @@ transcribe-only (no TTS voice for muse — reading the rail is the UX).
 
 ## 9. The Editor (UI of Museware itself)
 
+### 9.0 The landing & first run (the anti-AI-tool landing)
+
+The landing opens with THE PRODUCT, not a claim about it: the hero is a
+**live mini-canvas** — a real, tiny editor embedded in the page. You can
+drag one button into it, or type one prompt and watch muse build a small
+screen in ~15 seconds. We never SAY the AI builds; the visitor just watched
+it. Below: one line of positioning — "Figma designs. Sketchware blocks.
+Museware builds." — with the same small card shown three ways (styled by
+hand / given logic chips / built by the agent). Then the family strip
+(spark builds · wonder plans · SAM sees structure · image illustrates ·
+voice listens), the preset gallery (iPhone 17 Pro Max, Windows 11 Pro —
+one tap imports each into a scratch project), a short how-it-works trio
+(blueprint → approve → verified build), and a footer.
+
+**Ruthless no-list:** no signup wall, no email capture, no testimonials,
+no fake stats, no cookie banner, no marketing carousel. Your Meta API key
+IS your account. The only CTA, everywhere: **[Start building]** (and
+[Try the live canvas] on the hero itself).
+
+**First run (one screen, ~40 s):** paste key → per-model probe chips light
+up instantly (§6.1 — green/honest-red with the verbatim error) → straight
+into the editor. The empty canvas teaches in one line + three chips:
+[Start from blueprint] [Recreate a screenshot] [Import a preset].
+
+The landing shares the mw token system (§9.1.1) plus a marketing layer
+(display 48/64, wider rhythm) — visually one product, no "marketing site"
+that looks like a different company built it.
+
 ### 9.1 Look & feel — Museware's own design language (we dogfood §5)
 
 Museware itself is built on its own token engine — the app is the first
@@ -972,6 +1003,54 @@ Motion: 120–200 ms ease-out on panels/chips; the breakpoint frame MORPHS
 and LEAVE with a 150 ms fade-collapse (leave-on-answer must feel tactile);
 the agent ring PULSES (2 s loop) while working; `prefers-reduced-motion`
 disables all of it.
+
+### 9.1.1 The mw token architecture — our OWN system, three tiers
+
+**The ruling:** Museware's UI runs on its OWN token system — same
+three-tier ARCHITECTURE as the user-facing `openui-1.0` engine (§5), its
+own values. NOT Apple's or Windows' system wholesale: those encode
+platform-native materials (Mica, liquid glass) and device metrics that
+would make a web tool cosplay a phone OS. The two foundations files the
+owner owns (iPhone 17 Pro Max, Windows 11 Pro) are CALIBRATION sources
+for primitive values only — Windows gives the 4px grid, the spacing
+ladder 4/8/12/16/24/32/40/48, 40px touch minimums, restrained radii;
+iOS gives the readable type ladder and the 44px tap target. They also
+remain user-import presets (§5.1) — separate concern, never our chrome.
+
+**Tier 1 — Primitives** (never referenced by components):
+`mw-indigo-50…950` (#EEEBFF…#1F1A66, 13 steps), `mw-violet-50…950`,
+`mw-neutral-0…1000` (#FFFFFF…#000000, 15 steps), `mw-green-*`,
+`mw-amber-*`, `mw-red-*`; spacing `mw-space-1…12` (4px base:
+4,8,12,16,20,24,32,40,48,64,80,96); radii `mw-radius-none/sm(6)/md(10)/
+lg(12)/xl(16)/pill(999)`; type sizes `mw-fs-11…48`; weights 400/500/600/700.
+
+**Tier 2 — Semantic aliases** (the ONLY layer components reference;
+themes are alias remappings — dark default, `[data-mw-theme="light"]`):
+the full §9.1 table above (mw-bg, mw-surface, mw-surface2, mw-border,
+mw-ink/ink2/ink3, mw-accent, mw-accent2, mw-ok/warn/danger) PLUS state
+overlays: `mw-hover` (ink @ 6%), `mw-active` (@ 10%), `mw-disabled` (40%
+opacity), `mw-focus-ring` (accent @ 60%, 2px); semantic type roles:
+`mw-type-display` (32/1.2/700), `mw-type-title` (20/1.3/600),
+`mw-type-section` (16/1.4/600), `mw-type-body` (13/1.5/400),
+`mw-type-label` (12/1.4/500, ink2), `mw-type-code` (12 mono);
+elevation `mw-e0…e3` (flat / rest shadow / raised shadow / overlay
+shadow + scrim); motion `mw-motion-fast(120ms)/base(180ms)/slow(250ms)/
+morph(250ms)`, `mw-ease-out`, `mw-pulse(2s)`; breakpoints mirror §9.7
+(compact/medium 600/expanded 1024).
+
+**Tier 3 — Component tokens** (every named surface gets one — this is
+how "every single chip" is covered): `mw-topbar-h(64) mw-statusbar-h(24)
+mw-left-w(260) mw-rail-w(340) mw-inspector-w(280) mw-rail-peek(88)
+mw-control-h(36) mw-chip-h(28) mw-row-h(44) mw-card-radius(16)
+mw-panel-radius(12) mw-input-radius(10)`; card/chip/row/tab each have
+padding + gap tokens; every rail card kind has a token for its padding
+and header size.
+
+**Enforcement (same discipline we preach to users):** zero hardcoded
+hexes/px in components — ESLint stylelint rule + CI grep over src/ for
+`#[0-9A-Fa-f]{3,8}` outside the token definitions; contrast: AA for
+every ink-on-surface pair in BOTH themes, tested in CI from the alias
+table; the landing uses the same tiers plus its marketing display sizes.
 
 **Desktop ≥ 1024 px (the power surface):**
 ```
