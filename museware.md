@@ -5,6 +5,8 @@ product from scratch to finish using only this file. Nothing here requires acces
 any prior conversation. Where a decision was painful to learn elsewhere, the lesson is
 recorded as a **LAW** — do not relitigate laws during implementation.
 
+**Spec version:** 1.1 — audited & gap-filled (project-file format: `museware/1`).
+
 **Product one-liner (the pitch):**
 > Museware is the canvas where Meta's muse builds with you: every AI action is a
 > reviewable, undoable operation on the same drag-and-drop canvas you edit by hand.
@@ -140,10 +142,45 @@ museware/
   public/
 ```
 
+**Pinned versions (exact — no substitutes without editing this line):**
+react 18.3.x, react-dom 18.3.x, typescript 5.5.x, vite 5.4.x, zustand 4.5.x,
+@dnd-kit/core 6.1.x + @dnd-kit/sortable 8.0.x + @dnd-kit/utilities 3.2.x,
+zod 3.23.x, zod-to-json-schema 3.23.x, nanoid 5.0.x, lucide-static (icons —
+the NAME whitelist is §4), jszip 3.10.x, idb 8.0.x, vitest 2.x.
+
+**Code rules:** TS `strict: true` (no `any` outside zod catch-guards);
+functional components only; files kebab-case, components PascalCase; store
+actions are verbs (`applyOps`, `undo`); no CSS frameworks (see stack); every
+module exports the types it owns; ESLint (typescript-eslint + react-hooks)
+and prettier (2-space, single quotes, printWidth 92) committed.
+
+**CI (commit day one):** `.github/workflows/ci.yml` — node 20, `npm ci`,
+lint, `tsc --noEmit`, `vitest run`, `vite build`, plus a grep asserting the
+dist never contains `MUSE_API_KEY`. Required unit tests: the ops reducer
+(every E_ code), tokenSheet (1800 cap + the key-field regression),
+blueprintParse golden cases, typedOptions parser, reactCodegen snapshot.
+
+**Quickstart:** node 20+, `npm ci`, copy `.env.example` → `.env` (paste the
+muse key), `npm run dev` → http://localhost:5173. Build: `npm run build`.
+
 **Dev/proxy rule (LAW):** the API key lives in `.env`, read ONLY by a Vite dev-server
 middleware (`vite.config.ts` `server.proxy` → `/api/muse` → provider) or, in
 production, a tiny serverless function. The browser never sees the key. The canvas
 app calls `/api/muse/chat` (same-origin, relative URL — never localhost).
+
+The proxy is small and total (dev = `vite.config.ts`, prod = one serverless
+file doing the identical rewrite — key from env, body streamed through,
+same-origin CORS only):
+
+```ts
+// vite.config.ts (dev)
+server: { proxy: { "/api/muse": {
+  target: process.env.MUSE_BASE_URL,   // e.g. https://api.llama.com
+  changeOrigin: true,
+  rewrite: (p) => p.replace(/^\/api\/muse/, ""),
+  headers: { Authorization: `Bearer ${process.env.MUSE_API_KEY}` },
+}}}
+```
 
 ---
 
@@ -178,6 +215,7 @@ interface ScreenDoc {
   name: string;                  // "Home"
   root: ComponentNode;           // type:"screen" node, layout:"flex-col"
   entry?: boolean;               // the screen the app opens on
+  mockData?: Record<string, unknown[]>; // rows for list/table/chart (≤ 20 stored; render ≤ 5/10)
 }
 
 interface ProjectDoc {
@@ -195,6 +233,19 @@ Rendering rule: the Canvas renders `ProjectDoc` live; there is NO other represen
 The AI edits it only through ops; the user edits it only through the same ops
 (drag/inspector produce the same op types — this is what makes everything undoable
 and gives the verify gate one thing to inspect).
+
+**Screen ids:** slugified from the name (`Habit Tracker` → `habit_tracker`),
+pattern `^[a-z][a-z0-9_]{0,30}$`, unique. Ids NEVER change after creation
+(rename changes `name` only) — `link.to`, actions, and the project index all
+reference the id. The first screen is `entry`; exactly one entry at a time;
+RunMode opens there.
+
+**State (`bindKey`) semantics:** ONE global per-run store
+`Record<string, unknown>` shared by all screens (cross-screen values are the
+norm: a field on `home` feeds `details`). Keys follow
+`^[a-z][a-z0-9_]{0,30}$`; every key in use appears in the project index so
+the model reuses instead of inventing near-duplicates. Run-state is
+EPHEMERAL — reset on Run toggle and reload, never written into ProjectDoc.
 
 ---
 
@@ -240,6 +291,29 @@ interface OpEntry { at: number; source: "agent"|"user"; batch: Op[]; summary: st
 The op log IS the undo history, the crash-recovery replay, and the receipts the agent's
 progress lines are generated from.
 
+**Undo/redo mechanics:** one history for agent AND user batches. `undo` pops
+the last snapshot, restores tree/tokens/screens from it, pushes the entry to
+a redo stack; any newly applied op clears the redo stack. Snapshot = a
+structural clone; stack cap 50 (drop oldest). Undo NEVER touches the rail or
+rewrites the op log — history stays true; the undo itself logs an entry
+with summary "undo".
+
+**Error-code table (single source — validate.ts and tool results use exactly these):**
+
+| code | meaning | guidance carried in the result |
+|---|---|---|
+| E_BAD_OP | zod structural failure | zod message verbatim + offending field |
+| E_NO_PARENT | add/move target id missing | list of existing container ids |
+| E_NOT_CONTAINER | child under a leaf kind | the leaf's id + kind |
+| E_NAME_TAKEN | id collision | 3 suggested free alternatives |
+| E_SCREEN_MISSING | unknown screen id | the list of screen ids |
+| E_TOKEN_UNKNOWN | style references an undefined token | the token list from the sheet |
+| E_DEPTH | tree deeper than 8 | flatten suggestion |
+| E_COUNT | screen over 120 nodes | split across screens or remove |
+| E_BAD_ARGS | tool args not valid JSON | retry with strict JSON |
+| E_BUILD_CARD | building refused (just-scaffolded window, law 12) | stop; the user picks a mode on the card |
+| E_RATE | internal pacing guard tripped | wait; the client paces automatically |
+
 ---
 
 ## 4. The Component Library (fixed vocabulary — the model picks from THIS, only THIS)
@@ -274,6 +348,49 @@ leaf), props schema (zod-able), defaults.
 **Data display** (leaf, mock-data driven for the demo): `list` (`itemTemplate` — a
 mini node map repeated over mock items; render first 5), `table` (`columns`, `rows` ≤ 10),
 `stat` (`label`, `value`, `delta`), `chart` (`kind`: bar|line|spark, `data` ≤ 12 points).
+
+**Props schemas (zod — two full examples; every component gets the same
+treatment in `types/tools.ts`):**
+
+```ts
+const buttonProps = z.object({
+  text: z.string().min(1).max(80),
+  action: actionSchema,                                  // §4.1
+  variant: z.enum(["primary","secondary","ghost","danger"]).default("primary"),
+});
+const cardProps = z.object({
+  title: z.string().max(80).optional(),
+  pad: z.string().default("var(--pad-card)"),            // token default
+});
+```
+Every prop has a default OR `.optional()`, a max length on strings, and a
+doc comment the inspector renders as its field hint.
+
+**Default styles per kind (under the token defaults, §5.3):** containers
+render flex per their axis with `gap: var(--gap-section)`; `card`/`hero`
+get `border-radius: var(--radius-card)` + `background: var(--openui-elevated)`;
+buttons/inputs height `var(--h-button)`/`var(--h-input)` +
+`border-radius: var(--radius-button)`; heading levels 28/22/18/15 px, body 14,
+label 12. Fonts: `--font-heading`/`--font-body` CSS vars — default system
+stack; a preset's `font_heading`/`font_body` sets them with graceful
+fallbacks (`"X", system-ui, sans-serif`).
+
+**Fixed icon set (the ONLY valid `icon.name` values — Lucide):** home, search,
+settings, user, users, heart, star, bell, calendar, clock, check, check-circle,
+plus, minus, x, chevron-right, chevron-left, chevron-down, arrow-right,
+arrow-left, trash, edit, share, download, upload, image, camera, play, pause,
+refresh-cw, filter, list, grid, menu, more-horizontal, map-pin, mail, phone,
+shopping-cart, tag, gift, trophy, flame, moon, sun, droplet, book, music,
+wifi, lock, eye. (49 names — the inspector picker and validate.ts enforce
+exactly this list.)
+
+**Mock data (list / table / chart):** rows come from
+`ScreenDoc.mockData[dataKey]` — a component's `bindKey` doubles as its data
+key unless an explicit `dataKey` prop is set; the fill queue generates 5–20
+realistic rows per key during fill (law: realistic domain data, not
+"Item 1"). `list` renders the first 5 rows through `itemTemplate` (a node
+map where string props may reference `{{path.into.row}}`); `table` ≤ 10
+rows; `chart.data` ≤ 12 points `{label, value}`.
 
 ### 4.1 Actions (the interactivity model — deliberately small)
 `action: { type: "navigate"; to: ScreenDoc["id"] } | { type: "setState"; key: string; value: unknown } | { type: "toast"; text: string } | { type: "openUrl"; url: string }`
@@ -329,6 +446,21 @@ bug: the save path silently dropped everything the engine didn't model).
 reference ONLY these variables. Changing `brand_color` repaints the whole canvas —
 "colour propagation is the expectation."
 
+```css
+/* tokens.css — GENERATED by the token store, never hand-edited */
+:root {
+  /* 30 light keys */ --openui-bg:#F8FAFC; --openui-accent:#2563EB; /* … */
+  /* derived scales */ --radius-card:14px; --radius-button:12px;
+  --pad-screen:20px; --gap-section:16px; --h-button:50px; --h-input:50px;
+  --font-heading: system-ui, sans-serif; --font-body: system-ui, sans-serif;
+}
+[data-theme="dark"] { /* the 30 dark keys */ --openui-bg:#0B1220; /* … */ }
+```
+
+The theme attribute is set on the canvas root; the topbar carries an explicit
+Light / Dark / Auto toggle (Auto follows `prefers-color-scheme`). The canvas,
+RunMode, and the exported code all read the same vars — one truth everywhere.
+
 ### 5.3 Component token defaults
 Ship ~14 core component tokens (`screen, card, sunk_card, primary_button,
 secondary_button, input, chip, list_row, title, body, nav_bar, tab_bar, fab, dialog`)
@@ -347,6 +479,34 @@ nonexistent `name` field and silently showed zero component tokens — do not re
 
 ---
 
+### 5.5 Default starter theme ("Museware Default" — shipped inline)
+The canvas must work BEFORE any import: every new project starts with this
+complete theme (the model may retune it via `set_design_tokens`). Full
+values, all 30 keys, both modes:
+
+- **light:** bg `#F8FAFC`, fg `#FFFFFF`, sunk `#EEF2F7`, elevated `#FFFFFF`,
+  highlight `#E8EEF7`, accent `#2563EB`, accent_pressed `#1D4ED8`,
+  accent_subtle `#DBEAFE`, text_on_accent `#FFFFFF`, secondary `#6366F1`,
+  text_on_secondary `#FFFFFF`, text_primary `#0F172A`, text_secondary
+  `#475569`, text_tertiary `#94A3B8`, text_brand `#2563EB`,
+  border_default `#E2E8F0`, border_interactive `#93C5FD`,
+  border_accent `#2563EB`; info bg/text/border `#EFF6FF/#1D4ED8/#BFDBFE`;
+  success `#F0FDF4/#15803D/#BBF7D0`; alert `#FFFBEB/#B45309/#FDE68A`;
+  danger `#FEF2F2/#B91C1C/#FECACA`.
+- **dark:** bg `#0B1220`, fg `#111A2C`, sunk `#16203A`, elevated `#18233F`,
+  highlight `#1E2B4D`, accent `#3B82F6`, accent_pressed `#2563EB`,
+  accent_subtle `#1E3A8A`, text_on_accent `#FFFFFF`, secondary `#818CF8`,
+  text_on_secondary `#FFFFFF`, text_primary `#F1F5F9`, text_secondary
+  `#94A3B8`, text_tertiary `#64748B`, text_brand `#60A5FA`,
+  border_default `#243049`, border_interactive `#3B82F6`,
+  border_accent `#60A5FA`; info `#172554/#93C5FD/#1E3A8A`;
+  success `#052E16/#4ADE80/#166534`; alert `#451A03/#FCD34D/#92400E`;
+  danger `#450A0A/#F87171/#7F1D1D`.
+- scales: `neutral_scale "slate"`, `corner_profile "balanced"` (radii
+  card 14 / button 12 / input 12 / chip 20 / tag 8 / callout 12),
+  `density "comfortable"` (20/16/16/50/50/34/60), `theme_mode "DayNight"`,
+  no fonts (system stack). Component token defaults derive from these.
+
 ## 6. Muse API Client (`src/muse/client.ts`)
 
 - Endpoint: the Llama API (OpenAI-compatible chat-completions w/ tools + streaming)
@@ -360,17 +520,37 @@ nonexistent `name` field and silently showed zero component tokens — do not re
   (cap 3, then an error card with a Retry button).
 - **Cancels:** Stop button aborts the fetch (AbortController), marks the turn
   cancelled, keeps ops already applied, posts "Stopped — X of Y done."
+**Wire format (OpenAI-compatible):** `POST {MUSE_BASE_URL}/chat/completions`
+(default base `https://api.llama.com/v1`, override in env). Auth header
+`Authorization: Bearer $MUSE_API_KEY`. Body:
+`{ model, messages, tools: [<function defs generated from the zod schemas
+via zod-to-json-schema>], tool_choice: "auto", stream: true,
+temperature: 0.4, max_tokens: 4096 }`. Tool outputs go back as `role:"tool"`
+messages echoing `tool_call_id`.
+
+**Streaming accumulation (implement EXACTLY this):** read SSE lines
+(`data: {json}`, terminate on `data: [DONE]`); accumulate
+`choices[0].delta.tool_calls[]` BY INDEX — each fragment appends
+`id`/`name` when present and CONCATENATES `arguments` string parts; a call
+is complete when its `arguments` parses as JSON; `finish_reason` of
+`"tool_calls"` or `"stop"` ends the request phase. Text deltas stream into
+the rail bubble. Heartbeat: 30 s without any delta → rail line (§8.1). A
+stream error mid-turn: ONE retry with unchanged context — ops already
+applied are never lost (they apply per batch, not per turn).
+
 - Every request logs: model, prompt chars, tool names requested, latency → a tiny
   debug panel (receipts law).
 
 ---
 
-## 7. The Tool Surface (complete — the model gets these five and NOTHING else)
+## 7. The Tool Surface (complete — the model gets these SIX and NOTHING else)
 
 ```
 read_canvas()                       → compact project index (§8.2), ≤ 4000 chars
 set_design_tokens(patch)            → §5 patch; validates hexes; repaints canvas
 propose_blueprint(blueprint_text)   → starts the approval flow (§8.4); does NOT build
+ask_choice(question, options[])      → choice card (§8.6); options ≤ 4, each
+                                       {label ≤ 60 chars, hexes?: ≤ 4 #RRGGBB}
 edit_canvas(screen_id, ops[])       → §3 batched ops, all-or-nothing, ≤ 40 ops/call
 finish(summary)                     → ends the turn with a 2-sentence user summary
 ```
@@ -432,6 +612,8 @@ After a turn that applied tree/tokens changes:
 3. PASS → done. PROBLEMS → ONE rebuild round: same ask + "A PREVIOUS ATTEMPT HAD
    PROBLEMS (fix ALL): …". After the rebuild, ship regardless and show the reviewer's
    remaining notes honestly under the result. (Max attempts = 2 total.)
+If the reviewer call itself fails (network/model error), ship with the honest
+label "unverified" in the rail — the demo never blocks on the reviewer.
 
 ### 8.4 The Blueprint flow (law 3)
 - Trigger: user asks for an app/screen (or picks "Blueprint first").
@@ -448,6 +630,19 @@ After a turn that applied tree/tokens changes:
 - Build it → the fill queue: screens filled one `edit_canvas` per screen + one wiring
   pass (actions/navigation), progress card N-of-M with Stop (§9.5), verify gate at the
   end. "Fast mode" skips per-screen review, keeps the final gate.
+Adjust rounds cap at 3 (then an honest line: the blueprint stands as-is or
+the user cancels). Fill semantics: screens build in queue order; a screen
+that FAILS after its rebuild marks FAILED and the queue CONTINUES — one
+screen's failure never blocks the rest (its row shows the reviewer's
+PROBLEMS + Rebuild, §9.5). Per-screen fill prompt (verbatim):
+
+"Fill screen <name> from its blueprint section. SECTION: <the lines>.
+LOOK numbers are binding: <the LOOK line>. Token sheet: <sheet>. ONE
+edit_canvas call with ALL adds for this screen (library components only),
+then ONE call with styling deviations. Ids: <§3.2 rules>. Generate
+mockData rows (5–20, realistic) for every list/table/chart dataKey. Then
+finish() with one sentence."
+
 - **The stop law (12):** after `scaffold_project`-equivalent (first screen set created
   by the agent), builder tools refuse (`E_BUILD_CARD`) until the user answers the
   how-to-build card; tapping it cancels the agent's still-running turn first.
@@ -455,9 +650,9 @@ After a turn that applied tree/tokens changes:
 ### 8.5 System prompt (assembled, ~1200 chars max — pin exactly this spirit)
 ```
 You are the muse builder inside Museware. You change the canvas ONLY through tools:
-read_canvas, set_design_tokens, propose_blueprint, edit_canvas, finish.edit_canvas
-ops are BIG — all adds for a screen in one call, then one styling call; never one
-component per call. Components come from the library list; colours come from the
+read_canvas, set_design_tokens, propose_blueprint, ask_choice, edit_canvas,
+finish. edit_canvas ops are BIG — all adds for a screen in one call, then one
+styling call; never one component per call. Components come from the library list; colours come from the
 token sheet (hex literals only when the user explicitly demands a custom colour).
 First agree the look (offer 2–4 whole directions with hexes), save it with
 set_design_tokens, propose_blueprint, then fill in after approval. Never print HTML,
@@ -467,8 +662,8 @@ use its tokens, never invent replacements.
 
 ### 8.6 Choice protocol (the colour moment)
 The model asks the user to pick between 2–4 whole directions by calling
-`propose_blueprint` (style section) OR `set_design_tokens` preview variants rendered
-as a **choice card**: one row per option, up to 4 swatch dots per row (hexes from the
+**`ask_choice`** (first-class: question + options with optional hexes → the
+choice card): one row per option, up to 4 swatch dots per row (hexes from the
 option text; word→colour fallback map for "pastel pink" etc.), display labels with hex
 codes STRIPPED (the dots show the colour; the codes go to the model, not the user's
 eyes). Tap = the answer; the card leaves; "✓ Picked: …" line stays.
@@ -478,6 +673,18 @@ element" (sets the one node's style), "Cancel". A non-parsing hex keeps the card
 with an honest line. (This was two popups chained in the old product; ONE card here.)
 
 ---
+
+### 8.7 Blueprint → provisional tree (the approval-card thumbnails)
+`muse/blueprintParse.ts` interprets blueprint text BEFORE any edit_canvas
+exists: split on `SCREEN:` lines; per screen, parse `- <id> (<type>) …`
+lines into ComponentNodes (unknown type → `text`; omitted id → generated;
+verbs "opens / links to X" → action `{type:"navigate", to:slug(X)}`);
+apply the LOOK line's numbers to the screen root styles (outer padding,
+gap, type sizes); containers inferred from indentation when present,
+otherwise a flat `col`. The result renders as the approval card's
+thumbnails — and the SAME parser prefixes the fill queue's per-screen
+prompts, so approve-what-you-see equals build-what-you-saw. Golden unit
+tests: three hand-written blueprints with expected trees.
 
 ## 9. The Editor (UI of Museware itself)
 
@@ -505,9 +712,13 @@ with an honest line. (This was two popups chained in the old product; ONE card h
 - Recursive `NodeView` renders the tree with resolved styles (tokens → CSS vars).
 - dnd-kit: drag from a component palette (grouped by §4 categories) OR drag existing
   nodes (move). Drop indicators: before/after/inside (containers only — enforce §3.3
-  rules at drag time, so illegal drops are visibly impossible).
+  rules at drag time, so illegal drops are visibly impossible). Drop
+  indicators: before/after = a 2 px accent line across the edge; inside = an
+  inset accent outline on the container (pointer within 12 px of the edge
+  counts as before/after).
 - Selection: click → inspector; outline uses `--mw-accent`. Double-click text nodes →
-  inline edit (commit = `setText` op). Hover shows the node's id chip (ids matter to
+  inline edit (Enter or blur commits, Esc cancels; the commit is a plain
+  `setText` op). Hover shows the node's id chip (ids matter to
   the agent round-trips).
 - User drags produce the SAME ops as the agent — one history, one undo.
 
@@ -534,6 +745,8 @@ frame (390×844 / 768 / 1280) — the tree is responsive (flex/grid), not absolu
 - **Choice card / Colour card** (§8.6). **Typing-dots bubble** with the heartbeat
   text during long agent work ("🛠 Building 2 of 4 — Details…"), settling to a final
   line. **Error card** with the honest message + Retry.
+- The rail renders the LAST 100 messages (full history persisted; a
+  "load earlier" chip reveals more).
 - All cards: leave-on-answer (law 11); all rail content persisted with the project
   (restore on reload — cards older than the session restore as their decided/final
   state, never re-askable ghosts).
@@ -572,12 +785,28 @@ scope, two paragraphs max).
 
 ---
 
+### 11.5 Explicitly NOT in v1 (scope fence — do not build, do not promise)
+Multi-user/collaboration; server-side project storage (IndexedDB + file I/O
+only); custom code components or arbitrary-JS actions; real backend
+connectors or auth; themes beyond light/dark; RTL; i18n; native mobile
+builds (PWA/Capacitor wrap only); template gallery/marketplace; version
+branching. If a demo request drifts here, the answer is "post-hackathon".
+
+### 11.6 Security & safety
+The API key never reaches the browser bundle (CI greps the dist). Model
+output is DATA, never executed: ops pass zod, no `eval`/`new Function`
+anywhere, exported code is static text the user downloads. All text renders
+as text (React escaping; `dangerouslySetInnerHTML` is banned repo-wide).
+`image.src` accepts only `https:` and `data:` (validated at op time).
+`openUrl` shows an explicit confirm chip in RunMode. Receipts/logs carry
+lengths and tool names — never prompt content.
+
 ## 12. Milestones (hackathon clock; acceptance criteria are testable)
 
 - **M0 (h1–2) Skeleton:** Vite+TS+Zustand runs; ProjectDoc store + ops reducer +
   undo; canvas renders a hardcoded tree; palette drag-drop with container rules.
   ✅ drag a button into a card, undo restores, reload persists.
-- **M1 (h3–4) Muse loop:** proxy + client + pacing; the five tools with zod;
+- **M1 (h3–4) Muse loop:** proxy + client + pacing; the six tools with zod;
   system prompt; rail with live lines + dots + stop. ✅ "make a landing page with a
   hero and 3 feature cards" → one batched edit_canvas → canvas shows it; receipts in
   the op log.
@@ -646,6 +875,38 @@ the app. 5) Export PWA → open on a phone. Fallback: pre-recorded run.
 - Hex codes ate the labels ("Any need for those codes?") → display stripping §8.6.
 
 ---
+
+## Appendix A — Verbatim prompt pack (pin these; the wording is load-bearing)
+
+**A1 — System (code model, every request):** §8.5, exact text there.
+
+**A2 — Blueprint:**
+"You are the lead architect. One builder will fill every screen later, so
+decide EVERYTHING now. Output plain text only. RULES: id style, ONE shared
+state namespace, the screen list. Then per screen: 'SCREEN: <Name>' and one
+line per component '- <id> (<type>) <what it does; use "opens X" for
+navigation>', then 'LOOK: <n>dp outer padding, <n>dp between sections, card
+radius <n>, title <n>px, body <n>px, colours by token name'. Then 'STATE:'
+every cross-screen key, then 'WIRING:' every connection. ≤ 600 words total.
+Colours come from the token sheet — never invent hexes."
+
+**A3 — Reviewer (chat model):** §8.3, exact text there.
+
+**A4 — Fill (per screen):** §8.4, exact text there.
+
+**A5 — Adjust:**
+"Revise the blueprint honoring EXACTLY these changes: <wish>. Keep everything
+else as it was. Same format as before."
+
+**A6 — Typed-options correction (the model printed options as text):**
+"You offered choices as chat text. Call ask_choice with those options
+(labels + hexes) instead. The user taps cards, not paragraphs."
+
+**A7 — Vision describe (chat model, ≤ 2 images, before the code model sees
+the turn):**
+"Describe this UI mockup for a builder: structure top→bottom, every
+component with its type, every colour as hex, all text verbatim, spacing
+impressions in dp. ≤ 250 words."
 
 ## 15. Glossary
 **Op** — the single atomic change unit (§3). **Batch** — an all-or-nothing list of
