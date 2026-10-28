@@ -5,7 +5,8 @@ product from scratch to finish using only this file. Nothing here requires acces
 any prior conversation. Where a decision was painful to learn elsewhere, the lesson is
 recorded as a **LAW** — do not relitigate laws during implementation.
 
-**Spec version:** 1.1 — audited & gap-filled (project-file format: `museware/1`).
+**Spec version:** 1.2 — third audit: no-code blocks/events, custom components,
+web-vs-app modes, first-run scenario traces (project-file format: `museware/1`).
 
 **Product one-liner (the pitch):**
 > Museware is the canvas where Meta's muse builds with you: every AI action is a
@@ -63,16 +64,23 @@ laws. Sketchware Pro is source-available, NOT open-source — zero code reuse.
 11. **Cards leave on answer.** Any decision card the user taps disappears from the
     chat, leaving a one-line record ("✓ Picked: Sunny Playground"). Dead clickable
     cards are a bug.
-12. **The agent stops at creation milestones.** After scaffolding a project/screen,
-    the agent STOPS and hands control to the user (how-to-build card). The agent must
-    never run straight into building — "why does it go ahead and start building?!!"
-    was a real complaint. Gate it in the tool layer: after `scaffold_project`, builder
-    tools refuse until the user picks a mode.
+12. **The agent stops at creation milestones.** After the agent creates the project's
+    first screens, it STOPS and hands control to the user (how-to-build card) — it must
+    never run straight into filling/building ("why does it go ahead and start
+    building?!!" was a real complaint). The mechanical gate: a turn that contains an
+    `addScreen` op ENDS there (the loop forces `finish` right after the first
+    screen-creating batch), and a SECOND `addScreen` within the same turn returns
+    `E_BUILD_CARD`. Filling happens only via the fill queue after the user picks a
+    mode. (User drags are exempt — this gates the model, not the human.)
 13. **Answer from receipts.** Never claim a change happened unless the applied op log
     shows it. Progress lines come from real tool activity only.
 14. **JSON is banned from chat text.** The model's user-facing text is prose. Data
     flows in tool arguments only. If the model prints JSON in a reply, the turn is
     retried once with a correction note.
+15. **No-code is the ceiling, not the floor.** EVERY capability a user needs —
+    layout, styling, logic, data — is reachable by drag, tap, and pick alone
+    (palette, inspector, logic chips). The AI accelerates this; it is never a
+    prerequisite. If a flow requires typing code, the design is wrong.
 
 ---
 
@@ -196,6 +204,9 @@ interface ComponentNode {
   props: Record<string, unknown>;// schema-checked per type (§4)
   styles: StyleSet;              // see below — token references FIRST
   children: ComponentNode[];     // containers only
+  events?: Events;               // §4.2 — no-code logic (tap/change/submit)
+  visibleWhen?: { key: string;   // declarative show/hide, zero logic:
+                  equals?: string | number | boolean }  // state key + value
 }
 
 interface StyleSet {
@@ -224,9 +235,33 @@ interface ProjectDoc {
   screens: ScreenDoc[];
   tokens: DesignTokens;          // §5
   opLog: OpEntry[];              // full history (append-only, for undo + replay)
+  rail: RailEntry[];             // the agent chat + cards, persisted (§2.1)
+  kind: "web" | "app";           // §8.8 — sets DEFAULTS only; switchable anytime
+  customComponents: CustomComponent[]; // §4.3 — reusable no-code blocks
   blueprint?: { text: string; decided: boolean; updatedAt: number };
   updatedAt: number;
 }
+
+// §2.1 Rail persistence — the rail is PART of the project file, not a
+// side channel. Without this the "restore on reload" promise is a lie.
+interface RailEntry {
+  id: string;                    // nanoid
+  at: number;                    // epoch ms
+  role: "user" | "agent" | "system" | "card";
+  text: string;                  // prose (never JSON — law 14)
+  card?: {                       // present iff role === "card"
+    kind: "build_choice" | "blueprint" | "choice" | "color"
+        | "progress" | "error";
+    state: "pending" | "answered" | "cancelled" | "expired";
+    data: Record<string, unknown>; // blueprint text, options+hexes,
+                                   // picked index, N-of-M snapshot…
+  };
+}
+// Caps (enforced on save): ≤ 400 entries (oldest dropped), card data
+// ≤ 8 KB/entry (a blueprint text truncates at 6000 chars with an
+// explicit "…full text in the Design panel" note). RESTORE RULE: a
+// pending card from a previous session loads as "expired" and renders
+// its final state read-only — ghosts are never re-askable (§9.5).
 ```
 
 Rendering rule: the Canvas renders `ProjectDoc` live; there is NO other representation.
@@ -311,7 +346,7 @@ with summary "undo".
 | E_DEPTH | tree deeper than 8 | flatten suggestion |
 | E_COUNT | screen over 120 nodes | split across screens or remove |
 | E_BAD_ARGS | tool args not valid JSON | retry with strict JSON |
-| E_BUILD_CARD | building refused (just-scaffolded window, law 12) | stop; the user picks a mode on the card |
+| E_BUILD_CARD | a second addScreen in one turn (law 12) | end the turn with finish(); the user picks a mode on the card |
 | E_RATE | internal pacing guard tripped | wait; the client paces automatically |
 
 ---
@@ -331,10 +366,15 @@ leaf), props schema (zod-able), defaults.
 - `hero` — full-width banner; props: `title`, `subtitle`, `image?`
 - `tabs` — tab strip + panels; props: `items: string[]`
 - `section` — titled grouping; props: `title`
+- `form` — input-grouping container; props: `submitLabel` (default "Submit"),
+  events: `submit` (§4.2); children inputs bind keys, submit fires the actions
 
 **Text & display** (leaf): `heading` (`text`, `level` 1–4), `text` (`text`), `label`,
 `badge` (`text`, `tone`: accent|success|danger|neutral), `divider`, `icon`
-(`name` from a fixed Lucide set, `size`), `image` (`src`, `alt`, `fit`), `avatar` (`src`, `size`),
+(`name` from a fixed Lucide set, `size`), `image` (`src` — `https:`/`data:` only, validated at op time; when the
+  model has no real asset it MUST emit an inline SVG placeholder data-URI
+  drawn from the token palette — never an invented URL that 404s on
+  stage, `alt`, `fit`), `avatar` (`src`, `size`),
 `progress` (`value` 0–100), `spinner`.
 
 **Input** (leaf): `button` (`text`, `action` §4.1, `variant`: primary|secondary|ghost|danger),
@@ -392,11 +432,61 @@ realistic rows per key during fill (law: realistic domain data, not
 map where string props may reference `{{path.into.row}}`); `table` ≤ 10
 rows; `chart.data` ≤ 12 points `{label, value}`.
 
-### 4.1 Actions (the interactivity model — deliberately small)
-`action: { type: "navigate"; to: ScreenDoc["id"] } | { type: "setState"; key: string; value: unknown } | { type: "toast"; text: string } | { type: "openUrl"; url: string }`
-RunMode (§9.6) interprets actions client-side. That is the WHOLE interactivity surface
-for the hackathon. No custom code, no arbitrary JS — constrained vocab beats live
-freedom (and makes verification tractable).
+### 4.1 Actions (the atomic verbs of the no-code logic system)
+```ts
+type Action =
+  | { type: "navigate"; to: string }                 // screen id
+  | { type: "setState"; key: string; value: unknown }// write the run store
+  | { type: "toggle"; key: string }                  // flip a boolean state
+  | { type: "toast"; text: string }
+  | { type: "openUrl"; url: string }                 // confirm chip (§11.6)
+  | { type: "when"; key: string; equals?: unknown;   // conditional:
+      then: Action[] }                               // nested ≤ 2 deep
+```
+RunMode (§9.6) interprets actions client-side; codegen lowers them into a
+~40-line runtime stub. This is the WHOLE verb set — deliberately tiny, but
+COMPOSABLE (ordered lists + one conditional level covers forms, toggles,
+wizards, filters, tab logic) and fully verifiable. No arbitrary JS, ever.
+
+### 4.2 Events & logic chips (Sketchware's blocks, reborn without code)
+Every interactive component exposes EVENTS; an event holds an ORDERED LIST
+of actions rendered as chips:
+```ts
+type EventName = "tap" | "change" | "submit";
+type Events = Partial<Record<EventName, Action[]>>;
+```
+Defaults: every leaf gets `tap`; inputs/select/checkbox/switch/slider get
+`change`; `form` gets `submit`; `link`/`bottomnav` items carry navigate
+chips out of the box. **The builder UI (Inspector → Events tab):** a
+"WHEN <event>" row per event; under it "+ add action" opens a picker —
+Navigate (screen list) / Set state (key picker + value field) / Toggle /
+Toast (text) / Open URL / If state equals… (then nested chips). Argument
+fields are PICKERS (screens, existing state keys, tones) — nothing to
+type but literal values. The AI writes the same structure through
+`edit_canvas` (`setProps` on `events`), and the verify gate reviews it
+like any other content. Beyond v1 (do NOT build): API-call action,
+persisted storage action, loops.
+
+### 4.3 Custom components (reusable blocks — place-as-copy in v1)
+```ts
+interface CustomComponent {
+  name: string;                  // "habit_row" — §3.2 id rules
+  description: string;           // one line, shown in the palette
+  root: ComponentNode;           // subtree; ids preserved inside
+  preview?: string;              // tiny data-URI snapshot for the palette
+}
+```
+- **Save:** Inspector → "Save as component" (names the selection).
+- **Place:** palette gains a "My components" group (top); placing inserts
+  a COPY of the subtree (ids regenerated per §3.2 with the component name
+  as prefix: `habit_row_btn_done`).
+- **v1 honesty:** instances are copies — editing the source does NOT
+  retro-update placed copies (deep sync is post-hackathon; the inspector
+  says so in one line). The AI can `saveComponent`/`placeComponent` too
+  (ops below), so "make me a card I can reuse" works end-to-end.
+- New ops (§3.1): `{ op:"saveComponent"; name; description; root }` ·
+  `{ op:"placeComponent"; name; parentId; index? }` — validated like all
+  ops; `E_NAME_TAKEN` on duplicate save.
 
 ---
 
@@ -562,8 +652,8 @@ widget per call." (law 2 exists because models do it unless told, every time).
 
 **Structured output defence (law 1):** request tool-calls natively; if a reply
 contains fenced JSON/HTML instead of tool calls, retry ONCE with a correction message.
-If the model needs to offer CHOICES (styles/directions), it must use
-`propose_blueprint` or the choice card protocol (§8.6) — if it still types options as
+If the model needs to offer CHOICES (styles/directions), it must call
+`ask_choice` (§8.6) — if it still types options as
 text, `typedOptions.ts` parses 2–6 numbered options (≥2 with hex codes) from the text
 and renders tappable choice chips (coloured dots, hex-stripped labels, tap = send that
 option as the user's message). The fallback exists because instructions alone were
@@ -575,7 +665,7 @@ proven insufficient.
 
 ### 8.1 Turn lifecycle
 ```
-user message / card tap / scaffold event
+user message / card tap / milestone (first screen batch ends the turn — law 12)
 → assemble context (§8.2, LAW 6 caps)
 → [ paced, streaming ] muse call (tools on, CODE model)
 → for each tool call: validate → apply/queue → tool result (capped)
@@ -603,8 +693,8 @@ silence, but drowning the chat kills it entirely).
 
 ### 8.3 The Verify Gate (law 5 — non-negotiable, the best-paid pattern)
 After a turn that applied tree/tokens changes:
-1. Render the changed screens to a plain-text description (screens → tree outline with
-   resolved styles; ≤ 4000 chars).
+1. `muse/canvasOutline.ts` renders the changed screens to a plain-text
+   description (screens → tree outline with resolved styles; ≤ 4000 chars).
 2. Ask the CHAT model, as reviewer: "A builder was asked: <user ask>. It produced:
    <outline>. Answer exactly PASS, or PROBLEMS: a numbered list. Visual quality
    counts: cramped/default-padded layouts, ignored LOOK numbers, off-palette colours
@@ -643,9 +733,12 @@ then ONE call with styling deviations. Ids: <§3.2 rules>. Generate
 mockData rows (5–20, realistic) for every list/table/chart dataKey. Then
 finish() with one sentence."
 
-- **The stop law (12):** after `scaffold_project`-equivalent (first screen set created
-  by the agent), builder tools refuse (`E_BUILD_CARD`) until the user answers the
-  how-to-build card; tapping it cancels the agent's still-running turn first.
+- **The stop law (12), mechanically:** the moment a turn applies its first
+  `addScreen` batch, the loop appends `finish` and ends the turn; the UI then posts
+  the how-to-build card. If the model tries another `addScreen` in that same turn,
+  `edit_canvas` returns `E_BUILD_CARD` (one correction round: "end with finish()").
+  Tapping the card cancels any still-finishing turn first. User drags bypass this
+  entirely — it gates only the model.
 
 ### 8.5 System prompt (assembled, ~1200 chars max — pin exactly this spirit)
 ```
@@ -686,6 +779,36 @@ thumbnails — and the SAME parser prefixes the fill queue's per-screen
 prompts, so approve-what-you-see equals build-what-you-saw. Golden unit
 tests: three hand-written blueprints with expected trees.
 
+### 8.8 First-run scenario: "Design me a landing page website" (exact trace)
+This is the demo's opening line, so it is pinned step by step:
+
+| # | Surface | What happens |
+|---|---|---|
+| 1 | rail dots | Turn assembles: system prompt + starter-token sheet + (near-empty) index. |
+| 2 | choice card | The model calls `ask_choice`: "Web page or app feel?" with two options — unless the user's wording already decided it ("website" → web, "app" → app). Here: **web**. |
+| 3 | rail line | `kind:"web"` set: desktop viewport becomes default, navbar/footer pattern suggested. |
+| 4 | blueprint card | `propose_blueprint`: one screen `landing` (hero → features → stats → CTA → footer), every section line with ids/types, a LOOK line with hard numbers FROM THE TOKEN SHEET, WIRING (CTA → sign-up form submit), STATE (email, submitted). Persist-on-create fires HERE. |
+| 5 | user tap | Build it → card leaves → "✓ Blueprint approved" line → fill queue opens. |
+| 6 | progress card | "🛠 Screens 1 of 1 — landing…" + typing dots; ONE `edit_canvas` batch with ALL adds (hero, 3 feature cards in a grid, stats with mockData rows, form with bindKey inputs), then ONE styling batch. Receipts in the op log. |
+| 7 | verify gate | `canvasOutline` renders the screen → reviewer: PASS (or one rebuild). |
+| 8 | final line | "Landing page ready — 14 components, your tokens, runs now." + [▶ Run] pulse. Total: ~6 requests, well under $0.10. |
+
+**Web vs app — one system, different defaults (never two pipelines):**
+the JSON tree is IDENTICAL; `kind` switches DEFAULTS only —
+
+| | `kind: "web"` (default viewport 1280) | `kind: "app"` (default 390×844) |
+|---|---|---|
+| Navigation pattern | `navbar` + footer sections | `bottomnav` + `fab` |
+| Content width | max-width page container | full-bleed screens |
+| Blueprint hints | sections, SEO-ish headings, footer | screens, thumb-reach, bottom nav |
+| Export button | "Deploy site" (static zip) | "Install as app" (PWA manifest + SW) |
+| RunMode | identical (same runtime) | identical |
+
+The model picks `kind` from the user's words and says so in one line; the
+user can flip it any time (Project settings) — the tree just re-renders in
+the new defaults. THAT is the whole website/app differentiation: honest,
+visible, and zero duplicated build logic.
+
 ## 9. The Editor (UI of Museware itself)
 
 ### 9.1 Layout
@@ -705,12 +828,16 @@ tests: three hand-written blueprints with expected trees.
 - Dark pro-tool theme (Museware's own tokens — dogfood §5).
 - **STOP is always visible while the agent runs** (law 7). Status pill: "Building
   screens 2 of 4 — Muse is working… [⏹ Stop]".
-- Keyboard: `⌘/Ctrl+Z` undo, `⇧⌘Z` redo, `⌫` delete selection, `⌘D` duplicate,
+- Empty canvas (first run): one centered line — "Describe your app to
+Muse, drag a component in, or import a preset." — with two chips:
+[Start from blueprint] [Import preset].
+Keyboard: `⌘/Ctrl+Z` undo, `⇧⌘Z` redo, `⌫` delete selection, `⌘D` duplicate,
   `⌘S` save project file. Empty states teach in one line each.
 
 ### 9.2 Canvas
 - Recursive `NodeView` renders the tree with resolved styles (tokens → CSS vars).
-- dnd-kit: drag from a component palette (grouped by §4 categories) OR drag existing
+- dnd-kit: drag from a component palette (grouped by §4 categories, plus a
+  "My components" group from §4.3 at the top) OR drag existing
   nodes (move). Drop indicators: before/after/inside (containers only — enforce §3.3
   rules at drag time, so illegal drops are visibly impossible). Drop
   indicators: before/after = a 2 px accent line across the edge; inside = an
@@ -726,15 +853,18 @@ tests: three hand-written blueprints with expected trees.
 Schema-driven from §4: props fields by type (text/number/select/toggle/screen-picker/
 action-picker), styles section (token pickers FIRST: colour = token swatch grid with
 custom hex as the last option; spacing/radius steppers bound to token defaults),
-bindings list (`bindKey`s on the screen). "Ask muse to restyle this" button → prefills
+bindings list (`bindKey`s on the screen). **Events tab** (§4.2): the
+WHEN/THEN chip editor — argument fields are pickers, zero code. **Save as
+component** button (§4.3). "Ask muse to restyle this" button → prefills
 the rail with a scoped request.
 
 ### 9.4 Screens & viewport
 Screen tabs add/duplicate/delete/rename screens. Viewport switch resizes the canvas
 frame (390×844 / 768 / 1280) — the tree is responsive (flex/grid), not absolute.
+The initial viewport follows `kind` (§8.8); switching is always manual-after.
 
 ### 9.5 Agent rail & cards (port of the field-proven set — richness identical)
-- **How-to-build card** (after scaffold/milestone): "Build it — how?" with Blueprint
+- **How-to-build card** (auto-posted after a turn creates the first screens): "Build it — how?" with Blueprint
   first (recommended) / Steady screens / Fast screens / Not now. Leaves on tap.
 - **Blueprint approval card**: rendered screen thumbnails + rules text (8-line clamp)
   + Build it / Adjust it / Cancel. New card per adjust round.
@@ -753,7 +883,8 @@ frame (390×844 / 768 / 1280) — the tree is responsive (flex/grid), not absolu
 
 ### 9.6 Run mode
 Toggles the canvas to a real running app: navigation actions switch screens, state
-actions mutate a per-run store (`bindKey`s read/write it), toasts toast, forms bind.
+actions mutate a per-run store (`bindKey`s read/write it), toasts toast, forms bind,
+and every component's EVENTS fire their action lists in order (incl. `when`).
 This is the judge-moment feature: "the AI built this, and it actually RUNS."
 
 ---
@@ -816,7 +947,8 @@ lengths and tool names — never prompt content.
 - **M3 (h7–8) Blueprint flow:** propose_blueprint → persist-on-create → approval card
   with thumbnails → fill queue (N-of-M + Stop + per-screen undo) → verify gate with
   one rebuild round. ✅ full "habit tracker for my daughter" run end-to-end.
-- **M4 (h9) Inspector & layers polish:** schema-driven editing; user drags = ops.
+- **M4 (h9) Inspector & layers polish:** schema-driven editing; user drags = ops;
+  Events tab (logic chips) + custom components (save/place).
 - **M5 (h10) Run mode + export:** actions run; React codegen + PWA zip.
 - **M6 (h11) Hardening:** reload recovery, choice/colour cards with swatch dots +
   typed-options fallback, error cards, heartbeat, caps audit.
@@ -854,6 +986,11 @@ the app. 5) Export PWA → open on a phone. Fallback: pre-recorded run.
 13. Run mode: every navigate/setState/toast action works; no console errors.
 14. Export: codegen compiles, PWA installs on Android Chrome, icon = brand colour.
 15. Cost receipts panel: one full build ≤ 150 requests, ≤ $1 (log proves it).
+16. The §8.8 landing-page trace runs EXACTLY as written, timed (≤ 6 requests).
+17. Events in RunMode: a toggle chip flips `visibleWhen` content live; form submit
+    fires its action list; nested `when` evaluates once per change.
+18. Custom component: save a selection → palette group appears → place twice →
+    both copies render; `E_NAME_TAKEN` on duplicate name; AI can do the same.
 
 ---
 
@@ -875,6 +1012,22 @@ the app. 5) Export PWA → open on a phone. Fallback: pre-recorded run.
 - Hex codes ate the labels ("Any need for those codes?") → display stripping §8.6.
 
 ---
+
+## 16. Position — beyond Figma AND Sketchware (README-ready)
+| | Figma | Sketchware | **Museware** |
+|---|---|---|---|
+| Design on canvas | ✅ (best-in-class) | ➖ basic | ✅ token-driven, live |
+| Logic without code | ❌ none | ✅ block events (Android only) | ✅ logic chips, web + PWA |
+| AI builds FOR you | ➖ generating mockups, not an app | ➖ agent bolted on | ✅ AI-native: tools + verify gate |
+| AI + human share one source | ❌ | ❌ | ✅ both write the same ops → one undo |
+| Runs instantly | ❌ prototype only | ❌ compile step | ✅ Run mode, zero compile |
+| What you ship | mockups | APK | website zip / PWA / React code |
+| Verify before show | — | — | ✅ render + model self-review, PASS/PROBLEMS |
+| Bounded AI context | — | — | ✅ capped sheets/idx/results (laws 6) |
+
+The one-line pitch stays: every AI action is a reviewable, undoable
+operation on the same canvas you drag on — Figma's canvas, Sketchware's
+no-code logic, an AI that actually builds, and it RUNS.
 
 ## Appendix A — Verbatim prompt pack (pin these; the wording is load-bearing)
 
@@ -915,4 +1068,8 @@ ops from one tool call. **Blueprint** — the up-front plan text + its approval 
 — the ≤1800-char AI-facing design summary. **Verify gate** — render + model
 self-review PASS/PROBLEMS with one rebuild. **Rail** — the agent chat dock. **Card**
 — an interactive rail message that leaves on answer. **Receipts** — the op log; the
-only source of truth for "did it happen."
+only source of truth for "did it happen." **Event** — a
+component trigger (tap/change/submit) holding an ordered action list (§4.2).
+**Logic chip** — one action rendered in the Events tab; arguments are
+pickers. **Custom component** — a saved subtree placed as copies (§4.3).
+**kind** — the project's web/app mode: defaults only, one tree (§8.8).
