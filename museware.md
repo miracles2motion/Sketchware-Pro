@@ -1082,6 +1082,105 @@ rail      mw-railcard-pad 12 · mw-railcard-head-size 14 ·
 Add one Tier-3 pair (pad + header-size) whenever a new named surface is
 built; a component that cannot name its token is a review finding.
 
+### 9.1.2 The complete element inventory — every visual thing has a token line
+
+**Scrollbars:** `mw-scroll-w 10` (thumb 8) · thumb `mw-neutral-600` rest,
+`neutral-800` hover, `neutral-400` while dragging · track transparent ·
+radius pill · canvas/frame scrollbars auto-hide (overlay style) ·
+`::-webkit-scrollbar` + `scrollbar-width/scrollbar-color` both set.
+
+**Buttons** (variant × size grid; every cell token-resolved):
+- variants: primary = `mw-accent` bg + white ink (hover accent-600, active
+  accent-700); secondary = `mw-surface2` bg + `mw-border` + `mw-ink`;
+  ghost = transparent + `mw-ink2` (hover `mw-hover` bg); danger = `mw-red-600`
+  bg + white ink. Each variant a Tier-2 alias pair — never raw hex in JSX.
+- sizes: `mw-btn-h-sm 28 / md 36 / lg 44` · pad-x 12/14/16 · icon-button
+  square variants per size · label = `mw-type-label` 500.
+- states: hover `mw-hover` (or variant hover) · active `mw-active` ·
+  focus `mw-focus-ring` · disabled 40% opacity + `not-allowed` · loading =
+  16px spinner + 70% opacity + pointer-events none.
+
+**Inputs** (text, textarea, select): rest border `mw-border`, bg
+`mw-surface`; focus 2px `mw-focus-ring` + border accent; error border
+`mw-red-500` + 12px message row (`mw-red-400`); success border green-500;
+disabled bg `mw-surface2`; placeholder `mw-ink3`; select adds chevron icon.
+**Dropdown menu** (select, pickers): `mw-surface` + border + radius 10 +
+`mw-e2` shadow; item h32 (hover `mw-hover`, selected `mw-accent-subtle` bg
++ accent text + check icon); max-h 320 + §scrollbars.
+
+**Checkbox / radio / switch:** checkbox 18px r4 — unchecked border
+`mw-border`, checked `mw-accent` bg + white check; radio 18px — checked
+accent ring + accent dot; switch track 36×20 — off border-on-surface2,
+on `mw-accent`, thumb 16 white 2px inset; all: 150ms motion, focus ring,
+error variant ring red. Touch variant (mobile): track 44×26, thumb 22.
+
+**Slider:** track 4px `mw-neutral-800`, fill accent, thumb 14px white +
+2px accent border, value tooltip while dragging.
+
+**Tabs:** screen-tab h40 — active `mw-ink` + 2px accent underline, inactive
+`mw-ink2`, hover `mw-ink`; segmented control (viewport 📱💻🖥): track
+`mw-surface2`, active segment `mw-surface` + `mw-e1` shadow.
+
+**Chips / badges:** chip h28 pill — rest border + `mw-ink2`; selected =
+accent-subtle bg + accent text + check; filter chips same; swatch chip =
+16px color dot + label; **badge dot** 8px (ok/warn/danger aliases); count
+badge 16px pill red-600 white 11px; **kbd chip** mono 11 `mw-surface2` +
+border r4.
+
+**Tooltips:** inverse — `mw-neutral-950` bg (light theme: `neutral-0` +
+border) · 12px `mw-type-label` · r6 · arrow 6 · delay 400ms in / 0 out ·
+max-w 240 · z 60.
+
+**Toasts / banners:** toast bottom-center desktop / above composer mobile
+— surface, r10, `mw-e3`, 3px left status border (ok/warn/danger), 4s
+auto-dismiss + close, z 50. Inline banner: accent/green/amber/red subtle
+bg pairs + 3px left border + icon + actions right.
+
+**Modals:** scrim `mw-neutral-1000` @ 60% (40% in light) · panel surface
+r16 `mw-e3` max-w 560 · header title 16/600 · footer right-aligned
+buttons (danger confirm uses danger button) · Esc + scrim close except
+destructive confirms · z 40. **Flyouts / context menus / popovers:** r10
+border `mw-e2` · item h32 (icon 16 + label) · separator `mw-border` ·
+danger item `mw-red-400` · z 30.
+
+**Progress & loading:** spinner = rotating arc 1s (sm 16 / md 24 / lg 32);
+determinate bar 4px track `mw-neutral-800` + accent fill; indeterminate =
+1.2s shimmer; **skeletons** = `mw-surface2` blocks r8 + shimmer — layouts
+load as skeletons, never spinners (and never blank).
+
+**Text furniture:** link accent (underline on hover) · inline code
+`mw-surface2` + mono 12 r4 · text selection accent @ 25% · diff view:
+added green @ 15% bg, removed red @ 15% (op-log/receipts) · dividers
+1px `mw-border` (inset variant 12px margins).
+
+**Canvas furniture:** bg `mw-canvas-bg` = neutral-950 (light: neutral-100)
+with 1px dot grid `mw-neutral-800` @ 24px spacing · device frame =
+surface, r18, border, `mw-e2` · selection outline 2px accent
+(radius-following) · hover outline 1px accent @ 40% · drop line 2px
+accent · drop-into = inset 2px dashed accent · resize handles 8px white
+squares + accent border · snap guide 1px violet dashed · measurement
+label mono 11 chip · **cursors:** default / grab / grabbing (drag) /
+text (dbl-click) / crosshair (insert mode) / not-allowed (illegal drop).
+
+**Rail specifics:** user bubble accent @ 18% bg, radius 14/14/4/14 ·
+muse prose plain on surface · system pill surface2 12px · recording =
+mic button red bg + pulse ring · suggestion chips surface2 → hover
+border-accent · token ring stroke accent → amber @70% → red @90% ·
+model pill mono 11.
+
+**Z-index scale (never ad-hoc):** canvas 0 · docked panels 10 ·
+sticky/status 20 · flyout/popover/dropdown 30 · modal 40 · toast 50 ·
+tooltip 60.
+
+**Density:** exactly ONE — pro-compact (§9.1). A density switch is out of
+v1 (§11.5); scale everything through the tokens, never per-screen hacks.
+
+**The Gallery rule (enforcement):** a `/gallery` route renders EVERY
+element above in EVERY state (rest/hover/active/focus/disabled/loading ×
+both themes) — the visual QA page and the CI screenshot target. An
+element missing from the gallery is missing from the product; a component
+that cannot be rendered from tokens alone is a review finding.
+
 **Enforcement (same discipline we preach to users):** zero hardcoded
 hexes/px in components — ESLint stylelint rule + CI grep over src/ for
 `#[0-9A-Fa-f]{3,8}` outside the token definitions; contrast: AA for
