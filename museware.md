@@ -1017,12 +1017,34 @@ ladder 4/8/12/16/24/32/40/48, 40px touch minimums, restrained radii;
 iOS gives the readable type ladder and the 44px tap target. They also
 remain user-import presets (§5.1) — separate concern, never our chrome.
 
-**Tier 1 — Primitives** (never referenced by components):
-`mw-indigo-50…950` (#EEEBFF…#1F1A66, 13 steps), `mw-violet-50…950`,
-`mw-neutral-0…1000` (#FFFFFF…#000000, 15 steps), `mw-green-*`,
-`mw-amber-*`, `mw-red-*`; spacing `mw-space-1…12` (4px base:
-4,8,12,16,20,24,32,40,48,64,80,96); radii `mw-radius-none/sm(6)/md(10)/
-lg(12)/xl(16)/pill(999)`; type sizes `mw-fs-11…48`; weights 400/500/600/700.
+**Tier 1 — Primitives** (complete hex ramps — never referenced by
+components, only by Tier 2):
+
+```
+mw-indigo   50#EEEBFF 100#DFD9FF 200#C4BAFF 300#A897FF 400#8F79FF
+            500#6D5CFF 600#5B49F5 700#4A38D6 800#3A2BB0 900#2B2090
+            950#1F1A66
+mw-violet   50#FAF5FF 100#F3E8FF 200#E9D5FF 300#D8B4FE 400#C084FC
+            500#A855F7 600#9333EA 700#7E22CE 800#6B21A8 900#581C87
+            950#3B0764
+mw-neutral  0#FFFFFF 50#F7F8FA 100#F0F2F5 150#E8EBEF 200#E3E6EB
+            300#D3D7DE 400#B9BFC9 500#8B93A3 600#62697A 700#5A6170
+            800#454B57 850#333947 900#262B36 950#151821 1000#0E1015
+mw-green    50#ECFDF5 100#D1FAE5 200#A7F3D0 300#6EE7B7 400#34D399
+            500#10B981 600#059669 700#047857 800#065F46 900#064E3B
+            950#022C22
+mw-amber    50#FFFBEB 100#FEF3C7 200#FDE68A 300#FCD34D 400#F5B544
+            500#F59E0B 600#D97706 700#B45309 800#92400E 900#78350F
+            950#451A03
+mw-red      50#FEF2F2 100#FEE2E2 200#FECACA 300#FCA5A5 400#F87171
+            500#EF4444 600#DC2626 700#B91C1C 800#991B1B 900#7F1D1D
+            950#450A0A
+```
+
+Spacing `mw-space-1…12`: 4, 8, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96 px.
+Radii: `mw-radius-none(0) sm(6) md(10) lg(12) xl(16) pill(999)`.
+Type sizes `mw-fs`: 11, 12, 13, 14, 15, 16, 18, 20, 24, 28, 32, 40, 48 px
+(mono face for ids/code at 11–13). Weights: 400 / 500 / 600 / 700.
 
 **Tier 2 — Semantic aliases** (the ONLY layer components reference;
 themes are alias remappings — dark default, `[data-mw-theme="light"]`):
@@ -1039,12 +1061,26 @@ morph(250ms)`, `mw-ease-out`, `mw-pulse(2s)`; breakpoints mirror §9.7
 (compact/medium 600/expanded 1024).
 
 **Tier 3 — Component tokens** (every named surface gets one — this is
-how "every single chip" is covered): `mw-topbar-h(64) mw-statusbar-h(24)
-mw-left-w(260) mw-rail-w(340) mw-inspector-w(280) mw-rail-peek(88)
-mw-control-h(36) mw-chip-h(28) mw-row-h(44) mw-card-radius(16)
-mw-panel-radius(12) mw-input-radius(10)`; card/chip/row/tab each have
-padding + gap tokens; every rail card kind has a token for its padding
-and header size.
+how "every single chip" is covered):
+
+```
+layout    mw-topbar-h 64 · mw-statusbar-h 24 · mw-left-w 260 ·
+          mw-left-icon-rail 48 · mw-rail-w 340 · mw-inspector-w 280 ·
+          mw-rail-peek 88 · mw-flyout-w 240 · mw-menu-w 200 ·
+          mw-panel-pad 12 · mw-section-gap 16 · mw-frame-radius 18
+controls  mw-control-h 36 · mw-chip-h 28 · mw-row-h 44 · mw-tab-h 40 ·
+          mw-input-h 36 · mw-icon-sm 16 · mw-icon-md 20 · mw-icon-lg 24 ·
+          mw-touch-min 40
+surfaces  mw-card-radius 16 · mw-panel-radius 12 · mw-input-radius 10 ·
+          mw-chip-radius 999 · mw-card-pad 16 · mw-card-gap 12 ·
+          mw-chip-pad-x 12 · mw-chip-pad-y 6 · mw-row-pad 12 ·
+          mw-tab-pad 10
+rail      mw-railcard-pad 12 · mw-railcard-head-size 14 ·
+          mw-railcard-gap 8 · mw-rail-composer-min 56 ·
+          mw-rail-max-rows 6 · mw-swatch-size 16 · mw-swatch-gap 5
+```
+Add one Tier-3 pair (pad + header-size) whenever a new named surface is
+built; a component that cannot name its token is a review finding.
 
 **Enforcement (same discipline we preach to users):** zero hardcoded
 hexes/px in components — ESLint stylelint rule + CI grep over src/ for
